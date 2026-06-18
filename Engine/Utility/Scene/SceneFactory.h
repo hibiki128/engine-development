@@ -1,0 +1,14 @@
+#pragma once
+#include "AbstractSceneFactory.h"
+
+namespace Hagine {
+class SceneFactory : public AbstractSceneFactory {
+  public:
+    /// <summary>
+    /// シーン生成
+    /// </summary>
+    /// <param name="sceneName"></param>
+    /// <returns></returns>
+    std::unique_ptr<BaseScene> CreateScene(const std::string &sceneName) override;
+};
+} // namespace Hagine
