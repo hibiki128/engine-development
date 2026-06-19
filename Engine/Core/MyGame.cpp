@@ -13,9 +13,9 @@ void MyGame::Initialize() {
    
     // 最初のシーンを予約（シーンは REGISTER_SCENE で自己登録済み）
 #ifdef _DEBUG
-    sceneManager_->NextSceneReservation("TEST");
+    sceneManager_->NextSceneReservation("TITLE");
 #else
-    sceneManager_->NextSceneReservation("TEST");
+    sceneManager_->NextSceneReservation("TITLE");
 #endif // _DEBUG
     // -----------------------
 }
