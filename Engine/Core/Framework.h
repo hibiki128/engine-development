@@ -23,14 +23,12 @@
 #include "Particle/ParticleCommon.h"
 #include "Particle/ParticleEditor.h"
 #include "Particle/ParticleGroupManager.h"
-#include "Scene/AbstractSceneFactory.h"
 #include "Scene/SceneManager.h"
 #include "Scene/SceneTransition.h"
 #include "SkyBox/SkyBox.h"
 #include "SpriteCommon.h"
 #include "SpriteManager.h"
 #include "line/DrawLine3D.h"
-#include <Application/Utility/MotionEditor/MotionEditor.h>
 #include"Engine/Utility/LoadFile/Csv/CsvLoad.h"
 #include "Engine/Render/DrawSystem.h"
 namespace Hagine {
@@ -90,8 +88,6 @@ class Framework {
     DrawLine3D *line3d_ = nullptr;
     SkyBox *skyBox_ = nullptr;
 
-    // シーンファクトリー
-    std::unique_ptr<AbstractSceneFactory> sceneFactory_ = nullptr;
     SceneTransition *sceneTransition_ = nullptr;
 
     SceneManager *sceneManager_ = nullptr;
@@ -104,7 +100,6 @@ class Framework {
     ParticleGroupManager *particleGroupManager_ = nullptr;
     ParticleCSGroupManager *particleCSGroupManager_ = nullptr;
     PipeLineManager *pipeLineManager_ = nullptr;
-    MotionEditor *motionEditor_ = nullptr;
     ComputePipeLineManager *computePipeLineManager_ = nullptr;
     ShortcutManager *shortcutManager_ = nullptr;
     SpriteManager *spriteManager_ = nullptr;

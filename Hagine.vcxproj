@@ -20,13 +20,13 @@
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
-    <ConfigurationType>Application</ConfigurationType>
+    <ConfigurationType>StaticLibrary</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
     <PlatformToolset>v143</PlatformToolset>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
-    <ConfigurationType>Application</ConfigurationType>
+    <ConfigurationType>StaticLibrary</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
     <PlatformToolset>v143</PlatformToolset>
     <WholeProgramOptimization>true</WholeProgramOptimization>
@@ -45,14 +45,16 @@
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-    <OutDir>$(SolutionDir)..\Generated\Outputs\$(Configuration)\</OutDir>
-    <IntDir>$(SolutionDir)..\Generated\Obj\$(ProjectName)\$(Configuration)\</IntDir>
+    <OutDir>$(ProjectDir)..\Generated\Outputs\$(Configuration)\</OutDir>
+    <IntDir>$(ProjectDir)..\Generated\Obj\$(ProjectName)\$(Configuration)\</IntDir>
     <IncludePath>$(SolutionDir)externals\nlohmann;$(SolutionDir)DirectXTex;$(SolutionDir)imgui;$(IncludePath);$(SolutionDir)nlohmann</IncludePath>
+    <PublicIncludeDirectories>$(SolutionDir);$(ProjectDir);$(ProjectDir)Engine\2d;$(ProjectDir)Engine\3d;$(ProjectDir)Engine\Audio;$(ProjectDir)Engine\Base;$(ProjectDir)Engine\Core;$(ProjectDir)Engine\Frame;$(ProjectDir)Engine\Input;$(ProjectDir)Engine\Math;$(ProjectDir)Engine\OffScreen;$(ProjectDir)Engine\Scene;$(ProjectDir)Engine\Utility;$(ProjectDir)externals\std_truetype;$(ProjectDir)externals\assimp\include</PublicIncludeDirectories>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
-    <OutDir>$(SolutionDir)..\Generated\Outputs\$(Configuration)\</OutDir>
-    <IntDir>$(SolutionDir)..\Generated\Obj\$(ProjectName)\$(Configuration)\</IntDir>
+    <OutDir>$(ProjectDir)..\Generated\Outputs\$(Configuration)\</OutDir>
+    <IntDir>$(ProjectDir)..\Generated\Obj\$(ProjectName)\$(Configuration)\</IntDir>
     <IncludePath>$(SolutionDir)externals\nlohmann;$(SolutionDir)DirectXTex;$(IncludePath);$(SolutionDir)nlohmann</IncludePath>
+    <PublicIncludeDirectories>$(SolutionDir);$(ProjectDir);$(ProjectDir)Engine\2d;$(ProjectDir)Engine\3d;$(ProjectDir)Engine\Audio;$(ProjectDir)Engine\Base;$(ProjectDir)Engine\Core;$(ProjectDir)Engine\Frame;$(ProjectDir)Engine\Input;$(ProjectDir)Engine\Math;$(ProjectDir)Engine\OffScreen;$(ProjectDir)Engine\Scene;$(ProjectDir)Engine\Utility;$(ProjectDir)externals\std_truetype;$(ProjectDir)externals\assimp\include</PublicIncludeDirectories>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
@@ -65,7 +67,7 @@
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
       <TreatWarningAsError>true</TreatWarningAsError>
-      <AdditionalIncludeDirectories>$(SolutionDir);$(ProjectDir);$(ProjectDir)Engine\2d;$(ProjectDir)Engine\3d;$(ProjectDir)Engine\Audio;$(ProjectDir)Engine\Base;$(ProjectDir)Engine\Core;$(ProjectDir)Engine\Frame;$(ProjectDir)Engine\Input;$(ProjectDir)Engine\Math;$(ProjectDir)Engine\OffScreen;$(ProjectDir)Engine\Scene;$(ProjectDir)Engine\Utility;$(ProjectDir)externals\std_truetype;$(ProjectDir)externals\assimp\include;$(ProjectDir)myEngine\utility\imgui;$(ProjectDir)externals\imgui;$(ProjectDir)externals\DirectXTex;$(ProjectDir)myEngine\Audio;$(ProjectDir)scene\MyGame;$(ProjectDir)scene\MyGame;$(ProjectDir)scene</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir);$(ProjectDir);$(ProjectDir)Engine\2d;$(ProjectDir)Engine\3d;$(ProjectDir)Engine\Audio;$(ProjectDir)Engine\Base;$(ProjectDir)Engine\Core;$(ProjectDir)Engine\Frame;$(ProjectDir)Engine\Input;$(ProjectDir)Engine\Math;$(ProjectDir)Engine\OffScreen;$(ProjectDir)Engine\Scene;$(ProjectDir)Engine\Utility;$(ProjectDir)externals\std_truetype;$(ProjectDir)externals\assimp\include;$(ProjectDir)externals\imgui;$(ProjectDir)externals\DirectXTex</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -91,7 +93,7 @@ copy "$(WindowsSdkDIr)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
       <AdditionalOptions>/utf-8 /IGNORE:4049 /IGNORE:4099 </AdditionalOptions>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
-      <AdditionalIncludeDirectories>$(SolutionDir);$(ProjectDir);$(ProjectDir)Engine\2d;$(ProjectDir)Engine\3d;$(ProjectDir)Engine\Audio;$(ProjectDir)Engine\Base;$(ProjectDir)Engine\Core;$(ProjectDir)Engine\Frame;$(ProjectDir)Engine\Input;$(ProjectDir)Engine\Math;$(ProjectDir)Engine\OffScreen;$(ProjectDir)Engine\Scene;$(ProjectDir)Engine\Utility;$(ProjectDir)externals\std_truetype;$(ProjectDir)externals\assimp\include;$(ProjectDir)externals\DirectXTex;$(ProjectDir)myEngine\Audio;$(ProjectDir)scene\MyGame;$(ProjectDir)scene\MyGame;$(ProjectDir)scene</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir);$(ProjectDir);$(ProjectDir)Engine\2d;$(ProjectDir)Engine\3d;$(ProjectDir)Engine\Audio;$(ProjectDir)Engine\Base;$(ProjectDir)Engine\Core;$(ProjectDir)Engine\Frame;$(ProjectDir)Engine\Input;$(ProjectDir)Engine\Math;$(ProjectDir)Engine\OffScreen;$(ProjectDir)Engine\Scene;$(ProjectDir)Engine\Utility;$(ProjectDir)externals\std_truetype;$(ProjectDir)externals\assimp\include;$(ProjectDir)externals\DirectXTex</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -107,15 +109,6 @@ copy "$(WindowsSdkDIr)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="Application\Scene\ClearScene.cpp" />
-    <ClCompile Include="Application\Scene\DemoScene.cpp" />
-    <ClCompile Include="Application\Scene\GameScene.cpp" />
-    <ClCompile Include="Application\Scene\SelectScene.cpp" />
-    <ClCompile Include="Application\Scene\TitleScene.cpp" />
-    <ClCompile Include="Application\Utility\HitStop\HitStop.cpp" />
-    <ClCompile Include="Application\Utility\MotionEditor\MotionEditor.cpp" />
-    <ClCompile Include="Application\Utility\Shake\Shake.cpp" />
-    <ClCompile Include="application\Utility\ComboSystem\ComboSystem.cpp" />
     <ClCompile Include="Engine\OffScreen\PostEffect\PostEffectParamsImpl.cpp" />
     <ClCompile Include="Engine\Utility\Collider\type\CylinderCollider.cpp" />
     <ClCompile Include="Engine\3d\Camera\BaseFollowCamera\BaseFollowCamera.cpp" />
@@ -188,7 +181,6 @@ copy "$(WindowsSdkDIr)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClCompile Include="Engine\2d\SpriteCommon.cpp" />
     <ClCompile Include="Engine\Utility\Graphics\PipeLine\PipeLineManager.cpp" />
     <ClCompile Include="Engine\Utility\Graphics\Srv\SrvManager.cpp" />
-    <ClCompile Include="Engine\Utility\Scene\SceneFactory.cpp" />
     <ClCompile Include="Engine\Utility\Scene\SceneManager.cpp" />
     <ClCompile Include="Engine\Utility\String\StringUtility.cpp" />
     <ClCompile Include="Engine\Utility\Graphics\Texture\TextureManager.cpp" />
@@ -212,13 +204,19 @@ copy "$(WindowsSdkDIr)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClCompile Include="Engine\3d\Particle\CSParticle\ParticleCSEditor.cpp" />
     <ClCompile Include="Engine\2d\SpriteManager.cpp" />
     <ClCompile Include="Engine\3d\Particle\CSParticle\ParticleCSFieldManager.cpp" />
-    <ClCompile Include="Application\Scene\TutorialScene.cpp" />
     <ClCompile Include="Engine\2d\Text\TextRenderer.cpp" />
+    <ClCompile Include="Engine\Scene\TestScene.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <None Include=".clang-format" />
     <None Include=".editorconfig" />
     <None Include=".gitattributes" />
     <None Include=".gitignore" />
+    <None Include="exclusion.dic" />
+    <None Include="Hagine.aps" />
+    <None Include="Hagine.vcxproj.user" />
+    <None Include="imgui_editor.ini" />
+    <None Include="imgui_game.ini" />
     <None Include="README.md" />
     <None Include="resources\shaders\OffScreen\FullScreen.hlsli">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
@@ -258,15 +256,6 @@ copy "$(WindowsSdkDIr)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     </None>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="Application\Scene\ClearScene.h" />
-    <ClInclude Include="Application\Scene\DemoScene.h" />
-    <ClInclude Include="Application\Scene\GameScene.h" />
-    <ClInclude Include="Application\Scene\SelectScene.h" />
-    <ClInclude Include="Application\Scene\TitleScene.h" />
-    <ClInclude Include="Application\Utility\HitStop\HitStop.h" />
-    <ClInclude Include="Application\Utility\MotionEditor\MotionEditor.h" />
-    <ClInclude Include="Application\Utility\Shake\Shake.h" />
-    <ClInclude Include="application\Utility\ComboSystem\ComboSystem.h" />
     <ClInclude Include="Engine\3d\Shadow\ShadowMap.h" />
     <ClInclude Include="Engine\OffScreen\PostEffect\IPostEffectParams.h" />
     <ClInclude Include="Engine\OffScreen\PostEffect\PostEffectParamsFactory.h" />
@@ -307,6 +296,7 @@ copy "$(WindowsSdkDIr)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClInclude Include="Engine\3d\Particle\ParticleGroup.h" />
     <ClInclude Include="Engine\3d\Particle\ParticleGroupManager.h" />
     <ClInclude Include="Engine\Utility\LoadFile\Csv\CsvLoad.h" />
+    <ClInclude Include="Engine\Utility\Scene\SceneRegistry.h" />
     <ClInclude Include="externals\imgui\ImGuizmo.h" />
     <ClInclude Include="Engine\3d\Model\Material\Material.h" />
     <ClInclude Include="Engine\3d\Model\Mesh\Mesh.h" />
@@ -349,8 +339,6 @@ copy "$(WindowsSdkDIr)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClInclude Include="Engine\2d\SpriteCommon.h" />
     <ClInclude Include="Engine\Utility\Graphics\PipeLine\PipeLineManager.h" />
     <ClInclude Include="Engine\Utility\Graphics\Srv\SrvManager.h" />
-    <ClInclude Include="Engine\Utility\Scene\AbstractSceneFactory.h" />
-    <ClInclude Include="Engine\Utility\Scene\SceneFactory.h" />
     <ClInclude Include="Engine\Utility\Scene\SceneManager.h" />
     <ClInclude Include="Engine\Utility\String\StringUtility.h" />
     <ClInclude Include="Engine\Utility\Graphics\Texture\TextureManager.h" />
@@ -376,8 +364,8 @@ copy "$(WindowsSdkDIr)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClInclude Include="resource.h" />
     <ClInclude Include="Engine\Utility\Edit\ShortcutManager\ShortcutManager.h" />
     <ClInclude Include="Engine\2d\SpriteManager.h" />
-    <ClInclude Include="Application\Scene\TutorialScene.h" />
     <ClInclude Include="Engine\2d\Text\TextRenderer.h" />
+    <ClInclude Include="Engine\Scene\TestScene.h" />
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="Resources\shaders\OffScreen\Bloom.PS.hlsl">

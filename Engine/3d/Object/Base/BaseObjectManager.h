@@ -1,6 +1,8 @@
 #pragma once
 #include "Object/Base/BaseObject.h"
 #include "unordered_map"
+#include <functional>
+#include <vector>
 namespace Hagine {
 
 /// <summary>
@@ -60,6 +62,19 @@ class BaseObjectManager {
     /// </summary>
     /// <param name="baseObject">追加するオブジェクト</param>
     void AddObject(std::unique_ptr<BaseObject> baseObject);
+
+    /// <summary>
+    /// オブジェクト登録時に呼ばれるコールバックの型
+    /// </summary>
+    using ObjectRegisterCallback = std::function<void(BaseObject *)>;
+
+    /// <summary>
+    /// オブジェクト登録オブザーバを追加する。
+    /// エンジンが特定機能（MotionEditor 等）を直接知らずに済むよう、
+    /// アプリ側がここでフックを差し込む。
+    /// </summary>
+    /// <param name="cb">オブジェクト登録時に呼ばれるコールバック</param>
+    void AddRegisterObserver(ObjectRegisterCallback cb) { registerObservers_.push_back(std::move(cb)); }
 
     /// <summary>
     /// 非所有でオブジェクトを登録（シーンが unique_ptr を保持したまま登録する）
@@ -277,5 +292,8 @@ class BaseObjectManager {
     bool showObjectCreationModal_ = false; // オブジェクト生成モーダル表示フラグ
     bool showObjectLoadModal_ = false;     // オブジェクト読み込みモーダル表示フラグ
     std::string selectedJsonPath_;         // 選択中のJsonパス
+
+    // オブジェクト登録時に呼ばれるオブザーバ群（アプリ側が差し込む）
+    std::vector<ObjectRegisterCallback> registerObservers_;
 };
 } // namespace Hagine

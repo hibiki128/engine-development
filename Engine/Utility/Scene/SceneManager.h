@@ -1,5 +1,5 @@
 #pragma once
-#include "AbstractSceneFactory.h"
+#include "SceneRegistry.h"
 #include "SceneTransition.h"
 #include <OffScreen.h>
 #include <Engine/Render/DrawSystem.h>
@@ -64,8 +64,6 @@ class SceneManager {
     bool GetTransitionEnd() const { return transitionEnd_; }
 
   public: // setter / getter
-    void SetSceneFactory(std::unique_ptr<AbstractSceneFactory> sceneFactory) { sceneFactory_ = std::move(sceneFactory); }
-
     /// <summary>
     /// 次シーン予約
     /// </summary>
@@ -95,8 +93,6 @@ class SceneManager {
     std::unique_ptr<BaseScene> scene_;
     // 次のシーン
     std::unique_ptr<BaseScene> nextScene_;
-    // シーンファクトリー
-    std::unique_ptr<AbstractSceneFactory> sceneFactory_ = nullptr;
     SceneTransition *transition_ = nullptr;
 
     std::string currentSceneName_;

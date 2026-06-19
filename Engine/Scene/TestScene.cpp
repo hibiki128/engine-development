@@ -1,8 +1,11 @@
 #include "Engine/Utility/Scene/SceneManager.h"
-#include "TitleScene.h"
+#include "TestScene.h"
+#include"Engine/Utility/Scene/SceneRegistry.h"
+
+REGISTER_SCENE("TEST", TestScene)
 
 using namespace Hagine;
-void TitleScene::Initialize() {
+void TestScene::Initialize() {
     /// ===================================================
     /// 初期化
     /// ===================================================
@@ -12,20 +15,20 @@ void TitleScene::Initialize() {
     debugCamera_ = std::make_unique<DebugCamera>();
     debugCamera_->Initialize(&vp_);
 
-      drawSystem_->Register("Title_PreDraw", DrawLayer::kPreEffect, [this](const ViewProjection &vp) {
+    drawSystem_->Register("Test_PreDraw", DrawLayer::kPreEffect, [this](const ViewProjection &vp) {
         spriteManager_->DrawAll();
         objectManager_->Draw(vp);
     });
 }
 
-void TitleScene::Finalize() {
+void TestScene::Finalize() {
     /// ===================================================
     /// 終了処理
     /// ===================================================
     BaseScene::Finalize();
 }
 
-void TitleScene::Update() {
+void TestScene::Update() {
     /// ===================================================
     /// 更新処理
     /// ===================================================
@@ -37,38 +40,38 @@ void TitleScene::Update() {
     ChangeScene();
 }
 
-void TitleScene::Draw() {
+void TestScene::Draw() {
     /// ===================================================
     /// 描画処理
     /// ===================================================
 }
 
-void TitleScene::DrawForOffScreen() {
+void TestScene::DrawForOffScreen() {
     /// ===================================================
     /// オフスクリーン描画処理
     /// ===================================================
 }
 
-void TitleScene::AddSceneSetting() {
+void TestScene::AddSceneSetting() {
     /// ===================================================
     /// シーン設定（デバッグ）
     /// ===================================================
     debugCamera_->imgui();
 }
 
-void TitleScene::AddObjectSetting() {
+void TestScene::AddObjectSetting() {
     /// ===================================================
     /// オブジェクト設定（デバッグ）
     /// ===================================================
 }
 
-void TitleScene::AddParticleSetting() {
+void TestScene::AddParticleSetting() {
     /// ===================================================
     /// パーティクル設定（デバッグ）
     /// ===================================================
 }
 
-void TitleScene::CameraUpdate() {
+void TestScene::CameraUpdate() {
     /// ===================================================
     /// カメラ更新
     /// ===================================================
@@ -79,7 +82,7 @@ void TitleScene::CameraUpdate() {
     }
 }
 
-void TitleScene::ChangeScene() {
+void TestScene::ChangeScene() {
     /// ===================================================
     /// シーン切り替え
     /// ===================================================

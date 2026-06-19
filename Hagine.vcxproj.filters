@@ -100,33 +100,6 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp" />
-    <ClCompile Include="application\Utility\ComboSystem\ComboSystem.cpp">
-      <Filter>Application\Utility\ComboSystem</Filter>
-    </ClCompile>
-    <ClCompile Include="Application\Utility\HitStop\HitStop.cpp">
-      <Filter>Application\Utility\HitStop</Filter>
-    </ClCompile>
-    <ClCompile Include="Application\Utility\MotionEditor\MotionEditor.cpp">
-      <Filter>Application\Utility\MotionEditor</Filter>
-    </ClCompile>
-    <ClCompile Include="Application\Utility\Shake\Shake.cpp">
-      <Filter>Application\Utility\Shake</Filter>
-    </ClCompile>
-    <ClCompile Include="Application\Scene\ClearScene.cpp">
-      <Filter>Application\Scene</Filter>
-    </ClCompile>
-    <ClCompile Include="Application\Scene\DemoScene.cpp">
-      <Filter>Application\Scene</Filter>
-    </ClCompile>
-    <ClCompile Include="Application\Scene\GameScene.cpp">
-      <Filter>Application\Scene</Filter>
-    </ClCompile>
-    <ClCompile Include="Application\Scene\SelectScene.cpp">
-      <Filter>Application\Scene</Filter>
-    </ClCompile>
-    <ClCompile Include="Application\Scene\TitleScene.cpp">
-      <Filter>Application\Scene</Filter>
-    </ClCompile>
     <ClCompile Include="Engine\2d\Sprite.cpp">
       <Filter>Engine\2d</Filter>
     </ClCompile>
@@ -346,9 +319,6 @@
     <ClCompile Include="Engine\Utility\LoadFile\Csv\CsvLoad.cpp">
       <Filter>Engine\Utility\LoadFile\Csv</Filter>
     </ClCompile>
-    <ClCompile Include="Engine\Utility\Scene\SceneFactory.cpp">
-      <Filter>Engine\Utility\Scene</Filter>
-    </ClCompile>
     <ClCompile Include="Engine\Utility\Scene\SceneManager.cpp">
       <Filter>Engine\Utility\Scene</Filter>
     </ClCompile>
@@ -403,46 +373,25 @@
     <ClCompile Include="Engine\2d\Text\TextRenderer.cpp">
       <Filter>Engine\2d\Text</Filter>
     </ClCompile>
-    <ClCompile Include="Application\Scene\TutorialScene.cpp">
-      <Filter>Application\Scene</Filter>
-    </ClCompile>
     <ClCompile Include="Engine\3d\Shadow\ShadowMap.cpp">
       <Filter>Engine\3d\Shadow</Filter>
     </ClCompile>
-    <ClCompile Include="Engine\Utility\Debug\ImGui\ImGuiManager.cpp" />
-    <ClCompile Include="Engine\Utility\Debug\ImGui\ImGuiNotification.cpp" />
-    <ClCompile Include="Engine\Utility\Debug\ImGui\ImGuizmoManager.cpp" />
+    <ClCompile Include="Engine\Utility\Debug\ImGui\ImGuiManager.cpp">
+      <Filter>Engine\Utility\Debug\ImGui</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\Utility\Debug\ImGui\ImGuiNotification.cpp">
+      <Filter>Engine\Utility\Debug\ImGui</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\Utility\Debug\ImGui\ImGuizmoManager.cpp">
+      <Filter>Engine\Utility\Debug\ImGui</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\Scene\TestScene.cpp">
+      <Filter>Engine\Scene</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="externals\imgui\imconfig.h" />
     <ClInclude Include="resource.h" />
-    <ClInclude Include="application\Utility\ComboSystem\ComboSystem.h">
-      <Filter>Application\Utility\ComboSystem</Filter>
-    </ClInclude>
-    <ClInclude Include="Application\Utility\HitStop\HitStop.h">
-      <Filter>Application\Utility\HitStop</Filter>
-    </ClInclude>
-    <ClInclude Include="Application\Utility\MotionEditor\MotionEditor.h">
-      <Filter>Application\Utility\MotionEditor</Filter>
-    </ClInclude>
-    <ClInclude Include="Application\Utility\Shake\Shake.h">
-      <Filter>Application\Utility\Shake</Filter>
-    </ClInclude>
-    <ClInclude Include="Application\Scene\ClearScene.h">
-      <Filter>Application\Scene</Filter>
-    </ClInclude>
-    <ClInclude Include="Application\Scene\DemoScene.h">
-      <Filter>Application\Scene</Filter>
-    </ClInclude>
-    <ClInclude Include="Application\Scene\GameScene.h">
-      <Filter>Application\Scene</Filter>
-    </ClInclude>
-    <ClInclude Include="Application\Scene\SelectScene.h">
-      <Filter>Application\Scene</Filter>
-    </ClInclude>
-    <ClInclude Include="Application\Scene\TitleScene.h">
-      <Filter>Application\Scene</Filter>
-    </ClInclude>
     <ClInclude Include="Engine\2d\Sprite.h">
       <Filter>Engine\2d</Filter>
     </ClInclude>
@@ -683,12 +632,6 @@
     <ClInclude Include="Engine\Utility\LoadFile\Csv\CsvLoad.h">
       <Filter>Engine\Utility\LoadFile\Csv</Filter>
     </ClInclude>
-    <ClInclude Include="Engine\Utility\Scene\AbstractSceneFactory.h">
-      <Filter>Engine\Utility\Scene</Filter>
-    </ClInclude>
-    <ClInclude Include="Engine\Utility\Scene\SceneFactory.h">
-      <Filter>Engine\Utility\Scene</Filter>
-    </ClInclude>
     <ClInclude Include="Engine\Utility\Scene\SceneManager.h">
       <Filter>Engine\Utility\Scene</Filter>
     </ClInclude>
@@ -752,16 +695,25 @@
     <ClInclude Include="Engine\2d\Text\TextRenderer.h">
       <Filter>Engine\2d\Text</Filter>
     </ClInclude>
-    <ClInclude Include="Application\Scene\TutorialScene.h">
-      <Filter>Application\Scene</Filter>
-    </ClInclude>
     <ClInclude Include="Engine\3d\Shadow\ShadowMap.h">
       <Filter>Engine\3d\Shadow</Filter>
     </ClInclude>
-    <ClInclude Include="Engine\Utility\Debug\ImGui\Debugui_improved.h" />
-    <ClInclude Include="Engine\Utility\Debug\ImGui\ImGuiManager.h" />
-    <ClInclude Include="Engine\Utility\Debug\ImGui\ImGuiNotification.h" />
-    <ClInclude Include="Engine\Utility\Debug\ImGui\ImGuizmoManager.h" />
+    <ClInclude Include="Engine\Utility\Debug\ImGui\ImGuiManager.h">
+      <Filter>Engine\Utility\Debug\ImGui</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Utility\Debug\ImGui\ImGuiNotification.h">
+      <Filter>Engine\Utility\Debug\ImGui</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Utility\Debug\ImGui\ImGuizmoManager.h">
+      <Filter>Engine\Utility\Debug\ImGui</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Scene\TestScene.h">
+      <Filter>Engine\Scene</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Utility\Debug\ImGui\Debugui_improved.h">
+      <Filter>Engine\Utility\Debug\ImGui</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Utility\Scene\SceneRegistry.h" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="Hagine.rc" />
@@ -798,37 +750,22 @@
     <None Include="resources\shaders\OffScreen\FullScreen.hlsli">
       <Filter>Resources\shaders\OffScreen</Filter>
     </None>
+    <None Include=".clang-format" />
+    <None Include="exclusion.dic" />
+    <None Include="Hagine.aps" />
+    <None Include="Hagine.vcxproj.user" />
+    <None Include="imgui_editor.ini" />
+    <None Include="imgui_game.ini" />
   </ItemGroup>
   <ItemGroup>
     <Filter Include="Engine">
       <UniqueIdentifier>{dcc764a6-5f57-492d-8783-600ae91c83a9}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Application">
-      <UniqueIdentifier>{42f2262f-29c4-4912-957b-8440f067ea2c}</UniqueIdentifier>
     </Filter>
     <Filter Include="Externals">
       <UniqueIdentifier>{1c323e53-2ff7-4c83-99ab-373e4dedf576}</UniqueIdentifier>
     </Filter>
     <Filter Include="Resources">
       <UniqueIdentifier>{c87fcc78-7c33-4acf-b7f5-cb53f66386d5}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Application\Scene">
-      <UniqueIdentifier>{11af08ee-90aa-449b-b28f-ef2c9011e0b1}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Application\Utility">
-      <UniqueIdentifier>{348e9bc3-d0ce-473a-b132-62cf3e8afe55}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Application\Utility\ComboSystem">
-      <UniqueIdentifier>{e9d7ce76-f735-4161-9bb2-92c3f651e83c}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Application\Utility\HitStop">
-      <UniqueIdentifier>{0ceed33a-183b-449d-b99c-82cca270766e}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Application\Utility\MotionEditor">
-      <UniqueIdentifier>{c6039326-4c92-4d9f-8421-8babee2d4e0c}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Application\Utility\Shake">
-      <UniqueIdentifier>{0580369b-7d5d-4411-859d-529bd7f67a44}</UniqueIdentifier>
     </Filter>
     <Filter Include="Engine\2d">
       <UniqueIdentifier>{f6580ddd-27d8-4bcd-9721-7b8876ed7ec3}</UniqueIdentifier>
@@ -1018,15 +955,6 @@
     </Filter>
     <Filter Include="Engine\3d\Shadow">
       <UniqueIdentifier>{c23361e0-1d03-42e9-a565-bdfb09da142b}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Application\BehaviorTree">
-      <UniqueIdentifier>{1feef48e-a943-44d0-a190-8df92d83649f}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Application\BehaviorTree\Node">
-      <UniqueIdentifier>{d56b464f-ac70-4942-a621-8a110235e57d}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Application\BehaviorTree\Editor">
-      <UniqueIdentifier>{902c7bb1-a7db-4db2-a946-f4e90348e140}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>

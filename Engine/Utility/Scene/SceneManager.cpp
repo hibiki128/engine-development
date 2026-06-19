@@ -25,8 +25,6 @@ void SceneManager::Finalize() {
     nextScene_.reset();
     // 現在のシーンを解放
     scene_.reset();
-    // シーンファクトリーを解放
-    sceneFactory_.reset();
 }
 
 void SceneManager::Update() {
@@ -69,7 +67,7 @@ void SceneManager::SceneSelection(const std::string &sceneName) {
         return;
     }
     transition_->Reset();
-    nextScene_ = sceneFactory_->CreateScene(sceneName);
+    nextScene_ = SceneRegistry::GetInstance()->Create(sceneName);
     transition_->SetFadeInStart(true);
 #endif // _DEBUG
 }
@@ -85,13 +83,13 @@ void SceneManager::NextSceneReservation(const std::string &sceneName) {
         return; // すでに遷移中なので次の予約はしない
     }
     transition_->Reset();
-    assert(sceneFactory_);
     assert(nextScene_ == nullptr);
 
     currentSceneName_ = sceneName;
 
     // 次シーンを生成（unique_ptr で受け取る）
-    nextScene_ = sceneFactory_->CreateScene(sceneName);
+    nextScene_ = SceneRegistry::GetInstance()->Create(sceneName);
+    assert(nextScene_ && "シーンが登録されていません。REGISTER_SCENE を確認してください");
     nextScene_->SetOffScreen(offscreen_);
     nextScene_->SetDrawSystem(drawSystem_);
     if (!firstChange_) {

@@ -187,10 +187,6 @@ void Framework::Initialize() {
     shortcutManager_->Initialize(input_);
     ///-----------------------------------
 
-    ///-------AttackManager-------
-    motionEditor_ = MotionEditor::GetInstance();
-    ///---------------------------
-
     ///-------SceneTransition-------
     sceneTransition_ = SceneTransition::GetInstance();
     ///-----------------------------
@@ -234,7 +230,6 @@ void Framework::Finalize() {
     srvManager_->Finalize();
     audio_->Finalize();
     lightGroup_->Finalize();
-    motionEditor_->Finalize();
     particleEditor_->Finalize();
     particleCSFieldManager_->Finalize();
     particleCSEditor_->Finalize();

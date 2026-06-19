@@ -2,10 +2,10 @@
 #include "BaseScene.h"
 
 /// <summary>
-/// セレクトシーンのクラス
-/// ステージ選択や設定などを行うシーンを管理する
+/// テストシーンのクラス
+/// シーンの設定などを確認するシーン
 /// </summary>
-class ClearScene : public Hagine::BaseScene {
+class TestScene : public Hagine::BaseScene {
   public:
     /// ===================================================
     /// public method
