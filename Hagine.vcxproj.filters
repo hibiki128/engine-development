@@ -99,7 +99,6 @@
     </FxCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="main.cpp" />
     <ClCompile Include="Engine\2d\Sprite.cpp">
       <Filter>Engine\2d</Filter>
     </ClCompile>
@@ -713,7 +712,9 @@
     <ClInclude Include="Engine\Utility\Debug\ImGui\Debugui_improved.h">
       <Filter>Engine\Utility\Debug\ImGui</Filter>
     </ClInclude>
-    <ClInclude Include="Engine\Utility\Scene\SceneRegistry.h" />
+    <ClInclude Include="Engine\Utility\Scene\SceneRegistry.h">
+      <Filter>Engine\Utility\Scene</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="Hagine.rc" />
