@@ -7,7 +7,7 @@
 #include "imgui.h"
 #endif
 
-#include "externals/nlohmann/json.hpp"
+#include "nlohmann/json.hpp"
 
 #include "Data/DataHandler.h"
 #include <filesystem>

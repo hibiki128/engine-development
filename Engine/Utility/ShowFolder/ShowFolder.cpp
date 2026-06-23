@@ -4,7 +4,7 @@
 #include "ShowFolder.h"
 #include <Graphics/Texture/TextureManager.h>
 #include <algorithm>
-#include <externals/icon/IconsFontAwesome5.h>
+#include <icon/IconsFontAwesome5.h>
 #include <filesystem>
 #include <imgui.h>
 #include <string>

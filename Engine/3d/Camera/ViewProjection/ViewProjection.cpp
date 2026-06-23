@@ -1,8 +1,8 @@
 #define NOMINMAX
 #include "ViewProjection.h"
 #include "Data/DataHandler.h"
-#include "Engine/Utility/Debug/ImGui/Debugui_improved.h"
-#include "Engine/Utility/Debug/ImGui/ImGuiNotification.h"
+#include "Utility/Debug/ImGui/Debugui_improved.h"
+#include "Utility/Debug/ImGui/ImGuiNotification.h"
 #include "Frame.h"
 #include "cmath"
 #include "myMath.h"

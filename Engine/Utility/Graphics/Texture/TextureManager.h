@@ -1,8 +1,8 @@
 #pragma once
-#include <externals/imgui/imstb_truetype.h>
+#include <imgui/imstb_truetype.h>
 #include "DirectXCommon.h"
 #include "d3d12.h"
-#include "externals/DirectXTex/DirectXTex.h"
+#include "DirectXTex/DirectXTex.h"
 #include "string"
 #include "unordered_map"
 #include "wrl.h"

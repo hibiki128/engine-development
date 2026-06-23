@@ -6,7 +6,7 @@
 #include "imgui.h"
 #include <implot.h>
 #endif 
-#include "Engine/Utility/Debug/ImGui/Debugui_improved.h"
+#include "Utility/Debug/ImGui/Debugui_improved.h"
 #include "algorithm"
 
 namespace Hagine {

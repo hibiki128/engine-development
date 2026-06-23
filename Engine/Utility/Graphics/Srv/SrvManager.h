@@ -3,7 +3,7 @@
 #include <d3d12.h>
 #include <queue> // 空きインデックスの管理用
 #include <wrl.h>
-#include"externals/DirectXTex/DirectXTex.h"
+#include"DirectXTex/DirectXTex.h"
 
 namespace Hagine {
 class DirectXCommon;

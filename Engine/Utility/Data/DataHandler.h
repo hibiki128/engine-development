@@ -3,7 +3,7 @@
 #include "type/Vector4.h"
 #include <Primitive/PrimitiveModel.h>
 #include <cstdint>
-#include <externals/nlohmann/json.hpp>
+#include <../nlohmann/json.hpp>
 #include <filesystem>
 #include <fstream>
 #include <memory>

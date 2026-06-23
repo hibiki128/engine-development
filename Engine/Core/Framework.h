@@ -8,7 +8,7 @@
 #include "Debug/ImGui/ImGuizmoManager.h"
 #include "Debug/ResourceLeakChecker/D3DResourceLeakChecker.h"
 #include "Edit/ShortcutManager/ShortcutManager.h"
-#include "Engine/offscreen/OffScreen.h"
+#include "offscreen/OffScreen.h"
 #include "Graphics/Model/ModelManager.h"
 #include "Graphics/PipeLine/ComputePipeLineManager.h"
 #include "Graphics/PipeLine/PipeLineManager.h"
@@ -29,8 +29,8 @@
 #include "SpriteCommon.h"
 #include "SpriteManager.h"
 #include "line/DrawLine3D.h"
-#include"Engine/Utility/LoadFile/Csv/CsvLoad.h"
-#include "Engine/Render/DrawSystem.h"
+#include"Utility/LoadFile/Csv/CsvLoad.h"
+#include "Render/DrawSystem.h"
 namespace Hagine {
 class Framework {
   public: // メンバ関数

@@ -1,14 +1,14 @@
 #include "ShadowMap.h"
 #include "Data/DataHandler.h"
 #include "DirectXCommon.h"
-#include "Engine/Utility/Debug/ImGui/ImGuiNotification.h"
+#include "Utility/Debug/ImGui/ImGuiNotification.h"
 #include "Graphics/Srv/SrvManager.h"
 #include "Light/LightGroup.h"
 #include <cmath>
 #include <myMath.h>
 #ifdef _DEBUG
 #include "imgui.h"
-#include "Engine/Utility/Debug/ImGui/Debugui_improved.h"
+#include "Utility/Debug/ImGui/Debugui_improved.h"
 #endif
 
 namespace Hagine {

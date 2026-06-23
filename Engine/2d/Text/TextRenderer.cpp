@@ -4,8 +4,8 @@
 #include "../SpriteManager.h"
 #include <Graphics/Texture/TextureManager.h>
 #include <String/StringUtility.h>
-#include <externals/DirectXTex/DirectXTex.h>
-#include <externals/imgui/imstb_truetype.h>
+#include <DirectXTex/DirectXTex.h>
+#include <imgui/imstb_truetype.h>
 #ifdef _DEBUG
 #include <imgui.h>
 #endif // _DEBUG

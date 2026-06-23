@@ -11,7 +11,7 @@
 #include "Object/Object3d.h"
 #include "Transform/ObjColor.h"
 #include "Transform/WorldTransform.h"
-#include "externals/nlohmann/json.hpp"
+#include "nlohmann/json.hpp"
 #include <Graphics/PipeLine/PipeLineManager.h>
 #include <string>
 

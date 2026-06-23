@@ -1,13 +1,13 @@
 #define NOMINMAX
 #include "SpriteManager.h"
-#include "Engine/Utility/Debug/ImGui/Debugui_improved.h"
-#include "Engine/Utility/Debug/ImGui/ImGuizmoManager.h"
+#include "Utility/Debug/ImGui/Debugui_improved.h"
+#include "Utility/Debug/ImGui/ImGuizmoManager.h"
 #include "SpriteCommon.h"
 #include "WinApp.h"
 #include "myMath.h"
 #include <Data/DataHandler.h>
 #include <Shadow/ShadowMap.h>
-#include <Engine/Utility/Debug/ImGui/ImGuiNotification.h>
+#include <Utility/Debug/ImGui/ImGuiNotification.h>
 #include <ShowFolder/ShowFolder.h>
 #include <filesystem>
 

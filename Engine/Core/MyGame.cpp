@@ -9,11 +9,10 @@ void MyGame::Initialize() {
     Framework::PlaySounds();
     Framework::RegisterShortcutKey();
     // -----ゲーム固有の処理-----
-
    
     // 最初のシーンを予約（シーンは REGISTER_SCENE で自己登録済み）
 #ifdef _DEBUG
-    sceneManager_->NextSceneReservation("TITLE");
+    sceneManager_->NextSceneReservation("TEST");
 #else
     sceneManager_->NextSceneReservation("TITLE");
 #endif // _DEBUG

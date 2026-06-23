@@ -2,9 +2,9 @@
 #include "BaseObject.h"
 #include "BaseObjectManager.h"
 #include "Collider/CollisionManager.h"
-#include "Engine/Frame/Frame.h"
-#include "Engine/Utility/Debug/ImGui/Debugui_improved.h"
-#include "Engine/Utility/Debug/ImGui/ImGuiNotification.h"
+#include "Frame/Frame.h"
+#include "Utility/Debug/ImGui/Debugui_improved.h"
+#include "Utility/Debug/ImGui/ImGuiNotification.h"
 #include "Scene/SceneManager.h"
 #include "ShowFolder/ShowFolder.h"
 #ifdef _DEBUG

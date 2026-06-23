@@ -4,7 +4,7 @@
 #include "d3d12.h"
 #include "dxcapi.h"
 #include "dxgi1_6.h"
-#include "externals/DirectXTex/DirectXTex.h"
+#include "../DirectXTex/DirectXTex.h"
 #include "string"
 #include "wrl.h"
 #include <type/Vector4.h>

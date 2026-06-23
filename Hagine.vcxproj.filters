@@ -963,4 +963,9 @@
       <Filter>Externals\imgui</Filter>
     </Text>
   </ItemGroup>
+  <ItemGroup>
+    <Font Include="Resources\fonts\fa-solid-900.ttf" />
+    <Font Include="Resources\fonts\NotoSansJP-Medium.ttf" />
+    <Font Include="Resources\fonts\PixelMplus12-Regular.ttf" />
+  </ItemGroup>
 </Project>

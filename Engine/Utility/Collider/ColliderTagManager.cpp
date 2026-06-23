@@ -2,8 +2,8 @@
 
 #ifdef _DEBUG
 #include <imgui.h>
-#include "Engine/Utility/Debug/ImGui/ImGuiNotification.h"
-#include "Engine/Utility/Debug/ImGui/Debugui_improved.h"
+#include "Utility/Debug/ImGui/ImGuiNotification.h"
+#include "Utility/Debug/ImGui/Debugui_improved.h"
 
 namespace Hagine {
 void ColliderTagManager::ImGuiTagManager() {

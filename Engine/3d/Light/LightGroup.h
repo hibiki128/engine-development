@@ -1,7 +1,7 @@
 #pragma once
 #include "Data/DataHandler.h"
 #include "d3d12.h"
-#include "externals/nlohmann/json.hpp"
+#include "../nlohmann/json.hpp"
 #include "wrl.h"
 #include <Camera/ViewProjection/ViewProjection.h>
 #include <string>

@@ -1,6 +1,6 @@
 #pragma once
 #include "Object/Base/BaseObjectManager.h"
-#include "externals/nlohmann/json.hpp"
+#include "nlohmann/json.hpp"
 #include <fstream>
 #include <memory>
 #include <string>

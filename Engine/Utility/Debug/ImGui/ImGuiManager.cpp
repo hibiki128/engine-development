@@ -1,8 +1,8 @@
 #include "ImGuiManager.h"
 #ifdef _DEBUG
 #include "Collider/CollisionManager.h"
-#include "Engine/2d/Text/TextRenderer.h"
-#include "Engine/OffScreen/OffScreen.h"
+#include "2d/Text/TextRenderer.h"
+#include "OffScreen/OffScreen.h"
 #include "ImGuiNotification.h"
 #include "ImGuizmo.h"
 #include "ImGuizmoManager.h"
@@ -11,12 +11,12 @@
 #include "imgui.h"
 #include "imgui_impl_win32.h"
 #include <Data/DataHandler.h>
-#include <Engine/Frame/Frame.h>
+#include <Frame/Frame.h>
 #include <Line/DrawLine3D.h>
 #include <Particle/CSParticle/ParticleCSFieldManager.h>
-#include <Engine/Render/DrawSystem.h>
+#include <Render/DrawSystem.h>
 #include <Shadow/ShadowMap.h>
-#include <externals/icon/IconsFontAwesome5.h>
+#include <icon/IconsFontAwesome5.h>
 #include <imgui_impl_dx12.h>
 #include <implot.h>
 #endif // _DEBUG
@@ -51,7 +51,7 @@ void ImGuiManager::Initialize(WinApp *winApp, ImGuizmoManager *imguizmoManager) 
 
     float fontSize = 16.0f;
 
-    io.Fonts->AddFontFromFileTTF("resources/fonts/PixelMplus12-Regular.ttf", 14.0f, nullptr, io.Fonts->GetGlyphRangesJapanese());
+    io.Fonts->AddFontFromFileTTF("Resources/fonts/PixelMplus12-Regular.ttf", 14.0f, nullptr, io.Fonts->GetGlyphRangesJapanese());
 
     // アイコンフォント読み込み（FontAwesomeなど）
     // FontAwesomeの設定
@@ -60,7 +60,7 @@ void ImGuiManager::Initialize(WinApp *winApp, ImGuizmoManager *imguizmoManager) 
     icons_config.MergeMode = true;
     icons_config.PixelSnapH = true;
     icons_config.GlyphMinAdvanceX = fontSize;
-    io.Fonts->AddFontFromFileTTF("resources/fonts/fa-solid-900.ttf", fontSize, &icons_config, icon_ranges);
+    io.Fonts->AddFontFromFileTTF("Resources/fonts/fa-solid-900.ttf", fontSize, &icons_config, icon_ranges);
 
     // フォントの生成
     unsigned char *tex_pixels = nullptr;

@@ -1,6 +1,6 @@
-#include "Engine/Utility/Scene/SceneManager.h"
+#include "Utility/Scene/SceneManager.h"
 #include "TestScene.h"
-#include"Engine/Utility/Scene/SceneRegistry.h"
+#include"Utility/Scene/SceneRegistry.h"
 
 REGISTER_SCENE("TEST", TestScene)
 
