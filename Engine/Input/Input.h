@@ -67,6 +67,7 @@ class Input {
     std::array<BYTE, 256> key_;
     std::array<BYTE, 256> keyPre_;
     std::vector<Joystick> joysticks_;
+
     // マウス
     static std::unique_ptr<Mouse> mouse_;
     // ゲームパッド
@@ -230,7 +231,7 @@ class Input {
     const BYTE *GetPreviousKeyState() const { return keyPre_.data(); }
 
     /// <summary>
-    /// ゲームパッドの取得
+    /// ゲームパッドポインタの取得
     /// </summary>
     /// <returns></returns>
     GamePad *GetGamePad() const { return gamePad_.get(); }
