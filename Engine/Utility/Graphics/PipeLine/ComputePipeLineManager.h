@@ -12,6 +12,7 @@ enum class ComputePipelineType {
     kInitParticle,
     kEmitter,
     kUpdateEmitter,
+    kUpdateEmitterLite, // 演出なし専用の軽量 Update（root sig は kUpdateEmitter と共有）
     kResetArgs,
     kCount,
 };
@@ -82,6 +83,8 @@ class ComputePipeLineManager {
     void CreateUpdateEmitterPipelines();
     Microsoft::WRL::ComPtr<ID3D12RootSignature> CreateUpdateEmitterRootSignature();
     Microsoft::WRL::ComPtr<ID3D12PipelineState> CreateUpdateEmitterGraphicsPipeLine(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature);
+    // 演出なし専用の軽量 Update PSO（root sig は CreateUpdateEmitterRootSignature を共有）
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> CreateUpdateEmitterLiteGraphicsPipeLine(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature);
 
     // パーティクルカウント関連
     void CreateCountPipelines();

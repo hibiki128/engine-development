@@ -88,6 +88,7 @@ void SceneManager::NextSceneReservation(const std::string &sceneName) {
     currentSceneName_ = sceneName;
 
     // 次シーンを生成（unique_ptr で受け取る）
+    // シーンは各 .cpp の REGISTER_SCENE により SceneRegistry へ自己登録済み
     nextScene_ = SceneRegistry::GetInstance()->Create(sceneName);
     assert(nextScene_ && "シーンが登録されていません。REGISTER_SCENE を確認してください");
     nextScene_->SetOffScreen(offscreen_);

@@ -3,18 +3,24 @@
 #include "Collider/CollisionManager.h"
 #include "2d/Text/TextRenderer.h"
 #include "OffScreen/OffScreen.h"
+#include "AssetDragDrop.h"
 #include "ImGuiNotification.h"
 #include "ImGuizmo.h"
 #include "ImGuizmoManager.h"
 #include "Object/Base/BaseObject.h"
 #include "Scene/SceneManager.h"
+#include "Graphics/Texture/TextureManager.h"
 #include "imgui.h"
 #include "imgui_impl_win32.h"
+#include <algorithm>
+#include <filesystem>
+#include <map>
 #include <Data/DataHandler.h>
 #include <Frame/Frame.h>
 #include <Line/DrawLine3D.h>
 #include <Particle/CSParticle/ParticleCSFieldManager.h>
 #include <Render/DrawSystem.h>
+#include <Debug/GpuProfiler/GpuProfiler.h>
 #include <Shadow/ShadowMap.h>
 #include <icon/IconsFontAwesome5.h>
 #include <imgui_impl_dx12.h>
@@ -23,6 +29,32 @@
 
 namespace Hagine {
 #ifdef _DEBUG
+
+namespace {
+// ImGui DX12 バックエンド（マルチビューポート対応の新API）がSRVデスクリプタを
+// 動的に確保/解放するためのコールバック。SrvManager の共有ヒープから割り当てる。
+//
+// ★重要: エンジン全体は「予約した r に対し実書き込みは r+1」という +1 規約で統一されている
+//   （Sprite/Skin/Particle 各種/RendererBuffer/TextureManager(kSRVIndexTop=1) 等）。
+//   ImGui のフォントSRVも実行時に動的確保されるため、ここで +1 を付けないと +1 利用箇所と
+//   同じデスクリプタに書き込んでしまい、フォントSRVが上書きされて文字・塗りが黒化する。
+static constexpr uint32_t kImGuiSrvOffset = 1;
+void ImGuiSrvAlloc(ImGui_ImplDX12_InitInfo * /*info*/,
+                   D3D12_CPU_DESCRIPTOR_HANDLE *outCpu, D3D12_GPU_DESCRIPTOR_HANDLE *outGpu) {
+    SrvManager *srv = SrvManager::GetInstance();
+    uint32_t index = srv->Allocate() + kImGuiSrvOffset;
+    *outCpu = srv->GetCPUDescriptorHandle(index);
+    *outGpu = srv->GetGPUDescriptorHandle(index);
+}
+void ImGuiSrvFree(ImGui_ImplDX12_InitInfo * /*info*/,
+                  D3D12_CPU_DESCRIPTOR_HANDLE /*cpu*/, D3D12_GPU_DESCRIPTOR_HANDLE /*gpu*/) {
+    // 解放はあえて no-op（インデックスをプールへ戻さない）。
+    // SrvManager::Free は ClearDescriptor で「予約インデックス側」をクリアするが、+1 規約では
+    // そこは隣のリソースの実使用スロットに当たり、巻き込んでnull化してしまう。フォントアトラスの
+    // 再構築でしか呼ばれず（=ごく少数）、リークは数枠程度で無害なため戻さない方が安全。
+}
+} // namespace
+
 void ImGuiManager::Initialize(WinApp *winApp, ImGuizmoManager *imguizmoManager) {
 
     dxCommon_ = DirectXCommon::GetInstance();
@@ -37,9 +69,11 @@ void ImGuiManager::Initialize(WinApp *winApp, ImGuizmoManager *imguizmoManager) 
     // Docking機能を有効化
     ImGuiIO &io = ImGui::GetIO();
     // 高度な機能を有効化
-    io.ConfigFlags |= ImGuiConfigFlags_DockingEnable; // ドッキング機能
-    io.ConfigWindowsResizeFromEdges = true;           // エッジからリサイズ
-    io.ConfigWindowsMoveFromTitleBarOnly = true;      // タイトルバーからの移動
+    io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;   // ドッキング機能
+    io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable; // マルチビューポート（ImGuiウィンドウを独立OSウィンドウへ）
+    io.ConfigWindowsResizeFromEdges = true;             // エッジからリサイズ
+    io.ConfigWindowsMoveFromTitleBarOnly = true;        // タイトルバーからの移動
+    multiViewport_ = (io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable) != 0;
 
     // パフォーマンス関連の設定
     io.ConfigMemoryCompactTimer = 300.0f; // メモリ圧縮の間隔を長く
@@ -51,7 +85,7 @@ void ImGuiManager::Initialize(WinApp *winApp, ImGuizmoManager *imguizmoManager) 
 
     float fontSize = 16.0f;
 
-    io.Fonts->AddFontFromFileTTF("Resources/fonts/PixelMplus12-Regular.ttf", 14.0f, nullptr, io.Fonts->GetGlyphRangesJapanese());
+    io.Fonts->AddFontFromFileTTF("resources/fonts/PixelMplus12-Regular.ttf", 14.0f, nullptr, io.Fonts->GetGlyphRangesJapanese());
 
     // アイコンフォント読み込み（FontAwesomeなど）
     // FontAwesomeの設定
@@ -60,29 +94,40 @@ void ImGuiManager::Initialize(WinApp *winApp, ImGuizmoManager *imguizmoManager) 
     icons_config.MergeMode = true;
     icons_config.PixelSnapH = true;
     icons_config.GlyphMinAdvanceX = fontSize;
-    io.Fonts->AddFontFromFileTTF("Resources/fonts/fa-solid-900.ttf", fontSize, &icons_config, icon_ranges);
+    io.Fonts->AddFontFromFileTTF("resources/fonts/fa-solid-900.ttf", fontSize, &icons_config, icon_ranges);
 
-    // フォントの生成
-    unsigned char *tex_pixels = nullptr;
-    int tex_width, tex_height;
-    io.Fonts->GetTexDataAsRGBA32(&tex_pixels, &tex_width, &tex_height);
+    // ImGui 1.92 の新DX12バックエンド（ImGui_ImplDX12_InitInfo）は
+    // ImGuiBackendFlags_RendererHasTextures を立て、フォントアトラスを動的管理する。
+    // その場合 ImFontAtlas::Build()（= GetTexDataAsRGBA32）を手動で呼ぶとアサートになるため呼ばない。
+    // フォントテクスチャは必要時にバックエンドが自動でラスタライズ／アップロードする。
 
     // カスタムテーマを設定
     SetupTheme();
 
     ImGui_ImplWin32_Init(winApp->GetHwnd());
 
-    // srvインデックスを割り
+    // SRVを割り当てる管理クラスを取得
     srvManager_ = SrvManager::GetInstance();
 
-    uint32_t srvIndex = srvManager_->Allocate();
-    ImGui_ImplDX12_Init(
-        dxCommon_->GetDevice().Get(),
-        2,
-        DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
-        srvManager_->GetDescriptorHeap(),
-        srvManager_->GetCPUDescriptorHandle(srvIndex),
-        srvManager_->GetGPUDescriptorHandle(srvIndex));
+    // マルチビューポート対応のため、新APIの InitInfo で初期化する。
+    // SRVデスクリプタの確保/解放はコールバック経由で SrvManager に委譲し、
+    // 副ウィンドウのフォント/テクスチャ用に追加SRVを動的確保できるようにする。
+    ImGui_ImplDX12_InitInfo initInfo{};
+    initInfo.Device = dxCommon_->GetDevice().Get();
+    initInfo.CommandQueue = dxCommon_->GetCommandQueue();
+    initInfo.NumFramesInFlight = 2;
+    // メインビューポートの ImGui はバックバッファの sRGB RTV に描画されるため、
+    // ImGui の PSO も sRGB にしないと #613(RENDER_TARGET_FORMAT_MISMATCH) になる。
+    // 副ビューポートのフリップモデル・スワップチェインは sRGB 不可だが、
+    // imgui_impl_dx12.cpp 側を patch 済み（swapchain は非sRGB・RTV は明示sRGB）なので
+    // ここは sRGB を渡してよい（メイン／副ともに sRGB-correct で一致する）。
+    initInfo.RTVFormat = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
+    initInfo.DSVFormat = DXGI_FORMAT_UNKNOWN;
+    initInfo.SrvDescriptorHeap = srvManager_->GetDescriptorHeap();
+    initInfo.SrvDescriptorAllocFn = ImGuiSrvAlloc;
+    initInfo.SrvDescriptorFreeFn = ImGuiSrvFree;
+    ImGui_ImplDX12_Init(&initInfo);
+
     imGuizmoManager_ = imguizmoManager;
 }
 
@@ -269,6 +314,17 @@ void ImGuiManager::Draw() {
     ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), commandList);
 }
 
+void ImGuiManager::RenderMultiViewport() {
+    if (!multiViewport_) {
+        return;
+    }
+    // メインビューポートの描画・Present が済んだ後に、ドックから切り離した
+    // ImGuiウィンドウ群を独立OSウィンドウとして更新・描画する。
+    // DX12 バックエンドが各ウィンドウのスワップチェイン生成/描画/Present を内部で処理する。
+    ImGui::UpdatePlatformWindows();
+    ImGui::RenderPlatformWindowsDefault();
+}
+
 void ImGuiManager::UpdateIni() {
     if (showGrid_) {
         DrawLine3D::GetInstance()->DrawGrid(gridY_, gridDivision_, gridSize_, gridColor_);
@@ -340,10 +396,10 @@ void ImGuiManager::ShowMainMenu() {
                 windowToggle(ICON_FA_ARROWS_ALT " ギズモ", showGizmoView_);
 
                 ImGui::SeparatorText("アセット・エディタ");
+                windowToggle(ICON_FA_IMAGES " アセットブラウザ", showAssetBrowserView_);
                 windowToggle(ICON_FA_SQUARE " スプライトマネージャ", showSpriteManagerView_);
                 windowToggle(ICON_FA_SHAPES " コライダー", showColliderTagManagerView_);
                 windowToggle(ICON_FA_BULLHORN " オーディオ", showAudioManagerView_);
-                windowToggle(ICON_FA_CODE_BRANCH " モーションエディター", showMotionEditorView_);
 
                 ImGui::SeparatorText("パーティクル");
                 windowToggle(ICON_FA_STAR " パーティクルビュー", showParticleView_);
@@ -694,22 +750,45 @@ void ImGuiManager::ShowStatisticsWindow() {
     ParticleCSEditor::GetInstance()->ShowGPUParticleStatistics();
 
     ImGui::Separator();
+    GpuProfiler::GetInstance()->DrawImGui();
+
+    ImGui::Separator();
     if (ImGui::CollapsingHeader("ログ履歴", ImGuiTreeNodeFlags_DefaultOpen)) {
-        if (ImGui::Button("履歴をクリア")) {
+        static ImGuiTextFilter logFilter;
+        static bool autoScroll = true;
+
+        // ツールバー: クリア / 自動スクロール / 絞り込み
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.45f, 0.25f, 0.25f, 0.85f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.60f, 0.32f, 0.32f, 0.95f));
+        if (ImGui::SmallButton("クリア##log"))
             ImGuiNotification::ClearHistory();
-        }
-        ImGui::BeginChild("LogScrollRegion", ImVec2(0, 200), true, ImGuiWindowFlags_HorizontalScrollbar);
+        ImGui::PopStyleColor(2);
+        ImGui::SameLine();
+        ImGui::Checkbox("自動スクロール##log", &autoScroll);
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(-1.0f);
+        logFilter.Draw("##logfilter");
+
         const auto &history = ImGuiNotification::GetHistory();
+        int shown = 0;
+        ImGui::BeginChild("LogScrollRegion", ImVec2(0, 200), ImGuiChildFlags_Borders, ImGuiWindowFlags_HorizontalScrollbar);
         for (const auto &n : history) {
+            if (!logFilter.PassFilter(n.message.c_str()))
+                continue;
+            ++shown;
             ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(n.color.x, n.color.y, n.color.z, n.color.w));
             ImGui::TextUnformatted(n.message.c_str());
             ImGui::PopStyleColor();
         }
-        // 新しいログがあれば自動スクロール
-        if (ImGui::GetScrollY() >= ImGui::GetScrollMaxY()) {
+        // 新しいログがあれば自動スクロール（最下部に居るときだけ）
+        if (autoScroll && ImGui::GetScrollY() >= ImGui::GetScrollMaxY()) {
             ImGui::SetScrollHereY(1.0f);
         }
         ImGui::EndChild();
+
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.55f, 0.55f, 0.60f, 1.0f));
+        ImGui::Text("%d 件表示 / 全 %d 件", shown, static_cast<int>(history.size()));
+        ImGui::PopStyleColor();
     }
 
     ImGui::End();
@@ -763,22 +842,6 @@ void ImGuiManager::ShowHierarchyWindow() {
     ImGui::Begin("オブジェクトマネージャ", &showHierarchyView_, flags);
 
     baseObjectManager_->DrawHierarchyEditor();
-
-    ImGui::End();
-}
-
-void ImGuiManager::ShowMotionEditorWindow() {
-    if (!showMotionEditorView_)
-        return; // 表示しない場合は早期リターン
-
-    ImGuiWindowFlags flags = ImGuiWindowFlags_NoFocusOnAppearing;
-
-    ImGui::Begin("モーションエディター", &showMotionEditorView_, flags);
-
-    // 中身はアプリ側が差し込んだコールバックで描画（エンジンは MotionEditor を知らない）
-    if (motionEditorDrawCallback_) {
-        motionEditorDrawCallback_();
-    }
 
     ImGui::End();
 }
@@ -850,6 +913,129 @@ void ImGuiManager::ShowDrawSystemWindow() {
 
     // ウィンドウの生成・閉じるボタンは DrawSystem 側に委譲する
     DrawSystem::GetInstance()->UpdateImGui(&showDrawSystemView_);
+}
+
+void ImGuiManager::ShowAssetBrowserWindow() {
+    if (!showAssetBrowserView_)
+        return; // 表示しない場合は早期リターン
+
+    ImGuiWindowFlags flags = ImGuiWindowFlags_NoFocusOnAppearing;
+    ImGui::Begin("アセットブラウザ", &showAssetBrowserView_, flags);
+
+    // resources/images 配下の画像を列挙（初回スキャン + 再スキャン）。
+    // textureFilePath 規約に合わせ base からの相対パス('/'区切り)で保持し、
+    // 親フォルダごとにまとめる（map のキーがフォルダ＝表示順もフォルダ順になる）。
+    static std::map<std::string, std::vector<std::string>> s_byDir;
+    static int s_fileCount = 0;
+    static bool s_scanned = false;
+    auto scan = []() {
+        s_byDir.clear();
+        s_fileCount = 0;
+        std::error_code ec;
+        const std::string base = "resources/images";
+        if (std::filesystem::exists(base, ec)) {
+            for (auto &e : std::filesystem::recursive_directory_iterator(base, ec)) {
+                if (ec)
+                    break;
+                if (!e.is_regular_file())
+                    continue;
+                std::string ext = e.path().extension().string();
+                for (auto &ch : ext)
+                    ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+                // dds は読み込みが重い（かつキューブマップ等2D表示できないものを含む）ため
+                // アセットブラウザの一覧には載せない。
+                if (ext != ".png" && ext != ".jpg" && ext != ".jpeg")
+                    continue;
+                std::string rel = std::filesystem::relative(e.path(), base, ec).generic_string();
+                if (rel.empty())
+                    continue;
+                // 親フォルダ（'/'区切りの最後の'/'より前）をキーにする。直下は "" 。
+                std::string dir;
+                size_t slash = rel.find_last_of('/');
+                if (slash != std::string::npos)
+                    dir = rel.substr(0, slash);
+                s_byDir[dir].push_back(rel);
+                ++s_fileCount;
+            }
+            for (auto &kv : s_byDir)
+                std::sort(kv.second.begin(), kv.second.end());
+        }
+    };
+    if (!s_scanned) {
+        scan();
+        s_scanned = true;
+    }
+
+    if (ImGui::Button("再スキャン"))
+        scan();
+    ImGui::SameLine();
+    ImGui::TextDisabled("画像をドラッグ → テクスチャ設定へドロップ（%d 件）", s_fileCount);
+    ImGui::Separator();
+
+    ImGui::BeginChild("##AssetGrid", ImVec2(0, 0), false);
+
+    TextureManager *tex = TextureManager::GetInstance();
+    ImGuiStyle &style = ImGui::GetStyle();
+    const float thumb = 64.0f;
+    const float cellW = thumb + style.FramePadding.x * 2.0f;
+
+    // サムネ1枚分の描画（PushID 済みであること）。
+    // ※ キューブマップ(.dds skybox 等)は SRV が TEXTURECUBE なので、Texture2D として
+    //    描画すると GPU ベース検証 #940 で落ちる。メタデータで判定しプレースホルダにする。
+    auto drawThumb = [&](const std::string &rel) {
+        ImGui::BeginGroup();
+        ImTextureID id = 0;
+        bool isCube = false;
+        if (ImGui::IsRectVisible(ImVec2(thumb, thumb))) {
+            tex->LoadTexture(rel);
+            const DirectX::TexMetadata &meta = tex->GetMetaData(rel);
+            isCube = meta.IsCubemap();
+            if (!isCube) {
+                D3D12_GPU_DESCRIPTOR_HANDLE h = tex->GetSrvHandleGPU("resources/images/" + rel);
+                if (h.ptr != 0)
+                    id = static_cast<ImTextureID>(h.ptr);
+            }
+        }
+        if (id != 0)
+            ImGui::ImageButton("##thumb", id, ImVec2(thumb, thumb));
+        else
+            ImGui::Button(isCube ? "[CUBE]" : "...",
+                          ImVec2(thumb + style.FramePadding.x * 2.0f, thumb + style.FramePadding.y * 2.0f));
+        // キューブマップは 2D テクスチャ枠に使えない（ドロップ先は Texture2D 前提）ので
+        // ドラッグ元にしない。それ以外はサムネをドラッグ元にする。
+        if (!isCube)
+            AssetDragDrop::TextureSource(rel, id);
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("%s%s", rel.c_str(), isCube ? "\n(キューブマップ: 2Dテクスチャには使用不可)" : "");
+        ImGui::EndGroup();
+    };
+
+    int uid = 0;
+    for (auto &kv : s_byDir) {
+        const std::string &dir = kv.first;
+        const std::vector<std::string> &fileList = kv.second;
+        std::string header = (dir.empty() ? std::string("(ルート)") : dir) +
+                             "  [" + std::to_string(fileList.size()) + "]##dir_" + dir;
+        if (ImGui::CollapsingHeader(header.c_str(), ImGuiTreeNodeFlags_DefaultOpen)) {
+            const float windowVisibleX2 = ImGui::GetWindowPos().x + ImGui::GetWindowContentRegionMax().x;
+            const int n = static_cast<int>(fileList.size());
+            for (int k = 0; k < n; ++k) {
+                ImGui::PushID(uid++);
+                drawThumb(fileList[k]);
+                // 次のサムネが右端を超えなければ同じ行に並べる（自動折り返し）。
+                const float lastX2 = ImGui::GetItemRectMax().x;
+                const float nextX2 = lastX2 + style.ItemSpacing.x + cellW;
+                if (k + 1 < n && nextX2 < windowVisibleX2)
+                    ImGui::SameLine();
+                ImGui::PopID();
+            }
+        } else {
+            uid += static_cast<int>(fileList.size()); // 折りたたみ時もIDを進めて安定させる
+        }
+    }
+
+    ImGui::EndChild();
+    ImGui::End();
 }
 
 void ImGuiManager::FixAspectRatio() {
@@ -954,11 +1140,22 @@ void ImGuiManager::ShowSceneWindow(OffScreen *offScreen, const std::string &scen
         sceneTextureSize_, ImVec2(0.0f, 0.0f), ImVec2(1.0f, 1.0f),
         backgroundColor);
 
-    // ImGuizmoのために正確なシーン位置を計算
+    // ImGuizmo 用のシーン位置（ImGui 座標系）。マルチビューポート時はスクリーン全体座標になる。
     actualScenePos_ = ImVec2(
         contentPos.x + sceneOffset.x,
         contentPos.y + sceneOffset.y);
-    imGuizmoManager_->Update(actualScenePos_, sceneTextureSize_);
+
+    // レイ計算用のシーン位置は、Mouse::GetMousePos()(ScreenToClient=クライアント座標) と
+    // 同じ空間に合わせる。ViewportsEnable 時は ImGui 座標がスクリーン全体座標になるため、
+    // メインビューポート位置（=メインウィンドウのクライアント原点のスクリーン座標）を引く。
+    // OFF 時は Pos=(0,0) なので無変換＝従来どおり。
+    ImVec2 mainVpPos = ImGui::GetMainViewport()->Pos;
+    scenePosForRay_ = ImVec2(actualScenePos_.x - mainVpPos.x, actualScenePos_.y - mainVpPos.y);
+
+    // 他の ImGui ウィンドウがシーンウィンドウの上に重なっているとき、その上でのクリックで
+    // シーンのオブジェクト選択を誤発火させないよう、シーンウィンドウのホバー状態を渡す。
+    bool sceneHovered = ImGui::IsWindowHovered();
+    imGuizmoManager_->Update(actualScenePos_, sceneTextureSize_, sceneHovered);
 
     ImGui::End();
 }
@@ -983,8 +1180,6 @@ void ImGuiManager::ShowMainUI(OffScreen *offscreen) {
     ShowGizmoWindow();
     // 階層エディターウィンドウを描画
     ShowHierarchyWindow();
-    // モーションエディターウィンドウを描画
-    ShowMotionEditorWindow();
     // スプライトマネージャウィンドウを描画
     ShowSpriteManagerWindow();
     // コライダータグマネージャウィンドウを描画
@@ -995,6 +1190,8 @@ void ImGuiManager::ShowMainUI(OffScreen *offscreen) {
     ShowShadowMapWindow();
     // 描画システム設定ウィンドウを描画
     ShowDrawSystemWindow();
+    // アセットブラウザ窓を描画
+    ShowAssetBrowserWindow();
 
     ShowHelpWindow();
     baseObjectManager_->UpdateImGui();
@@ -1465,11 +1662,11 @@ void ImGuiManager::SaveFlag() {
     data->Save("showLightView", showLightView_);
     data->Save("showGizmoView", showGizmoView_);
     data->Save("showHierarchyView", showHierarchyView_);
-    data->Save("showMotionEditorView", showMotionEditorView_);
     data->Save("showShortcutWindow", showShortcutWindow_);
     data->Save("showSpriteManagerView", showSpriteManagerView_);
     data->Save("showShadowMapView", showShadowMapView_);
     data->Save("showDrawSystemView", showDrawSystemView_);
+    data->Save("showAssetBrowserView", showAssetBrowserView_);
     data->Save("isEditorMode", isEditorMode_);
     data->Save("gridColor", gridColor_);
 #ifdef _DEBUG
@@ -1490,11 +1687,11 @@ void ImGuiManager::LoadFlag() {
     showLightView_ = data->Load("showLightView", false);
     showGizmoView_ = data->Load("showGizmoView", false);
     showHierarchyView_ = data->Load("showHierarchyView", true);
-    showMotionEditorView_ = data->Load("showMotionEditorView", false);
     showShortcutWindow_ = data->Load("showShortcutWindow", false);
     showSpriteManagerView_ = data->Load("showSpriteManagerView", false);
     showShadowMapView_ = data->Load("showShadowMapView", true);
     showDrawSystemView_ = data->Load("showDrawSystemView", true);
+    showAssetBrowserView_ = data->Load("showAssetBrowserView", false);
     isEditorMode_ = data->Load("isEditorMode", true);
     gridColor_ = data->Load("gridColor", Vector4(0.5f, 0.5f, 0.5f, 1.0f));
 }

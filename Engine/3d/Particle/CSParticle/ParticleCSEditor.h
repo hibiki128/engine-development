@@ -183,6 +183,7 @@ class ParticleCSEditor {
     // ワイヤーフレーム用VBを最大容量で確保し永続マップする（初回のみ）。
     void BuildPreviewWireBuffer();
     // 現在のカメラパラメータから view 行列と view*projection 行列を計算する。
-    void ComputePreviewMatrices(Matrix4x4 &outView, Matrix4x4 &outViewProj) const;
+    // outEye=カメラワールド座標, outProjScaleY=projection[1][1]（プレビューの描画カリング用）。
+    void ComputePreviewMatrices(Matrix4x4 &outView, Matrix4x4 &outViewProj, Vector3 &outEye, float &outProjScaleY) const;
 };
 } // namespace Hagine

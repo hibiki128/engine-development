@@ -281,7 +281,13 @@ class ParticleCSEmitter {
     /// RT/DSV/Viewport/DescriptorHeap は呼び出し側で設定済みであること。ワイヤー(DrawEmitter)は描かない。
     /// </summary>
     /// <param name="perViewGpuAddress">プレビュー用 per-view 定数バッファのGPUアドレス</param>
-    void DrawGraphicsForPreview(D3D12_GPU_VIRTUAL_ADDRESS perViewGpuAddress);
+    /// <param name="previewPerView">プレビュー per-view のマップ済みポインタ（描画カリング設定の書込先・nullptr可）</param>
+    /// <param name="cameraPos">プレビューカメラのワールド座標（距離カリング用）</param>
+    /// <param name="projScaleY">プレビュー射影の[1][1]（画面サイズカリング用）</param>
+    void DrawGraphicsForPreview(D3D12_GPU_VIRTUAL_ADDRESS perViewGpuAddress,
+                                PerView *previewPerView = nullptr,
+                                const Vector3 &cameraPos = {0.0f, 0.0f, 0.0f},
+                                float projScaleY = 1.0f);
 
     /// <summary>
     /// エミッターのワイヤーフレームを描画
@@ -314,6 +320,12 @@ class ParticleCSEmitter {
     /// <param name="type">プリミティブの種類</param>
     void LoadPrimitiveModel(PrimitiveType type);
 
+    /// <summary>
+    /// 現在のプリミティブ形状パラメータ(分割数/半径など)でモデルと発生メッシュを作り直す。
+    /// 分割数や円の幅を変更したときに呼ぶ。
+    /// </summary>
+    void RebuildPrimitiveModel();
+
     /// <summary>発生源メッシュの三角形情報を生成</summary>
     void CreateModelTriangles();
 
@@ -342,6 +354,11 @@ class ParticleCSEmitter {
     std::vector<ParticleCSGroup *> particleGroups_;
     std::set<std::string> particleGroupNames_;
 
+    // DrawCompute の各フェーズ(Reset/Emit/Update/Readback)で参照する、グループごとの
+    // 「今フレーム処理するか」フラグ。生存0かつ発生なしのアイドルグループを一括スキップする。
+    // particleGroups_ と同じ順序・サイズ。DrawCompute 冒頭で毎フレーム再計算する。
+    std::vector<uint8_t> groupActive_;
+
     Microsoft::WRL::ComPtr<ID3D12Resource> triangleInfoResource_ = nullptr;
     TriangleInfo *triangleInfoData_ = nullptr;
     std::vector<TriangleInfo> triangleInfoList_;
@@ -367,6 +384,7 @@ class ParticleCSEmitter {
     ModelData modelData_;
     std::string modelPath_;
     PrimitiveType primitiveType_ = PrimitiveType::None;
+    PrimitiveParams primitiveParams_; // プリミティブの分割数/半径など（リング等で調整可）
 
     std::string name_;
     std::string drawGroup_ = "3D"; // 描画グループ＝描画ステージ（既定は3D）

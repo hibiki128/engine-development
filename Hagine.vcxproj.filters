@@ -97,6 +97,8 @@
     <FxCompile Include="Resources\shaders\OffScreen\Bloom.PS.hlsl">
       <Filter>Resources\shaders\OffScreen</Filter>
     </FxCompile>
+    <FxCompile Include="Resources\shaders\Particle\CSParticle\ResetArgs.CS.hlsl" />
+    <FxCompile Include="Resources\shaders\Particle\CSParticle\UpdateParticleLite.CS.hlsl" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Engine\2d\Sprite.cpp">
@@ -354,6 +356,15 @@
     <ClCompile Include="externals\imgui\ImGuizmo.cpp">
       <Filter>Externals\imgui</Filter>
     </ClCompile>
+    <ClCompile Include="externals\imgui\ImCurveEdit.cpp">
+      <Filter>Externals\imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="externals\imgui\ImGradient.cpp">
+      <Filter>Externals\imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="externals\imgui\imgui-knobs.cpp">
+      <Filter>Externals\imgui</Filter>
+    </ClCompile>
     <ClCompile Include="Engine\Utility\Collider\type\CylinderCollider.cpp">
       <Filter>Engine\Utility\Collider\type</Filter>
     </ClCompile>
@@ -386,6 +397,9 @@
     </ClCompile>
     <ClCompile Include="Engine\Scene\TestScene.cpp">
       <Filter>Engine\Scene</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\Utility\Debug\GpuProfiler\GpuProfiler.cpp">
+      <Filter>Engine\Utility\Debug\GPUProfiler</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -658,6 +672,15 @@
     <ClInclude Include="externals\imgui\ImGuizmo.h">
       <Filter>Externals\imgui</Filter>
     </ClInclude>
+    <ClInclude Include="externals\imgui\ImCurveEdit.h">
+      <Filter>Externals\imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="externals\imgui\ImGradient.h">
+      <Filter>Externals\imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="externals\imgui\imgui-knobs.h">
+      <Filter>Externals\imgui</Filter>
+    </ClInclude>
     <ClInclude Include="externals\imgui\imstb_rectpack.h">
       <Filter>Externals\imgui</Filter>
     </ClInclude>
@@ -715,9 +738,9 @@
     <ClInclude Include="Engine\Utility\Scene\SceneRegistry.h">
       <Filter>Engine\Utility\Scene</Filter>
     </ClInclude>
-  </ItemGroup>
-  <ItemGroup>
-    <ResourceCompile Include="Hagine.rc" />
+    <ClInclude Include="Engine\Utility\Debug\GpuProfiler\GpuProfiler.h">
+      <Filter>Engine\Utility\Debug\GPUProfiler</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include=".editorconfig" />
@@ -757,6 +780,7 @@
     <None Include="Hagine.vcxproj.user" />
     <None Include="imgui_editor.ini" />
     <None Include="imgui_game.ini" />
+    <None Include="Resources\shaders\Particle\CSParticle\CurlNoise.hlsli" />
   </ItemGroup>
   <ItemGroup>
     <Filter Include="Engine">
@@ -956,6 +980,9 @@
     </Filter>
     <Filter Include="Engine\3d\Shadow">
       <UniqueIdentifier>{c23361e0-1d03-42e9-a565-bdfb09da142b}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Engine\Utility\Debug\GPUProfiler">
+      <UniqueIdentifier>{251796a5-fe64-4116-bd1e-cdb7d7aa0c9a}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>

@@ -13,6 +13,12 @@ void Mesh::PrimitiveInitialize(const PrimitiveType &type) {
     meshData_.indices = PrimitiveModel::GetInstance()->GetPrimitiveData(type).indices;
 }
 
+void Mesh::PrimitiveInitialize(const PrimitiveType &type, const PrimitiveParams &params) {
+    auto data = PrimitiveModel::GetInstance()->BuildParametricData(type, params);
+    meshData_.vertices = data.vertices;
+    meshData_.indices = data.indices;
+}
+
 void Mesh::CreateVartexData() {
     vertexResource_ = dxCommon_->CreateBufferResource(sizeof(VertexData) * meshData_.vertices.size());
     // リソースの先頭のアドレスから使う

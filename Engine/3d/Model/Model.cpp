@@ -5,6 +5,7 @@
 #include "fstream"
 #include "myMath.h"
 #include "sstream"
+#include <Debug/Log/Logger.h>
 #include <Shadow/ShadowMap.h>
 #include <SkyBox/SkyBox.h>
 
@@ -47,6 +48,20 @@ void Model::CreatePrimitiveModel(const PrimitiveType &type, std::string texPath)
     modelData_.meshes[0] = meshes_[0]->GetMeshData();
 
     // メッシュのマテリアルインデックスを設定
+    modelData_.meshes[0].materialIndex = 0;
+}
+
+void Model::CreatePrimitiveModel(const PrimitiveType &type, std::string texPath, const PrimitiveParams &params) {
+    (void)texPath;
+    // プリミティブモデルは単一メッシュ・単一マテリアル
+    meshes_.resize(1);
+    modelData_.meshes.resize(1);
+
+    meshes_[0] = std::make_unique<Mesh>();
+    meshes_[0]->PrimitiveInitialize(type, params); // 分割数・形状パラメータ反映
+    meshes_[0]->Initialize();
+
+    modelData_.meshes[0] = meshes_[0]->GetMeshData();
     modelData_.meshes[0].materialIndex = 0;
 }
 
@@ -175,6 +190,7 @@ ModelData Model::LoadModelFile(const std::string &directoryPath, const std::stri
     } else if (filename.size() >= 4 && filename.substr(filename.size() - 4) == ".obj") {
         isGltf_ = false;
     } else {
+        Logger::Error("Unsupported model format: \"" + filename + "\". Only .gltf and .obj are supported.");
         assert(false && "Unsupported file format");
     }
 
@@ -190,6 +206,13 @@ ModelData Model::LoadModelFile(const std::string &directoryPath, const std::stri
 
     // メッシュが存在しない場合
     if (!scene || !scene->HasMeshes()) {
+        if (!scene) {
+            // ファイルが見つからない・破損しているなど、読み込み自体に失敗したケース
+            Logger::Error("Failed to load model: \"" + filePath + "\". " + importer.GetErrorString());
+        } else {
+            // 読み込めたがメッシュが無いケース（デフォルトメッシュで代替する）
+            Logger::Warn("Model has no meshes: \"" + filePath + "\". Using a default mesh instead.");
+        }
         // デフォルトのメッシュとマテリアルを作成
         MeshData defaultMesh;
         MaterialData defaultMaterial;

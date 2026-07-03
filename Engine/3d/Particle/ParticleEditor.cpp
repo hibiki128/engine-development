@@ -2,6 +2,7 @@
 #include "ParticleEditor.h"
 #include "Debug/ImGui/ImGuiManager.h"
 #include <Utility/Debug/ImGui/ImGuiNotification.h>
+#include "Render/DrawGroupManager.h"
 #ifdef _DEBUG
 #include "ShowFolder/ShowFolder.h"
 #endif // _DEBUG
@@ -40,6 +41,7 @@ void ParticleEditor::AddParticleEmitter(const std::string &name, const std::stri
     emitter->Initialize(name);
     // マップに追加
     emitters_[name] = std::move(emitter);
+    DrawGroupManager::GetInstance()->RegisterGroup(emitters_[name]->GetDrawGroup()); // 所属グループを登録
     ImGuiNotification::Post("パーティクルエミッターを追加しました: " + name, {0.4f, 0.8f, 1.0f, 1.0f});
 }
 
@@ -54,6 +56,7 @@ void ParticleEditor::AddParticleEmitter(const std::string &name) {
     emitter->Initialize(name);
     // マップに追加
     emitters_[name] = std::move(emitter);
+    DrawGroupManager::GetInstance()->RegisterGroup(emitters_[name]->GetDrawGroup()); // 所属グループを登録
     ImGuiNotification::Post("パーティクルエミッターを追加しました: " + name, {0.4f, 0.8f, 1.0f, 1.0f});
 }
 

@@ -3,12 +3,17 @@
 #include "TextureManager.h"
 #include "DirectXCommon.h"
 #include "Utility/Debug/ImGui/ImGuiNotification.h"
+#include <Debug/Log/Logger.h>
 #include <String/StringUtility.h>
+#include <cstdio>
 #include <filesystem>
 #include <fstream>
 #include <vector>
 
-// ImGuiで0番を使用するため、1番から使用
+// SRVインデックスのオフセット（=1）。エンジン共通の規約に合わせる。
+// SrvManager::Allocate() で予約した r に対し、実際の書き込みは r+1（先頭1枠を空ける）。
+// この +1 規約はエンジン全体で使われており（Sprite/Skin/Particle 各種/RendererBuffer 等）、
+// ここだけ変えると他の +1 利用箇所と衝突するため 1 のまま維持すること。
 namespace Hagine {
 uint32_t TextureManager::kSRVIndexTop = 1;
 
@@ -35,7 +40,13 @@ void TextureManager::LoadTexture(const std::string &filePath) {
         isDDS_ = false;
         hr = DirectX::LoadFromWICFile(filePathW.c_str(), DirectX::WIC_FLAGS_FORCE_SRGB, nullptr, image);
     }
-    assert(SUCCEEDED(hr));
+    if (FAILED(hr)) {
+        char hrText[16] = {};
+        snprintf(hrText, sizeof(hrText), "0x%08X", static_cast<unsigned int>(hr));
+        Logger::Error("Failed to load texture: \"" + newFilePath + "\" (HRESULT=" + hrText + "). The file may be missing or its format unsupported.");
+        assert(SUCCEEDED(hr));
+        return;
+    }
 
     DirectX::ScratchImage *imageToUse = &image; // 初期値はオリジナルのイメージ
 
@@ -78,7 +89,11 @@ void TextureManager::LoadFontTexture(const std::string &fontFilePath, float font
     // TTFファイルをバイナリとして丸ごと読み込む
     const std::string fullPath = "resources/fonts/" + fontFilePath;
     std::ifstream file(fullPath, std::ios::binary | std::ios::ate);
-    assert(file.is_open());
+    if (!file.is_open()) {
+        Logger::Error("Failed to open font file: \"" + fullPath + "\". The file was not found.");
+        assert(file.is_open());
+        return;
+    }
     const std::streamsize fileSize = file.tellg();
     file.seekg(0, std::ios::beg);
     std::vector<uint8_t> ttfBuffer(static_cast<size_t>(fileSize));
@@ -102,7 +117,12 @@ void TextureManager::LoadFontTexture(const std::string &fontFilePath, float font
         fontData.charData.data());
 
     // bakeResultが負の場合はアトラスサイズが不足している
-    assert(bakeResult > 0);
+    if (bakeResult <= 0) {
+        Logger::Error("Failed to bake font atlas: \"" + fontFilePath + "\". The atlas size (" +
+                      std::to_string(atlasWidth) + "x" + std::to_string(atlasHeight) + ") is too small for the requested font size.");
+        assert(bakeResult > 0);
+        return;
+    }
 
     // アトラスのグレースケールピクセルをCPU側でも保持する（テキストテクスチャ合成用）
     fontData.atlasPixels = grayscaleBitmap;
@@ -189,13 +209,17 @@ uint32_t TextureManager::GetTextureIndexByFilePath(const std::string &filePath) 
     }
 
     // 見つからない場合はassertでエラーにする
+    Logger::Error("Texture index not found: \"" + newFilePath + "\". The texture was never loaded (the path may be wrong).");
     assert(0);
     return 0;
 }
 
 D3D12_GPU_DESCRIPTOR_HANDLE TextureManager::GetSrvHandleGPU(const std::string &filePath) {
     // 指定されたファイルパスが存在するかチェック
-    assert(textureDatas_.find(filePath) != textureDatas_.end());
+    if (textureDatas_.find(filePath) == textureDatas_.end()) {
+        Logger::Error("Texture handle not found: \"" + filePath + "\". The texture was never loaded (the path may be wrong).");
+        assert(textureDatas_.find(filePath) != textureDatas_.end());
+    }
 
     TextureData &textureData = textureDatas_[filePath];
     return textureData.srvHandleGPU;
@@ -204,7 +228,10 @@ D3D12_GPU_DESCRIPTOR_HANDLE TextureManager::GetSrvHandleGPU(const std::string &f
 const DirectX::TexMetadata &TextureManager::GetMetaData(const std::string &filePath) {
     std::string fullPath = ("resources/images/" + filePath);
     // 指定されたファイルパスが存在するかチェック
-    assert(textureDatas_.find(fullPath) != textureDatas_.end());
+    if (textureDatas_.find(fullPath) == textureDatas_.end()) {
+        Logger::Error("Texture metadata not found: \"" + fullPath + "\". The texture was never loaded (the path may be wrong).");
+        assert(textureDatas_.find(fullPath) != textureDatas_.end());
+    }
 
     TextureData &textureData = textureDatas_[fullPath];
     return textureData.metadata;

@@ -8,6 +8,9 @@
 #include <Object/Base/BaseObjectManager.h>
 #include <Transform/WorldTransform.h>
 #include "WinApp.h"
+#include <imgui.h>
+// Debugui_improved.h は ImVec4 / ImGui:: を使うので imgui.h の後に include する
+#include "Debugui_improved.h"
 
 // =======================================================================
 // GizmoTarget メンバ関数実装
@@ -301,9 +304,14 @@ void ImGuizmoManager::imgui() {
     if (!viewProjection_)
         return;
 
+    ImGui::PushStyleColor(ImGuiCol_CheckMark, DebugTheme::kAccentGreen);
     ImGui::Checkbox("デバッグ表示する", &isDrawDebug_);
+    ImGui::PopStyleColor();
+    ImGui::SetItemTooltip("選択中オブジェクトの AABB / スフィア / レイを線で表示します");
 
-    // 操作モード選択
+    ImGui::Spacing();
+    SectionHeader("[ 操作モード ]", DebugTheme::kAccentBlue);
+    ImGui::PushStyleColor(ImGuiCol_CheckMark, DebugTheme::kAccentBlue);
     if (ImGui::RadioButton("移動", currentOperation_ == ImGuizmo::TRANSLATE))
         currentOperation_ = ImGuizmo::TRANSLATE;
     ImGui::SameLine();
@@ -312,19 +320,24 @@ void ImGuizmoManager::imgui() {
     ImGui::SameLine();
     if (ImGui::RadioButton("スケール", currentOperation_ == ImGuizmo::SCALE))
         currentOperation_ = ImGuizmo::SCALE;
+    ImGui::PopStyleColor();
 
-    // 座標系選択
+    ImGui::Spacing();
+    SectionHeader("[ 座標系 ]", DebugTheme::kAccentCyan);
+    ImGui::PushStyleColor(ImGuiCol_CheckMark, DebugTheme::kAccentCyan);
     if (ImGui::RadioButton("ローカル", currentMode_ == ImGuizmo::LOCAL))
         currentMode_ = ImGuizmo::LOCAL;
     ImGui::SameLine();
     if (ImGui::RadioButton("ワールド", currentMode_ == ImGuizmo::WORLD))
         currentMode_ = ImGuizmo::WORLD;
+    ImGui::PopStyleColor();
 
     ImGui::Separator();
 
-    // 検索ボックス
-    ImGui::Text("オブジェクト検索:");
-    bool searchChanged = ImGui::InputText("##ObjectSearch", searchBuffer_, sizeof(searchBuffer_));
+    SectionHeader("[ オブジェクト選択 ]", DebugTheme::kAccentPurple);
+    // 検索ボックス（ヒント付き・全幅）
+    ImGui::SetNextItemWidth(-1);
+    bool searchChanged = ImGui::InputTextWithHint("##ObjectSearch", "名前で絞り込み...", searchBuffer_, sizeof(searchBuffer_));
     if (searchChanged)
         UpdateFilteredNames();
     if (filteredNames_.empty())
@@ -438,7 +451,7 @@ void ImGuizmoManager::imgui() {
 
 // ---- Update -----------------------------------------------------------
 
-void ImGuizmoManager::Update(const ImVec2 &scenePosition, const ImVec2 &sceneSize) {
+void ImGuizmoManager::Update(const ImVec2 &scenePosition, const ImVec2 &sceneSize, bool sceneHovered) {
     if (!viewProjection_)
         return;
 
@@ -446,7 +459,7 @@ void ImGuizmoManager::Update(const ImVec2 &scenePosition, const ImVec2 &sceneSiz
     ImGuizmo::SetDrawlist();
 
     if (!ImGuizmo::IsUsing()) {
-        HandleMouseSelection(scenePosition, sceneSize);
+        HandleMouseSelection(scenePosition, sceneSize, sceneHovered);
 
         // Tab キーで重複オブジェクトをサイクル選択
         if (Input::GetInstance()->TriggerKey(DIK_TAB) && overlapCandidates_.size() > 1) {
@@ -489,22 +502,24 @@ void ImGuizmoManager::ShowSelectedObjectImGui() {
 // マウスクリック時のレイキャストによる選択判定
 // BaseObject/WorldTransform/FreeTransform すべての型に対応するため
 // 行列版の RayIntersectAABBByMatrix を使用する
-void ImGuizmoManager::HandleMouseSelection(const ImVec2 &scenePosition, const ImVec2 &sceneSize) {
+void ImGuizmoManager::HandleMouseSelection(const ImVec2 &scenePosition, const ImVec2 &sceneSize, bool sceneHovered) {
     ImVec2 mousePos = ImGui::GetMousePos();
     bool isInScene = (mousePos.x >= scenePosition.x && mousePos.x <= scenePosition.x + sceneSize.x &&
                       mousePos.y >= scenePosition.y && mousePos.y <= scenePosition.y + sceneSize.y);
 
-    if (ImGuizmo::IsUsing() || !isInScene || !Input::IsTriggerMouse(0) || !viewProjection_)
+    // 他の ImGui ウィンドウがシーンに重なっている上でのクリックは無視（誤選択防止）
+    if (!sceneHovered || ImGuizmo::IsUsing() || !isInScene || !Input::IsTriggerMouse(0) || !viewProjection_)
         return;
 
     bool isCtrlPressed = Input::GetInstance()->PushKey(DIK_LCONTROL);
     std::string pickedName;
     bool foundHit = false;
 
-    // マウス位置をシーンウィンドウ相対座標に変換し、スプライト座標系にスケール
-    Vector2 mouseScreenPos = Input::GetMousePos();
-    float relX = mouseScreenPos.x - scenePosition.x;
-    float relY = mouseScreenPos.y - scenePosition.y;
+    // マウス位置をシーンウィンドウ相対座標に変換し、スプライト座標系にスケール。
+    // scenePosition は ImGui 座標系なので、ImGui のマウス座標(mousePos)を使って整合させる
+    // （Input::GetMousePos() はクライアント座標系なのでマルチビューポート時にずれる）。
+    float relX = mousePos.x - scenePosition.x;
+    float relY = mousePos.y - scenePosition.y;
     float spriteSpaceX = (relX / sceneSize.x) * static_cast<float>(WinApp::kClientWidth);
     float spriteSpaceY = (relY / sceneSize.y) * static_cast<float>(WinApp::kClientHeight);
 

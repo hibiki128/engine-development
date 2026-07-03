@@ -234,7 +234,9 @@ void LightGroup::imgui() {
                             directionalLightData_->direction = directionalLightData_->direction.Normalize();
                     });
                     Row("輝度", "光の明るさ", [&] {
-                        ImGui::DragFloat("##intensity", &directionalLightData_->intensity, 0.01f, 0.0f, 10.0f, "%.2f");
+                        ThemedKnob("##intensity", &directionalLightData_->intensity, 0.0f, 10.0f, "%.2f",
+                                   DebugTheme::kAccentYellow, 44.0f,
+                                   ImGuiKnobFlags_NoTitle | ImGuiKnobFlags_ValueTooltip);
                     });
                     Row("色", "光の色", [&] {
                         ImGui::ColorEdit3("##color", &directionalLightData_->color.x, ImGuiColorEditFlags_NoInputs);
@@ -311,7 +313,9 @@ void LightGroup::imgui() {
                             ImGui::ColorEdit3("##color", &pointLights_[i].color.x, ImGuiColorEditFlags_NoInputs);
                         });
                         Row("輝度", nullptr, [&] {
-                            ImGui::DragFloat("##intensity", &pointLights_[i].intensity, 0.01f, 0.0f, 10.0f, "%.2f");
+                            ThemedKnob("##intensity", &pointLights_[i].intensity, 0.0f, 10.0f, "%.2f",
+                                       DebugTheme::kAccentYellow, 44.0f,
+                                       ImGuiKnobFlags_NoTitle | ImGuiKnobFlags_ValueTooltip);
                         });
                         Row("半径", nullptr, [&] {
                             ImGui::DragFloat("##radius", &pointLights_[i].radius, 0.1f, 0.1f, 100.0f, "%.2f");
@@ -397,7 +401,9 @@ void LightGroup::imgui() {
                             ImGui::ColorEdit3("##color", &spotLights_[i].color.x, ImGuiColorEditFlags_NoInputs);
                         });
                         Row("輝度", nullptr, [&] {
-                            ImGui::DragFloat("##intensity", &spotLights_[i].intensity, 0.01f, 0.0f, 10.0f, "%.2f");
+                            ThemedKnob("##intensity", &spotLights_[i].intensity, 0.0f, 10.0f, "%.2f",
+                                       DebugTheme::kAccentYellow, 44.0f,
+                                       ImGuiKnobFlags_NoTitle | ImGuiKnobFlags_ValueTooltip);
                         });
                         Row("距離", nullptr, [&] {
                             ImGui::DragFloat("##distance", &spotLights_[i].distance, 0.1f, 0.1f, 100.0f, "%.2f");

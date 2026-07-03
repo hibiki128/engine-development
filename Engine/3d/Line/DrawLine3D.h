@@ -21,7 +21,7 @@ class DrawLine3D {
     /// public constant
     /// ===================================================
 
-    static const UINT kMaxLineCount = 65536; // 最大線数
+    static const UINT kMaxLineCount = 655360; // 最大線数
     static const UINT kVertexCountLine = 2;  // 線の頂点数
     static const UINT kIndexCountLine = 0;   // 線のインデックス数
 
@@ -98,6 +98,17 @@ class DrawLine3D {
     /// </summary>
     /// <param name="viewProjection">ビュープロジェクション</param>
     void Draw(const ViewProjection &viewProjection);
+
+    /// <summary>
+    /// 現在蓄積済みの線分を、外部提供の viewProject 定数バッファで描画する（Reset しない）。
+    /// GPUパーティクルのプレビュー窓など、シーンとは別カメラで同じデバッグ線
+    /// （フィールド枠・ギャザー点など）を再表示するために使う。
+    /// RT / ビューポート / ディスクリプタヒープは呼び出し側で設定済みであること。
+    /// この後に本来の Draw(sceneVP) が同じ線をシーンVPで描画し Reset する。
+    /// </summary>
+    /// <param name="cl">記録先コマンドリスト</param>
+    /// <param name="viewProjCB">viewProject 行列(Matrix4x4)を格納した定数バッファの GPU アドレス</param>
+    void DrawWithExternalCB(ID3D12GraphicsCommandList *cl, D3D12_GPU_VIRTUAL_ADDRESS viewProjCB);
 
     /// <summary>
     /// グリッド描画

@@ -134,15 +134,17 @@ void TextRenderer::CreateCharacterAtlasSprite(
 
 void TextRenderer::UpdateImGui() {
 #ifdef _DEBUG
-    if (!ImGui::Begin("テキストレンダラー (TextRenderer)")) {
+    if (!ImGui::Begin("テキストレンダラー (TextRenderer)", nullptr, ImGuiWindowFlags_NoFocusOnAppearing)) {
         ImGui::End();
         return;
     }
 
-    // 作成モードをRadioButtonで切り替える
+    // 作成モードを RadioButton で切り替える（くすみ緑のアクセント）
+    ImGui::PushStyleColor(ImGuiCol_CheckMark, ImVec4(0.45f, 0.68f, 0.52f, 1.0f));
     ImGui::RadioButton("テキストスプライト", &imguiMode_, 0);
     ImGui::SameLine();
     ImGui::RadioButton("アトラススプライト", &imguiMode_, 1);
+    ImGui::PopStyleColor();
     ImGui::Separator();
 
     std::vector<std::string> fontKeys = TextureManager::GetInstance()->GetAllFontKeys();

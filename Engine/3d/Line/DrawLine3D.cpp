@@ -78,6 +78,19 @@ void DrawLine3D::Draw(const ViewProjection &viewProjection) {
     Reset();
 }
 
+void DrawLine3D::DrawWithExternalCB(ID3D12GraphicsCommandList *cl, D3D12_GPU_VIRTUAL_ADDRESS viewProjCB) {
+    if (indexLine_ == 0) {
+        return;
+    }
+    // Reset しない: この後シーン側の Draw(sceneVP) が同じ線をシーンVPで描画して Reset する。
+    // 定数バッファは自前の cBufferResource_ ではなく呼び出し側の CB を使う（VP をシーンと共有しないため）。
+    psoManager_->DrawCommonSetting(PipelineType::kLine3d);
+    D3D12_VERTEX_BUFFER_VIEW vbView = line_->vbView;
+    cl->IASetVertexBuffers(0, 1, &vbView);
+    cl->SetGraphicsRootConstantBufferView(0, viewProjCB);
+    cl->DrawInstanced(indexLine_ * 2, 1, 0, 0);
+}
+
 void DrawLine3D::DrawGrid(float y, int division, float size, Vector4 color) {
     // 分割数が無効な場合は何もしない
     if (division <= 0 || size <= 0.0f) {

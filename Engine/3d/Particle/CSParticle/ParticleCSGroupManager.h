@@ -83,18 +83,22 @@ class ParticleCSGroupManager {
     void CreatePrimitiveParticleCSGroup(const std::string &groupName, PrimitiveType type, uint32_t maxParticleCount = 10000, const std::string &texturePath = {}, BlendMode blendMode = BlendMode::kAdd);
 
     /// <summary>
-    /// 名前を指定してGPUパーティクルグループを取得
+    /// 名前を指定してGPUパーティクルグループを取得する。
+    /// 起動時に全 .json を確保するのをやめ、未生成のテンプレートは
+    /// ここで初めて JSON メタデータから遅延生成する。これにより
+    /// 実際に使われないグループの maxParticleCount 分の GPU バッファ確保を防ぐ。
     /// </summary>
     /// <param name="name">グループ名</param>
-    /// <returns>ParticleCSGroup*: 該当グループ（なければ nullptr）</returns>
-    ParticleCSGroup *GetParticleCSGroup(const std::string &name) {
-        for (const auto &group : particleGroups_) {
-            if (group->GetGroupName() == name) {
-                return group.get();
-            }
-        }
-        return nullptr;
-    }
+    /// <returns>ParticleCSGroup*: 該当グループ（登録が無ければ nullptr）</returns>
+    ParticleCSGroup *GetParticleCSGroup(const std::string &name);
+
+    /// <summary>
+    /// 登録済み（未生成のものも含む）全グループ名を返す。
+    /// 遅延生成により particleGroups_ には未確保のものがあるため、
+    /// メタデータ登録簿を基準に列挙する（主にエディタの一覧表示用）。
+    /// </summary>
+    /// <returns>グループ名の一覧（名前順）</returns>
+    std::vector<std::string> GetAllGroupNames() const;
 
     std::unique_ptr<ParticleCSGroup> CreateParticleCSGroupCopy(const std::string &name) {
         ParticleCSGroup *originalGroup = GetParticleCSGroup(name);
@@ -198,6 +202,8 @@ class ParticleCSGroupManager {
     // 名前を指定してパーティクルグループを削除する
     // particleGroups_ と independentGroups_ の両方から探して削除する
     void RemoveParticleCSGroup(const std::string &groupName) {
+        // メタデータ登録簿からも削除（以降の遅延生成・一覧表示から除外する）
+        groupDescs_.erase(groupName);
         // particleGroups_ から削除
         particleGroups_.erase(
             std::remove_if(particleGroups_.begin(), particleGroups_.end(),
@@ -225,10 +231,33 @@ class ParticleCSGroupManager {
 
   private:
     /// ===================================================
+    /// private methods
+    /// ===================================================
+
+    // JSON から読み出したグループ生成用メタデータ。
+    // 起動時はこれだけを保持し、実体(GPUバッファ)は要求時に遅延生成する。
+    struct GroupDesc {
+        std::string groupName;
+        std::string texturePath;
+        std::string modelPath;
+        uint32_t maxParticleCount = 10000;
+        BlendMode blendMode = BlendMode::kAdd;
+        PrimitiveType primitiveType = PrimitiveType::None;
+    };
+
+    // メタデータからテンプレートグループを生成し particleGroups_ へ登録する。
+    // Initialize からの一括生成と違い JSON への保存は行わない（読み込み専用の遅延生成）。
+    ParticleCSGroup *LoadGroupFromDesc(const GroupDesc &desc);
+
+    /// ===================================================
     /// private variaus
     /// ===================================================
 
     std::vector<std::unique_ptr<ParticleCSGroup>> particleGroups_;
+
+    // 全グループの生成用メタデータ登録簿（グループ名 → メタデータ）。
+    // 起動時に .json を走査してここへ登録し、実体は使用時に遅延生成する。
+    std::unordered_map<std::string, GroupDesc> groupDescs_;
 
     // 現在エミッターに割り当て中の独立グループ
     std::vector<std::unique_ptr<ParticleCSGroup>> independentGroups_;
