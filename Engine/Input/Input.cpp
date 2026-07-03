@@ -70,7 +70,9 @@ void Input::Update() {
     keyboard_->Acquire();
     keyboard_->GetDeviceState(sizeof(key_), key_.data());
 
+    // マウスの更新
     mouse_->Update();
+    // ゲームパッドの更新
     gamePad_->Update();
 
     for (auto &joystick : joysticks_) {
