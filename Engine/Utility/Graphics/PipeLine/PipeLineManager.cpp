@@ -545,8 +545,15 @@ Microsoft::WRL::ComPtr<ID3D12RootSignature> PipeLineManager::CreateGPUParticleRo
     descriptorRangeAliveCount[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
     descriptorRangeAliveCount[0].OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
 
+    // ★ t4: SoA 回転バッファ (VertexShaderで使用、回転グループのみ参照)
+    D3D12_DESCRIPTOR_RANGE descriptorRangeRotation[1] = {};
+    descriptorRangeRotation[0].BaseShaderRegister = 4; // register(t4)
+    descriptorRangeRotation[0].NumDescriptors = 1;
+    descriptorRangeRotation[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+    descriptorRangeRotation[0].OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+
     // RootParameter作成。複数設定できるので配列。
-    D3D12_ROOT_PARAMETER rootParameters[6] = {}; // b0,t0,t1(tex),b1,t2,t3
+    D3D12_ROOT_PARAMETER rootParameters[7] = {}; // b0,t0(DrawCore),t1(tex),b1,t2,t3,t4(Rotation)
 
     // b0: PerView用のConstantBufferView (VertexShaderで使用)
     rootParameters[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
@@ -581,6 +588,12 @@ Microsoft::WRL::ComPtr<ID3D12RootSignature> PipeLineManager::CreateGPUParticleRo
     rootParameters[5].ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX;
     rootParameters[5].DescriptorTable.pDescriptorRanges = descriptorRangeAliveCount;
     rootParameters[5].DescriptorTable.NumDescriptorRanges = _countof(descriptorRangeAliveCount);
+
+    // ★ t4: SoA 回転バッファ (VertexShaderで使用)
+    rootParameters[6].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+    rootParameters[6].ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX;
+    rootParameters[6].DescriptorTable.pDescriptorRanges = descriptorRangeRotation;
+    rootParameters[6].DescriptorTable.NumDescriptorRanges = _countof(descriptorRangeRotation);
 
     descriptionRootSignature.pParameters = rootParameters;
     descriptionRootSignature.NumParameters = _countof(rootParameters);

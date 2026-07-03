@@ -1,14 +1,48 @@
 #include "Audio.h"
 #include "Utility/Debug/ImGui/ImGuiNotification.h"
+#include <Debug/Log/Logger.h>
 #include <cassert>
+#include <cmath>
+#include <cstring>
 #include <fstream>
 
 #ifdef _DEBUG
 #include "imgui.h"
 #include "Utility/Debug/ImGui/Debugui_improved.h"
+#include <implot.h>
 #endif // _DEBUG
 
 namespace Hagine {
+
+namespace {
+// PCM の 1 サンプル（1 チャンネル分）を [-1,1] の float へ正規化する。
+//   bits      : ビット深度（8 / 16 / 32）
+//   formatTag : WAVEFORMATEX.wFormatTag（32bit が float か整数かの判定に使う）
+float NormalizeSample(const uint8_t *p, uint16_t bits, uint16_t formatTag) {
+    switch (bits) {
+    case 8:
+        // 8bit PCM は符号なし（128 が無音）
+        return (static_cast<float>(*p) - 128.0f) / 128.0f;
+    case 16: {
+        int16_t v = 0;
+        std::memcpy(&v, p, sizeof(v));
+        return static_cast<float>(v) / 32768.0f;
+    }
+    case 32: {
+        if (formatTag == WAVE_FORMAT_IEEE_FLOAT) {
+            float v = 0.0f;
+            std::memcpy(&v, p, sizeof(v));
+            return v;
+        }
+        int32_t v = 0;
+        std::memcpy(&v, p, sizeof(v));
+        return static_cast<float>(v) / 2147483648.0f;
+    }
+    default:
+        return 0.0f;
+    }
+}
+} // namespace
 void Audio::Initialize(const std::string &directoryPath) {
     HRESULT hr;
 
@@ -32,15 +66,21 @@ uint32_t Audio::LoadWave(const std::string &filename) {
 
     std::ifstream file;
     file.open(fullPath, std::ios_base::binary);
-    assert(file.is_open());
+    if (!file.is_open()) {
+        Logger::Error("Failed to open audio file: \"" + fullPath + "\". The file was not found.");
+        assert(file.is_open());
+        return UINT32_MAX;
+    }
 
     RiffHeader riff;
     file.read((char *)&riff, sizeof(riff));
 
     if (strncmp(riff.chunk.id, "RIFF", 4) != 0) {
+        Logger::Error("Invalid audio file (missing RIFF header): \"" + fullPath + "\".");
         assert(0);
     }
     if (strncmp(riff.type, "WAVE", 4) != 0) {
+        Logger::Error("Invalid audio file (not WAVE format): \"" + fullPath + "\".");
         assert(0);
     }
 
@@ -59,6 +99,7 @@ uint32_t Audio::LoadWave(const std::string &filename) {
     }
 
     if (strncmp(format.chunk.id, "fmt ", 4) != 0) {
+        Logger::Error("Invalid audio file (missing fmt chunk): \"" + fullPath + "\".");
         assert(0);
     }
 
@@ -72,6 +113,7 @@ uint32_t Audio::LoadWave(const std::string &filename) {
     }
 
     if (strncmp(data.id, "data", 4) != 0) {
+        Logger::Error("Invalid audio file (missing data chunk): \"" + fullPath + "\".");
         assert(0);
     }
 
@@ -267,6 +309,144 @@ uint32_t Audio::DebugResolveIndex(const std::string &filename) const {
     return UINT32_MAX;
 }
 
+float Audio::GetCurrentAmplitude() const {
+    float maxAmp = 0.0f;
+
+    for (auto &voice : voices_) {
+        if (!voice || !voice->sourceVoice) {
+            continue;
+        }
+        uint32_t index = voice->handle;
+        if (index >= soundDatas_.size()) {
+            continue;
+        }
+        const SoundData &sd = soundDatas_[index];
+        const WAVEFORMATEX &fmt = sd.wfex;
+        const uint16_t channels = fmt.nChannels ? fmt.nChannels : 1;
+        const uint16_t bits = fmt.wBitsPerSample;
+        const uint8_t *data = sd.buffer.data();
+        const size_t bytes = sd.buffer.size();
+        if (!data || bytes == 0 || bits == 0) {
+            continue;
+        }
+        const size_t bytesPerSample = bits / 8u;
+        const size_t frameBytes = bytesPerSample * channels;
+        if (frameBytes == 0) {
+            continue;
+        }
+        const size_t totalFrames = bytes / frameBytes;
+        if (totalFrames == 0) {
+            continue;
+        }
+
+        XAUDIO2_VOICE_STATE state{};
+        voice->sourceVoice->GetState(&state);
+        // 再生位置（ループ再生で SamplesPlayed が総数を超えるためモジュロで巻き戻す）
+        const size_t curFrame = static_cast<size_t>(state.SamplesPlayed % totalFrames);
+
+        // 現在位置からの短い窓（約20ms）でピーク（最大絶対値）を取る。
+        // ピークは RMS よりビート/打撃音に反応が良く、振動が音に合って見える。
+        // 窓内は最大256点に間引いて一定コストにする。
+        size_t window = (fmt.nSamplesPerSec ? fmt.nSamplesPerSec : 44100u) / 50u; // 20ms 相当
+        if (window < 64) {
+            window = 64;
+        }
+        const size_t step = (window / 256u) + 1u;
+
+        float peak = 0.0f;
+        for (size_t k = 0; k < window; k += step) {
+            const size_t fr = (curFrame + k) % totalFrames;
+            float s = 0.0f;
+            for (uint16_t ch = 0; ch < channels; ++ch) {
+                s += NormalizeSample(data + fr * frameBytes + ch * bytesPerSample, bits, fmt.wFormatTag);
+            }
+            s /= static_cast<float>(channels);
+            const float a = s < 0.0f ? -s : s;
+            if (a > peak) {
+                peak = a;
+            }
+        }
+
+        if (peak > maxAmp) {
+            maxAmp = peak;
+        }
+    }
+
+    return maxAmp;
+}
+
+#ifdef _DEBUG
+void Audio::DebugBuildWaveform(uint32_t index) {
+    debugWaveformIndex_ = static_cast<int>(index);
+    debugWaveformX_.clear();
+    debugWaveformMin_.clear();
+    debugWaveformMax_.clear();
+
+    if (index >= soundDatas_.size()) {
+        return;
+    }
+    const SoundData &sd = soundDatas_[index];
+    const WAVEFORMATEX &fmt = sd.wfex;
+    const uint16_t channels = fmt.nChannels ? fmt.nChannels : 1;
+    const uint16_t bits = fmt.wBitsPerSample;
+    const uint8_t *data = sd.buffer.data();
+    const size_t bytes = sd.buffer.size();
+    if (!data || bytes == 0 || bits == 0) {
+        return;
+    }
+
+    const size_t bytesPerSample = bits / 8u;
+    const size_t frameBytes = bytesPerSample * channels;
+    if (frameBytes == 0) {
+        return;
+    }
+    const size_t totalFrames = bytes / frameBytes;
+    if (totalFrames == 0) {
+        return;
+    }
+
+    // 1 フレーム分のサンプルを [-1,1] の float に正規化して取り出す
+    auto sampleAt = [&](size_t frame, uint16_t ch) -> float {
+        const uint8_t *p = data + frame * frameBytes + ch * bytesPerSample;
+        return NormalizeSample(p, bits, fmt.wFormatTag);
+    };
+
+    const int buckets = 600;
+    debugWaveformX_.resize(buckets);
+    debugWaveformMin_.assign(buckets, 0.0f);
+    debugWaveformMax_.assign(buckets, 0.0f);
+
+    for (int b = 0; b < buckets; ++b) {
+        debugWaveformX_[b] = static_cast<float>(b);
+
+        size_t start = static_cast<size_t>((static_cast<double>(b) / buckets) * totalFrames);
+        size_t end = static_cast<size_t>((static_cast<double>(b + 1) / buckets) * totalFrames);
+        if (end <= start) {
+            end = start + 1;
+        }
+        if (end > totalFrames) {
+            end = totalFrames;
+        }
+
+        // 長尺でも一定コストに収めるためバケット内を間引いて走査する
+        size_t step = ((end - start) / 256u) + 1u;
+        float mn = 1.0f;
+        float mx = -1.0f;
+        for (size_t fr = start; fr < end; fr += step) {
+            float s = 0.0f;
+            for (uint16_t ch = 0; ch < channels; ++ch) {
+                s += sampleAt(fr, ch);
+            }
+            s /= static_cast<float>(channels);
+            mn = (s < mn) ? s : mn;
+            mx = (s > mx) ? s : mx;
+        }
+        debugWaveformMin_[b] = mn;
+        debugWaveformMax_[b] = mx;
+    }
+}
+#endif // _DEBUG
+
 //==============================================================================
 // Debug() 本体
 //==============================================================================
@@ -275,18 +455,18 @@ void Audio::Debug() {
 #ifdef _DEBUG
     // ── マスター音量 ──
     SectionHeader("[ マスター ]", DebugTheme::kAccentBlue);
-    ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kTextDim);
-    ImGui::TextUnformatted("マスター音量");
-    ImGui::PopStyleColor();
-    ImGui::SetNextItemWidth(-1);
-    ImGui::PushStyleColor(ImGuiCol_SliderGrab, DebugTheme::kAccentBlue);
-    ImGui::PushStyleColor(ImGuiCol_SliderGrabActive, DebugTheme::kAccentBlue);
-    if (ImGui::SliderFloat("##master", &debugMasterVolume_, 0.0f, 1.0f, "%.2f")) {
-        if (masterVoice_) {
-            masterVoice_->SetVolume(debugMasterVolume_);
+    {
+        // 回転ノブで中央寄せ表示する
+        const float knobSize = 64.0f;
+        ImGui::SetCursorPosX(ImGui::GetCursorPosX() +
+                             (ImGui::GetContentRegionAvail().x - knobSize) * 0.5f);
+        if (ThemedKnob("音量##master", &debugMasterVolume_, 0.0f, 1.0f, "%.2f",
+                       DebugTheme::kAccentBlue, knobSize)) {
+            if (masterVoice_) {
+                masterVoice_->SetVolume(debugMasterVolume_);
+            }
         }
     }
-    ImGui::PopStyleColor(2);
 
     ImGui::Spacing();
 
@@ -343,9 +523,9 @@ void Audio::Debug() {
             StatusBadge("未ロード", DebugTheme::kAccentOrange);
         }
 
-        // 再生パラメータ
-        ImGui::SetNextItemWidth(-1);
-        ImGui::SliderFloat("##vol", &debugVolume_, 0.0f, 1.0f, "音量 %.2f");
+        // 再生パラメータ（音量は回転ノブ）
+        ThemedKnob("再生音量##vol", &debugVolume_, 0.0f, 1.0f, "%.2f",
+                   DebugTheme::kAccentCyan, 52.0f);
         ImGui::Checkbox("ループ再生", &debugLoop_);
 
         ImGui::Spacing();
@@ -435,6 +615,37 @@ void Audio::Debug() {
                                 sd.wfex.wBitsPerSample,
                                 sd.wfex.nAvgBytesPerSec);
                     ImGui::PopStyleColor();
+                }
+
+                // 波形プレビュー（PCM の min/max エンベロープを ImPlot で描画）
+                // 選択音が変わったときだけ再構築する
+                if (debugWaveformIndex_ != static_cast<int>(idx)) {
+                    DebugBuildWaveform(idx);
+                }
+                if (!debugWaveformMax_.empty()) {
+                    ImGui::Spacing();
+                    if (ImPlot::BeginPlot("##waveform", ImVec2(-1.0f, 90.0f), ImPlotFlags_CanvasOnly)) {
+                        ImPlot::SetupAxes(nullptr, nullptr,
+                                          ImPlotAxisFlags_NoDecorations,
+                                          ImPlotAxisFlags_NoDecorations);
+                        const double bucketCount = static_cast<double>(debugWaveformMax_.size());
+                        ImPlot::SetupAxesLimits(0.0, bucketCount, -1.05, 1.05, ImPlotCond_Always);
+
+                        const int count = static_cast<int>(debugWaveformMax_.size());
+                        // 振幅エンベロープ（min〜max を塗り）
+                        ImPlot::SetNextFillStyle(DebugTheme::kAccentCyan, 0.55f);
+                        ImPlot::PlotShaded("##env", debugWaveformX_.data(),
+                                           debugWaveformMin_.data(),
+                                           debugWaveformMax_.data(), count);
+
+                        // 再生ヘッド（再生中のみ縦線で表示）
+                        if (playing && duration > 0.0f) {
+                            double head = (position / duration) * bucketCount;
+                            ImPlot::SetNextLineStyle(DebugTheme::kAccentOrange, 2.0f);
+                            ImPlot::PlotInfLines("##playhead", &head, 1);
+                        }
+                        ImPlot::EndPlot();
+                    }
                 }
             }
         }

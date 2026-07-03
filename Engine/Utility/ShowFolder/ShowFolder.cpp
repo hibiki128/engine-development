@@ -2,6 +2,7 @@
 #define IMGUI_DEFINE_MATH_OPERATORS
 #define NOMINMAX
 #include "ShowFolder.h"
+#include "Utility/Debug/ImGui/AssetDragDrop.h"
 #include <Graphics/Texture/TextureManager.h>
 #include <algorithm>
 #include <icon/IconsFontAwesome5.h>
@@ -53,6 +54,20 @@ void ShowTextureFile(std::string &selectedTexturePath) {
 
     filter.Draw("##texsearch", ImGui::GetContentRegionAvail().x);
     ImGui::Spacing();
+
+    // アセットブラウザからのドラッグ&ドロップ受け口。
+    // ここに画像をドロップすると、現在のテクスチャ選択（selectedTexturePath）を差し替える。
+    {
+        ImGui::PushStyleColor(ImGuiCol_Button, {0.25f, 0.32f, 0.40f, 0.6f});
+        ImGui::Button("＋ ここにアセットをドロップしてテクスチャ設定", ImVec2(-1, 0));
+        ImGui::PopStyleColor();
+        std::string dropped;
+        if (AssetDragDrop::TextureTarget(dropped))
+            selectedTexturePath = dropped;
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("アセットブラウザの画像をドラッグ&ドロップで設定できます");
+        ImGui::Spacing();
+    }
 
     std::vector<std::string> folders, files;
     try {

@@ -145,7 +145,7 @@ class TextureManager {
 
     bool isDDS_ = false;
 
-    // ImGuiが0番を使用するため1番から使用するSRVインデックスの開始番号
+    // SRVインデックスのオフセット（=1）。エンジン共通の +1 規約（.cpp 参照）。
     static uint32_t kSRVIndexTop;
 };
 } // namespace Hagine

@@ -29,6 +29,11 @@ class Mesh {
     void PrimitiveInitialize(const PrimitiveType &type);
 
     /// <summary>
+    /// プリミティブ初期化（分割数・形状パラメータ指定版）
+    /// </summary>
+    void PrimitiveInitialize(const PrimitiveType &type, const PrimitiveParams &params);
+
+    /// <summary>
     /// Getter
     /// </summary>
     MeshData &GetMeshData() { return meshData_; }

@@ -9,6 +9,7 @@
 #include <Shadow/ShadowMap.h>
 #include <Utility/Debug/ImGui/ImGuiNotification.h>
 #include <ShowFolder/ShowFolder.h>
+#include "Render/DrawGroupManager.h"
 #include <filesystem>
 
 namespace Hagine {
@@ -41,6 +42,7 @@ void SpriteManager::RegisterSprite(const std::string &name, const std::string &t
 
     sprites_.push_back(std::move(spriteData));
     UpdateSpriteInstances(sprites_.back().get());
+    DrawGroupManager::GetInstance()->RegisterGroup(sprites_.back()->drawGroup); // 所属グループを登録
 #ifdef _DEBUG
     // instanceData[0].translation の xy をギズモで直接編集できるよう登録
     ImGuizmoManager::GetInstance()->AddTarget(
@@ -1133,6 +1135,7 @@ void SpriteManager::LoadAllSprites() {
             sprite->blendMode = static_cast<BlendMode>(blendModeInt);
             sprite->lockAspectRatio = lockAspectRatio;
             sprite->drawGroup = drawGroup;
+            DrawGroupManager::GetInstance()->RegisterGroup(drawGroup);
 
             // 保存されたインスタンスデータを反映する
             for (int idx = 0; idx < savedInstCount && idx < (int)sprite->instanceData.size(); ++idx) {

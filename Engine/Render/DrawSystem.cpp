@@ -1,6 +1,7 @@
 #include "DrawSystem.h"
 #include "DirectXCommon.h"
 #include "Collider/CollisionManager.h"
+#include "Debug/GpuProfiler/GpuProfiler.h"
 #include "Data/DataHandler.h"
 #include "Utility/Debug/ImGui/ImGuiNotification.h"
 #include "Graphics/Srv/SrvManager.h"
@@ -93,6 +94,9 @@ OffScreen *DrawSystem::GetStageOffScreen(int stageIndex) {
 // -------------------------------------------------------
 
 void DrawSystem::Draw(const ViewProjection &vp) {
+    // GPU プロファイラ: フレーム先頭で ring を進め、過去フレームの結果を取り込む
+    GpuProfiler::GetInstance()->BeginFrame();
+
     // ─── GPU パーティクル Compute フェーズ（全エミッターを一括実行して Direct Queue に Wait 挿入）───
     {
         for (auto &entry : entries_) {
@@ -106,6 +110,9 @@ void DrawSystem::Draw(const ViewProjection &vp) {
         // （Compute=シミュレーションのみここで実行。Graphics はプレビューに隔離済み）
         ParticleCSEditor::GetInstance()->DrawAllCompute(vp);
 #endif
+
+        // Compute スパンを Execute 前に resolve（リストが閉じる前に記録する必要がある）
+        GpuProfiler::GetInstance()->ResolveCompute(dxCommon_->GetComputeCommandList().Get());
 
         // 記録が無ければ ExecuteComputeCommands は自己ガードで no-op、Wait も signaled 済み値への待ちで無害。
         dxCommon_->ExecuteComputeCommands();
@@ -190,6 +197,7 @@ void DrawSystem::Draw(const ViewProjection &vp) {
     }
 
     if (!lastOffScreen) {
+        GpuProfiler::GetInstance()->ResolveGraphics(dxCommon_->GetCommandList().Get());
         ParticleEditor::GetInstance()->UpdateFrameStats();
         return;
     }
@@ -211,6 +219,9 @@ void DrawSystem::Draw(const ViewProjection &vp) {
 
     // ─── finalResult（フルフレーム）をバックバッファへコピー ───
     lastOffScreen->CopyFinalResultToBackBuffer();
+
+    // Graphics スパンを resolve（描画コマンド記録が全て済んだ後・リスト Close 前）
+    GpuProfiler::GetInstance()->ResolveGraphics(dxCommon_->GetCommandList().Get());
 
     ParticleEditor::GetInstance()->UpdateFrameStats();
 }
@@ -331,7 +342,7 @@ void DrawSystem::UpdateImGui(bool *open) {
         }
         ImGui::EndChild();
         ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kTextDim);
-        ImGui::TextWrapped("上から順に描画（各Stageにポストエフェクト適用、UI Layerは最前面合成）");
+        ImGui::TextUnformatted("↑ 上から順に描画（各Stageにポストエフェクト適用、UI Layerは最前面合成）");
         ImGui::PopStyleColor();
 
         // --- ステージ追加（現状未対応） ---
@@ -340,7 +351,7 @@ void DrawSystem::UpdateImGui(bool *open) {
         // 動的RTV確保に対応するまで CreateStage() はUIから呼ばない。
         ImGui::Spacing();
         ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kTextDim);
-        ImGui::TextWrapped("＊ステージ追加は現在のエンジン構成では未対応です（OffScreenがRTVスロットを共有しているため）");
+        ImGui::TextWrapped("※ ステージ追加は現在のエンジン構成では未対応です（OffScreenがRTVスロットを共有しているため）。");
         ImGui::PopStyleColor();
 
         // ───────────────────────────────────────────────
@@ -462,11 +473,11 @@ void DrawSystem::UpdateImGui(bool *open) {
         ImGui::SameLine();
         ImGui::BeginGroup();
         ImGui::Dummy(ImVec2(0, 60));
-        if (moveButton("->##mvR", !leftSel.empty() && !sameStage)) {
+        if (moveButton("→##mvR", !leftSel.empty() && !sameStage)) {
             moveEntries(leftStage, rightStage, leftSel);
         }
         ImGui::SetItemTooltip("選択を右のステージへ移動");
-        if (moveButton("<-##mvL", !rightSel.empty() && !sameStage)) {
+        if (moveButton("←##mvL", !rightSel.empty() && !sameStage)) {
             moveEntries(rightStage, leftStage, rightSel);
         }
         ImGui::SetItemTooltip("選択を左のステージへ移動");

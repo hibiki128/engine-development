@@ -25,17 +25,17 @@ void ParticleCSGroupManager::Initialize() {
                 continue;
             }
 
-            std::string texturePath = data.Load<std::string>("textureName", "");
-            std::string modelPath = data.Load<std::string>("modelfilePath", "");
-            uint32_t maxParticleCount = data.Load<uint32_t>("maxParticleCount", 10000);
-            BlendMode blendMode = data.Load<BlendMode>("blendMode", BlendMode::kAdd);
-            PrimitiveType type = data.Load<PrimitiveType>("primitiveType", PrimitiveType::None);
-
-            if (!modelPath.empty()) {
-                CreateParticleCSGroup(loadedGroupName, modelPath, maxParticleCount, texturePath, blendMode);
-            } else if (type != PrimitiveType::None) {
-                CreatePrimitiveParticleCSGroup(loadedGroupName, type, maxParticleCount, texturePath, blendMode);
-            }
+            // ここではメタデータの登録のみ行い、実体(GPUバッファ)は確保しない。
+            // 実際に確保するのはエミッター等が名前で要求した時（GetParticleCSGroup での遅延生成）。
+            // これにより起動時に全 .json 分の maxParticleCount バッファを確保する無駄を無くす。
+            GroupDesc desc;
+            desc.groupName = loadedGroupName;
+            desc.texturePath = data.Load<std::string>("textureName", "");
+            desc.modelPath = data.Load<std::string>("modelfilePath", "");
+            desc.maxParticleCount = data.Load<uint32_t>("maxParticleCount", 10000);
+            desc.blendMode = data.Load<BlendMode>("blendMode", BlendMode::kAdd);
+            desc.primitiveType = data.Load<PrimitiveType>("primitiveType", PrimitiveType::None);
+            groupDescs_[loadedGroupName] = std::move(desc);
         }
     }
 }
@@ -44,6 +44,46 @@ void ParticleCSGroupManager::Finalize() {
     particleGroups_.clear();
     independentGroups_.clear();
     groupPool_.clear();
+    groupDescs_.clear();
+}
+
+ParticleCSGroup *ParticleCSGroupManager::GetParticleCSGroup(const std::string &name) {
+    // 既に実体化済みなら返す
+    for (const auto &group : particleGroups_) {
+        if (group->GetGroupName() == name) {
+            return group.get();
+        }
+    }
+    // 未生成: メタデータ登録簿にあれば、この時点で初めて遅延生成する
+    auto it = groupDescs_.find(name);
+    if (it != groupDescs_.end()) {
+        return LoadGroupFromDesc(it->second);
+    }
+    return nullptr;
+}
+
+ParticleCSGroup *ParticleCSGroupManager::LoadGroupFromDesc(const GroupDesc &desc) {
+    auto particleGroup = std::make_unique<ParticleCSGroup>();
+    if (!desc.modelPath.empty()) {
+        particleGroup->CreateParticleGroup(desc.groupName, desc.modelPath, desc.maxParticleCount, desc.texturePath, desc.blendMode);
+    } else if (desc.primitiveType != PrimitiveType::None) {
+        particleGroup->CreatePrimitiveParticleGroup(desc.groupName, desc.primitiveType, desc.maxParticleCount, desc.texturePath, desc.blendMode);
+    } else {
+        return nullptr;
+    }
+    ParticleCSGroup *groupPtr = particleGroup.get();
+    particleGroups_.emplace_back(std::move(particleGroup));
+    return groupPtr;
+}
+
+std::vector<std::string> ParticleCSGroupManager::GetAllGroupNames() const {
+    std::vector<std::string> names;
+    names.reserve(groupDescs_.size());
+    for (const auto &[name, desc] : groupDescs_) {
+        names.push_back(name);
+    }
+    std::sort(names.begin(), names.end());
+    return names;
 }
 
 void ParticleCSGroupManager::CreateParticleCSGroup(const std::string &groupName, const std::string &fileName, uint32_t maxParticleCount, const std::string &texturePath, BlendMode blendMode) {
@@ -69,6 +109,18 @@ void ParticleCSGroupManager::AddParticleCSGroup(std::unique_ptr<ParticleCSGroup>
     data.Save("primitiveType", particleCSGroup->GetPrimitiveType());
     data.Save("maxParticleCount", particleCSGroup->GetSettingsData()->maxParticleCount);
     data.Save("blendMode", particleCSGroup->GetParticleGroupData().blendMode);
+
+    // エディタ等で新規生成されたグループも登録簿へ登録し、一覧表示と
+    // （破棄後の）遅延再生成の対象に含める。
+    GroupDesc desc;
+    desc.groupName = particleCSGroup->GetGroupName();
+    desc.texturePath = textureFilePath;
+    desc.modelPath = particleCSGroup->GetModelPath();
+    desc.maxParticleCount = particleCSGroup->GetSettingsData()->maxParticleCount;
+    desc.blendMode = particleCSGroup->GetParticleGroupData().blendMode;
+    desc.primitiveType = particleCSGroup->GetPrimitiveType();
+    groupDescs_[desc.groupName] = std::move(desc);
+
     particleGroups_.emplace_back(std::move(particleCSGroup));
 }
 } // namespace Hagine

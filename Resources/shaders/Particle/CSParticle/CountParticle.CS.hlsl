@@ -2,7 +2,8 @@
 
 ConstantBuffer<ParticleCSSettings> gSettings : register(b0);
 RWStructuredBuffer<uint> gAliveCount : register(u0);
-RWStructuredBuffer<Particle> gParticles : register(u1);
+// SoA: 生存判定は Life バッファ(lifeTime>0)で行う
+RWStructuredBuffer<float> gLife : register(u1);
 
 groupshared uint groupAliveCount;
 
@@ -29,7 +30,7 @@ void main(uint3 GTid : SV_GroupThreadID, uint3 DTid : SV_DispatchThreadID)
     // 各スレッドがパーティクルをチェック
     if (particleIndex < gSettings.maxParticleCount)
     {
-        if (gParticles[particleIndex].color.a > 0.0f)
+        if (gLife[particleIndex] > 0.0f)
         {
             InterlockedAdd(groupAliveCount, 1);
         }

@@ -52,6 +52,18 @@ std::string ModelManager::CreatePrimitiveModel(PrimitiveType type, std::string t
     return uniqueKey;
 }
 
+std::string ModelManager::CreatePrimitiveModel(PrimitiveType type, std::string texPath, const PrimitiveParams &params) {
+    std::unique_ptr<Model> model = std::make_unique<Model>();
+    model->Initialize(modelCommon_);
+    model->CreatePrimitiveModel(type, texPath, params);
+    model->SetSrv(srvManager_);
+    // パラメータ版は頻繁に作り直されるので通知は出さない（ユニークキーのみ生成）
+    static int paramModelIndex = 0;
+    std::string uniqueKey = "PrimitiveParamModel_" + std::to_string(paramModelIndex++);
+    models_.insert(std::make_pair(uniqueKey, std::move(model)));
+    return uniqueKey;
+}
+
 Model *ModelManager::FindModel(const std::string &filePath) {
     // .gltfファイルの場合はファイルパスにユニークな識別子を使って検索
     if (filePath.substr(filePath.find_last_of(".") + 1) == "gltf") {

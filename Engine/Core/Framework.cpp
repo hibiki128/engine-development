@@ -1,5 +1,6 @@
 #include "Framework.h"
 #include "Utility/Debug/ImGui/ImGuiNotification.h"
+#include <Debug/Log/Logger.h>
 #include <Frame.h>
 #include <Shadow/ShadowMap.h>
 
@@ -24,6 +25,8 @@ void Framework::Run() {
 }
 
 void Framework::Initialize() {
+    Logger::Info("Application initialization started.");
+
     ///---------WinApp--------
     // WindowsAPIの初期化
     winApp_ = WinApp::GetInstance();
@@ -149,7 +152,6 @@ void Framework::Initialize() {
 
     ///-------SkyBox-------
     skyBox_ = SkyBox::GetInstance();
-    skyBox_->Initialize("debug/rostock_laage_airport_4k.dds");
     ///--------------------
 
     ///--------LightGroup------------
@@ -202,9 +204,13 @@ void Framework::Initialize() {
 
     /// 時間の初期化
     Frame::Init();
+
+    Logger::Info("Application initialization finished.");
 }
 
 void Framework::Finalize() {
+    Logger::Info("Application shutting down.");
+
     collisionManager_->Clear();
     sceneManager_->Finalize();
     sceneTransition_->Finalize();
@@ -345,6 +351,7 @@ void Framework::LoadResource() {
     textureManager_->LoadFontTexture("NotoSansJP-Medium.ttf", 100);
 
     ImGuiNotification::Post("全ての基本リソースを読み込みました", {0.2f, 0.8f, 0.2f, 1.0f});
+    Logger::Info("All base resources loaded.");
 }
 
 void Framework::PlaySounds() {

@@ -30,6 +30,82 @@ struct Particle
     float paddingScale;
 };
 
+// =============================================
+// SoA バッファ要素（C++ ParticleStruct.h の CSParticleXxx と**バイト単位で一致**）
+//   StructuredBuffer は 4 バイト境界のタイトパッキング（float3=12B / float4=16B）。
+//   gLife=float(4B) / gDrawCore=PDrawCore(36B) / gSimCore=PSimCore(12B)
+//   gTrail=PTrail(20B) / gRotation=PRotation(24B) / gOverride=uint2(8B)
+//   上記サイズは C++ 側 static_assert が固定している。
+//   scale 系は half pack（PackScaleXY/Z, UnpackScale3）、color は RGBA8 pack。
+// =============================================
+struct PDrawCore
+{
+    float3 translate; // 12B
+    uint scaleXY;     //  4B half(x)|half(y)<<16
+    uint scaleZ;      //  4B half(z)（上位16bitは空き）
+    float3 velocity;  // 12B
+    uint color;       //  4B RGBA8 パック（Pack/UnpackColorRGBA8 で変換）
+};
+
+struct PSimCore
+{
+    float currentTime;          // 4B
+    uint initialScaleXY;        // 4B half(x)|half(y)<<16
+    uint initialScaleZ_isTrail; // 4B 下位16bit=half(z) / 上位16bit=isTrailParticle(0/1)
+};
+
+struct PTrail
+{
+    uint parentIndex;
+    float3 lastTrailPosition;
+    float trailSpawnDistance;
+};
+
+struct PRotation
+{
+    float3 rotation;
+    float3 angularVelocity;
+};
+
+// color を RGBA8(unorm) 1 word に圧縮/復元する。
+//   バッファ境界(load/store)でのみ使い、計算は従来通り float4 で行う。
+//   範囲は [0,1] にクランプ（粒子色は加算/通常ブレンド前提で十分）。
+uint PackColorRGBA8(float4 c)
+{
+    uint4 q = (uint4) (saturate(c) * 255.0f + 0.5f);
+    return q.r | (q.g << 8) | (q.b << 16) | (q.a << 24);
+}
+
+float4 UnpackColorRGBA8(uint p)
+{
+    return float4(p & 0xFFu, (p >> 8) & 0xFFu, (p >> 16) & 0xFFu, (p >> 24) & 0xFFu) * (1.0f / 255.0f);
+}
+
+// scale 系（描画scale / initialScale）を half3 にパック/復元する。
+//   視覚用途のみで半精度(fp16)で十分。translate/velocity には使わない
+//   （位置精度の低下・速度積分のドリフト/ジッタを避けるため）。
+//   StructuredBuffer は 4B 境界なので half3(6B) は置けず、f32tof16 で
+//   xy=1word / z=1word に詰める。z word の上位16bit は空き
+//   （SimCore では isTrailParticle をそこへ同梱する）。
+uint PackScaleXY(float3 s)
+{
+    return f32tof16(s.x) | (f32tof16(s.y) << 16);
+}
+uint PackScaleZ(float3 s)
+{
+    return f32tof16(s.z);
+}
+// z word（DrawCore は scaleZ、SimCore は initialScaleZ_isTrail）の下位16bitのみ参照。
+float3 UnpackScale3(uint xy, uint z)
+{
+    return float3(f16tof32(xy & 0xFFFFu), f16tof32(xy >> 16), f16tof32(z & 0xFFFFu));
+}
+// SimCore の z word: 下位16bit=half(z) / 上位16bit=isTrailParticle(0/1)。
+uint PackScaleZTrail(float3 s, uint isTrail)
+{
+    return f32tof16(s.z) | ((isTrail & 0xFFFFu) << 16);
+}
+
 Particle CreateEmptyParticle()
 {
     Particle p;
@@ -88,6 +164,17 @@ struct PerView
     uint enableVelocityStretch;
     float velocityStretchFactor;
     uint enableRotation; // 1=回転あり / 0=回転なし（VSで回転行列計算をスキップ）
+    // ---- 描画カリング (overdraw 対策)。C++ PerView と一致させること ----
+    float3 cameraPosition;     // 距離計算用カメラワールド座標
+    uint enableDistanceCull;   // 1=距離フェード+カリング
+    float distanceCullStart;   // フェード開始距離
+    float distanceCullEnd;     // 完全カリング距離
+    float projScaleY;          // projection[1][1]（画面サイズ計算用）
+    uint enableSizeClamp;      // 1=画面サイズ上限+微小カリング
+    float maxScreenHeight;     // 画面上の最大高さ(NDC)。超過分はスケール縮小
+    float minScreenHeight;     // これ未満の画面高さは微小カリング(0=無効)
+    float drawCullPad0;
+    float drawCullPad1;
 };
 
 struct EmitterMesh
@@ -102,6 +189,8 @@ struct EmitterMesh
     uint emit;
     uint edgeCount;
     float3 anchorPoint;
+    // 発生数ゲートの上書き値。0=通常(gSettings.emitCount)、>0=この値を発生数に使う（フィールド接触Emit用）
+    uint emitCountOverride;
 };
 
 struct PerFrame
@@ -211,6 +300,28 @@ struct ParticleCSSettings
     float emitSphereRadius;
     float emitConeAngle;
     float emitShapePad;
+    // ---- カラーグラデーション (N段 LUT を CB 同梱)。C++ ParticleCSSettings と一致させること ----
+    uint enableColorGradient; // 1=colorLUT を色に使う（start/mid/end/random を上書き）
+    float colorGradPad0;
+    float colorGradPad1;
+    float colorGradPad2;
+    uint4 colorLUT[64];       // 256段 RGBA8。idx の色 = colorLUT[idx>>2][idx&3]
+    // ---- 寿命カーブ(サイズ/アルファ倍率) LUT。C++ ParticleCSSettings と一致させること ----
+    uint enableSizeCurve;     // 1=scale に sizeCurveLUT を乗算
+    uint enableAlphaCurve;    // 1=color.a に alphaCurveLUT を乗算
+    float lifeCurvePad0;
+    float lifeCurvePad1;
+    float4 sizeCurveLUT[64];  // 256段 float 倍率。idx の倍率 = sizeCurveLUT[idx>>2][idx&3]
+    float4 alphaCurveLUT[64];
+    // ---- 音声振動（音の立ち上がりでバンっと揺らす）。C++ ParticleCSSettings 末尾と一致させること ----
+    uint enableAudioVibration;       // 1=今流れている音量で各粒子を揺らす
+    float audioVibrationStrength;    // 振動の大きさ（揺れ幅）
+    float audioVibrationSensitivity; // 感度（音の立ち上がりに掛ける入力ゲイン）
+    float audioAmplitude;            // 音の立ち上がりエンベロープ[0,1]（CPU注入。ビートで跳ね時間で減衰＝振動の駆動）
+    float audioVibrationFrequency;   // 振動の速さ（Hz的スケール。大きいほど細かく震える）
+    float audioAttackSharpness;      // 反応カーブ指数（>1で大きい音だけドンと反応・小さい音は無視）
+    float audioReleaseRate;          // エンベロープ減衰速度[1/s]（CPUが使用。shaderは未使用）
+    float audioPad0;                 // 16B境界パディング
 };
 
 // 【重要】このレイアウトは C++ 側 `struct ParticleFieldData`

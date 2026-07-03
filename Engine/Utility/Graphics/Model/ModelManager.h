@@ -53,6 +53,11 @@ class ModelManager {
     /// <param name="type"></param>
     std::string CreatePrimitiveModel(PrimitiveType type, std::string texPath);
 
+    /// <summary>
+    /// プリミティブモデルの作成（分割数・形状パラメータ指定版）
+    /// </summary>
+    std::string CreatePrimitiveModel(PrimitiveType type, std::string texPath, const PrimitiveParams &params);
+
   public:
     std::unordered_map<std::string, std::unique_ptr<Model>> models_;
 

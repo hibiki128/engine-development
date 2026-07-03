@@ -5,10 +5,23 @@ ConstantBuffer<EmitterMesh> gEmitterMesh : register(b0);
 ConstantBuffer<PerFrame> gPerFrame : register(b1);
 ConstantBuffer<ParticleCSSettings> gSettings : register(b2);
 ConstantBuffer<FieldCountCB> gFieldCB : register(b3);
-RWStructuredBuffer<Particle> gParticles : register(u0);
-RWStructuredBuffer<int> gFreeListIndex : register(u1);
-RWStructuredBuffer<uint> gFreeList : register(u2);
-RWStructuredBuffer<int> gFreeListTailIndex : register(u3);
+// SoA バッファ（u0-u5）
+RWStructuredBuffer<float>     gLife     : register(u0);
+RWStructuredBuffer<PDrawCore> gDrawCore : register(u1);
+RWStructuredBuffer<PSimCore>  gSimCore  : register(u2);
+RWStructuredBuffer<PTrail>    gTrail    : register(u3);
+RWStructuredBuffer<PRotation> gRotation : register(u4);
+RWStructuredBuffer<uint2>     gOverride : register(u5);
+// フリーリスト（u6-u8）
+RWStructuredBuffer<int>  gFreeListIndex     : register(u6);
+RWStructuredBuffer<uint> gFreeList          : register(u7);
+RWStructuredBuffer<int>  gFreeListTailIndex : register(u8);
+// 生存リスト間接ディスパッチ（§8）: 新規粒子を out リストへ append する。
+//   out リスト = [今フレームEmitした粒子] + [Update後も生存した粒子]。
+//   描画用 renderCompact にも同じ idx で書き、今フレームから即描画する（1F遅延なし）。
+RWStructuredBuffer<uint>      gAliveList     : register(u9);  // out: 生存slot indexリスト
+RWStructuredBuffer<uint>      gAliveCounter  : register(u10); // out: リスト長(append位置のアトミックカウンタ)
+RWStructuredBuffer<PDrawCore> gRenderCompact : register(u11); // out: 描画データ(詰めた順)
 StructuredBuffer<TriangleInfo> gTriangles : register(t0);
 StructuredBuffer<float> gTriangleCDF : register(t1);
 StructuredBuffer<EdgeInfo> gEdges : register(t2);
@@ -142,7 +155,12 @@ bool TryFieldContactEmit(inout RandomGenerator rng, float3x3 rotMatrix,
 
     static const int kMaxRetry = 32;
 
-    if (gEmitterMesh.triangleCount > 0)
+    // エッジ発生モード(2)が選ばれ辺があれば辺を、そうでなければ三角形を優先。
+    // 三角形が無ければ辺、それも無ければ点にフォールバックする。
+    bool useEdges = (gEmitterMesh.edgeCount > 0) &&
+                    (gEmitterMesh.emitFromSurface == 2 || gEmitterMesh.triangleCount == 0);
+
+    if (!useEdges && gEmitterMesh.triangleCount > 0)
     {
         // ---- メッシュエミッター: CDF面積加重でリトライ ----
         [loop]
@@ -209,7 +227,12 @@ void main(uint3 DTid : SV_DispatchThreadID)
     if (gEmitterMesh.emit == 0)
         return;
 
-    if (DTid.x >= gSettings.emitCount)
+    // 発生数のゲート。フィールド接触Emitモードでは gEmitterMesh.emitCountOverride が発生数を決める。
+    // （通常モードは override=0 なのでグループ設定 gSettings.emitCount を使う）
+    uint effectiveEmitCount = (gEmitterMesh.emitCountOverride > 0u)
+                                  ? gEmitterMesh.emitCountOverride
+                                  : gSettings.emitCount;
+    if (DTid.x >= effectiveEmitCount)
         return;
 
     // -------------------------------------------------------
@@ -345,23 +368,39 @@ void main(uint3 DTid : SV_DispatchThreadID)
     }
 
     // -------------------------------------------------------
-    // パーティクル初期化
+    // パーティクル初期化（SoA: 各バッファへローカルに組んで1回ずつ書き出す）
+    //   endScale は廃止（Update で gSettings.endScaleValue を直読み）
     // -------------------------------------------------------
-    float scaleValue = lerp(gSettings.scaleMin, gSettings.scaleMax, generator.Generate1d());
-    gParticles[particleIndex].scale = float3(scaleValue, scaleValue, scaleValue);
-    gParticles[particleIndex].initialScale = float3(scaleValue, scaleValue, scaleValue);
-    gParticles[particleIndex].translate = emitPosition;
-    gParticles[particleIndex].lastTrailPosition = emitPosition;
+    PDrawCore dc;
+    PSimCore sc;
+    PTrail tr;
+    PRotation rot;
 
-    if (gSettings.enableRandomColor)
+    float scaleValue = lerp(gSettings.scaleMin, gSettings.scaleMax, generator.Generate1d());
+    float3 scale3 = float3(scaleValue, scaleValue, scaleValue);
+    dc.scaleXY = PackScaleXY(scale3);
+    dc.scaleZ = PackScaleZ(scale3);
+    sc.initialScaleXY = PackScaleXY(scale3);
+    sc.initialScaleZ_isTrail = PackScaleZTrail(scale3, 0u); // 通常パーティクル isTrail=0
+    dc.translate = emitPosition;
+    tr.lastTrailPosition = emitPosition;
+
+    float4 emitColor;
+    if (gSettings.enableColorGradient)
     {
-        gParticles[particleIndex].color.rgb = generator.Generate3d() * 0.5f + 0.5f;
-        gParticles[particleIndex].color.a = 1.0f;
+        // グラデーション有効時は発生フレームから始点色(LUT[0])で描画する（次フレーム以降は Update が更新）
+        emitColor = UnpackColorRGBA8(gSettings.colorLUT[0].x);
+    }
+    else if (gSettings.enableRandomColor)
+    {
+        emitColor.rgb = generator.Generate3d() * 0.5f + 0.5f;
+        emitColor.a = 1.0f;
     }
     else
     {
-        gParticles[particleIndex].color = gSettings.startColor;
+        emitColor = gSettings.startColor;
     }
+    dc.color = PackColorRGBA8(emitColor);
 
     float3 vel;
     if (gSettings.enableRadialVelocity)
@@ -384,46 +423,60 @@ void main(uint3 DTid : SV_DispatchThreadID)
             lerp(gSettings.velocityMin.z, gSettings.velocityMax.z, generator.Generate1d())
         );
     }
-    gParticles[particleIndex].velocity = vel;
+    dc.velocity = vel;
 
-    gParticles[particleIndex].lifeTime = lerp(gSettings.lifeTimeMin, gSettings.lifeTimeMax, generator.Generate1d());
-    gParticles[particleIndex].currentTime = 0.0f;
+    float life = lerp(gSettings.lifeTimeMin, gSettings.lifeTimeMax, generator.Generate1d());
 
     // フィールドにヒットしていれば lifeTime をフィールド値で上書き
     if (hitFieldIndex >= 0 && gFields[hitFieldIndex].emitSpawnLifeTimeMax > 0.0f)
     {
-        gParticles[particleIndex].lifeTime = lerp(
+        life = lerp(
             gFields[hitFieldIndex].emitSpawnLifeTimeMin,
             gFields[hitFieldIndex].emitSpawnLifeTimeMax,
             generator.Generate1d()
         );
     }
 
-    gParticles[particleIndex].isTrailParticle = 0;
-    gParticles[particleIndex].parentIndex = 0xFFFFFFFF;
-    gParticles[particleIndex].trailSpawnDistance = gSettings.trailSpawnDistance;
-    gParticles[particleIndex].settingsOverrideFlags = uint2(0u, 0u);
-    gParticles[particleIndex].endScale = gSettings.endScaleValue;
+    sc.currentTime = 0.0f;
+    // isTrailParticle(=0) は上の sc.initialScaleZ_isTrail に同梱済み
+    tr.parentIndex = 0xFFFFFFFF;
+    tr.trailSpawnDistance = gSettings.trailSpawnDistance;
 
     if (gSettings.enableRandomRotation)
     {
-        gParticles[particleIndex].rotation = float3(
+        rot.rotation = float3(
             lerp(gSettings.rotationMin.x, gSettings.rotationMax.x, generator.Generate1d()),
             lerp(gSettings.rotationMin.y, gSettings.rotationMax.y, generator.Generate1d()),
             lerp(gSettings.rotationMin.z, gSettings.rotationMax.z, generator.Generate1d())
         );
     }
     else
-        gParticles[particleIndex].rotation = float3(0, 0, 0);
+        rot.rotation = float3(0, 0, 0);
 
     if (gSettings.enableRandomAngularVelocity)
     {
-        gParticles[particleIndex].angularVelocity = float3(
+        rot.angularVelocity = float3(
             lerp(gSettings.angularVelocityMin.x, gSettings.angularVelocityMax.x, generator.Generate1d()),
             lerp(gSettings.angularVelocityMin.y, gSettings.angularVelocityMax.y, generator.Generate1d()),
             lerp(gSettings.angularVelocityMin.z, gSettings.angularVelocityMax.z, generator.Generate1d())
         );
     }
     else
-        gParticles[particleIndex].angularVelocity = float3(0, 0, 0);
+        rot.angularVelocity = float3(0, 0, 0);
+
+    // SoA バッファへ書き出し（Life は最後に書いてスロットを「生存」にする）
+    gDrawCore[particleIndex] = dc;
+    gSimCore[particleIndex] = sc;
+    gTrail[particleIndex] = tr;
+    gRotation[particleIndex] = rot;
+    gOverride[particleIndex] = uint2(0u, 0u);
+    gLife[particleIndex] = life;
+
+    // 生存リスト間接ディスパッチ（§8）: 新規粒子を out リストへ append する。
+    //   これにより次フレームの Update がこの粒子を sim 対象にする。
+    //   renderCompact にも同じ idx で書き、今フレームから即描画する（drawCount=out カウンタ）。
+    uint emitDst;
+    InterlockedAdd(gAliveCounter[0], 1, emitDst);
+    gAliveList[emitDst] = particleIndex;
+    gRenderCompact[emitDst] = dc;
 }

@@ -5,7 +5,6 @@
 #include "Object/Base/BaseObjectManager.h"
 #include"SpriteManager.h"
 #include <Audio.h>
-#include <functional>
 
 namespace Hagine {
 class ImGuizmoManager;
@@ -36,12 +35,6 @@ class ImGuiManager {
     void SetupTheme();
 
     /// <summary>
-    /// 「モーションエディター」ウィンドウの中身を描画するコールバックを設定する。
-    /// エンジンは具体的な MotionEditor（アプリ側機能）を知らずに済む。
-    /// </summary>
-    void SetMotionEditorDrawCallback(std::function<void()> cb) { motionEditorDrawCallback_ = std::move(cb); }
-
-    /// <summary>
     /// シングルトンインスタンスの取得
     /// </summary>
     /// <returns></returns>
@@ -69,6 +62,12 @@ class ImGuiManager {
     /// 画面への描画
     /// </summary>
     void Draw();
+
+    /// <summary>
+    /// マルチビューポート描画（ドックから切り離したウィンドウを独立OSウィンドウとして描画）。
+    /// メインビューポートの Present 後に呼ぶこと。
+    /// </summary>
+    void RenderMultiViewport();
 
     /// <summary>
     /// .iniファイル関連の更新
@@ -116,8 +115,10 @@ class ImGuiManager {
     Vector2 GetSceneSize() const {
         return Vector2(sceneTextureSize_.x, sceneTextureSize_.y);
     }
+    // レイ計算用のシーン位置（クライアント座標系。Mouse::GetMousePos と同じ空間）。
+    // マルチビューポートで ImGui 座標がスクリーン全体座標になってもマウスと整合させるため。
     Vector2 GetScenePos() const {
-        return Vector2(actualScenePos_.x, actualScenePos_.y);
+        return Vector2(scenePosForRay_.x, scenePosForRay_.y);
     }
 #endif // USE_IMGUI
 
@@ -157,8 +158,6 @@ class ImGuiManager {
 
     void ShowHierarchyWindow();
 
-    void ShowMotionEditorWindow();
-
     void ShowSpriteManagerWindow();
 
     void ShowColliderTagManagerWindow();
@@ -168,6 +167,9 @@ class ImGuiManager {
     void ShowShadowMapWindow();
 
     void ShowDrawSystemWindow();
+
+    // アセットブラウザ窓（resources/images をサムネ一覧表示、各サムネをD&Dのドラッグ元にする）
+    void ShowAssetBrowserWindow();
 
     void FixAspectRatio();
 
@@ -203,7 +205,8 @@ class ImGuiManager {
 
     // シーンウィンドウ
     ImVec2 sceneTextureSize_ = {800.0f, 450.0f};
-    ImVec2 actualScenePos_ = {};
+    ImVec2 actualScenePos_ = {};   // ImGui座標系（ImGuizmo用）
+    ImVec2 scenePosForRay_ = {};   // クライアント座標系（レイ計算用）
 
 #endif // USE_IMGUI
     int cubeCount_ = 0;
@@ -226,19 +229,17 @@ class ImGuiManager {
     bool showFPSView_ = true;
     bool showOfScreenView_ = true;
     bool showLightView_ = true;
-    bool isEditorMode_ = true; // エディターモードフラグ
+    bool isEditorMode_ = true;    // エディターモードフラグ
+    bool multiViewport_ = false;  // マルチビューポート有効フラグ
     bool showShortcutWindow_ = false;
     bool showGizmoView_ = true;
     bool showHierarchyView_ = true;
-    bool showMotionEditorView_ = true;
     bool showSpriteManagerView_ = true;
     bool showColliderTagManagerView_ = false;
     bool showAudioManagerView_ = false;
     bool showShadowMapView_ = true;
     bool showDrawSystemView_ = true;
-
-    // 「モーションエディター」ウィンドウの中身を描画するコールバック（アプリ側が差し込む）
-    std::function<void()> motionEditorDrawCallback_;
+    bool showAssetBrowserView_ = false; // アセットブラウザ窓
 
     // グリッド設定用メンバ変数
     bool showGrid_ = true;

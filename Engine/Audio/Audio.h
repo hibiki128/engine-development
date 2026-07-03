@@ -109,6 +109,13 @@ class Audio {
     void SetVolume(uint32_t soundIndex, float volume);
 
     /// <summary>
+    /// 今再生中の音の振幅[0,1]を返す（再生中ボイスのPCMを再生位置でRMSサンプリング）。
+    /// 複数再生中は最も大きい振幅を返す。何も再生していなければ0。
+    /// パーティクルの音声振動など、再生に影響しない読み取り専用の用途に使う。
+    /// </summary>
+    float GetCurrentAmplitude() const;
+
+    /// <summary>
     /// 終了
     /// </summary>
     void Finalize();
@@ -144,6 +151,9 @@ class Audio {
     /// ロード済みファイル名 → soundIndex を解決する（未ロードなら UINT32_MAX）
     uint32_t DebugResolveIndex(const std::string &filename) const;
 
+    /// 指定インデックスの PCM から表示用の波形エンベロープ（min/max）を構築しキャッシュする
+    void DebugBuildWaveform(uint32_t index);
+
   private:
     //------------------------------------------------------------------
     // 通常メンバ
@@ -172,5 +182,11 @@ class Audio {
     bool debugLoop_ = false;                         // ループフラグ
     float debugMasterVolume_ = 1.0f;                 // マスター音量
     std::map<std::string, uint32_t> debugLoadedMap_; // ファイル名 → soundIndex
+
+    // 波形プレビュー用キャッシュ（再構築は選択音が変わったときだけ）
+    int debugWaveformIndex_ = -1;          // キャッシュ中の soundIndex（-1=未構築）
+    std::vector<float> debugWaveformX_;    // X 座標（0..buckets-1）
+    std::vector<float> debugWaveformMin_;  // 各バケットの最小サンプル
+    std::vector<float> debugWaveformMax_;  // 各バケットの最大サンプル
 };
 } // namespace Hagine

@@ -45,6 +45,17 @@ class ParticleCSFieldManager {
     void RemoveField(int index);
     ParticleField *GetField(int index);
     int GetFieldCount() const { return static_cast<int>(fields_.size()); }
+    // GPU へ転送される「有効(enabled)」フィールド数。UploadToGPU が gFieldCB.fieldCount に
+    // 書き込む値と一致する（= シェーダが実際に走査する本数）。
+    // 軽量 Update バリアントの適格判定（フィールドの影響を受けないか）に使う。
+    int GetActiveFieldCount() const {
+        int count = 0;
+        for (const auto &f : fields_) {
+            if (f.enabled)
+                ++count;
+        }
+        return count;
+    }
     std::vector<ParticleField> &GetFields() { return fields_; }
 
     // --- フィールド生成（セーブ/ロード付き） ---

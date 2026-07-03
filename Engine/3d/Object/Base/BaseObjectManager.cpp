@@ -5,7 +5,7 @@
 #endif // _DEBUG
 #include <Debug/Log/Logger.h>
 #include <ShowFolder/ShowFolder.h>
-#include"Render/DrawSystem.h"
+#include "Render/DrawGroupManager.h"
 
 namespace Hagine {
 void BaseObjectManager::Finalize() {
@@ -42,10 +42,6 @@ void BaseObjectManager::RegisterExternal(BaseObject* obj) {
 #ifdef _DEBUG
     ImGuizmoManager::GetInstance()->AddTarget(name, obj);
 #endif
-    // アプリ側が差し込んだ登録フックを通知（MotionEditor 等）
-    for (auto &cb : registerObservers_) {
-        cb(obj);
-    }
     objects_.emplace(name, obj);
     ImGuiNotification::Post("オブジェクトを追加しました: " + name, {0.4f, 0.8f, 1.0f, 1.0f});
 }
@@ -886,7 +882,7 @@ void BaseObjectManager::LoadObjectFromJson(const std::string &startPath, const s
 
     this->AddObject(std::move(newObject));
     ImGuiNotification::Post("オブジェクトを読み込みました: " + objectName, {0.2f, 0.8f, 0.8f, 1.0f});
-    Logger::Log("オブジェクト読み込み完了: " + objectName + " (" + fullPath + ")");
+    Logger::Info("Object loaded: " + objectName + " (" + fullPath + ")");
 }
 
 void BaseObjectManager::RestoreParentChildRelationshipForObject(BaseObject *object) {

@@ -5,16 +5,29 @@
 ConstantBuffer<PerFrame> gPerFrame : register(b0);
 ConstantBuffer<ParticleCSSettings> gSettings : register(b1);
 ConstantBuffer<FieldCountCB> gFieldCB : register(b2);
-RWStructuredBuffer<Particle> gParticles : register(u0);
-RWStructuredBuffer<int> gFreeListIndex : register(u1);
-RWStructuredBuffer<uint> gFreeList : register(u2);
-RWStructuredBuffer<int> gFreeListTailIndex : register(u3);
-// 生存コンパクション用: 生存パーティクルの slot index を詰めて書き出す
-RWStructuredBuffer<uint> gAliveList : register(u4);
-// 生存コンパクション用: append 位置を返すアトミックカウンタ (各フレーム先頭で 0 にリセット)
-RWStructuredBuffer<uint> gAliveCounter : register(u5);
+// SoA バッファ（u0-u5）。Update は使う機能のバッファだけ load/store して帯域を削る。
+RWStructuredBuffer<float>     gLife     : register(u0);
+RWStructuredBuffer<PDrawCore> gDrawCore : register(u1);
+RWStructuredBuffer<PSimCore>  gSimCore  : register(u2);
+RWStructuredBuffer<PTrail>    gTrail    : register(u3);
+RWStructuredBuffer<PRotation> gRotation : register(u4);
+RWStructuredBuffer<uint2>     gOverride : register(u5);
+// フリーリスト（u6-u8）
+RWStructuredBuffer<int>  gFreeListIndex     : register(u6);
+RWStructuredBuffer<uint> gFreeList          : register(u7);
+RWStructuredBuffer<int>  gFreeListTailIndex : register(u8);
+// 生存コンパクション用（u9-u10）: 生存slot indexを詰める / append位置のアトミックカウンタ
+RWStructuredBuffer<uint> gAliveList    : register(u9);
+RWStructuredBuffer<uint> gAliveCounter : register(u10);
+// 描画コンパクション（u11）: 描画データ(DrawCore=40B)を詰めた順(instanceId順)に書き出す。
+// 描画VSはこれを順次読みして散乱gatherを排除する。
+RWStructuredBuffer<PDrawCore> gRenderCompact : register(u11);
 StructuredBuffer<ParticleField> gFields : register(t0);
 StructuredBuffer<ParticleFieldSettingsOverrideData> gFieldsOverride : register(t1);
+// 生存リスト間接ディスパッチ（§8）: 前フレームの out リスト = 今フレームの in（処理対象）。
+//   Update は全スロット走査をやめ、この in リストの tid 番目だけを sim する → O(生存数)。
+StructuredBuffer<uint> gAliveListIn    : register(t2); // in: 処理対象 slot index 列
+StructuredBuffer<uint> gAliveCounterIn : register(t3); // in: リスト長
 
 // =============================================
 // フィールド適用結果
@@ -343,26 +356,41 @@ void SpawnTrailParticles(inout Particle p, int particleIndex, float3 currentPosi
             gPerFrame.time + float(particleIndex) + float(i) * 0.1f
         );
 
-        gParticles[trailIndex].translate = spawnPosition;
-        gParticles[trailIndex].initialScale = parentCurrentScale * gSettings.trailScaleMultiplier;
-        gParticles[trailIndex].scale = gParticles[trailIndex].initialScale;
+        // 子トレイルスロットへ SoA バッファで書き込む（互いに素なスロットなので安全）。
+        float3 childInitialScale = parentCurrentScale * gSettings.trailScaleMultiplier;
 
-        if (gSettings.trailInheritVelocity != 0)
-        {
-            gParticles[trailIndex].velocity = parentVelocity * gSettings.trailVelocityScale;
-        }
-        else
-        {
-            gParticles[trailIndex].velocity = float3(0.0f, 0.0f, 0.0f);
-        }
+        PDrawCore cdc;
+        cdc.translate = spawnPosition;
+        cdc.scaleXY = PackScaleXY(childInitialScale);
+        cdc.scaleZ = PackScaleZ(childInitialScale);
+        cdc.velocity = (gSettings.trailInheritVelocity != 0)
+                           ? (parentVelocity * gSettings.trailVelocityScale)
+                           : float3(0.0f, 0.0f, 0.0f);
+        cdc.color = PackColorRGBA8(parentColor * gSettings.trailColorMultiplier);
+        gDrawCore[trailIndex] = cdc;
 
-        gParticles[trailIndex].color = parentColor * gSettings.trailColorMultiplier;
-        gParticles[trailIndex].lifeTime = trailLifeTime;
-        gParticles[trailIndex].currentTime = 0.0f;
-        gParticles[trailIndex].isTrailParticle = 1;
-        gParticles[trailIndex].parentIndex = particleIndex;
-        gParticles[trailIndex].lastTrailPosition = spawnPosition;
-        gParticles[trailIndex].trailSpawnDistance = gSettings.trailSpawnDistance;
+        PSimCore csc;
+        csc.currentTime = 0.0f;
+        csc.initialScaleXY = PackScaleXY(childInitialScale);
+        csc.initialScaleZ_isTrail = PackScaleZTrail(childInitialScale, 1u); // トレイル isTrail=1
+        gSimCore[trailIndex] = csc;
+
+        PTrail ctr;
+        ctr.parentIndex = particleIndex;
+        ctr.lastTrailPosition = spawnPosition;
+        ctr.trailSpawnDistance = gSettings.trailSpawnDistance;
+        gTrail[trailIndex] = ctr;
+
+        // Life は最後に書いてスロットを「生存」にする（次フレームから更新対象）
+        gLife[trailIndex] = trailLifeTime;
+
+        // 生存リスト間接ディスパッチ（§8）: 生成したトレイル子も out リストへ append する。
+        //   in リスト経由でしか sim しない設計のため、append しないと子が処理も描画もされない。
+        //   renderCompact にも同じ idx で書き、子を今フレームから即描画する。
+        uint trailDst;
+        InterlockedAdd(gAliveCounter[0], 1, trailDst);
+        gAliveList[trailDst] = (uint) trailIndex;
+        gRenderCompact[trailDst] = cdc;
     }
 
     // capped のときは移動区間を全消費して lastTrailPosition を currentPosition まで進め、
@@ -371,26 +399,68 @@ void SpawnTrailParticles(inout Particle p, int particleIndex, float3 currentPosi
     p.lastTrailPosition = lastPos + direction * consumedDistance;
 }
 
-[numthreads(1024, 1, 1)]
+// スレッドグループ256（C++ kFullUpdateThreadsPerGroup と一致必須）。
+// 演出多用でレジスタが多くオキュパンシが低いため、常駐ブロック数を増やす狙いで1024→256に縮小。
+// Wave 単位集約（下記 WaveActiveSum/WavePrefixSum 等）はブロックサイズ非依存なので正しさ不変。
+[numthreads(256, 1, 1)]
 void main(uint3 DTid : SV_DispatchThreadID)
 {
-    int particleIndex = DTid.x;
-    if (particleIndex >= (int) gSettings.maxParticleCount)
+    // 生存リスト間接ディスパッチ（§8）: 全スロット走査ではなく in リストの tid 番目だけ処理する。
+    //   tid >= リスト長 のスレッドは何もしない（早期 return。フル版は Wave 集約なのでバリア制約なし）。
+    uint tid = DTid.x;
+    if (tid >= gAliveCounterIn[0])
+        return;
+    int particleIndex = (int) gAliveListIn[tid];
+    if (particleIndex < 0 || particleIndex >= (int) gSettings.maxParticleCount)
         return;
 
     // =============================================
-    // グローバルメモリからローカルにコピー（1回のロードで済ます）
-    // 以降はローカル変数を読み書きし、最後に1回だけ書き戻す。
-    // p.xxx への散発的アクセスを排除して
-    // メモリ帯域を大幅に節約する。
+    // SoA ロード:
+    //   まず Life(4B) だけ読み、死亡/未使用スロット(lifeTime<=0)は
+    //   ここで離脱して残りのバッファを一切触らない（帯域の最大の削減点）。
+    //   生存スロットは DrawCore/SimCore を常時、Trail/Rotation/Override を
+    //   機能フラグに応じてのみ load する。以降は従来どおりローカル p を読み書きする。
     // =============================================
-    Particle p = gParticles[particleIndex];
-
-    // lifeTime <= 0 のスロットは未使用（Init時の初期値）なのでスキップする。
-    // color.a による判定から変更: startColor.a=0（完全透明スタート）を
-    // 設定した場合でも正常に更新が走るようにするため。
-    if (p.lifeTime <= 0.0f)
+    float lifeTime = gLife[particleIndex];
+    if (lifeTime <= 0.0f)
         return;
+
+    // 機能ゲート: 使う機能のバッファだけ load/store する
+    const bool useRotation = (gSettings.enableRandomRotation != 0 || gSettings.enableRandomAngularVelocity != 0);
+    const bool useOverride = (gFieldCB.fieldCount > 0);
+    const bool useTrail = (gSettings.enableTrail != 0 || gFieldCB.fieldCount > 0);
+
+    Particle p = (Particle) 0;
+    p.lifeTime = lifeTime;
+
+    PDrawCore dc = gDrawCore[particleIndex];
+    p.translate = dc.translate;
+    p.scale = UnpackScale3(dc.scaleXY, dc.scaleZ);
+    p.velocity = dc.velocity;
+    p.color = UnpackColorRGBA8(dc.color);
+
+    PSimCore sc = gSimCore[particleIndex];
+    p.currentTime = sc.currentTime;
+    p.initialScale = UnpackScale3(sc.initialScaleXY, sc.initialScaleZ_isTrail);
+    p.isTrailParticle = sc.initialScaleZ_isTrail >> 16; // 上位16bit = isTrailParticle
+
+    if (useTrail)
+    {
+        PTrail tr = gTrail[particleIndex];
+        p.parentIndex = tr.parentIndex;
+        p.lastTrailPosition = tr.lastTrailPosition;
+        p.trailSpawnDistance = tr.trailSpawnDistance;
+    }
+
+    if (useRotation)
+    {
+        PRotation rot = gRotation[particleIndex];
+        p.rotation = rot.rotation;
+        p.angularVelocity = rot.angularVelocity;
+    }
+
+    if (useOverride)
+        p.settingsOverrideFlags = gOverride[particleIndex];
         
         // 1. 加速度処理
     if (gSettings.enableAcceleration)
@@ -493,6 +563,39 @@ void main(uint3 DTid : SV_DispatchThreadID)
             sin(t + pz + 1.0471f) // 位相60°ずらして3軸をデコリレート
         ) * gSettings.turbulenceStrength;
         p.velocity += turbForce * gPerFrame.deltaTime;
+    }
+
+        // 7.1 音声振動（音の“立ち上がり”でバンっと揺らす）
+        //   各粒子は「自分固有のランダム方向」へ、高周波 sin 振動で震える。
+        //   揺れ幅 = 立ち上がりエンベロープ(audioAmplitude) × 感度 × 振動の大きさ。
+        //   ★audioAmplitude は CPU が onset(音量の増加分)で跳ね上げ時間で減衰させた値。
+        //     → 波形が大きくなった瞬間にバンっと強く震え、その後スッと落ち着く（＝振動っぽい）。
+        //   ★pow(・, audioAttackSharpness) で「大きい音だけドンと・小さい音は無視」を作る。
+        //   ★sin は反転するので velocity は発散しない（飛んでいかない）。
+        //   ★方向・位相・周波数を粒子ごとに散らすので「全体が同じ方向」にならずバラバラに動く。
+    if (gSettings.enableAudioVibration)
+    {
+        float fi = float(particleIndex);
+        // per-particle 固定ランダム方向（決定論的・毎フレーム不変）
+        float3 dir = float3(
+            frac(sin(fi * 12.9898f) * 43758.5453f) * 2.0f - 1.0f,
+            frac(sin(fi * 78.2330f) * 43758.5453f) * 2.0f - 1.0f,
+            frac(sin(fi * 37.7190f) * 43758.5453f) * 2.0f - 1.0f);
+        float dlen = length(dir);
+        if (dlen > 0.0001f)
+        {
+            dir /= dlen;
+            // per-particle 位相・周波数（organic に散らす）。基準周波数を粒子ごとに ±20% ジッタ。
+            float phase = frac(sin(fi * 45.13f) * 43758.5453f) * 6.28318f;
+            float freqJitter = 0.8f + frac(sin(fi * 98.71f) * 43758.5453f) * 0.4f;
+            float freq = max(gSettings.audioVibrationFrequency, 0.0f) * freqJitter;
+            float osc = sin(gPerFrame.time * freq + phase); // [-1,1] 高周波＝細かく震える
+            // 立ち上がりエンベロープに感度を掛け、反応カーブ(指数)で「大きい音だけドンと」に整形
+            float env = saturate(gSettings.audioAmplitude * gSettings.audioVibrationSensitivity);
+            env = pow(env, max(gSettings.audioAttackSharpness, 0.0001f));
+            float vib = osc * env * gSettings.audioVibrationStrength;
+            p.velocity += dir * vib * gPerFrame.deltaTime;
+        }
     }
 
         // 8. Curl Noise による速度場
@@ -635,8 +738,14 @@ void main(uint3 DTid : SV_DispatchThreadID)
 
         // 10. 各種パラメータ更新
     float lifeRatio = p.currentTime / p.lifeTime;
-        
-    if (!gSettings.enableRandomColor)
+
+    if (gSettings.enableColorGradient)
+    {
+        // N段カラーグラデーション: CPUがベイクした256段LUTをlifeRatioでサンプル（start/mid/end/random を上書き）
+        uint gi = (uint) (saturate(lifeRatio) * 255.0f + 0.5f);
+        p.color = UnpackColorRGBA8(gSettings.colorLUT[gi >> 2][gi & 3]);
+    }
+    else if (!gSettings.enableRandomColor)
     {
         float4 lerpedColor;
         if (gSettings.enableMidColor)
@@ -680,15 +789,27 @@ void main(uint3 DTid : SV_DispatchThreadID)
         }
         if (gSettings.enableEndScale)
         {
-            // initialScale→endScaleValue を lifeRatio で補間（既存の lifetimeMul/sinMul とは独立）
-            p.scale = lerp(p.initialScale, p.endScale, lifeRatio) * sinMul;
+            // initialScale→endScaleValue を lifeRatio で補間（per-particle endScale は廃止し設定値を直読み）
+            p.scale = lerp(p.initialScale, gSettings.endScaleValue, lifeRatio) * sinMul;
         }
         else if (gSettings.enableLifetimeScale || gSettings.enableSinScale)
         {
             p.scale = p.initialScale * lifetimeMul * sinMul;
         }
     }
-    
+
+        // 寿命カーブ: サイズ/アルファに倍率カーブを乗算（256段LUTをlifeRatioでサンプル）
+    if (gSettings.enableSizeCurve)
+    {
+        uint si = (uint) (saturate(lifeRatio) * 255.0f + 0.5f);
+        p.scale *= gSettings.sizeCurveLUT[si >> 2][si & 3];
+    }
+    if (gSettings.enableAlphaCurve)
+    {
+        uint ai = (uint) (saturate(lifeRatio) * 255.0f + 0.5f);
+        p.color.a *= gSettings.alphaCurveLUT[ai >> 2][ai & 3];
+    }
+
         // 回転更新
     p.rotation += p.angularVelocity * gPerFrame.deltaTime;
         
@@ -762,7 +883,44 @@ void main(uint3 DTid : SV_DispatchThreadID)
         gFreeList[slot] = particleIndex;
     }
 
-    gParticles[particleIndex] = p;
+    // =============================================
+    // SoA 書き戻し: 使った機能のバッファだけ store する。
+    // =============================================
+    gLife[particleIndex] = p.lifeTime;
+
+    PDrawCore odc;
+    odc.translate = p.translate;
+    odc.scaleXY = PackScaleXY(p.scale);
+    odc.scaleZ = PackScaleZ(p.scale);
+    odc.velocity = p.velocity;
+    odc.color = PackColorRGBA8(p.color);
+    gDrawCore[particleIndex] = odc;
+
+    PSimCore osc;
+    osc.currentTime = p.currentTime;
+    osc.initialScaleXY = PackScaleXY(p.initialScale);
+    osc.initialScaleZ_isTrail = PackScaleZTrail(p.initialScale, p.isTrailParticle);
+    gSimCore[particleIndex] = osc;
+
+    if (useTrail)
+    {
+        PTrail otr;
+        otr.parentIndex = p.parentIndex;
+        otr.lastTrailPosition = p.lastTrailPosition;
+        otr.trailSpawnDistance = p.trailSpawnDistance;
+        gTrail[particleIndex] = otr;
+    }
+
+    if (useRotation)
+    {
+        PRotation orot;
+        orot.rotation = p.rotation;
+        orot.angularVelocity = p.angularVelocity;
+        gRotation[particleIndex] = orot;
+    }
+
+    if (useOverride)
+        gOverride[particleIndex] = p.settingsOverrideFlags;
 
     // =============================================
     // 生存コンパクション
@@ -770,8 +928,8 @@ void main(uint3 DTid : SV_DispatchThreadID)
     //   aliveList の先頭から詰めて書き出す。
     //   描画側は aliveCounter 個だけ instance を発行すればよく、
     //   死亡スロットへの無駄な VS 起動（オーバードロー要因）を排除する。
-    //   ※ このフレームに新規生成されたトレイル子は、自身のスレッドが
-    //     既に早期 return しているため次フレームから描画対象になる（1F遅延・許容）。
+    //   ※ このフレームに新規生成されたトレイル子は SpawnTrailParticles 内で
+    //     out リスト/renderCompact へ即 append 済み（今フレームから描画、次フレームから sim）。
     // =============================================
     //   高速化: 生存スレッドが各自 InterlockedAdd すると高密度時に単一カウンタへ
     //   数万回の atomic が殺到し直列化する。Wave 内で生存数をまとめ、先頭レーンが
@@ -790,7 +948,11 @@ void main(uint3 DTid : SV_DispatchThreadID)
         waveBase = WaveReadLaneFirst(waveBase);
         if (alive)
         {
-            gAliveList[waveBase + laneOffset] = (uint) particleIndex;
+            uint dst = waveBase + laneOffset;
+            gAliveList[dst] = (uint) particleIndex;
+            // 描画データを詰めた順に書き出す（odc は上の DrawCore 書き戻しで構築済み）。
+            // 描画VSは gRenderCompact[instanceId] を順次読みできる。
+            gRenderCompact[dst] = odc;
         }
     }
 }

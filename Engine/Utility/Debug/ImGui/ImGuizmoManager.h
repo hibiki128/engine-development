@@ -156,7 +156,9 @@ class ImGuizmoManager {
     void AddTarget(const std::string &name, Sprite *sprite, bool selectable = true);
 
     void imgui();
-    void Update(const ImVec2 &scenePosition, const ImVec2 &sceneSize);
+    // sceneHovered: シーンウィンドウが他のImGuiウィンドウに覆われずホバーされているか。
+    //               false のときはクリックによるオブジェクト選択を行わない（誤操作防止）。
+    void Update(const ImVec2 &scenePosition, const ImVec2 &sceneSize, bool sceneHovered = true);
 
     /// 現在選択されている最初のオブジェクトを返す（BaseObject のみ対応）
     BaseObject *GetSelectedTarget();
@@ -209,7 +211,7 @@ class ImGuizmoManager {
 
   private:
     void ShowSelectedObjectImGui();
-    void HandleMouseSelection(const ImVec2 &scenePosition, const ImVec2 &sceneSize);
+    void HandleMouseSelection(const ImVec2 &scenePosition, const ImVec2 &sceneSize, bool sceneHovered);
     void CycleOverlapSelection();
     // GizmoTarget を受け取ってギズモを表示・操作する
     void DisplayGizmo();

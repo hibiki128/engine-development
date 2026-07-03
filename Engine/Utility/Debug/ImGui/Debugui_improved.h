@@ -6,6 +6,8 @@
 // ============================================================
 #ifdef _DEBUG
 
+// 回転ノブ（imgui-knobs）。imgui.h を使うため、本ヘッダは imgui.h の後に include する前提。
+#include <imgui-knobs.h>
 
 namespace Hagine {
 namespace DebugTheme {
@@ -138,6 +140,33 @@ static bool LabeledSlider(const char *label, const char *id,
     ImGui::PushStyleColor(ImGuiCol_SliderGrabActive, accentColor);
     bool changed = ImGui::SliderFloat(id, v, vmin, vmax, fmt);
     ImGui::PopStyleColor(2);
+    return changed;
+}
+
+// ------------------------------------------------------------
+// テーマ配色の回転ノブ（imgui-knobs / WiperOnly）
+//   label  : ノブ見出し兼 ID（## で表示名と ID を分離可）
+//   v      : 対象の値
+//   vmin/vmax: 範囲
+//   fmt    : 値の書式
+//   accent : インジケータ（ワイパー）色
+//   size   : ノブ直径 px（0 = 既定の 4 行ぶん）
+//   flags  : 追加フラグ（NoTitle / NoInput 等）
+// 戻り値: 値が変化したら true
+// ------------------------------------------------------------
+static bool ThemedKnob(const char *label, float *v,
+                       float vmin, float vmax,
+                       const char *fmt, ImVec4 accent,
+                       float size = 0.0f,
+                       ImGuiKnobFlags flags = ImGuiKnobFlags_ValueTooltip) {
+    const ImVec4 track = {accent.x, accent.y, accent.z, 0.22f};
+    const ImVec4 active = {accent.x, accent.y, accent.z, 1.0f};
+    ImGui::PushStyleColor(ImGuiCol_Button, track);         // ワイパー軌道（地）
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, accent); // インジケータ（ホバー）
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive, active);  // インジケータ（操作中）
+    bool changed = ImGuiKnobs::Knob(label, v, vmin, vmax, 0.0f, fmt,
+                                    ImGuiKnobVariant_WiperOnly, size, flags);
+    ImGui::PopStyleColor(3);
     return changed;
 }
 } // namespace Hagine

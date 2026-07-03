@@ -581,6 +581,15 @@ void Object3d::SetModel(const std::string &filePath) {
 void Object3d::DrawShadow(const WorldTransform &worldTransform) {
     if (!model_) return;
 
+    // スキニングを「現在フレームのポーズ」で適用してからシャドウマップへ描く。
+    // シャドウパスはメインパスより前に走るため、ここでスキニングしないと
+    // 後段メインパスでしか走らない＝シャドウは前フレームのスキン結果を使い、
+    // 自己影のUV/深度が1フレームずれてキャラ全身が影になってしまう（自己影バグ）。
+    if (model_->IsGltf() && model_->GetModelData().hasAnimations) {
+        objectCommon_->computeSkinningDrawCommonSetting();
+        model_->Update();
+    }
+
     Matrix4x4 localMatrix = MakeAffineMatrix(worldTransform.scale_, worldTransform.quateRotation_, worldTransform.translation_);
     Matrix4x4 worldMatrix = localMatrix;
     if (worldTransform.parent_) {

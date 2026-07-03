@@ -54,6 +54,11 @@ class Model {
     void CreatePrimitiveModel(const PrimitiveType &type, std::string texPath);
 
     /// <summary>
+    /// プリミティブモデル作成（分割数・形状パラメータ指定版）
+    /// </summary>
+    void CreatePrimitiveModel(const PrimitiveType &type, std::string texPath, const PrimitiveParams &params);
+
+    /// <summary>
     /// 更新処理
     /// </summary>
     void Update();
