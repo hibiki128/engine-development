@@ -152,6 +152,7 @@ void Framework::Initialize() {
 
     ///-------SkyBox-------
     skyBox_ = SkyBox::GetInstance();
+    skyBox_->Initialize("debug/rostock_laage_airport_4k.dds");
     ///--------------------
 
     ///--------LightGroup------------
