@@ -2,7 +2,9 @@
 #include "BaseObject.h"
 #include "BaseObjectManager.h"
 #include "Collider/CollisionManager.h"
+#include "Debug/CpuProfiler/CpuProfiler.h"
 #include "Frame/Frame.h"
+#include "Model/Material/Material.h"
 #include "Utility/Debug/ImGui/Debugui_improved.h"
 #include "Utility/Debug/ImGui/ImGuiNotification.h"
 #include "Scene/SceneManager.h"
@@ -78,13 +80,17 @@ void BaseObject::Init(const std::string objectName) {
 void BaseObject::Update() {
     if (obj3d_->GetHaveAnimation()) {
         // ループフラグはアニメーションごとに Object3d が内部管理する
+        HAGINE_CPU_PROFILE("Update/Objects/Anim");
         obj3d_->AnimationUpdate();
     }
     SetBlendMode(blendMode_);
 
     // リジッドボディの物理を更新（重力・速度積分）。
     // 衝突解消（押し出し）はこの後の CollisionManager::Update のコールバックで行う。
-    UpdatePhysics(Frame::DeltaTime());
+    {
+        HAGINE_CPU_PROFILE("Update/Objects/Phys");
+        UpdatePhysics(Frame::DeltaTime());
+    }
 }
 
 void BaseObject::Draw(const ViewProjection &viewProjection) {
@@ -1559,6 +1565,42 @@ void BaseObject::DebugObject() {
         // Blend mode
         if (ImGui::TreeNodeEx("ブレンドモード##bm", ImGuiTreeNodeFlags_SpanAvailWidth)) {
             ShowBlendModeCombo(blendMode_);
+            ImGui::TreePop();
+        }
+
+        // ノーマルマップ / 手続き的法線
+        if (ImGui::TreeNodeEx("ノーマルマップ##nm", ImGuiTreeNodeFlags_SpanAvailWidth)) {
+            if (Material *mat = GetMaterial((uint32_t)selMat)) {
+                MaterialData &md = mat->GetMaterialData();
+
+                // テクスチャ法線マップ
+                ImGui::PushStyleColor(ImGuiCol_CheckMark, DebugTheme::kAccentGreen);
+                ImGui::Checkbox("テクスチャ法線マップ##nmtex", &md.enableNormalMap);
+                ImGui::PopStyleColor();
+                if (md.enableNormalMap) {
+                    ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kTextDim);
+                    ImGui::Text("map: %s", md.hasNormalMapTexture ? md.normalMapFilePath.c_str() : "(未設定=albedo流用)");
+                    ImGui::PopStyleColor();
+                }
+
+                // 手続き的法線（両方ONなら PS は手続き的を優先）
+                ImGui::PushStyleColor(ImGuiCol_CheckMark, DebugTheme::kAccentGreen);
+                ImGui::Checkbox("手続き的法線##pn", &md.enableProceduralNormal);
+                ImGui::PopStyleColor();
+                ImGui::SetItemTooltip("テクスチャ不要。worldXZの高さ場から法線を摂動。両方ONなら手続き的が優先");
+                if (md.enableProceduralNormal) {
+                    ImGui::SetNextItemWidth(-1);
+                    ImGui::DragFloat("スケール##pns", &md.proceduralScale, 0.05f, 0.01f, 50.0f, "スケール %.2f");
+                }
+
+                // 法線の強さ（テクスチャ・手続き共通）
+                ImGui::SetNextItemWidth(-1);
+                ImGui::DragFloat("強さ##pnst", &md.normalStrength, 0.01f, 0.0f, 8.0f, "強さ %.2f");
+            } else {
+                ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kTextDim);
+                ImGui::TextUnformatted("マテリアルがありません");
+                ImGui::PopStyleColor();
+            }
             ImGui::TreePop();
         }
         ImGui::PopStyleColor(2);

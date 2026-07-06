@@ -1,5 +1,6 @@
 #include "Framework.h"
 #include "Utility/Debug/ImGui/ImGuiNotification.h"
+#include <Debug/CpuProfiler/CpuProfiler.h>
 #include <Debug/Log/Logger.h>
 #include <Frame.h>
 #include <Shadow/ShadowMap.h>
@@ -152,7 +153,6 @@ void Framework::Initialize() {
 
     ///-------SkyBox-------
     skyBox_ = SkyBox::GetInstance();
-    skyBox_->Initialize("debug/rostock_laage_airport_4k.dds");
     ///--------------------
 
     ///--------LightGroup------------
@@ -189,6 +189,10 @@ void Framework::Initialize() {
     shortcutManager_ = ShortcutManager::GetInstance();
     shortcutManager_->Initialize(input_);
     ///-----------------------------------
+
+    ///-------AttackManager-------
+    motionEditor_ = MotionEditor::GetInstance();
+    ///---------------------------
 
     ///-------SceneTransition-------
     sceneTransition_ = SceneTransition::GetInstance();
@@ -237,6 +241,7 @@ void Framework::Finalize() {
     srvManager_->Finalize();
     audio_->Finalize();
     lightGroup_->Finalize();
+    motionEditor_->Finalize();
     particleEditor_->Finalize();
     particleCSFieldManager_->Finalize();
     particleCSEditor_->Finalize();
@@ -326,23 +331,36 @@ void Framework::Update() {
     /// deltaTimeの更新
     Frame::Update();
 
-    particleCSFieldManager_->Update();
-
-    sceneManager_->Update();
-
-    baseObjectManager_->Update();
-
-    spriteManager_->UpdateAll(Frame::DeltaTime());
-
-    collisionManager_->Update();
-
-    LightGroup::GetInstance()->Update(*sceneManager_->GetBaseScene()->GetViewProjection());
-
-    input_->Update();
-
-    shortcutManager_->Update();
-
-    endRequest_ = winApp_->ProcessMessage();
+    {
+        HAGINE_CPU_PROFILE("Update/ParticleField");
+        particleCSFieldManager_->Update();
+    }
+    {
+        HAGINE_CPU_PROFILE("Update/Scene(logic+ImGui)");
+        sceneManager_->Update();
+    }
+    {
+        HAGINE_CPU_PROFILE("Update/Objects(anim+phys)");
+        baseObjectManager_->Update();
+    }
+    {
+        HAGINE_CPU_PROFILE("Update/Sprites");
+        spriteManager_->UpdateAll(Frame::DeltaTime());
+    }
+    {
+        HAGINE_CPU_PROFILE("Update/Collision");
+        collisionManager_->Update();
+    }
+    {
+        HAGINE_CPU_PROFILE("Update/Light");
+        LightGroup::GetInstance()->Update(*sceneManager_->GetBaseScene()->GetViewProjection());
+    }
+    {
+        HAGINE_CPU_PROFILE("Update/Input");
+        input_->Update();
+        shortcutManager_->Update();
+        endRequest_ = winApp_->ProcessMessage();
+    }
 }
 
 void Framework::LoadResource() {
@@ -350,6 +368,28 @@ void Framework::LoadResource() {
     textureManager_->LoadAllTextures();
 
     textureManager_->LoadFontTexture("NotoSansJP-Medium.ttf", 100);
+
+    particleEditor_->AddParticleEmitter("hitEmitter");
+    particleEditor_->AddParticleEmitter("bulletEmitter");
+    particleEditor_->AddParticleEmitter("enemyBulletEmitter");
+    particleEditor_->AddParticleEmitter("chageBullet");
+    particleEditor_->AddParticleEmitter("RushEmitter");
+    particleEditor_->AddParticleEmitter("punchEmitter");
+    particleEditor_->AddParticleEmitter("smokeEmitter");
+    particleCSEditor_->AddParticleEmitter("playerAura");
+    particleCSEditor_->AddParticleEmitter("FadeOut");
+    particleCSEditor_->AddParticleEmitter("death");
+    particleCSEditor_->AddParticleEmitter("death_arm");
+    particleCSEditor_->AddParticleEmitter("makan_main");
+    particleCSEditor_->AddParticleEmitter("makan_around");
+    particleCSEditor_->AddParticleEmitter("chargeEmitter");
+    particleCSEditor_->AddParticleEmitter("fireWork_explosion");
+    particleCSEditor_->AddParticleEmitter("fireWork_Trail");
+    particleCSEditor_->AddParticleEmitter("ChargeAura");
+    particleCSEditor_->AddParticleEmitter("enemyChargeAura");
+    particleCSEditor_->AddParticleEmitter("AroundField");
+   
+    particleCSFieldManager_->CreateField("GeneratedField", "GeneratedField");
 
     ImGuiNotification::Post("全ての基本リソースを読み込みました", {0.2f, 0.8f, 0.2f, 1.0f});
     Logger::Info("All base resources loaded.");

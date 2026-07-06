@@ -1,6 +1,7 @@
 #include "DrawSystem.h"
 #include "DirectXCommon.h"
 #include "Collider/CollisionManager.h"
+#include "Debug/CpuProfiler/CpuProfiler.h"
 #include "Debug/GpuProfiler/GpuProfiler.h"
 #include "Data/DataHandler.h"
 #include "Utility/Debug/ImGui/ImGuiNotification.h"
@@ -99,6 +100,7 @@ void DrawSystem::Draw(const ViewProjection &vp) {
 
     // ─── GPU パーティクル Compute フェーズ（全エミッターを一括実行して Direct Queue に Wait 挿入）───
     {
+        HAGINE_CPU_PROFILE("DS/ParticleCompute+Wait");
         for (auto &entry : entries_) {
             if (entry.enabled && entry.stageIndex == kGPUParticleCompute) {
                 entry.draw(vp);
@@ -127,19 +129,24 @@ void DrawSystem::Draw(const ViewProjection &vp) {
 #endif
 
     // ─── シャドウプレパス ───
-    ShadowMap *shadowMap = ShadowMap::GetInstance();
-    shadowMap->Update(); // 有効フラグをGPUバッファに反映（無効時もenabledを0にするため毎フレーム呼ぶ）
-    if (shadowMap->IsEnabled()) {
-        shadowMap->BeginShadowPass();
-        srvManager_->SetDescriptorHeap();
-        shadowMap->SetShadowPassActive(true);
-        for (auto &entry : entries_) {
-            if (entry.enabled && entry.stageIndex == 0) {
-                entry.draw(vp);
+    {
+        HAGINE_CPU_PROFILE("DS/ShadowRec");
+        ShadowMap *shadowMap = ShadowMap::GetInstance();
+        shadowMap->Update(); // 有効フラグをGPUバッファに反映（無効時もenabledを0にするため毎フレーム呼ぶ）
+        if (shadowMap->IsEnabled()) {
+            shadowMap->BeginShadowPass();
+            srvManager_->SetDescriptorHeap();
+            shadowMap->SetShadowPassActive(true);
+            int gpuShadow = GpuProfiler::GetInstance()->OpenGraphics(dxCommon_->GetCommandList().Get(), "Shadow");
+            for (auto &entry : entries_) {
+                if (entry.enabled && entry.stageIndex == 0) {
+                    entry.draw(vp);
+                }
             }
+            GpuProfiler::GetInstance()->Close(dxCommon_->GetCommandList().Get(), gpuShadow);
+            shadowMap->SetShadowPassActive(false);
+            shadowMap->EndShadowPass();
         }
-        shadowMap->SetShadowPassActive(false);
-        shadowMap->EndShadowPass();
     }
 
     // 登録済みステージ（kUILayer を除く）を昇順で処理
@@ -151,6 +158,10 @@ void DrawSystem::Draw(const ViewProjection &vp) {
 
     OffScreen *lastOffScreen = nullptr;
 
+    // ステージループ（本描画の記録＋ポストエフェクト）を計測。
+    // lastOffScreen は後段で使うのでブロック外で宣言している。
+    {
+    HAGINE_CPU_PROFILE("DS/StageLoop(scene+postfx)");
     for (size_t si = 0; si < sortedStages.size(); ++si) {
         int stageIdx = sortedStages[si];
         OffScreen *stageOS = stageOffScreens_.at(stageIdx);
@@ -164,11 +175,13 @@ void DrawSystem::Draw(const ViewProjection &vp) {
             stageOS->BlitToOffScreen(lastOffScreen->GetFinalResultSrvIndex());
         }
 
+        int gpuScene = GpuProfiler::GetInstance()->OpenGraphics(dxCommon_->GetCommandList().Get(), "Scene(不透明+UI等)");
         for (auto &entry : entries_) {
             if (entry.enabled && entry.stageIndex == stageIdx) {
                 entry.draw(vp);
             }
         }
+        GpuProfiler::GetInstance()->Close(dxCommon_->GetCommandList().Get(), gpuScene);
 
         // 注: GPUパーティクルエディタのエミッターは「プレビュー窓のみ」で確認する。
         // 以前はここで DrawAllGraphics(vp) を呼び現在のシーン offscreen にも描画していたが、
@@ -195,6 +208,7 @@ void DrawSystem::Draw(const ViewProjection &vp) {
 
         lastOffScreen = stageOS;
     }
+    } // DS/StageLoop
 
     if (!lastOffScreen) {
         GpuProfiler::GetInstance()->ResolveGraphics(dxCommon_->GetCommandList().Get());
@@ -203,6 +217,8 @@ void DrawSystem::Draw(const ViewProjection &vp) {
     }
 
     // ─── UI・シーン遷移を finalResult に合成 ───
+    {
+    HAGINE_CPU_PROFILE("DS/Composite+Copy");
     lastOffScreen->BeginCompositePass();
     srvManager_->SetDescriptorHeap();
 
@@ -219,6 +235,7 @@ void DrawSystem::Draw(const ViewProjection &vp) {
 
     // ─── finalResult（フルフレーム）をバックバッファへコピー ───
     lastOffScreen->CopyFinalResultToBackBuffer();
+    } // DS/Composite+Copy
 
     // Graphics スパンを resolve（描画コマンド記録が全て済んだ後・リスト Close 前）
     GpuProfiler::GetInstance()->ResolveGraphics(dxCommon_->GetCommandList().Get());

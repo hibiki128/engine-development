@@ -45,12 +45,21 @@ void GpuProfiler::EnsureInit() {
     rd.Format = DXGI_FORMAT_UNKNOWN;
     rd.SampleDesc.Count = 1;
     rd.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+    // Direct/Compute の両キューが同一 readback を書くとクロスキュー同時アクセスに
+    // なるため、キューごとに 1 本ずつ用意する。
     if (FAILED(device->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &rd,
                                                D3D12_RESOURCE_STATE_COPY_DEST, nullptr,
-                                               IID_PPV_ARGS(&readback_))))
+                                               IID_PPV_ARGS(&readbackGraphics_))))
         return;
-    readback_->SetName(L"GpuProfiler_Readback");
-    readback_->Map(0, nullptr, reinterpret_cast<void **>(&mapped_));
+    readbackGraphics_->SetName(L"GpuProfiler_Readback_Graphics");
+    readbackGraphics_->Map(0, nullptr, reinterpret_cast<void **>(&mappedGraphics_));
+
+    if (FAILED(device->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &rd,
+                                               D3D12_RESOURCE_STATE_COPY_DEST, nullptr,
+                                               IID_PPV_ARGS(&readbackCompute_))))
+        return;
+    readbackCompute_->SetName(L"GpuProfiler_Readback_Compute");
+    readbackCompute_->Map(0, nullptr, reinterpret_cast<void **>(&mappedCompute_));
 
     // キューごとのタイムスタンプ周波数（tick/秒）。Direct と Compute で異なりうる。
     if (auto *gq = dxCommon_->GetCommandQueue())
@@ -72,12 +81,13 @@ void GpuProfiler::BeginFrame() {
     pairCursor_ = 0;
     RingFrame &rf = rings_[ringIndex_];
 
-    if (rf.valid && mapped_) {
+    if (rf.valid && mappedGraphics_ && mappedCompute_) {
         results_.clear();
         const uint32_t ringBase = ringIndex_ * kSlotsPerRing;
         for (const auto &e : rf.entries) {
-            uint64_t t0 = mapped_[ringBase + e.pair * 2];
-            uint64_t t1 = mapped_[ringBase + e.pair * 2 + 1];
+            const uint64_t *src = e.isCompute ? mappedCompute_ : mappedGraphics_;
+            uint64_t t0 = src[ringBase + e.pair * 2];
+            uint64_t t1 = src[ringBase + e.pair * 2 + 1];
             uint64_t freq = e.isCompute ? freqCompute_ : freqGraphics_;
             double ms = (freq > 0 && t1 >= t0) ? static_cast<double>(t1 - t0) * 1000.0 / static_cast<double>(freq) : 0.0;
 
@@ -144,8 +154,9 @@ void GpuProfiler::Resolve(ID3D12GraphicsCommandList *cl, bool isCompute) {
         if (e.isCompute != isCompute)
             continue;
         uint32_t startSlot = ringBase + e.pair * 2;
+        ID3D12Resource *dst = isCompute ? readbackCompute_.Get() : readbackGraphics_.Get();
         cl->ResolveQueryData(queryHeap_.Get(), D3D12_QUERY_TYPE_TIMESTAMP,
-                             startSlot, 2, readback_.Get(),
+                             startSlot, 2, dst,
                              static_cast<UINT64>(startSlot) * sizeof(uint64_t));
     }
 }

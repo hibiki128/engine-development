@@ -15,12 +15,14 @@
 #include <algorithm>
 #include <filesystem>
 #include <map>
+#include <Application/Utility/MotionEditor/MotionEditor.h>
 #include <Data/DataHandler.h>
 #include <Frame/Frame.h>
 #include <Line/DrawLine3D.h>
 #include <Particle/CSParticle/ParticleCSFieldManager.h>
 #include <Render/DrawSystem.h>
 #include <Debug/GpuProfiler/GpuProfiler.h>
+#include <Debug/CpuProfiler/CpuProfiler.h>
 #include <Shadow/ShadowMap.h>
 #include <icon/IconsFontAwesome5.h>
 #include <imgui_impl_dx12.h>
@@ -400,6 +402,7 @@ void ImGuiManager::ShowMainMenu() {
                 windowToggle(ICON_FA_SQUARE " スプライトマネージャ", showSpriteManagerView_);
                 windowToggle(ICON_FA_SHAPES " コライダー", showColliderTagManagerView_);
                 windowToggle(ICON_FA_BULLHORN " オーディオ", showAudioManagerView_);
+                windowToggle(ICON_FA_CODE_BRANCH " モーションエディター", showMotionEditorView_);
 
                 ImGui::SeparatorText("パーティクル");
                 windowToggle(ICON_FA_STAR " パーティクルビュー", showParticleView_);
@@ -750,6 +753,9 @@ void ImGuiManager::ShowStatisticsWindow() {
     ParticleCSEditor::GetInstance()->ShowGPUParticleStatistics();
 
     ImGui::Separator();
+    CpuProfiler::GetInstance()->DrawImGui();
+
+    ImGui::Separator();
     GpuProfiler::GetInstance()->DrawImGui();
 
     ImGui::Separator();
@@ -842,6 +848,19 @@ void ImGuiManager::ShowHierarchyWindow() {
     ImGui::Begin("オブジェクトマネージャ", &showHierarchyView_, flags);
 
     baseObjectManager_->DrawHierarchyEditor();
+
+    ImGui::End();
+}
+
+void ImGuiManager::ShowMotionEditorWindow() {
+    if (!showMotionEditorView_)
+        return; // 表示しない場合は早期リターン
+
+    ImGuiWindowFlags flags = ImGuiWindowFlags_NoFocusOnAppearing;
+
+    ImGui::Begin("モーションエディター", &showMotionEditorView_, flags);
+
+    MotionEditor::GetInstance()->DrawImGui();
 
     ImGui::End();
 }
@@ -1180,6 +1199,8 @@ void ImGuiManager::ShowMainUI(OffScreen *offscreen) {
     ShowGizmoWindow();
     // 階層エディターウィンドウを描画
     ShowHierarchyWindow();
+    // モーションエディターウィンドウを描画
+    ShowMotionEditorWindow();
     // スプライトマネージャウィンドウを描画
     ShowSpriteManagerWindow();
     // コライダータグマネージャウィンドウを描画
@@ -1662,6 +1683,7 @@ void ImGuiManager::SaveFlag() {
     data->Save("showLightView", showLightView_);
     data->Save("showGizmoView", showGizmoView_);
     data->Save("showHierarchyView", showHierarchyView_);
+    data->Save("showMotionEditorView", showMotionEditorView_);
     data->Save("showShortcutWindow", showShortcutWindow_);
     data->Save("showSpriteManagerView", showSpriteManagerView_);
     data->Save("showShadowMapView", showShadowMapView_);
@@ -1687,6 +1709,7 @@ void ImGuiManager::LoadFlag() {
     showLightView_ = data->Load("showLightView", false);
     showGizmoView_ = data->Load("showGizmoView", false);
     showHierarchyView_ = data->Load("showHierarchyView", true);
+    showMotionEditorView_ = data->Load("showMotionEditorView", false);
     showShortcutWindow_ = data->Load("showShortcutWindow", false);
     showSpriteManagerView_ = data->Load("showSpriteManagerView", false);
     showShadowMapView_ = data->Load("showShadowMapView", true);

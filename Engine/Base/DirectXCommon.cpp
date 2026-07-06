@@ -250,10 +250,16 @@ void DirectXCommon::DeviceInitialize() {
 #ifdef _DEBUG
     Microsoft::WRL::ComPtr<ID3D12Debug1> debugController = nullptr;
     if (SUCCEEDED(D3D12GetDebugInterface(IID_PPV_ARGS(&debugController)))) {
-        // デバッグレイヤーを有効化する
+        // デバッグレイヤーを有効化する（API誤用の検出。相対的に軽い）
         debugController->EnableDebugLayer();
-        // さらにGPU側でもチェックを行うようにする
-        debugController->SetEnableGPUBasedValidation(TRUE);
+
+        // GPUベース検証(GBV)はシェーダを差し替えて全リソースアクセスを毎回検証するため、
+        // 描画/ディスパッチを数倍重くする。Debugビルドが極端に重くなる主因になり得るので
+        // 通常はOFF。ディスクリプタ範囲外アクセス等のGPU側クラッシュ/破損を追う時だけ true にする。
+        constexpr bool kEnableGpuBasedValidation = false;
+        if (kEnableGpuBasedValidation) {
+            debugController->SetEnableGPUBasedValidation(TRUE);
+        }
     }
 #endif
 

@@ -26,15 +26,24 @@ void Skin::Update(const Skeleton &skeleton) {
 }
 
 void Skin::UpdateInputVertices(const ModelData &modelData) {
+    // 入力頂点はバインドポーズ（静的データ）でありスキニングでも書き換わらないため、
+    // 毎フレーム転送する必要はない。マップ済みバッファへ初回だけコピーすれば十分。
+    if (inputVerticesUploaded_) {
+        return;
+    }
+
     // モデルデータから各メッシュの頂点情報を取得し、GPU上のバッファへコピー
+    size_t vertexOffset = 0;
     for (const auto &mesh : modelData.meshes) {
         for (size_t i = 0; i < mesh.vertices.size(); ++i) {
-            if (vertexOffset_ + i < totalVertexCount_) {
-                skinCluster_.mappedVertex[vertexOffset_ + i] = mesh.vertices[i];
+            if (vertexOffset + i < totalVertexCount_) {
+                skinCluster_.mappedVertex[vertexOffset + i] = mesh.vertices[i];
             }
         }
-        vertexOffset_ += mesh.vertices.size();
+        vertexOffset += mesh.vertices.size();
     }
+
+    inputVerticesUploaded_ = true;
 }
 
 void Skin::ExecuteSkinning(ID3D12GraphicsCommandList *commandList) {

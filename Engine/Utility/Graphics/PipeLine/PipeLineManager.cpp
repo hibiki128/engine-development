@@ -286,8 +286,17 @@ Microsoft::WRL::ComPtr<ID3D12RootSignature> PipeLineManager::CreateRootSignature
     shadowDescriptorRange[0].RegisterSpace = 0;
     shadowDescriptorRange[0].OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
 
+    // ノーマルマップ用DescriptorRange (t3)
+    D3D12_DESCRIPTOR_RANGE normalMapDescriptorRange[1] = {};
+    normalMapDescriptorRange[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+    normalMapDescriptorRange[0].NumDescriptors = 1;
+    normalMapDescriptorRange[0].BaseShaderRegister = 3; // t3
+    normalMapDescriptorRange[0].RegisterSpace = 0;
+    normalMapDescriptorRange[0].OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+
     // RootParameter作成。複数設定できるので配列。
-    D3D12_ROOT_PARAMETER rootParameters[10] = {};
+    // 末尾に t3(ノーマルマップ) を追加。既存 index(0..9) は変更しない。
+    D3D12_ROOT_PARAMETER rootParameters[11] = {};
     rootParameters[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;                   // CBVを使う
     rootParameters[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;                // VertexShaderで使う
     rootParameters[0].Descriptor.ShaderRegister = 0;                                   // レジスタ番号0とバインド
@@ -323,6 +332,11 @@ Microsoft::WRL::ComPtr<ID3D12RootSignature> PipeLineManager::CreateRootSignature
     rootParameters[9].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
     rootParameters[9].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
     rootParameters[9].Descriptor.ShaderRegister = 5;
+    // ノーマルマップ SRV (t3) - param 10
+    rootParameters[10].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+    rootParameters[10].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+    rootParameters[10].DescriptorTable.pDescriptorRanges = normalMapDescriptorRange;
+    rootParameters[10].DescriptorTable.NumDescriptorRanges = _countof(normalMapDescriptorRange);
 
     descriptionRootSignature.pParameters = rootParameters;
     descriptionRootSignature.NumParameters = _countof(rootParameters);
@@ -1291,8 +1305,16 @@ Microsoft::WRL::ComPtr<ID3D12RootSignature> PipeLineManager::CreateSkinningRootS
     skinShadowDescriptorRange[0].RegisterSpace = 0;
     skinShadowDescriptorRange[0].OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
 
-    // スキン+シャドウ用に11要素のrootParametersを構築する
-    D3D12_ROOT_PARAMETER rootParameters11[11] = {};
+    // ノーマルマップ用 DescriptorRange (t3 PIXEL)
+    D3D12_DESCRIPTOR_RANGE skinNormalMapDescriptorRange[1] = {};
+    skinNormalMapDescriptorRange[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+    skinNormalMapDescriptorRange[0].NumDescriptors = 1;
+    skinNormalMapDescriptorRange[0].BaseShaderRegister = 3; // t3
+    skinNormalMapDescriptorRange[0].RegisterSpace = 0;
+    skinNormalMapDescriptorRange[0].OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+
+    // スキン+シャドウ+ノーマルマップ用に12要素のrootParametersを構築する
+    D3D12_ROOT_PARAMETER rootParameters11[12] = {};
     for (int _i = 0; _i < 9; ++_i) rootParameters11[_i] = rootParameters[_i];
     // rootParameters[9]: シャドウマップ SRV (t2) - PIXEL
     rootParameters11[9].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
@@ -1303,6 +1325,11 @@ Microsoft::WRL::ComPtr<ID3D12RootSignature> PipeLineManager::CreateSkinningRootS
     rootParameters11[10].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
     rootParameters11[10].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
     rootParameters11[10].Descriptor.ShaderRegister = 5;
+    // rootParameters[11]: ノーマルマップ SRV (t3) - PIXEL
+    rootParameters11[11].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+    rootParameters11[11].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+    rootParameters11[11].DescriptorTable.pDescriptorRanges = skinNormalMapDescriptorRange;
+    rootParameters11[11].DescriptorTable.NumDescriptorRanges = _countof(skinNormalMapDescriptorRange);
 
     descriptionRootSignature.pParameters = rootParameters11;
     descriptionRootSignature.NumParameters = _countof(rootParameters11);
