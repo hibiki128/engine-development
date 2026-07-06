@@ -45,10 +45,6 @@ void Input::Init(HINSTANCE hInstance, HWND hWnd) {
     mouse_ = std::make_unique<Mouse>();
     mouse_->Init(directInput_, hWnd);
 
-    // ゲームパッド初期化
-    gamePad_ = std::make_unique<GamePad>();
-    gamePad_->Init(0);
-
     // XInputデバイスの追加
     for (DWORD i = 0; i < XUSER_MAX_COUNT; ++i) {
         XINPUT_STATE state;
@@ -70,10 +66,7 @@ void Input::Update() {
     keyboard_->Acquire();
     keyboard_->GetDeviceState(sizeof(key_), key_.data());
 
-    // マウスの更新
     mouse_->Update();
-    // ゲームパッドの更新
-    gamePad_->Update();
 
     for (auto &joystick : joysticks_) {
         if (joystick.type_ == PadType::XInput) {

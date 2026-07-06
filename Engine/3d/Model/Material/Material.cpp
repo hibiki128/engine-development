@@ -28,6 +28,12 @@ void Material::Draw(const Vector4 color, bool lighting) {
 
     materialData_.uvTransform = MakeAffineMatrix({materialData_.uvSize.x, materialData_.uvSize.y, 1.0f}, {0.0f, 0.0f, materialData_.uvRotate}, {materialData_.uvPosition.x, materialData_.uvPosition.y, 0.0f});
 
+    // 法線マッピング関連（ImGui等での変更を毎フレーム反映）
+    materialDataGPU_->enableNormalMap = materialData_.enableNormalMap ? 1 : 0;
+    materialDataGPU_->enableProceduralNormal = materialData_.enableProceduralNormal ? 1 : 0;
+    materialDataGPU_->normalStrength = materialData_.normalStrength;
+    materialDataGPU_->proceduralScale = materialData_.proceduralScale;
+
     ID3D12GraphicsCommandList *commandList = dxCommon_->GetCommandList().Get();
     commandList->SetGraphicsRootConstantBufferView(0, materialResource_->GetGPUVirtualAddress());
 
@@ -97,6 +103,32 @@ void Material::UpdateGPUData() {
         materialDataGPU_->uvTransform = materialData_.uvTransform;
         materialDataGPU_->shininess = 32.0f;
         materialDataGPU_->environmentCoefficient = materialData_.environmentCoefficient;
+        materialDataGPU_->enableNormalMap = materialData_.enableNormalMap ? 1 : 0;
+        materialDataGPU_->enableProceduralNormal = materialData_.enableProceduralNormal ? 1 : 0;
+        materialDataGPU_->normalStrength = materialData_.normalStrength;
+        materialDataGPU_->proceduralScale = materialData_.proceduralScale;
     }
+}
+
+void Material::SetProceduralNormal(bool enable, float scale, float strength) {
+    materialData_.enableProceduralNormal = enable;
+    materialData_.proceduralScale = scale;
+    materialData_.normalStrength = strength;
+    UpdateGPUData();
+}
+
+void Material::SetNormalMap(const std::string &normalMapPath) {
+    if (normalMapPath.empty())
+        return;
+
+    // 法線マップを読み込み、テクスチャインデックスを解決して有効化する
+    TextureManager::GetInstance()->LoadTexture(normalMapPath);
+    materialData_.normalMapFilePath = normalMapPath;
+    materialData_.normalMapIndex = TextureManager::GetInstance()->GetTextureIndexByFilePath(normalMapPath);
+    materialData_.hasNormalMapTexture = true;
+    materialData_.enableNormalMap = true;
+    // 手続き的法線とは排他（PS が procedural を優先するため明示的に切る）
+    materialData_.enableProceduralNormal = false;
+    UpdateGPUData();
 }
 } // namespace Hagine

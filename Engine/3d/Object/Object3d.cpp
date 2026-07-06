@@ -119,9 +119,12 @@ void Object3d::Update(const WorldTransform &worldTransform, const ViewProjection
     }
 
     if (model_ && model_->IsGltf()) {
-        if (model_->GetModelData().hasAnimations) {
+        // 影パスで既にこのフレームのスキニングを済ませていれば再実行しない
+        // （同一フレームのポーズは不変なので出力は同じ）
+        if (model_->GetModelData().hasAnimations && !skinnedThisFrame_) {
             objectCommon_->computeSkinningDrawCommonSetting();
             model_->Update();
+            skinnedThisFrame_ = true;
         }
     }
 
@@ -162,6 +165,9 @@ void Object3d::Draw(const WorldTransform &worldTransform, const ViewProjection &
 }
 
 void Object3d::AnimationUpdate() {
+    // 新しいフレームの開始。影パス／本描画のどちらか最初の1回だけスキニングする
+    skinnedThisFrame_ = false;
+
     if (currentModelAnimation_) {
         // 基本的には modelFilePath_ に紐づくループフラグを使用するが、
         // 切り替え待機中（補間中）は、切り替え先（targetLoop_）の設定を優先する
@@ -585,9 +591,10 @@ void Object3d::DrawShadow(const WorldTransform &worldTransform) {
     // シャドウパスはメインパスより前に走るため、ここでスキニングしないと
     // 後段メインパスでしか走らない＝シャドウは前フレームのスキン結果を使い、
     // 自己影のUV/深度が1フレームずれてキャラ全身が影になってしまう（自己影バグ）。
-    if (model_->IsGltf() && model_->GetModelData().hasAnimations) {
+    if (model_->IsGltf() && model_->GetModelData().hasAnimations && !skinnedThisFrame_) {
         objectCommon_->computeSkinningDrawCommonSetting();
         model_->Update();
+        skinnedThisFrame_ = true;
     }
 
     Matrix4x4 localMatrix = MakeAffineMatrix(worldTransform.scale_, worldTransform.quateRotation_, worldTransform.translation_);

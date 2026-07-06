@@ -75,6 +75,15 @@ class Animator {
     Animation GetCurrentAnimation() const;
 
     /// <summary>
+    /// 補間していない現在のアニメーションへの参照を取得
+    /// 非補間時に毎フレームのディープコピーを避けるための高速経路。
+    /// 補間中は表示用ポーズが別途生成されるため、この参照は使用しないこと
+    /// （IsBlending() が false のときのみ有効）。
+    /// </summary>
+    /// <returns>const Animation&: 現在のアニメーションデータへの参照</returns>
+    const Animation &GetCurrentAnimationRef() const { return currentAnimation_; }
+
+    /// <summary>
     /// 現在のファイル情報を更新
     /// </summary>
     /// <param name="directoryPath">ディレクトリパス</param>

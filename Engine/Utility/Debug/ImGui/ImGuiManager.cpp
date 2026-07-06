@@ -21,6 +21,7 @@
 #include <Particle/CSParticle/ParticleCSFieldManager.h>
 #include <Render/DrawSystem.h>
 #include <Debug/GpuProfiler/GpuProfiler.h>
+#include <Debug/CpuProfiler/CpuProfiler.h>
 #include <Shadow/ShadowMap.h>
 #include <icon/IconsFontAwesome5.h>
 #include <imgui_impl_dx12.h>
@@ -748,6 +749,9 @@ void ImGuiManager::ShowStatisticsWindow() {
     ParticleEditor::GetInstance()->SceneParticleCount();
 
     ParticleCSEditor::GetInstance()->ShowGPUParticleStatistics();
+
+    ImGui::Separator();
+    CpuProfiler::GetInstance()->DrawImGui();
 
     ImGui::Separator();
     GpuProfiler::GetInstance()->DrawImGui();

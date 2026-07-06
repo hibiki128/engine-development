@@ -129,7 +129,7 @@ void Model::Draw(const std::vector<std::unique_ptr<Material>> &materials, std::v
 
         commandList->SetGraphicsRootDescriptorTable(7, srvManager_->GetGPUDescriptorHandle(SkyBox::GetInstance()->GetTextureIndex()));
 
-        // シャドウマップをバインド
+        // シャドウマップ・ノーマルマップをバインド
         {
             ShadowMap *shadowMap = ShadowMap::GetInstance();
             bool isSkinned = isGltf_ && animator_ && modelData_.hasAnimations && modelData_.hasBones;
@@ -137,6 +137,10 @@ void Model::Draw(const std::vector<std::unique_ptr<Material>> &materials, std::v
             uint32_t shadowDataSlot   = isSkinned ? 10 : 9;
             srvManager_->SetGraphicsRootDescriptorTable(shadowSrvSlot, shadowMap->GetShadowSrvIndex());
             commandList->SetGraphicsRootConstantBufferView(shadowDataSlot, shadowMap->GetShadowDataGpuAddress());
+
+            // ノーマルマップ SRV (t3)。未設定マテリアルでも albedo を束ねて常に有効にする
+            uint32_t normalMapSlot = isSkinned ? 11 : 10;
+            srvManager_->SetGraphicsRootDescriptorTable(normalMapSlot, currentMaterial->GetNormalMapIndex());
         }
 
         if (reflect) {

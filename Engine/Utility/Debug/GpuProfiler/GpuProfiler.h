@@ -92,8 +92,12 @@ class GpuProfiler {
     uint64_t freqCompute_ = 0;
 
     Microsoft::WRL::ComPtr<ID3D12QueryHeap> queryHeap_;
-    Microsoft::WRL::ComPtr<ID3D12Resource> readback_;
-    uint64_t *mapped_ = nullptr;
+    // readback はキューごとに分ける。1本を Direct/Compute 両キューから書くと
+    // クロスキュー同時アクセス扱いになりデバッグレイヤーが停止する（実際の競合）。
+    Microsoft::WRL::ComPtr<ID3D12Resource> readbackGraphics_;
+    Microsoft::WRL::ComPtr<ID3D12Resource> readbackCompute_;
+    uint64_t *mappedGraphics_ = nullptr;
+    uint64_t *mappedCompute_ = nullptr;
 
     DirectXCommon *dxCommon_ = nullptr;
     bool enabled_ = true;

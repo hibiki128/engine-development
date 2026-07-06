@@ -416,21 +416,6 @@ void ParticleCSEmitter::AddParticleGroup(ParticleCSGroup *group) {
     independentGroup->MarkLifeCurvesDirty();
     independentGroup->SetBlendMode(group->GetParticleGroupData().blendMode);
     independentGroup->SetBillboard(group->GetPerView()->enableBillboard);
-    // 速度ストレッチ/描画カリングは settings ではなく perView 側のストレージなので明示的に伝播させる。
-    // （SetSettingData ではコピーされない。伝播しないと LoadSetting/LoadCloneSetting で
-    //   復元した値が描画対象の独立グループへ反映されず、既定値に戻ってしまう）
-    {
-        const PerView *src = group->GetPerView();
-        PerView *dst = independentGroup->GetPerView();
-        dst->enableVelocityStretch = src->enableVelocityStretch;
-        dst->velocityStretchFactor = src->velocityStretchFactor;
-        dst->enableDistanceCull = src->enableDistanceCull;
-        dst->distanceCullStart = src->distanceCullStart;
-        dst->distanceCullEnd = src->distanceCullEnd;
-        dst->enableSizeClamp = src->enableSizeClamp;
-        dst->maxScreenHeight = src->maxScreenHeight;
-        dst->minScreenHeight = src->minScreenHeight;
-    }
     // テクスチャ(materials)は settings とは別ストレージなので明示的に伝播させる。
     // これがないと差し替えたテクスチャが描画対象の独立グループに反映されない。
     // GetParticleGroupData() は値返しなのでローカルに受けてから参照する。
@@ -1141,9 +1126,7 @@ void ParticleCSEmitter::LoadSetting() {
         settings.angularVelocityMin = data->Load<Vector3>(prefix + "angularVelocityMin", {0.0f, 0.0f, 0.0f});
         settings.angularVelocityMax = data->Load<Vector3>(prefix + "angularVelocityMax", {0.0f, 0.0f, 0.0f});
 
-        // 保存側(Save)は uint32_t で数値として書き出すため、読込も uint32_t で受ける。
-        // Load<bool> だと数値に対して get<bool>() が例外を投げ、常に既定値(ON)へ戻ってしまう。
-        group->SetBillboard(data->Load<uint32_t>(prefix + "enableBillboard", 1) != 0);
+        group->SetBillboard(data->Load(prefix + "enableBillboard", true));
 
         // ★ 速度ストレッチ設定のロード
         group->GetPerView()->enableVelocityStretch = data->Load<uint32_t>(prefix + "enableVelocityStretch", 0);
@@ -1364,9 +1347,7 @@ void ParticleCSEmitter::LoadCloneSetting() {
         settings.angularVelocityMin = data->Load<Vector3>(prefix + "angularVelocityMin", {0.0f, 0.0f, 0.0f});
         settings.angularVelocityMax = data->Load<Vector3>(prefix + "angularVelocityMax", {0.0f, 0.0f, 0.0f});
 
-        // 保存側(Save)は uint32_t で数値として書き出すため、読込も uint32_t で受ける。
-        // Load<bool> だと数値に対して get<bool>() が例外を投げ、常に既定値(ON)へ戻ってしまう。
-        group->SetBillboard(data->Load<uint32_t>(prefix + "enableBillboard", 1) != 0);
+        group->SetBillboard(data->Load(prefix + "enableBillboard", true));
 
         // ★ 速度ストレッチ設定のロード
         group->GetPerView()->enableVelocityStretch = data->Load<uint32_t>(prefix + "enableVelocityStretch", 0);

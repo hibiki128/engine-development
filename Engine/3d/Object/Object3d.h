@@ -69,6 +69,12 @@ class Object3d {
     float animationSpeed_ = 1.0f;
     float blendDuration_ = 0.5f;
 
+    // 1フレーム内でGPUスキニングを二重実行しないためのガード。
+    // 影パスと本描画パスの両方で model_->Update()（スキニングDispatch）が
+    // 呼ばれるが、同一フレームのポーズは不変なので最初の1回だけ実行すればよい。
+    // AnimationUpdate()（フレーム先頭）で false に戻す。
+    bool skinnedThisFrame_ = false;
+
   public: // メンバ関数
     void Initialize();
 

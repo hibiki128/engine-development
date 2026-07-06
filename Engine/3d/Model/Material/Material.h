@@ -56,6 +56,35 @@ class Material {
     void SetUVSize(const Vector2 &size) { materialData_.uvSize = size; }
     void SetUVRotate(const float &rotate) { materialData_.uvRotate = rotate; }
 
+    /// <summary>
+    /// 手続き的法線（テクスチャ不要のノーマルマップ）を設定
+    /// </summary>
+    /// <param name="enable">有効フラグ</param>
+    /// <param name="scale">ノイズのスケール（大きいほど細かい凹凸）</param>
+    /// <param name="strength">法線の強さ</param>
+    void SetProceduralNormal(bool enable, float scale = 3.0f, float strength = 1.0f);
+
+    /// <summary>
+    /// テクスチャ法線マップを設定して有効化する
+    /// </summary>
+    /// <param name="normalMapPath">法線マップ画像のパス（images 相対）</param>
+    void SetNormalMap(const std::string &normalMapPath);
+
+    /// <summary>
+    /// 法線の強さを設定
+    /// </summary>
+    void SetNormalStrength(float strength) {
+        materialData_.normalStrength = strength;
+        UpdateGPUData();
+    }
+
+    /// <summary>
+    /// バインド用の法線マップテクスチャインデックスを取得（未設定時は albedo を流用）
+    /// </summary>
+    uint32_t GetNormalMapIndex() const {
+        return materialData_.hasNormalMapTexture ? materialData_.normalMapIndex : materialData_.textureIndex;
+    }
+
   private:
     /// ===================================================
     /// private method

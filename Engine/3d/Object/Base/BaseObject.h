@@ -155,7 +155,7 @@ class BaseObject {
     bool IsGizmoSelectable() const { return isGizmoSelectable_; }
     bool GetIsAlive() const { return isAlive_; }
     Material *GetMaterial(uint32_t index = 0) {
-        obj3d_->GetMaterial(index);
+        return obj3d_->GetMaterial(index);
     }
     std::vector<std::unique_ptr<ColliderBase>> &GetColliders() { return colliders_; }
 

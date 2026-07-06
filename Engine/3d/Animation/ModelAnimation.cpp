@@ -28,8 +28,15 @@ void ModelAnimation::Update(bool roop) {
     }
     // ボーン情報がある場合は、ボーン階層とスキン（頂点ウェイト）を最新状態に更新
     if (modelData_.hasBones) {
-        // 現在のアニメーションデータと再生時間をボーンに適用し、階層行列を再計算
-        bone_->Update(animator_->GetCurrentAnimation(), animator_->GetAnimationTime());
+        // 現在のアニメーションデータと再生時間をボーンに適用し、階層行列を再計算。
+        // 補間中のみ合成ポーズの一時オブジェクトを生成し、非補間時は参照渡しにして
+        // 毎フレームのアニメーション全体（全ノード・全キーフレーム）のコピーを避ける。
+        if (animator_->IsBlending()) {
+            const Animation blended = animator_->GetCurrentAnimation();
+            bone_->Update(blended, animator_->GetAnimationTime());
+        } else {
+            bone_->Update(animator_->GetCurrentAnimationRef(), animator_->GetAnimationTime());
+        }
         // 計算されたボーン行列を元に、シェーダーに送るパレット行列を更新
         skin_->Update(bone_->GetSkeleton());
     }

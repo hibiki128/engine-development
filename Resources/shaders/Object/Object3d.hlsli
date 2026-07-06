@@ -27,6 +27,10 @@ struct Material
     float4x4 uvTransform;
     float shininess;
     float environmentCoefficient;
+    int enableNormalMap;        // テクスチャ法線マップ有効
+    int enableProceduralNormal; // 手続き的法線有効
+    float normalStrength;       // 法線の強さ
+    float proceduralScale;      // 手続きノイズのスケール
     float2 padding2; // 16バイト境界に合わせるためのパディング
 };
 

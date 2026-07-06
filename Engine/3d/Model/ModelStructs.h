@@ -50,19 +50,32 @@ struct MaterialData {
     Vector2 uvPosition{};                      // UV座標
     Vector2 uvSize = {1.0f, 1.0f};             // UVサイズ
     float uvRotate = 0.0f;                     // UV回転
+
+    // ── ノーマルマップ / 手続き的法線 ─────────────────
+    bool enableNormalMap = false;          // テクスチャ法線マップを使う
+    bool enableProceduralNormal = false;   // 手続き的法線を使う（テクスチャ不要）
+    float normalStrength = 1.0f;           // 法線の強さ
+    float proceduralScale = 3.0f;          // 手続きノイズのスケール（大きいほど細かい）
+    std::string normalMapFilePath{};       // 法線マップのパス（未設定なら albedo を流用）
+    uint32_t normalMapIndex = 0;           // 法線マップのテクスチャインデックス
+    bool hasNormalMapTexture = false;      // 法線マップ画像を明示設定したか
 };
 
 /// <summary>
 /// マテリアルデータ（GPU側）
 /// </summary>
 struct MaterialDataGPU {
-    Vector4 color{};              // 色
-    int32_t enableLighting{};     // ライティング有効フラグ
-    float padding[3]{};           // パディング
-    Matrix4x4 uvTransform{};      // UV変換行列
-    float shininess{};            // 光沢度
-    float environmentCoefficient{}; // 環境マップ係数
-    float padding2[2]{};            // パディング
+    Vector4 color{};                  // 色
+    int32_t enableLighting{};         // ライティング有効フラグ
+    float padding[3]{};               // パディング
+    Matrix4x4 uvTransform{};          // UV変換行列
+    float shininess{};                // 光沢度
+    float environmentCoefficient{};   // 環境マップ係数
+    int32_t enableNormalMap{};        // テクスチャ法線マップ有効
+    int32_t enableProceduralNormal{}; // 手続き的法線有効
+    float normalStrength{};           // 法線の強さ
+    float proceduralScale{};          // 手続きノイズのスケール
+    float padding2[2]{};              // パディング（16バイト境界合わせ）
 };
 
 /// <summary>

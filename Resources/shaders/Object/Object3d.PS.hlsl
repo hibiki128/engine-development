@@ -11,6 +11,83 @@ SamplerComparisonState gShadowSampler : register(s1);
 Texture2D<float4> gTexture : register(t0);
 TextureCube<float4> gEngironmentTexture : register(t1);
 Texture2D<float> gShadowMap : register(t2);
+Texture2D<float4> gNormalMap : register(t3);
+
+// ============================================================
+// 法線マッピング（頂点タンジェント不要・画面空間微分でTBNを構築）
+// ============================================================
+
+// 画面空間微分からコタンジェントフレーム(TBN)を作る（Christian Schuler の手法）
+float3x3 CotangentFrame(float3 N, float3 worldPos, float2 uv)
+{
+    float3 dp1 = ddx(worldPos);
+    float3 dp2 = ddy(worldPos);
+    float2 duv1 = ddx(uv);
+    float2 duv2 = ddy(uv);
+
+    float3 dp2perp = cross(dp2, N);
+    float3 dp1perp = cross(N, dp1);
+    float3 T = dp2perp * duv1.x + dp1perp * duv2.x;
+    float3 B = dp2perp * duv1.y + dp1perp * duv2.y;
+
+    float invmax = rsqrt(max(dot(T, T), dot(B, B)));
+    return float3x3(T * invmax, B * invmax, N);
+}
+
+// 接空間法線をワールド空間へ変換して幾何法線を摂動する
+float3 PerturbNormal(float3 N, float3 worldPos, float2 uv, float3 tangentNormal)
+{
+    float3x3 TBN = CotangentFrame(N, worldPos, uv);
+    return normalize(mul(tangentNormal, TBN));
+}
+
+// --- 手続き的法線用の簡易値ノイズ ---
+float Hash21(float2 p)
+{
+    p = frac(p * float2(123.34f, 456.21f));
+    p += dot(p, p + 45.32f);
+    return frac(p.x * p.y);
+}
+
+float ValueNoise(float2 p)
+{
+    float2 i = floor(p);
+    float2 f = frac(p);
+    float2 u = f * f * (3.0f - 2.0f * f);
+    float a = Hash21(i + float2(0.0f, 0.0f));
+    float b = Hash21(i + float2(1.0f, 0.0f));
+    float c = Hash21(i + float2(0.0f, 1.0f));
+    float d = Hash21(i + float2(1.0f, 1.0f));
+    return lerp(lerp(a, b, u.x), lerp(c, d, u.x), u.y);
+}
+
+// 数オクターブ重ねた高さ場（fBm）
+float HeightField(float2 p)
+{
+    float h = 0.0f;
+    float amp = 0.5f;
+    [unroll]
+    for (int i = 0; i < 3; i++)
+    {
+        h += ValueNoise(p) * amp;
+        p *= 2.0f;
+        amp *= 0.5f;
+    }
+    return h;
+}
+
+// worldXZ から接空間法線を生成（高さ場の勾配）
+float3 ProceduralTangentNormal(float2 worldXZ, float scale, float strength)
+{
+    float2 p = worldXZ * scale;
+    float eps = 0.5f;
+    float h = HeightField(p);
+    float hx = HeightField(p + float2(eps, 0.0f));
+    float hy = HeightField(p + float2(0.0f, eps));
+    float dhdx = (hx - h) / eps;
+    float dhdy = (hy - h) / eps;
+    return normalize(float3(-dhdx * strength, -dhdy * strength, 1.0f));
+}
 
 float SampleShadowPCF(float2 shadowUV, float shadowDepth)
 {
@@ -33,6 +110,25 @@ PixelShaderOutput main(VertexShaderOutput input)
     float4 transformedUV = mul(float4(input.texcoord, 0.0f, 1.0f), gMaterial.uvTransform);
     float4 textureColor = gTexture.Sample(gSampler, transformedUV.xy);
     PixelShaderOutput output;
+
+    // ── 法線マッピング（幾何法線を摂動）──────────────────
+    // 手続き的法線: worldXZ の高さ場から接空間法線を生成し、画面空間TBNで摂動する。
+    // 平らな地面でも凹凸のある陰影が付く。テクスチャ法線マップは Phase2 でここに追加。
+    if (gMaterial.enableProceduralNormal != 0)
+    {
+        float3 geomN = normalize(input.normal);
+        float3 tN = ProceduralTangentNormal(input.worldPosition.xz, gMaterial.proceduralScale, gMaterial.normalStrength);
+        input.normal = PerturbNormal(geomN, input.worldPosition, input.worldPosition.xz * gMaterial.proceduralScale, tN);
+    }
+    else if (gMaterial.enableNormalMap != 0)
+    {
+        float3 geomN = normalize(input.normal);
+        // 接空間法線をデコード(0..1 -> -1..1)し、強度でXYを増減して摂動する
+        float3 tN = gNormalMap.Sample(gSampler, transformedUV.xy).xyz * 2.0f - 1.0f;
+        tN.xy *= gMaterial.normalStrength;
+        tN = normalize(tN);
+        input.normal = PerturbNormal(geomN, input.worldPosition, transformedUV.xy, tN);
+    }
 
     // シャドウ係数の計算
     float shadowFactor = 1.0f;
