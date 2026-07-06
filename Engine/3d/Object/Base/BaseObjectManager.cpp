@@ -3,7 +3,6 @@
 #ifdef _DEBUG
 #include "Debug/ImGui/ImGuizmoManager.h"
 #endif // _DEBUG
-#include "Application/Utility/MotionEditor/MotionEditor.h"
 #include <Debug/Log/Logger.h>
 #include <ShowFolder/ShowFolder.h>
 #include "Render/DrawGroupManager.h"
@@ -43,7 +42,6 @@ void BaseObjectManager::RegisterExternal(BaseObject* obj) {
 #ifdef _DEBUG
     ImGuizmoManager::GetInstance()->AddTarget(name, obj);
 #endif
-    MotionEditor::GetInstance()->Register(obj);
     objects_.emplace(name, obj);
     ImGuiNotification::Post("オブジェクトを追加しました: " + name, {0.4f, 0.8f, 1.0f, 1.0f});
 }

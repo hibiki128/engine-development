@@ -29,7 +29,6 @@
 #include "SpriteCommon.h"
 #include "SpriteManager.h"
 #include "line/DrawLine3D.h"
-#include <Application/Utility/MotionEditor/MotionEditor.h>
 #include"Utility/LoadFile/Csv/CsvLoad.h"
 #include "Render/DrawSystem.h"
 namespace Hagine {
@@ -101,7 +100,6 @@ class Framework {
     ParticleGroupManager *particleGroupManager_ = nullptr;
     ParticleCSGroupManager *particleCSGroupManager_ = nullptr;
     PipeLineManager *pipeLineManager_ = nullptr;
-    MotionEditor *motionEditor_ = nullptr;
     ComputePipeLineManager *computePipeLineManager_ = nullptr;
     ShortcutManager *shortcutManager_ = nullptr;
     SpriteManager *spriteManager_ = nullptr;

@@ -190,10 +190,6 @@ void Framework::Initialize() {
     shortcutManager_->Initialize(input_);
     ///-----------------------------------
 
-    ///-------AttackManager-------
-    motionEditor_ = MotionEditor::GetInstance();
-    ///---------------------------
-
     ///-------SceneTransition-------
     sceneTransition_ = SceneTransition::GetInstance();
     ///-----------------------------
@@ -241,7 +237,6 @@ void Framework::Finalize() {
     srvManager_->Finalize();
     audio_->Finalize();
     lightGroup_->Finalize();
-    motionEditor_->Finalize();
     particleEditor_->Finalize();
     particleCSFieldManager_->Finalize();
     particleCSEditor_->Finalize();
@@ -368,28 +363,6 @@ void Framework::LoadResource() {
     textureManager_->LoadAllTextures();
 
     textureManager_->LoadFontTexture("NotoSansJP-Medium.ttf", 100);
-
-    particleEditor_->AddParticleEmitter("hitEmitter");
-    particleEditor_->AddParticleEmitter("bulletEmitter");
-    particleEditor_->AddParticleEmitter("enemyBulletEmitter");
-    particleEditor_->AddParticleEmitter("chageBullet");
-    particleEditor_->AddParticleEmitter("RushEmitter");
-    particleEditor_->AddParticleEmitter("punchEmitter");
-    particleEditor_->AddParticleEmitter("smokeEmitter");
-    particleCSEditor_->AddParticleEmitter("playerAura");
-    particleCSEditor_->AddParticleEmitter("FadeOut");
-    particleCSEditor_->AddParticleEmitter("death");
-    particleCSEditor_->AddParticleEmitter("death_arm");
-    particleCSEditor_->AddParticleEmitter("makan_main");
-    particleCSEditor_->AddParticleEmitter("makan_around");
-    particleCSEditor_->AddParticleEmitter("chargeEmitter");
-    particleCSEditor_->AddParticleEmitter("fireWork_explosion");
-    particleCSEditor_->AddParticleEmitter("fireWork_Trail");
-    particleCSEditor_->AddParticleEmitter("ChargeAura");
-    particleCSEditor_->AddParticleEmitter("enemyChargeAura");
-    particleCSEditor_->AddParticleEmitter("AroundField");
-   
-    particleCSFieldManager_->CreateField("GeneratedField", "GeneratedField");
 
     ImGuiNotification::Post("全ての基本リソースを読み込みました", {0.2f, 0.8f, 0.2f, 1.0f});
     Logger::Info("All base resources loaded.");

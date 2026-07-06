@@ -64,8 +64,7 @@ void MyGame::Update() {
 #endif // _DEBUG
 
     {
-        HAGINE_CPU_PROFILE("Update/MotionEditor");
-        motionEditor_->Update(Frame::DeltaTime());
+       
     }
 
     // -----------------------

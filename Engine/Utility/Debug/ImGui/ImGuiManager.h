@@ -158,8 +158,6 @@ class ImGuiManager {
 
     void ShowHierarchyWindow();
 
-    void ShowMotionEditorWindow();
-
     void ShowSpriteManagerWindow();
 
     void ShowColliderTagManagerWindow();
@@ -236,7 +234,6 @@ class ImGuiManager {
     bool showShortcutWindow_ = false;
     bool showGizmoView_ = true;
     bool showHierarchyView_ = true;
-    bool showMotionEditorView_ = true;
     bool showSpriteManagerView_ = true;
     bool showColliderTagManagerView_ = false;
     bool showAudioManagerView_ = false;
