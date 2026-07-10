@@ -35,20 +35,6 @@ void BaseScene::AddParticleSetting() {
 void BaseScene::DrawForOffScreen() {
 }
 
-void BaseScene::DrawParticleEditorUI() {
-#ifdef USE_IMGUI
-    // CPUパーティクルは従来どおり専用ウィンドウで編集。
-    ImGui::Begin("CPUパーティクル");
-    ptEditor_->ShowImGuiEditor();
-    ptEditor_->DebugAll();
-    ImGui::End();
-
-    // GPUパーティクルの編集UI（作成・選択・動き設定）はプレビュー窓に統合済み。
-    // 「表示 > ウィンドウ > パーティクルプレビュー」で開く（ImGuiManager::ShowParticlePreviewWindow）。
-
-#endif // USE_IMGUI
-}
-
 void BaseScene::DrawAllObjects() {
     spriteManager_->DrawAll();
     objectManager_->Draw(vp_);

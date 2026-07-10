@@ -123,6 +123,7 @@ void SceneManager::SceneChange() {
         scene_ = std::move(nextScene_);
 
         scene_->SetSceneManager(this);
+        scene_->SetWindow(winApp_);
         scene_->Initialize();
         transition_->SetFadeOutStart(true);
         ImGuiNotification::Post("シーンを切り替えました: " + currentSceneName_, {0.4f, 0.8f, 1.0f, 1.0f});

@@ -138,6 +138,7 @@ void Framework::Initialize() {
     ///-------SceneManager--------
     sceneManager_ = SceneManager::GetInstance();
     sceneManager_->Initialize(sceneTransition_.get());
+    sceneManager_->SetWinApp(winApp_.get());
     ///---------------------------
 
     ///-------OffScreen--------

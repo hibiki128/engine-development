@@ -14,6 +14,7 @@
 #include <XInput.h>
 #include <dinput.h>
 // input
+#include "Input/GamePad.h"
 #include "Mouse.h"
 #include <Camera/ViewProjection/ViewProjection.h>
 #include <myMath.h>
@@ -66,8 +67,11 @@ class Input {
     std::array<BYTE, 256> key_;
     std::array<BYTE, 256> keyPre_;
     std::vector<Joystick> joysticks_;
+
     // マウス
     static std::unique_ptr<Mouse> mouse_;
+    // ゲームパッド
+    std::unique_ptr<GamePad> gamePad_;
 
     Ray currentRay_;
     SceneViewport currentViewport_;
@@ -225,5 +229,11 @@ class Input {
 
     const BYTE *GetKeyState() const { return key_.data(); }
     const BYTE *GetPreviousKeyState() const { return keyPre_.data(); }
+
+    /// <summary>
+    /// ゲームパッドポインタの取得
+    /// </summary>
+    /// <returns></returns>
+    GamePad *GetGamePad() const { return gamePad_.get(); }
 };
 } // namespace Hagine
