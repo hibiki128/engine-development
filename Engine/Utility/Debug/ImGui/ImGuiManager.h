@@ -255,7 +255,7 @@ class ImGuiManager {
     Audio *audio_ = nullptr;
 
     // ImGui レイアウト ini は Application/Config/ 配下に生成する（プロジェクトルートを散らかさない）。
-    std::string editorIniFilePath_ = "Application/Config/imgui_editor.ini";
-    std::string gameIniFilePath_ = "Application/Config/imgui_game.ini";
+    std::string editorIniFilePath_ = "src/Config/imgui_editor.ini";
+    std::string gameIniFilePath_ = "src/Config/imgui_game.ini";
 };
 } // namespace Hagine
