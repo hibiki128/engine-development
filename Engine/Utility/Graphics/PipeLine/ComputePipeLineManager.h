@@ -3,8 +3,10 @@
 #include "PipeLineManager.h"
 #include "d3d12.h"
 #include "string"
+#include "string/stringUtility.h"
 #include "unordered_map"
 #include "wrl.h"
+#include <Asset/AssetPath.h>
 
 namespace Hagine {
 enum class ComputePipelineType {
@@ -33,7 +35,6 @@ class ComputePipeLineManager {
         static ComputePipeLineManager instance;
         return &instance;
     }
-
 
     void Finalize();
 
@@ -98,6 +99,8 @@ class ComputePipeLineManager {
 
   private:
     DirectXCommon *dxCommon_;
+
+    std::wstring shaderPath = Hagine::StringUtility::ConvertString(AssetPath::EngineRoot());
 
     // パイプラインとルートシグネチャの格納用マップ
     std::unordered_map<std::string, Microsoft::WRL::ComPtr<ID3D12PipelineState>> pipelines_;
