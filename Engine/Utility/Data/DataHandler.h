@@ -1,6 +1,7 @@
 #pragma once
 #include "iostream"
 #include "type/Vector4.h"
+#include <Asset/AssetPath.h>
 #include <Debug/Log/Logger.h>
 #include <Primitive/PrimitiveModel.h>
 #include <cstdint>
@@ -25,7 +26,7 @@ class DataHandler {
     /// private variants
     /// ===================================================
 
-    std::string basePath_ = "resources/jsons"; // 固定の基準パス
+    std::string basePath_ = AssetPath::JsonRoot(); // 固定の基準パス（Application/Assets/jsons）
     std::string folderPath_ = "";              // インスタンスごとのフォルダパス
     std::string fileName_ = "data.json";       // インスタンスごとのファイル名
     json cachedJson_;                          // メモリ上にキャッシュしたJSONデータ

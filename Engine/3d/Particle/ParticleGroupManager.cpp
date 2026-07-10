@@ -2,7 +2,7 @@
 
 namespace Hagine {
 void ParticleGroupManager::Initialize() {
-    const std::string directoryPath = "resources/jsons/ParticleGroup/";
+    const std::string directoryPath = "Application/Assets/jsons/ParticleGroup/";
 
     // ディレクトリが存在しない場合は何もしない
     if (!fs::exists(directoryPath) || !fs::is_directory(directoryPath)) {

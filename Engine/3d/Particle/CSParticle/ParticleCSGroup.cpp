@@ -1,5 +1,6 @@
 #define NOMINMAX
 #include "ParticleCSGroup.h"
+#include <Asset/AssetPath.h>
 #include <Audio/Audio.h>
 #include <algorithm>
 #include <cmath>
@@ -1283,15 +1284,17 @@ void ParticleCSGroup::DrawImGui() {
     PopSectionColor();
     if (openTex && !particleGroupData_.materials.empty()) {
         ImGui::Indent();
-        // resources/images 配下の画像を列挙（初回スキャン + 再スキャンボタン）。
+        // Application/Assets/images 配下の画像を列挙（初回スキャン + 再スキャンボタン）。
         // textureFilePath は base からの相対パス('/'区切り)で持つ規約に合わせる。
         static std::vector<std::string> s_imageFiles;
         static bool s_scanned = false;
         auto scanImages = []() {
             s_imageFiles.clear();
             std::error_code ec;
-            const std::string base = "resources/images";
-            if (std::filesystem::exists(base, ec)) {
+            // images はエンジン(debug)とアプリの 2 ルートに分割されているため両方を走査する。
+            for (const std::string &base : AssetPath::ImageScanRoots()) {
+                if (!std::filesystem::exists(base, ec))
+                    continue;
                 for (auto &e : std::filesystem::recursive_directory_iterator(base, ec)) {
                     if (ec)
                         break;
@@ -1306,8 +1309,8 @@ void ParticleCSGroup::DrawImGui() {
                     if (!rel.empty())
                         s_imageFiles.push_back(rel);
                 }
-                std::sort(s_imageFiles.begin(), s_imageFiles.end());
             }
+            std::sort(s_imageFiles.begin(), s_imageFiles.end());
         };
         if (!s_scanned) {
             scanImages();
@@ -1323,7 +1326,7 @@ void ParticleCSGroup::DrawImGui() {
         };
 
         // 選択中テクスチャのサムネイルプレビュー（読み込み済み前提）。
-        // ※ GetSrvHandleGPU は他の getter と違い "resources/images/" を前置しない＝フルパスを要求する。
+        // ※ GetSrvHandleGPU は他の getter と違い相対パスを前置しない＝フルパス(＝マップキー)を要求する。
         if (!curPath.empty()) {
             texManager_->LoadTexture(curPath); // 念のため未ロードならロード（ロード済みなら即return）
             // キューブマップは SRV が TEXTURECUBE。Texture2D として Image 描画すると
@@ -1331,7 +1334,7 @@ void ParticleCSGroup::DrawImGui() {
             if (texManager_->GetMetaData(curPath).IsCubemap()) {
                 ImGui::Button("CUBE", ImVec2(56.0f, 56.0f));
             } else {
-                D3D12_GPU_DESCRIPTOR_HANDLE h = texManager_->GetSrvHandleGPU("resources/images/" + curPath);
+                D3D12_GPU_DESCRIPTOR_HANDLE h = texManager_->GetSrvHandleGPU(AssetPath::Image(curPath));
                 if (h.ptr != 0)
                     ImGui::Image(static_cast<ImTextureID>(h.ptr), ImVec2(56.0f, 56.0f));
                 else

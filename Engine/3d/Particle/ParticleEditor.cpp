@@ -348,13 +348,26 @@ void ParticleEditor::ShowImGuiEditor() {
                     // モデル選択セクション (青色)
                     if (ColoredCollapsingHeader("モデル選択", 2)) {
                         // モデルファイル選択
-                        static std::filesystem::path baseDirObj = "resources/models/";
-                        static std::filesystem::path currentDirObj = "resources/models";
+                        // models はエンジン(debug)とアプリの 2 ルートに分割。ラジオで切り替える。
+                        static const std::filesystem::path kRootsObj[2] = {"Engine/EngineAssets/models", "Application/Assets/models"};
+                        static int rootSelObj = 1; // 既定: App
+                        static std::filesystem::path currentDirObj = kRootsObj[rootSelObj];
                         static std::string selectedFolderObj = "";
                         static std::string selectedFileObj = "";
 
+                        for (int i = 0; i < 2; ++i) {
+                            if (i > 0)
+                                ImGui::SameLine();
+                            if (ImGui::RadioButton(i == 0 ? "Engine(debug)##objr" : "App##objr", rootSelObj == i)) {
+                                rootSelObj = i;
+                                currentDirObj = kRootsObj[rootSelObj];
+                                selectedFolderObj = selectedFileObj = "";
+                            }
+                        }
+                        const std::filesystem::path baseDirObj = kRootsObj[rootSelObj];
+
                         // 「戻る」ボタン（上の階層に戻る）
-                        if (currentDirObj != "resources/models") {
+                        if (currentDirObj != baseDirObj) {
                             if (ImGui::Button("< 戻る(Model)")) {
                                 currentDirObj = currentDirObj.parent_path();
                                 selectedFolderObj = "";
@@ -548,7 +561,7 @@ void ParticleEditor::ShowFileSelector() {
 std::vector<std::string> ParticleEditor::GetJsonFiles() {
     static std::vector<std::string> jsonFiles; // キャッシュされたJSONファイルリスト
     static size_t lastFileCount = 0;           // 最後に取得したJSONファイル数
-    std::filesystem::path baseDir = "resources/jsons/Particle";
+    std::filesystem::path baseDir = "Application/Assets/jsons/Particle";
 
     // ディレクトリが存在しない場合はキャッシュをクリア
     if (!std::filesystem::exists(baseDir) || !std::filesystem::is_directory(baseDir)) {

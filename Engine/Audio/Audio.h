@@ -81,7 +81,7 @@ class Audio {
     /// <summary>
     /// 初期化
     /// </summary>
-    void Initialize(const std::string &directoryPath = "resources/sounds");
+    void Initialize(const std::string &directoryPath = "Application/Assets/sounds");
 
     /// <summary>
     /// 音声読み込み
@@ -136,7 +136,7 @@ class Audio {
     // デバッグ補助関数（private）
     //------------------------------------------------------------------
 
-    /// Resources\sounds\ を再帰スキャンして .wav ファイル一覧を更新する
+    /// Application/Assets/sounds/ を再帰スキャンして .wav ファイル一覧を更新する
     void DebugScanWavFiles();
 
     /// 指定インデックスの音声総時間（秒）を返す

@@ -17,12 +17,27 @@ void ShowTextureFile(std::string &selectedTexturePath) {
     namespace fs = std::filesystem;
     ImGuiStyle &style = ImGui::GetStyle();
 
-    static fs::path baseDirTex = "resources/images/";
-    static fs::path currentDirTex = "resources/images";
+    // images はエンジン(debug)とアプリの 2 ルートに分割されているため、ルートをラジオで切り替える。
+    static const char *kRootNamesTex[2] = {"Engine(debug)", "App"};
+    static const fs::path kRootsTex[2] = {"Engine/EngineAssets/images", "Application/Assets/images"};
+    static int rootSelTex = 1; // 既定: App
+    static fs::path currentDirTex = kRootsTex[rootSelTex];
     static std::string selectedFolderTex;
     static std::string selectedFileTex;
     static std::unordered_map<std::string, TextureCache> texCache;
     static ImGuiTextFilter filter;
+
+    // ルート切り替え
+    for (int i = 0; i < 2; ++i) {
+        if (i > 0)
+            ImGui::SameLine();
+        if (ImGui::RadioButton(kRootNamesTex[i], rootSelTex == i)) {
+            rootSelTex = i;
+            currentDirTex = kRootsTex[rootSelTex];
+            selectedFolderTex = selectedFileTex = "";
+        }
+    }
+    const fs::path baseDirTex = kRootsTex[rootSelTex];
 
     // パンくずリスト
     {
@@ -220,12 +235,27 @@ void ShowModelFile(std::string &selectedModelPath) {
     namespace fs = std::filesystem;
     ImGuiStyle &style = ImGui::GetStyle();
 
-    static fs::path baseDirModel = "resources/models/";
-    static fs::path currentDirModel = "resources/models";
+    // models はエンジン(debug)とアプリの 2 ルートに分割されているため、ルートをラジオで切り替える。
+    static const char *kRootNamesModel[2] = {"Engine(debug)", "App"};
+    static const fs::path kRootsModel[2] = {"Engine/EngineAssets/models", "Application/Assets/models"};
+    static int rootSelModel = 1; // 既定: App
+    static fs::path currentDirModel = kRootsModel[rootSelModel];
     static std::string selectedFolderModel;
     static std::string selectedFileModel;
     static ImGuiTextFilter filter;
     static bool showDetails = true;
+
+    // ルート切り替え
+    for (int i = 0; i < 2; ++i) {
+        if (i > 0)
+            ImGui::SameLine();
+        if (ImGui::RadioButton(kRootNamesModel[i], rootSelModel == i)) {
+            rootSelModel = i;
+            currentDirModel = kRootsModel[rootSelModel];
+            selectedFolderModel = selectedFileModel = "";
+        }
+    }
+    const fs::path baseDirModel = kRootsModel[rootSelModel];
 
     {
         ImGui::PushStyleColor(ImGuiCol_Button, {0.0f, 0.0f, 0.0f, 0.0f});
@@ -408,8 +438,8 @@ void ShowJsonFile(std::string &selectedJsonPath, std::string &startPath) {
     namespace fs = std::filesystem;
     ImGuiStyle &style = ImGui::GetStyle();
 
-    static fs::path baseDirJson = "resources/jsons/" + startPath;
-    static fs::path currentDirJson = "resources/jsons/" + startPath;
+    static fs::path baseDirJson = "Application/Assets/jsons/" + startPath;
+    static fs::path currentDirJson = "Application/Assets/jsons/" + startPath;
     static std::string selectedFolderJson;
     static std::string selectedFileJson;
     static ImGuiTextFilter filter;
@@ -591,8 +621,8 @@ void ShowJsonFile(std::string &selectedJsonPath, std::string &startPath) {
 }
 
 // ============================================================
-// ShowGltfFile  — resources/models/animation 以下の .gltf / .glb を閲覧する
-//                 選択されたパスは resources/models を基点とした相対パスで返す
+// ShowGltfFile  — Application/Assets/models/animation 以下の .gltf / .glb を閲覧する
+//                 選択されたパスは Application/Assets/models を基点とした相対パスで返す
 //                 例: animation/walk.gltf
 // ============================================================
 void ShowGltfFile(std::string &selectedGltfPath) {
@@ -601,8 +631,8 @@ void ShowGltfFile(std::string &selectedGltfPath) {
 
     // animation フォルダをルートとするが、SetAnimation に渡すパスの基点は
     // その一つ上の models/ なので parent_path() を相対パス計算に使う
-    static fs::path baseDirGltf = "resources/models/animation";
-    static fs::path currentDirGltf = "resources/models/animation";
+    static fs::path baseDirGltf = "Application/Assets/models/animation";
+    static fs::path currentDirGltf = "Application/Assets/models/animation";
     static std::string selectedFolderGltf;
     static std::string selectedFileGltf;
     static ImGuiTextFilter filter;
@@ -721,7 +751,7 @@ void ShowGltfFile(std::string &selectedGltfPath) {
                 return {0.8f, 0.8f, 0.8f, 1.0f};
             };
 
-            // resources/models を基点とした相対パスを生成（例: animation/walk.gltf）
+            // Application/Assets/models を基点とした相対パスを生成（例: animation/walk.gltf）
             auto getRelPath = [&](const std::string &f) {
                 std::string p = (currentDirGltf / f)
                                     .lexically_relative(baseDirGltf.parent_path())

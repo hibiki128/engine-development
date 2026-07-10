@@ -10,6 +10,7 @@
 #include "Object/Base/BaseObject.h"
 #include "Scene/SceneManager.h"
 #include "Graphics/Texture/TextureManager.h"
+#include <Asset/AssetPath.h>
 #include "imgui.h"
 #include "imgui_impl_win32.h"
 #include <algorithm>
@@ -89,7 +90,7 @@ void ImGuiManager::Initialize(WinApp *winApp, ImGuizmoManager *imguizmoManager) 
 
     float fontSize = 16.0f;
 
-    io.Fonts->AddFontFromFileTTF("resources/fonts/PixelMplus12-Regular.ttf", 14.0f, nullptr, io.Fonts->GetGlyphRangesJapanese());
+    io.Fonts->AddFontFromFileTTF(AssetPath::Font("PixelMplus12-Regular.ttf").c_str(), 14.0f, nullptr, io.Fonts->GetGlyphRangesJapanese());
 
     // アイコンフォント読み込み（FontAwesomeなど）
     // FontAwesomeの設定
@@ -98,7 +99,7 @@ void ImGuiManager::Initialize(WinApp *winApp, ImGuizmoManager *imguizmoManager) 
     icons_config.MergeMode = true;
     icons_config.PixelSnapH = true;
     icons_config.GlyphMinAdvanceX = fontSize;
-    io.Fonts->AddFontFromFileTTF("resources/fonts/fa-solid-900.ttf", fontSize, &icons_config, icon_ranges);
+    io.Fonts->AddFontFromFileTTF(AssetPath::Font("fa-solid-900.ttf").c_str(), fontSize, &icons_config, icon_ranges);
 
     // ImGui 1.92 の新DX12バックエンド（ImGui_ImplDX12_InitInfo）は
     // ImGuiBackendFlags_RendererHasTextures を立て、フォントアトラスを動的管理する。
@@ -937,7 +938,7 @@ void ImGuiManager::ShowAssetBrowserWindow() {
     ImGuiWindowFlags flags = ImGuiWindowFlags_NoFocusOnAppearing;
     ImGui::Begin("アセットブラウザ", &showAssetBrowserView_, flags);
 
-    // resources/images 配下の画像を列挙（初回スキャン + 再スキャン）。
+    // Application/Assets/images 配下の画像を列挙（初回スキャン + 再スキャン）。
     // textureFilePath 規約に合わせ base からの相対パス('/'区切り)で保持し、
     // 親フォルダごとにまとめる（map のキーがフォルダ＝表示順もフォルダ順になる）。
     static std::map<std::string, std::vector<std::string>> s_byDir;
@@ -947,8 +948,10 @@ void ImGuiManager::ShowAssetBrowserWindow() {
         s_byDir.clear();
         s_fileCount = 0;
         std::error_code ec;
-        const std::string base = "resources/images";
-        if (std::filesystem::exists(base, ec)) {
+        // images はエンジン(debug)とアプリの 2 ルートに分割されているため両方を走査する。
+        for (const std::string &base : AssetPath::ImageScanRoots()) {
+            if (!std::filesystem::exists(base, ec))
+                continue;
             for (auto &e : std::filesystem::recursive_directory_iterator(base, ec)) {
                 if (ec)
                     break;
@@ -972,9 +975,9 @@ void ImGuiManager::ShowAssetBrowserWindow() {
                 s_byDir[dir].push_back(rel);
                 ++s_fileCount;
             }
-            for (auto &kv : s_byDir)
-                std::sort(kv.second.begin(), kv.second.end());
         }
+        for (auto &kv : s_byDir)
+            std::sort(kv.second.begin(), kv.second.end());
     };
     if (!s_scanned) {
         scan();
@@ -1006,7 +1009,7 @@ void ImGuiManager::ShowAssetBrowserWindow() {
             const DirectX::TexMetadata &meta = tex->GetMetaData(rel);
             isCube = meta.IsCubemap();
             if (!isCube) {
-                D3D12_GPU_DESCRIPTOR_HANDLE h = tex->GetSrvHandleGPU("resources/images/" + rel);
+                D3D12_GPU_DESCRIPTOR_HANDLE h = tex->GetSrvHandleGPU(AssetPath::Image(rel));
                 if (h.ptr != 0)
                     id = static_cast<ImTextureID>(h.ptr);
             }
@@ -1462,6 +1465,10 @@ void ImGuiManager::SaveCurrentLayout() {
 #ifdef USE_IMGUI
     // 現在のモードに応じたファイルにレイアウトを保存
     const char *iniFilePath = isEditorMode_ ? editorIniFilePath_.c_str() : gameIniFilePath_.c_str();
+
+    // 保存先フォルダ(Application/Config)が無ければ作成する（fopen はディレクトリを作らないため）。
+    std::error_code ec;
+    std::filesystem::create_directories(std::filesystem::path(iniFilePath).parent_path(), ec);
 
     // メモリからiniデータを取得
     size_t size = 0;

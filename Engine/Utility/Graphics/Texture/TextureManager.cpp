@@ -2,6 +2,7 @@
 #define STB_TRUETYPE_IMPLEMENTATION
 #include "TextureManager.h"
 #include "DirectXCommon.h"
+#include <Asset/AssetPath.h>
 #include "Utility/Debug/ImGui/ImGuiNotification.h"
 #include <Debug/Log/Logger.h>
 #include <String/StringUtility.h>
@@ -18,8 +19,8 @@ namespace Hagine {
 uint32_t TextureManager::kSRVIndexTop = 1;
 
 void TextureManager::LoadTexture(const std::string &filePath) {
-    // ファイル名を取り出して、resources/images/を付ける
-    std::string newFilePath = "resources/images/" + filePath;
+    // 相対パスから実パス(＝マップキー)を作る。debug/配下はエンジン、それ以外はアプリのルート。
+    std::string newFilePath = AssetPath::Image(filePath);
 
     // 読み込み済みテクスチャを検索
     if (textureDatas_.contains(newFilePath)) {
@@ -87,7 +88,7 @@ void TextureManager::LoadFontTexture(const std::string &fontFilePath, float font
     assert(srvManager_->CanAllocate());
 
     // TTFファイルをバイナリとして丸ごと読み込む
-    const std::string fullPath = "resources/fonts/" + fontFilePath;
+    const std::string fullPath = AssetPath::Font(fontFilePath);
     std::ifstream file(fullPath, std::ios::binary | std::ios::ate);
     if (!file.is_open()) {
         Logger::Error("Failed to open font file: \"" + fullPath + "\". The file was not found.");
@@ -200,8 +201,8 @@ void TextureManager::Finalize() {
 }
 
 uint32_t TextureManager::GetTextureIndexByFilePath(const std::string &filePath) {
-    // ファイル名を取り出して、resources/images/を付ける
-    std::string newFilePath = "resources/images/" + filePath;
+    // 相対パスから実パス(＝マップキー)を作る。
+    std::string newFilePath = AssetPath::Image(filePath);
 
     auto it = textureDatas_.find(newFilePath);
     if (it != textureDatas_.end()) {
@@ -226,7 +227,7 @@ D3D12_GPU_DESCRIPTOR_HANDLE TextureManager::GetSrvHandleGPU(const std::string &f
 }
 
 const DirectX::TexMetadata &TextureManager::GetMetaData(const std::string &filePath) {
-    std::string fullPath = ("resources/images/" + filePath);
+    std::string fullPath = AssetPath::Image(filePath);
     // 指定されたファイルパスが存在するかチェック
     if (textureDatas_.find(fullPath) == textureDatas_.end()) {
         Logger::Error("Texture metadata not found: \"" + fullPath + "\". The texture was never loaded (the path may be wrong).");
@@ -261,42 +262,44 @@ std::vector<std::string> TextureManager::GetAllFontKeys() const {
 }
 
 void TextureManager::LoadAllTextures() {
-    // 読み込み開始ディレクトリ
-    std::filesystem::path baseDir = "resources/images";
+    // images はエンジン(debug)とアプリの 2 ルートに分割されているため両方を走査する。
+    // 相対パスは各ルート基点で作るので AssetPath::Image() が正しいルートへ振り分ける。
+    for (const std::string &baseDir : AssetPath::ImageScanRoots()) {
 
-    // ディレクトリが存在しない場合は早期リターン
-    if (!std::filesystem::exists(baseDir)) {
-        return;
-    }
-
-    // 再帰的探索
-    for (auto &entry : std::filesystem::recursive_directory_iterator(baseDir)) {
-
-        // ファイルでなければスキップ
-        if (!entry.is_regular_file())
-            continue;
-
-        // 拡張子を取得
-        std::string ext = entry.path().extension().string();
-
-        // png・jpg 以外は無視
-        if (ext != ".png" && ext != ".jpg")
-            continue;
-
-        // baseDir からの相対パスを作成
-        std::filesystem::path relative = entry.path().lexically_relative(baseDir);
-
-        // Windows だとパス区切りが \ なので / に統一する
-        std::string file = relative.string();
-        std::replace(file.begin(), file.end(), '\\', '/');
-
-        // 既にロード済みならスキップ
-        if (textureDatas_.contains("resources/images/" + file)) {
+        // ディレクトリが存在しない場合はスキップ
+        if (!std::filesystem::exists(baseDir)) {
             continue;
         }
 
-        // テクスチャを読み込む
-        LoadTexture(file);
+        // 再帰的探索
+        for (auto &entry : std::filesystem::recursive_directory_iterator(baseDir)) {
+
+            // ファイルでなければスキップ
+            if (!entry.is_regular_file())
+                continue;
+
+            // 拡張子を取得
+            std::string ext = entry.path().extension().string();
+
+            // png・jpg 以外は無視
+            if (ext != ".png" && ext != ".jpg")
+                continue;
+
+            // baseDir からの相対パスを作成
+            std::filesystem::path relative = entry.path().lexically_relative(baseDir);
+
+            // Windows だとパス区切りが \ なので / に統一する
+            std::string file = relative.string();
+            std::replace(file.begin(), file.end(), '\\', '/');
+
+            // 既にロード済みならスキップ
+            if (textureDatas_.contains(AssetPath::Image(file))) {
+                continue;
+            }
+
+            // テクスチャを読み込む
+            LoadTexture(file);
+        }
     }
 }
 } // namespace Hagine

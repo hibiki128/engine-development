@@ -1,5 +1,6 @@
 #define NOMINMAX
 #include "Object3d.h"
+#include <Asset/AssetPath.h>
 #include "Debug/Log/Logger.h"
 #include "DirectXCommon.h"
 #include "Graphics/Model/ModelManager.h"
@@ -53,7 +54,7 @@ void Object3d::CreateModel(const std::string &filePath) {
     if (model_->IsGltf()) {
         currentModelAnimation_ = std::make_unique<ModelAnimation>();
         currentModelAnimation_->SetModelData(model_->GetModelData());
-        currentModelAnimation_->Initialize("resources/models/", modelFilePath_);
+        currentModelAnimation_->Initialize(AssetPath::ModelsRoot(modelFilePath_), modelFilePath_);
 
         model_->SetAnimator(currentModelAnimation_->GetAnimator());
         if (model_->GetModelData().hasBones) {
@@ -195,7 +196,7 @@ void Object3d::AnimationUpdate() {
 
                 // アニメーター側のファイル情報がまだ切り替え先と異なる場合のみ更新する
                 if (currentFile != nextFile) {
-                    currentAnimator->UpdateCurrentFileInfo("resources/models/", nextFile);
+                    currentAnimator->UpdateCurrentFileInfo(AssetPath::ModelsRoot(nextFile), nextFile);
                 }
 
                 // ループフラグは modelFilePath_ をキーに参照するため、
@@ -268,7 +269,7 @@ void Object3d::SetAnimation(const std::string &animationFileName) {
     targetLoop_ = GetAnimationLoop(animationFileName);
 
     // 新しいアニメーションへの補間開始
-    animator->BlendToAnimation("resources/models/", animationFileName, blendDuration_);
+    animator->BlendToAnimation(AssetPath::ModelsRoot(animationFileName), animationFileName, blendDuration_);
 
     // 切り替え待機状態にする
     isAnimationSwitchPending_ = true;
@@ -286,7 +287,7 @@ void Object3d::AddAnimation(const std::string &fileName, bool loop) {
     auto animation = std::make_unique<ModelAnimation>();
 
     animation->SetModelData(model_->GetModelData());
-    animation->Initialize("resources/models/", fileName);
+    animation->Initialize(AssetPath::ModelsRoot(fileName), fileName);
     animation->GetAnimator()->SetAnimationTime(0.0f);
     animation->SetSpeed(animationSpeed_);
 
@@ -576,7 +577,7 @@ void Object3d::SetModel(const std::string &filePath) {
 
     if (model_->IsGltf()) {
         currentModelAnimation_->SetModelData(model_->GetModelData());
-        currentModelAnimation_->Initialize("resources/models/", filePath);
+        currentModelAnimation_->Initialize(AssetPath::ModelsRoot(filePath), filePath);
 
         model_->SetAnimator(currentModelAnimation_->GetAnimator());
         model_->SetBone(currentModelAnimation_->GetBone());

@@ -817,6 +817,7 @@
     <ClInclude Include="Engine\Render\DrawGroupManager.h">
       <Filter>Engine\Renderer</Filter>
     </ClInclude>
+    <ClInclude Include="Engine\Utility\Asset\AssetPath.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include=".editorconfig" />

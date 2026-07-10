@@ -895,7 +895,7 @@ void SpriteManager::DrawSpriteManager() {
 
     // 説明テキスト
     ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kTextDim);
-    ImGui::TextWrapped("スプライトは resources/jsons/Sprites/<フォルダ名> にJSONとして保存されます。");
+    ImGui::TextWrapped("スプライトは Application/Assets/jsons/Sprites/<フォルダ名> にJSONとして保存されます。");
     ImGui::PopStyleColor();
     ImGui::Spacing();
 
@@ -981,7 +981,7 @@ void SpriteManager::SaveDrawOrder() {
 
 void SpriteManager::LoadDrawOrder() {
     // DrawOrder.jsonファイルが存在するかチェック
-    std::string drawOrderPath = "resources/jsons/Sprites/" + saveFolder_ + "/DrawOrder.json";
+    std::string drawOrderPath = "Application/Assets/jsons/Sprites/" + saveFolder_ + "/DrawOrder.json";
     if (!fs::exists(drawOrderPath)) {
         return;
     }
@@ -1027,7 +1027,7 @@ void SpriteManager::LoadDrawOrder() {
 void SpriteManager::SaveAllSprites() {
     SaveDrawOrder();
 
-    std::string folderPath = "resources/jsons/Sprites/" + saveFolder_;
+    std::string folderPath = "Application/Assets/jsons/Sprites/" + saveFolder_;
     if (!fs::exists(folderPath)) {
         fs::create_directories(folderPath);
     }
@@ -1080,7 +1080,7 @@ void SpriteManager::SaveAllSprites() {
 }
 
 void SpriteManager::LoadAllSprites() {
-    std::string folderPath = "resources/jsons/Sprites/" + saveFolder_;
+    std::string folderPath = "Application/Assets/jsons/Sprites/" + saveFolder_;
 
     if (!fs::exists(folderPath) || !fs::is_directory(folderPath)) {
         return;

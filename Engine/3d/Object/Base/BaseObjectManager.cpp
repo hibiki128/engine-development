@@ -94,7 +94,7 @@ void BaseObjectManager::SaveAll() {
 
 void BaseObjectManager::LoadAll(std::string sceneName) {
     // シーンデータのフォルダパスを構築
-    std::string sceneDataPath = "Resources/jsons/SceneData/" + sceneName + "/ObjectDatas";
+    std::string sceneDataPath = "Application/Assets/jsons/SceneData/" + sceneName + "/ObjectDatas";
 
     // フォルダが存在するかチェック
     if (!std::filesystem::exists(sceneDataPath)) {
@@ -866,7 +866,7 @@ void BaseObjectManager::DrawObjectLoadModel() {
 
 void BaseObjectManager::LoadObjectFromJson(const std::string &startPath, const std::string &objectName) {
     // フルパスを構築 (startPath/objectName.json)
-    std::string fullPath = "resources/jsons/" + startPath + "/" + objectName + ".json";
+    std::string fullPath = "Application/Assets/jsons/" + startPath + "/" + objectName + ".json";
 
     // BaseObjectのLoadFromJson機能を使用してオブジェクトを作成
     auto newObject = std::make_unique<BaseObject>();

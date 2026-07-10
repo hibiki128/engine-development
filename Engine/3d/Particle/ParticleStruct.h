@@ -83,7 +83,7 @@ struct CSParticle {
 /// Update CS が「使う機能のバッファだけ load/store」できるようにして
 /// メモリ帯域を削減する（演出なし構成で 156B → 76B）。
 ///
-/// 【重要】各構造体は HLSL 側（Resources/shaders/Particle/Particle.hlsli の
+/// 【重要】各構造体は HLSL 側（Engine/EngineAssets/shaders/Particle/Particle.hlsli の
 ///   PDrawCore / PSimCore / PTrail / PRotation 等）と**バイト単位で一致**させること。
 ///   StructuredBuffer は 4 バイト境界のタイトパッキング（float3=12B, float4=16B）。
 ///   末尾の static_assert がレイアウト契約を固定する。
@@ -456,7 +456,7 @@ struct ParticleFieldSettingsOverride {
 /// GPUに送るフィールドデータ（StructuredBuffer 要素 / 16バイト境界）
 ///
 /// 【重要】このレイアウトは HLSL 側 `struct ParticleField`
-///   （Resources/shaders/Particle/Particle.hlsli）と**バイト単位で一致**させること。
+///   （Engine/EngineAssets/shaders/Particle/Particle.hlsli）と**バイト単位で一致**させること。
 ///   メンバの追加/削除/並べ替えは両方を同時に直し、下の static_assert を更新する。
 ///
 /// 【責務（1構造体に混載）】
