@@ -2,6 +2,7 @@
 #include "Utility/Debug/ImGui/ImGuiNotification.h"
 #include "Utility/Scene/SceneRegistry.h"
 #include <Debug/CpuProfiler/CpuProfiler.h>
+#include <Debug/GpuProfiler/GpuProfiler.h>
 #include <Debug/Log/Logger.h>
 #include <Frame.h>
 #include <Shadow/ShadowMap.h>
@@ -256,6 +257,11 @@ void Framework::Finalize() {
     modelCommon_->Finalize();
 
     baseObjectManager_->Finalize();
+
+    // GpuProfiler は QueryHeap / Readback を保持するシングルトン。静的破棄は
+    // ReportLiveObjects より後に走るため、device 解放前にここで明示解放する。
+    GpuProfiler::GetInstance()->Finalize();
+
     dxCommon_->Finalize();
 }
 

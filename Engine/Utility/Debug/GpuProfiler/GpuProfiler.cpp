@@ -110,6 +110,32 @@ void GpuProfiler::BeginFrame() {
     rf.valid = true;
 }
 
+void GpuProfiler::Finalize() {
+    if (!initialized_)
+        return;
+
+    // 永続マップしている readback は Unmap してから解放する。
+    if (mappedGraphics_) {
+        readbackGraphics_->Unmap(0, nullptr);
+        mappedGraphics_ = nullptr;
+    }
+    if (mappedCompute_) {
+        readbackCompute_->Unmap(0, nullptr);
+        mappedCompute_ = nullptr;
+    }
+    readbackGraphics_.Reset();
+    readbackCompute_.Reset();
+    queryHeap_.Reset();
+
+    for (auto &rf : rings_) {
+        rf.entries.clear();
+        rf.valid = false;
+    }
+    results_.clear();
+    dxCommon_ = nullptr;
+    initialized_ = false;
+}
+
 int GpuProfiler::Open(ID3D12GraphicsCommandList *cl, const char *label, bool isCompute) {
     if (!enabled_ || !initialized_ || !cl)
         return -1;

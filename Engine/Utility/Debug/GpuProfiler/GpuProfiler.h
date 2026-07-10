@@ -32,6 +32,11 @@ class GpuProfiler {
     /// フレーム先頭で呼ぶ。ring を進め、3F前に記録したスパンの結果を取り込む。
     void BeginFrame();
 
+    /// シャットダウン時に呼ぶ。QueryHeap / Readback を解放する。
+    /// シングルトンの静的破棄は D3DResourceLeakChecker の ReportLiveObjects より
+    /// 後に走るため、明示的に device 解放前（DirectXCommon::Finalize 前）に呼ぶこと。
+    void Finalize();
+
     /// Compute キュー用スパン開始。戻り値はハンドル（Close に渡す）。-1=無効/上限超過。
     int OpenCompute(ID3D12GraphicsCommandList *cl, const char *label);
     /// Graphics キュー用スパン開始。

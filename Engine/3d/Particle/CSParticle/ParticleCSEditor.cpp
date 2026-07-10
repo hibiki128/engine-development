@@ -14,6 +14,33 @@
 namespace Hagine {
 void ParticleCSEditor::Finalize() {
     emitters_.clear();
+
+    // プレビュー窓リソースの解放。シングルトンの静的破棄は D3DResourceLeakChecker の
+    // ReportLiveObjects より後に走るため、ここ（DirectXCommon::Finalize 前）で明示解放する。
+    // 永続マップしている VB / CB は Unmap してから Reset する。
+    if (previewGridMapped_) {
+        previewGridVB_->Unmap(0, nullptr);
+        previewGridMapped_ = nullptr;
+    }
+    if (previewWireMapped_) {
+        previewWireVB_->Unmap(0, nullptr);
+        previewWireMapped_ = nullptr;
+    }
+    if (previewLineCBData_) {
+        previewLineCB_->Unmap(0, nullptr);
+        previewLineCBData_ = nullptr;
+    }
+    if (previewPerViewData_) {
+        previewPerViewCB_->Unmap(0, nullptr);
+        previewPerViewData_ = nullptr;
+    }
+    previewGridVB_.Reset();
+    previewWireVB_.Reset();
+    previewLineCB_.Reset();
+    previewPerViewCB_.Reset();
+    previewColorResource_.Reset();
+    previewDepthResource_.Reset();
+    previewInitialized_ = false;
 }
 
 void ParticleCSEditor::Initialize() {
