@@ -27,7 +27,8 @@ class SceneManager {
     /// <summary>
     /// 初期化
     /// </summary>
-    void Initialize();
+    /// <param name="transition">シーン遷移演出（Framework が所有・注入する）</param>
+    void Initialize(SceneTransition *transition);
 
     /// <summary>
     /// シーン終了
@@ -85,6 +86,11 @@ class SceneManager {
 
     void SetOffScreen(OffScreen *offscreen) { offscreen_ = offscreen; }
     void SetDrawSystem(DrawSystem *drawSystem) { drawSystem_ = drawSystem; }
+
+    /// <summary>
+    /// シーン遷移演出を取得（App 側からのフェード制御用）
+    /// </summary>
+    SceneTransition *GetSceneTransition() const { return transition_; }
 
   private:
     OffScreen *offscreen_ = nullptr;

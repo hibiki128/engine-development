@@ -826,7 +826,7 @@ void ParticleCSGroup::CreateAliveCountResource() {
 void ParticleCSGroup::CreateAliveListResources() {
     const uint32_t maxCount = settingsData_->maxParticleCount;
 
-    // ping-pong の2枚それぞれに aliveList / aliveCounter を本確保する（§8）。
+    // ping-pong の2枚それぞれに aliveList / aliveCounter を本確保する。
     for (uint32_t i = 0; i < kAlivePingPong; ++i) {
         // --- aliveList: 生存 slot index バッファ (UAV: compute u9 / SRV: VS t2) ---
         aliveListResource_[i] = dxCommon_->CreateBufferResource(sizeof(uint32_t) * maxCount, true);
@@ -896,7 +896,7 @@ void ParticleCSGroup::CountAliveParticles() {
 }
 
 uint32_t ParticleCSGroup::GetAliveParticleCount() {
-    // Phase 2: 旧 CountParticle 全Nディスパッチを廃止し、生存コンパクションの
+    // 旧 CountParticle 全Nディスパッチを廃止し、生存コンパクションの
     // aliveCounter 読み戻し値(FetchAliveDrawCount で更新)をそのまま統計に流用する。
     cachedAliveCount_ = aliveDrawCount_;
     return cachedAliveCount_;
@@ -2073,7 +2073,7 @@ void ParticleCSGroup::DrawImGui() {
 
         if (v) {
             // --------------------------------------------------
-            // ブレンドモード（新規追加）
+            // ブレンドモード
             // --------------------------------------------------
             ImGui::Spacing();
             ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.56f, 0.69f, 0.86f, 1.0f));
@@ -2137,7 +2137,7 @@ void ParticleCSGroup::DrawImGui() {
                 ImGui::SetTooltip("1=軽量なめらか / 4=複雑（負荷増）");
 
             // --------------------------------------------------
-            // 分散オフセット（新規追加）
+            // 分散オフセット
             // --------------------------------------------------
             ImGui::Spacing();
             ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.56f, 0.69f, 0.86f, 1.0f));

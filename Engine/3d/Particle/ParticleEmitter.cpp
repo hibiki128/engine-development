@@ -96,11 +96,6 @@ void ParticleEmitter::DrawEmitter() {
     }
 }
 
-// -------------------------------------------------------
-// SyncSettingsToTransform
-//   transform の値を全グループの ParticleSetting に反映する
-//   dirty判定で変化があったときだけ呼ぶ
-// -------------------------------------------------------
 void ParticleEmitter::SyncSettingsToTransform() {
     if (!Manager_)
         return;
@@ -112,19 +107,12 @@ void ParticleEmitter::SyncSettingsToTransform() {
     }
 }
 
-// -------------------------------------------------------
-// EmitInternal
-//   設定同期なしでパーティクルを発射するだけの内部用関数
-// -------------------------------------------------------
 void ParticleEmitter::EmitInternal() {
     if (Manager_) {
         Manager_->Emit();
     }
 }
 
-// -------------------------------------------------------
-// Emit（外部から明示的に呼ぶ用。設定更新込み）
-// -------------------------------------------------------
 void ParticleEmitter::Emit() {
     SyncSettingsToTransform();
     EmitInternal();

@@ -8,8 +8,8 @@ SceneManager::~SceneManager() {
     
 }
 
-void SceneManager::Initialize() {
-    transition_ = SceneTransition::GetInstance();
+void SceneManager::Initialize(SceneTransition *transition) {
+    transition_ = transition;
     transition_->Initialize();
 }
 

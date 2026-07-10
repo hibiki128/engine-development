@@ -1,7 +1,7 @@
 #include "../Particle.hlsli"
 
 // =============================================
-// UpdateParticle 軽量バリアント（§6 D: 演出なし専用）
+// UpdateParticle 軽量バリアント（演出なし専用）
 //
 //   フル版 UpdateParticle.CS.hlsl は単一巨大カーネルで全演出コード
 //   (curl/vortex/gather/turbulence/field/trail/rotation/override) を抱え、
@@ -42,7 +42,7 @@ RWStructuredBuffer<uint> gAliveList    : register(u9);
 RWStructuredBuffer<uint> gAliveCounter : register(u10);
 // 描画コンパクション（u11）
 RWStructuredBuffer<PDrawCore> gRenderCompact : register(u11);
-// 生存リスト間接ディスパッチ（§8）: 前フレームの out リスト = 今フレームの in（処理対象）。
+// 生存リスト間接ディスパッチ: 前フレームの out リスト = 今フレームの in（処理対象）。
 //   軽量版はトレイルを持たないため append は survivor のみ（下のグループ集約コンパクション）。
 StructuredBuffer<uint> gAliveListIn    : register(t2); // in: 処理対象 slot index 列
 StructuredBuffer<uint> gAliveCounterIn : register(t3); // in: リスト長
@@ -66,7 +66,7 @@ groupshared uint sGroupBase;       // gAliveCounter から取得したグルー�
 [numthreads(256, 1, 1)]
 void main(uint3 DTid : SV_DispatchThreadID, uint groupIndex : SV_GroupIndex)
 {
-    // 生存リスト間接ディスパッチ（§8）: 全スロット走査ではなく in リストの tid 番目を処理する。
+    // 生存リスト間接ディスパッチ: 全スロット走査ではなく in リストの tid 番目を処理する。
     //   早期 return 不可（グループ集約バリアのため全スレッドが到達する必要がある）。
     //   tid>=リスト長 / dead / OOB は alive=false のまま下のコンパクションへ合流する。
     uint tid = DTid.x;

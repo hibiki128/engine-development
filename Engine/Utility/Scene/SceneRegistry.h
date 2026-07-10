@@ -1,9 +1,11 @@
 #pragma once
 #include "BaseScene.h"
+#include <algorithm>
 #include <functional>
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 namespace Hagine {
 
@@ -52,6 +54,21 @@ class SceneRegistry {
     /// </summary>
     bool Contains(const std::string &name) const {
         return creators_.find(name) != creators_.end();
+    }
+
+    /// <summary>
+    /// 登録済みシーン名の一覧を取得（名前順ソート済み）
+    /// シーン切替メニューやショートカットの動的生成に使う
+    /// </summary>
+    /// <returns>std::vector&lt;std::string&gt;: シーン名一覧</returns>
+    std::vector<std::string> GetSceneNames() const {
+        std::vector<std::string> names;
+        names.reserve(creators_.size());
+        for (const auto &pair : creators_) {
+            names.push_back(pair.first);
+        }
+        std::sort(names.begin(), names.end());
+        return names;
     }
 
   private:

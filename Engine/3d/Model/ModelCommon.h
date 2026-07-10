@@ -12,14 +12,10 @@ class ModelCommon {
     /// public method
     /// ===================================================
 
-    /// <summary>
-    /// シングルトンインスタンスの取得
-    /// </summary>
-    /// <returns>ModelCommon*: インスタンスのポインタ</returns>
-      static ModelCommon* GetInstance() {
-        static ModelCommon instance;
-          return &instance;
-    }
+    ModelCommon() = default;
+    ~ModelCommon() = default;
+    ModelCommon(ModelCommon &) = delete;
+    ModelCommon &operator=(ModelCommon &) = delete;
 
     /// <summary>
     /// 初期化
@@ -35,16 +31,6 @@ class ModelCommon {
     /// Getter
     /// </summary>
     DirectXCommon *GetDxCommon() const { return dxCommon_; }
-
-  private:
-    /// ===================================================
-    /// private method
-    /// ===================================================
-
-    ModelCommon() = default;
-    ~ModelCommon() = default;
-    ModelCommon(ModelCommon &) = delete;
-    ModelCommon &operator=(ModelCommon &) = delete;
 
   private:
     /// ===================================================

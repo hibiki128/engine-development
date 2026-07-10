@@ -8,7 +8,7 @@ extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hwnd_, UINT ms
 // WindowsAPI
 namespace Hagine {
 class WinApp {
-  private:
+  public:
     WinApp() = default;
     ~WinApp() = default;
     WinApp(const WinApp &) = delete;
@@ -18,15 +18,6 @@ class WinApp {
     static LRESULT CALLBACK WindowProc(HWND hwnd_, UINT msg, WPARAM wparam, LPARAM lparam);
 
   public: // メンバ関数
-    /// <summary>
-    /// シングルトンインスタンスの取得
-    /// </summary>
-    /// <returns></returns>
-      static WinApp* GetInstance() {
-        static WinApp instance;
-          return &instance;
-    }
-
     /// <summary>
     /// 初期化
     /// </summary>

@@ -54,15 +54,6 @@ class DrawSystem {
     static constexpr int kGPUParticleCompute = -2;
 
     /// <summary>
-    /// インスタンスを取得
-    /// </summary>
-    /// <returns>DrawSystem*: シングルトンインスタンス</returns>
-    static DrawSystem *GetInstance() {
-        static DrawSystem instance;
-        return &instance;
-    }
-
-    /// <summary>
     /// 初期化
     /// </summary>
     /// <param name="dxCommon">DirectX共通処理</param>
@@ -152,11 +143,6 @@ class DrawSystem {
     /// <param name="fileName">読み込みファイル名</param>
     void LoadConfig(const std::string &fileName = "DrawSystem");
 
-  private:
-    /// ===================================================
-    /// private method
-    /// ===================================================
-
     /// <summary>
     /// コンストラクタ
     /// </summary>
@@ -168,6 +154,11 @@ class DrawSystem {
     ~DrawSystem() = default;
     DrawSystem(const DrawSystem &) = delete;
     DrawSystem &operator=(const DrawSystem &) = delete;
+
+  private:
+    /// ===================================================
+    /// private method
+    /// ===================================================
 
     /// <summary>
     /// 描画処理登録の実体

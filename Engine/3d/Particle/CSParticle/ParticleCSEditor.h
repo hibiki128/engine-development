@@ -108,7 +108,7 @@ class ParticleCSEditor {
     // 名前からエミッターを取得（なければ nullptr）
     ParticleCSEmitter *GetEmitterByName(const std::string &name);
 
-    // ===== プレビュー窓 (Phase 8) =====
+    // ===== プレビュー窓 =====
     // 専用オフスクリーンRTを生成する（初回のみ）。Initialize から呼ぶ。
     void InitializePreview();
     // プレビューRTへ描画する。DrawSystem::Draw 冒頭(direct リスト記録中・ステージ束ね前)で呼ぶこと。

@@ -97,8 +97,12 @@
     <FxCompile Include="Resources\shaders\OffScreen\Bloom.PS.hlsl">
       <Filter>Resources\shaders\OffScreen</Filter>
     </FxCompile>
-    <FxCompile Include="Resources\shaders\Particle\CSParticle\ResetArgs.CS.hlsl" />
-    <FxCompile Include="Resources\shaders\Particle\CSParticle\UpdateParticleLite.CS.hlsl" />
+    <FxCompile Include="Resources\shaders\Particle\CSParticle\UpdateParticleLite.CS.hlsl">
+      <Filter>Resources\shaders\Particle\CSParticle</Filter>
+    </FxCompile>
+    <FxCompile Include="Resources\shaders\Particle\CSParticle\ResetArgs.CS.hlsl">
+      <Filter>Resources\shaders\Particle\CSParticle</Filter>
+    </FxCompile>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Engine\2d\Sprite.cpp">
@@ -215,13 +219,7 @@
     <ClCompile Include="Engine\Base\DirectXCommon.cpp">
       <Filter>Engine\Base</Filter>
     </ClCompile>
-    <ClCompile Include="Engine\Base\WinApp.cpp">
-      <Filter>Engine\Base</Filter>
-    </ClCompile>
     <ClCompile Include="Engine\Core\Framework.cpp">
-      <Filter>Engine\Core</Filter>
-    </ClCompile>
-    <ClCompile Include="Engine\Core\MyGame.cpp">
       <Filter>Engine\Core</Filter>
     </ClCompile>
     <ClCompile Include="Engine\Frame\Frame.cpp">
@@ -401,6 +399,45 @@
     <ClCompile Include="Engine\Utility\Debug\GpuProfiler\GpuProfiler.cpp">
       <Filter>Engine\Utility\Debug\GPUProfiler</Filter>
     </ClCompile>
+    <ClCompile Include="Engine\Base\Command\DXCommandList.cpp">
+      <Filter>Engine\Base\Command</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\Base\Command\DXCommandQueue.cpp">
+      <Filter>Engine\Base\Command</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\Base\Device\DXDevice.cpp">
+      <Filter>Engine\Base\Device</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\Base\Frame\FrameRateLimiter.cpp">
+      <Filter>Engine\Base\Frame</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\Base\Resource\ResourceFactory.cpp">
+      <Filter>Engine\Base\Resource</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\Base\Shader\ShaderCompiler.cpp">
+      <Filter>Engine\Base\Shader</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\Base\SwapChain\DXSwapChain.cpp">
+      <Filter>Engine\Base\SwapChain</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\Base\WinApp\WinApp.cpp">
+      <Filter>Engine\Base\WinApp</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\Utility\Debug\CpuProfiler\CpuProfiler.cpp">
+      <Filter>Engine\Utility\Debug\CpuProfiler</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\Utility\Debug\GameParam\GameParamHub.cpp">
+      <Filter>Engine\Utility\Debug\GameParam</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\Utility\Edit\MotionEditor\MotionEditor.cpp">
+      <Filter>Engine\Utility\Edit\MotionEditor</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\Utility\Graphics\Dsv\DsvManager.cpp">
+      <Filter>Engine\Utility\Graphics\Dsv</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\Utility\Graphics\Rtv\RtvManager.cpp">
+      <Filter>Engine\Utility\Graphics\Rtv</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="externals\imgui\imconfig.h" />
@@ -525,13 +562,7 @@
     <ClInclude Include="Engine\Base\DirectXCommon.h">
       <Filter>Engine\Base</Filter>
     </ClInclude>
-    <ClInclude Include="Engine\Base\WinApp.h">
-      <Filter>Engine\Base</Filter>
-    </ClInclude>
     <ClInclude Include="Engine\Core\Framework.h">
-      <Filter>Engine\Core</Filter>
-    </ClInclude>
-    <ClInclude Include="Engine\Core\MyGame.h">
       <Filter>Engine\Core</Filter>
     </ClInclude>
     <ClInclude Include="Engine\Frame\Frame.h">
@@ -740,6 +771,51 @@
     </ClInclude>
     <ClInclude Include="Engine\Utility\Debug\GpuProfiler\GpuProfiler.h">
       <Filter>Engine\Utility\Debug\GPUProfiler</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Base\Command\DXCommandList.h">
+      <Filter>Engine\Base\Command</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Base\Command\DXCommandQueue.h">
+      <Filter>Engine\Base\Command</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Base\Device\DXDevice.h">
+      <Filter>Engine\Base\Device</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Base\Frame\FrameRateLimiter.h">
+      <Filter>Engine\Base\Frame</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Base\Resource\ResourceFactory.h">
+      <Filter>Engine\Base\Resource</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Base\Shader\ShaderCompiler.h">
+      <Filter>Engine\Base\Shader</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Base\SwapChain\DXSwapChain.h">
+      <Filter>Engine\Base\SwapChain</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Base\WinApp\WinApp.h">
+      <Filter>Engine\Base\WinApp</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Utility\Debug\CpuProfiler\CpuProfiler.h">
+      <Filter>Engine\Utility\Debug\CpuProfiler</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Utility\Debug\GameParam\GameParamHub.h">
+      <Filter>Engine\Utility\Debug\GameParam</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Utility\Debug\ImGui\AssetDragDrop.h">
+      <Filter>Engine\Utility\Debug\ImGui</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Utility\Edit\MotionEditor\MotionEditor.h">
+      <Filter>Engine\Utility\Edit\MotionEditor</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Utility\Graphics\Dsv\DsvManager.h">
+      <Filter>Engine\Utility\Graphics\Dsv</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Utility\Graphics\Rtv\RtvManager.h">
+      <Filter>Engine\Utility\Graphics\Rtv</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Render\DrawGroupManager.h">
+      <Filter>Engine\Renderer</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
@@ -983,6 +1059,42 @@
     </Filter>
     <Filter Include="Engine\Utility\Debug\GPUProfiler">
       <UniqueIdentifier>{251796a5-fe64-4116-bd1e-cdb7d7aa0c9a}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Engine\Base\Command">
+      <UniqueIdentifier>{a1b2c3d4-0001-4a10-9c01-000000000001}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Engine\Base\Device">
+      <UniqueIdentifier>{a1b2c3d4-0002-4a10-9c01-000000000002}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Engine\Base\Frame">
+      <UniqueIdentifier>{a1b2c3d4-0003-4a10-9c01-000000000003}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Engine\Base\Resource">
+      <UniqueIdentifier>{a1b2c3d4-0004-4a10-9c01-000000000004}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Engine\Base\Shader">
+      <UniqueIdentifier>{a1b2c3d4-0005-4a10-9c01-000000000005}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Engine\Base\SwapChain">
+      <UniqueIdentifier>{a1b2c3d4-0006-4a10-9c01-000000000006}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Engine\Base\WinApp">
+      <UniqueIdentifier>{a1b2c3d4-0007-4a10-9c01-000000000007}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Engine\Utility\Debug\CpuProfiler">
+      <UniqueIdentifier>{a1b2c3d4-0008-4a10-9c01-000000000008}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Engine\Utility\Debug\GameParam">
+      <UniqueIdentifier>{a1b2c3d4-0009-4a10-9c01-000000000009}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Engine\Utility\Edit\MotionEditor">
+      <UniqueIdentifier>{a1b2c3d4-000a-4a10-9c01-00000000000a}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Engine\Utility\Graphics\Dsv">
+      <UniqueIdentifier>{a1b2c3d4-000b-4a10-9c01-00000000000b}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Engine\Utility\Graphics\Rtv">
+      <UniqueIdentifier>{a1b2c3d4-000c-4a10-9c01-00000000000c}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>

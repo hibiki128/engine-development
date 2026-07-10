@@ -48,13 +48,13 @@
     <OutDir>$(ProjectDir)..\Generated\Outputs\$(Configuration)\</OutDir>
     <IntDir>$(ProjectDir)..\Generated\Obj\$(ProjectName)\$(Configuration)\</IntDir>
     <IncludePath>$(ProjectDir)Externals\imgui;$(ProjectDir)Externals\DirectXTex</IncludePath>
-    <PublicIncludeDirectories>$(SolutionDir);$(ProjectDir)Engine;$(ProjectDir)Engine\2d;$(ProjectDir)Engine\3d;$(ProjectDir)Engine\Audio;$(ProjectDir)Engine\Base;$(ProjectDir)Engine\Core;$(ProjectDir)Engine\Frame;$(ProjectDir)Engine\Input;$(ProjectDir)Engine\Math;$(ProjectDir)Engine\OffScreen;$(ProjectDir)Engine\Scene;$(ProjectDir)Engine\Utility;$(ProjectDir)Externals;$(ProjectDir)Externals\imgui;$(ProjectDir)Externals\DirectXTex;$(ProjectDir)Externals\std_truetype;$(ProjectDir)Externals\assimp\include</PublicIncludeDirectories>
+    <PublicIncludeDirectories>$(SolutionDir);$(ProjectDir)Engine;$(ProjectDir)Engine\2d;$(ProjectDir)Engine\3d;$(ProjectDir)Engine\Audio;$(ProjectDir)Engine\Base;$(ProjectDir)Engine\Base\Command;$(ProjectDir)Engine\Base\Device;$(ProjectDir)Engine\Base\Frame;$(ProjectDir)Engine\Base\Resource;$(ProjectDir)Engine\Base\Shader;$(ProjectDir)Engine\Base\SwapChain;$(ProjectDir)Engine\Base\WinApp;$(ProjectDir)Engine\Core;$(ProjectDir)Engine\Frame;$(ProjectDir)Engine\Input;$(ProjectDir)Engine\Math;$(ProjectDir)Engine\OffScreen;$(ProjectDir)Engine\Scene;$(ProjectDir)Engine\Utility;$(ProjectDir)Externals;$(ProjectDir)Externals\imgui;$(ProjectDir)Externals\DirectXTex;$(ProjectDir)Externals\std_truetype;$(ProjectDir)Externals\assimp\include</PublicIncludeDirectories>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <OutDir>$(ProjectDir)..\Generated\Outputs\$(Configuration)\</OutDir>
     <IntDir>$(ProjectDir)..\Generated\Obj\$(ProjectName)\$(Configuration)\</IntDir>
     <IncludePath>$(ProjectDir)Externals\imgui;$(ProjectDir)Externals\DirectXTex</IncludePath>
-    <PublicIncludeDirectories>$(SolutionDir);$(ProjectDir)Engine;$(ProjectDir)Engine\2d;$(ProjectDir)Engine\3d;$(ProjectDir)Engine\Audio;$(ProjectDir)Engine\Base;$(ProjectDir)Engine\Core;$(ProjectDir)Engine\Frame;$(ProjectDir)Engine\Input;$(ProjectDir)Engine\Math;$(ProjectDir)Engine\OffScreen;$(ProjectDir)Engine\Scene;$(ProjectDir)Engine\Utility;$(ProjectDir)Externals;$(ProjectDir)Externals\imgui;$(ProjectDir)Externals\DirectXTex;$(ProjectDir)Externals\std_truetype;$(ProjectDir)Externals\assimp\include</PublicIncludeDirectories>
+    <PublicIncludeDirectories>$(SolutionDir);$(ProjectDir)Engine;$(ProjectDir)Engine\2d;$(ProjectDir)Engine\3d;$(ProjectDir)Engine\Audio;$(ProjectDir)Engine\Base;$(ProjectDir)Engine\Base\Command;$(ProjectDir)Engine\Base\Device;$(ProjectDir)Engine\Base\Frame;$(ProjectDir)Engine\Base\Resource;$(ProjectDir)Engine\Base\Shader;$(ProjectDir)Engine\Base\SwapChain;$(ProjectDir)Engine\Base\WinApp;$(ProjectDir)Engine\Core;$(ProjectDir)Engine\Frame;$(ProjectDir)Engine\Input;$(ProjectDir)Engine\Math;$(ProjectDir)Engine\OffScreen;$(ProjectDir)Engine\Scene;$(ProjectDir)Engine\Utility;$(ProjectDir)Externals;$(ProjectDir)Externals\imgui;$(ProjectDir)Externals\DirectXTex;$(ProjectDir)Externals\std_truetype;$(ProjectDir)Externals\assimp\include</PublicIncludeDirectories>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
@@ -67,7 +67,7 @@
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
       <TreatWarningAsError>true</TreatWarningAsError>
-      <AdditionalIncludeDirectories>$(SolutionDir);$(ProjectDir)Externals;$(ProjectDir)Engine;$(ProjectDir)Engine\2d;$(ProjectDir)Engine\3d;$(ProjectDir)Engine\Audio;$(ProjectDir)Engine\Base;$(ProjectDir)Engine\Core;$(ProjectDir)Engine\Frame;$(ProjectDir)Engine\Input;$(ProjectDir)Engine\Math;$(ProjectDir)Engine\OffScreen;$(ProjectDir)Engine\Scene;$(ProjectDir)Engine\Utility;$(ProjectDir)Externals\std_truetype;$(ProjectDir)Externals\assimp\include;$(ProjectDir)Externals\imgui;$(ProjectDir)Externals\DirectXTex</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir);$(ProjectDir)Externals;$(ProjectDir)Engine;$(ProjectDir)Engine\2d;$(ProjectDir)Engine\3d;$(ProjectDir)Engine\Audio;$(ProjectDir)Engine\Base;$(ProjectDir)Engine\Base\Command;$(ProjectDir)Engine\Base\Device;$(ProjectDir)Engine\Base\Frame;$(ProjectDir)Engine\Base\Resource;$(ProjectDir)Engine\Base\Shader;$(ProjectDir)Engine\Base\SwapChain;$(ProjectDir)Engine\Base\WinApp;$(ProjectDir)Engine\Core;$(ProjectDir)Engine\Frame;$(ProjectDir)Engine\Input;$(ProjectDir)Engine\Math;$(ProjectDir)Engine\OffScreen;$(ProjectDir)Engine\Scene;$(ProjectDir)Engine\Utility;$(ProjectDir)Externals\std_truetype;$(ProjectDir)Externals\assimp\include;$(ProjectDir)Externals\imgui;$(ProjectDir)Externals\DirectXTex</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -93,7 +93,7 @@ copy "$(WindowsSdkDIr)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
       <AdditionalOptions>/utf-8 /IGNORE:4049 /IGNORE:4099 </AdditionalOptions>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
-      <AdditionalIncludeDirectories>$(SolutionDir);$(ProjectDir)Externals;$(ProjectDir)Engine;$(ProjectDir)Engine\2d;$(ProjectDir)Engine\3d;$(ProjectDir)Engine\Audio;$(ProjectDir)Engine\Base;$(ProjectDir)Engine\Core;$(ProjectDir)Engine\Frame;$(ProjectDir)Engine\Input;$(ProjectDir)Engine\Math;$(ProjectDir)Engine\OffScreen;$(ProjectDir)Engine\Scene;$(ProjectDir)Engine\Utility;$(ProjectDir)Externals\std_truetype;$(ProjectDir)Externals\assimp\include;$(ProjectDir)Externals\imgui;$(ProjectDir)Externals\DirectXTex</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir);$(ProjectDir)Externals;$(ProjectDir)Engine;$(ProjectDir)Engine\2d;$(ProjectDir)Engine\3d;$(ProjectDir)Engine\Audio;$(ProjectDir)Engine\Base;$(ProjectDir)Engine\Base\Command;$(ProjectDir)Engine\Base\Device;$(ProjectDir)Engine\Base\Frame;$(ProjectDir)Engine\Base\Resource;$(ProjectDir)Engine\Base\Shader;$(ProjectDir)Engine\Base\SwapChain;$(ProjectDir)Engine\Base\WinApp;$(ProjectDir)Engine\Core;$(ProjectDir)Engine\Frame;$(ProjectDir)Engine\Input;$(ProjectDir)Engine\Math;$(ProjectDir)Engine\OffScreen;$(ProjectDir)Engine\Scene;$(ProjectDir)Engine\Utility;$(ProjectDir)Externals\std_truetype;$(ProjectDir)Externals\assimp\include;$(ProjectDir)Externals\imgui;$(ProjectDir)Externals\DirectXTex</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -109,6 +109,19 @@ copy "$(WindowsSdkDIr)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="Engine\Base\Command\DXCommandList.cpp" />
+    <ClCompile Include="Engine\Base\Command\DXCommandQueue.cpp" />
+    <ClCompile Include="Engine\Base\Device\DXDevice.cpp" />
+    <ClCompile Include="Engine\Base\Frame\FrameRateLimiter.cpp" />
+    <ClCompile Include="Engine\Base\Resource\ResourceFactory.cpp" />
+    <ClCompile Include="Engine\Base\Shader\ShaderCompiler.cpp" />
+    <ClCompile Include="Engine\Base\SwapChain\DXSwapChain.cpp" />
+    <ClCompile Include="Engine\Base\WinApp\WinApp.cpp" />
+    <ClCompile Include="Engine\Utility\Debug\CpuProfiler\CpuProfiler.cpp" />
+    <ClCompile Include="Engine\Utility\Debug\GameParam\GameParamHub.cpp" />
+    <ClCompile Include="Engine\Utility\Edit\MotionEditor\MotionEditor.cpp" />
+    <ClCompile Include="Engine\Utility\Graphics\Dsv\DsvManager.cpp" />
+    <ClCompile Include="Engine\Utility\Graphics\Rtv\RtvManager.cpp" />
     <ClCompile Include="Engine\OffScreen\PostEffect\PostEffectParamsImpl.cpp" />
     <ClCompile Include="Engine\Utility\Collider\type\CylinderCollider.cpp" />
     <ClCompile Include="Engine\3d\Camera\BaseFollowCamera\BaseFollowCamera.cpp" />
@@ -193,8 +206,6 @@ copy "$(WindowsSdkDIr)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClCompile Include="Engine\Utility\Scene\SceneManager.cpp" />
     <ClCompile Include="Engine\Utility\String\StringUtility.cpp" />
     <ClCompile Include="Engine\Utility\Graphics\Texture\TextureManager.cpp" />
-    <ClCompile Include="Engine\Base\WinApp.cpp" />
-    <ClCompile Include="Engine\Core\MyGame.cpp" />
     <ClCompile Include="Engine\Utility\Scene\SceneTransition.cpp" />
     <ClCompile Include="Engine\OffScreen\OffScreen.cpp" />
     <ClCompile Include="Engine\Render\DrawSystem.cpp" />
@@ -270,6 +281,21 @@ copy "$(WindowsSdkDIr)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Engine\3d\Shadow\ShadowMap.h" />
+    <ClInclude Include="Engine\Base\Command\DXCommandList.h" />
+    <ClInclude Include="Engine\Base\Command\DXCommandQueue.h" />
+    <ClInclude Include="Engine\Base\Device\DXDevice.h" />
+    <ClInclude Include="Engine\Base\Frame\FrameRateLimiter.h" />
+    <ClInclude Include="Engine\Base\Resource\ResourceFactory.h" />
+    <ClInclude Include="Engine\Base\Shader\ShaderCompiler.h" />
+    <ClInclude Include="Engine\Base\SwapChain\DXSwapChain.h" />
+    <ClInclude Include="Engine\Base\WinApp\WinApp.h" />
+    <ClInclude Include="Engine\Utility\Debug\CpuProfiler\CpuProfiler.h" />
+    <ClInclude Include="Engine\Utility\Debug\GameParam\GameParamHub.h" />
+    <ClInclude Include="Engine\Utility\Debug\ImGui\AssetDragDrop.h" />
+    <ClInclude Include="Engine\Utility\Edit\MotionEditor\MotionEditor.h" />
+    <ClInclude Include="Engine\Utility\Graphics\Dsv\DsvManager.h" />
+    <ClInclude Include="Engine\Utility\Graphics\Rtv\RtvManager.h" />
+    <ClInclude Include="Engine\Render\DrawGroupManager.h" />
     <ClInclude Include="Engine\OffScreen\PostEffect\IPostEffectParams.h" />
     <ClInclude Include="Engine\OffScreen\PostEffect\PostEffectParamsFactory.h" />
     <ClInclude Include="Engine\OffScreen\PostEffect\PostEffectParamsImpl.h" />
@@ -359,8 +385,6 @@ copy "$(WindowsSdkDIr)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClInclude Include="Engine\Utility\Scene\SceneManager.h" />
     <ClInclude Include="Engine\Utility\String\StringUtility.h" />
     <ClInclude Include="Engine\Utility\Graphics\Texture\TextureManager.h" />
-    <ClInclude Include="Engine\Base\WinApp.h" />
-    <ClInclude Include="Engine\Core\MyGame.h" />
     <ClInclude Include="Engine\Utility\Scene\SceneTransition.h" />
     <ClInclude Include="Engine\OffScreen\OffScreen.h" />
     <ClInclude Include="Engine\Render\DrawSystem.h" />

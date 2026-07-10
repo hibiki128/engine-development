@@ -24,7 +24,7 @@ RWStructuredBuffer<uint> gAliveCounter : register(u10);
 RWStructuredBuffer<PDrawCore> gRenderCompact : register(u11);
 StructuredBuffer<ParticleField> gFields : register(t0);
 StructuredBuffer<ParticleFieldSettingsOverrideData> gFieldsOverride : register(t1);
-// 生存リスト間接ディスパッチ（§8）: 前フレームの out リスト = 今フレームの in（処理対象）。
+// 生存リスト間接ディスパッチ: 前フレームの out リスト = 今フレームの in（処理対象）。
 //   Update は全スロット走査をやめ、この in リストの tid 番目だけを sim する → O(生存数)。
 StructuredBuffer<uint> gAliveListIn    : register(t2); // in: 処理対象 slot index 列
 StructuredBuffer<uint> gAliveCounterIn : register(t3); // in: リスト長
@@ -300,7 +300,7 @@ void SpawnTrailParticles(inout Particle p, int particleIndex, float3 currentPosi
     // フリーリストから必要本数を予約し、空きが足りなければ「入る分だけ」に切り詰める。
     // 旧実装は1本でも足りないと全件ロールバックして0本生成だった（フリーリスト枯渇＝高密度時に
     // トレイルが丸ごと消える）。ここでは入る分だけ生成し余剰予約のみ返すことで、高負荷時も
-    // 滑らかに減衰させる（Phase 5: ロールバックの全件破棄を撤廃）。
+    // 滑らかに減衰させる。
     // フリーリストは [head, tail) が利用可能。head を進めて予約し、余りを返す。
     uint capacity = gSettings.maxParticleCount;
     uint originalHead;
@@ -384,7 +384,7 @@ void SpawnTrailParticles(inout Particle p, int particleIndex, float3 currentPosi
         // Life は最後に書いてスロットを「生存」にする（次フレームから更新対象）
         gLife[trailIndex] = trailLifeTime;
 
-        // 生存リスト間接ディスパッチ（§8）: 生成したトレイル子も out リストへ append する。
+        // 生存リスト間接ディスパッチ: 生成したトレイル子も out リストへ append する。
         //   in リスト経由でしか sim しない設計のため、append しないと子が処理も描画もされない。
         //   renderCompact にも同じ idx で書き、子を今フレームから即描画する。
         uint trailDst;
@@ -405,7 +405,7 @@ void SpawnTrailParticles(inout Particle p, int particleIndex, float3 currentPosi
 [numthreads(256, 1, 1)]
 void main(uint3 DTid : SV_DispatchThreadID)
 {
-    // 生存リスト間接ディスパッチ（§8）: 全スロット走査ではなく in リストの tid 番目だけ処理する。
+    // 生存リスト間接ディスパッチ: 全スロット走査ではなく in リストの tid 番目だけ処理する。
     //   tid >= リスト長 のスレッドは何もしない（早期 return。フル版は Wave 集約なのでバリア制約なし）。
     uint tid = DTid.x;
     if (tid >= gAliveCounterIn[0])

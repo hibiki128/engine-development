@@ -9,8 +9,14 @@
 namespace Hagine {
 class ImGuizmoManager;
 class OffScreen;
+class DrawSystem;
 class ImGuiManager {
   private:
+    ImGuizmoManager *imGuizmoManager_ = nullptr;
+    WinApp *winApp_ = nullptr;
+    DrawSystem *drawSystem_ = nullptr;
+
+  public:
     /// ====================================
     /// public method
     /// ====================================
@@ -20,13 +26,6 @@ class ImGuiManager {
     ImGuiManager(ImGuiManager &) = delete;
     ImGuiManager &operator=(ImGuiManager &) = delete;
 
-    ImGuizmoManager *imGuizmoManager_ = nullptr;
-
-  public:
-    /// ====================================
-    /// public method
-    /// ====================================
-
     /// <summary>
     /// 初期化
     /// </summary>
@@ -35,13 +34,9 @@ class ImGuiManager {
     void SetupTheme();
 
     /// <summary>
-    /// シングルトンインスタンスの取得
+    /// 統計ウィンドウで参照する DrawSystem を設定（Framework が注入する）
     /// </summary>
-    /// <returns></returns>
-    static ImGuiManager* GetInstance() {
-        static ImGuiManager instance;
-        return &instance;
-    }
+    void SetDrawSystem(DrawSystem *drawSystem) { drawSystem_ = drawSystem; }
 
     /// <summary>
     /// 終了
@@ -158,6 +153,8 @@ class ImGuiManager {
 
     void ShowHierarchyWindow();
 
+    void ShowMotionEditorWindow();
+
     void ShowSpriteManagerWindow();
 
     void ShowColliderTagManagerWindow();
@@ -170,6 +167,9 @@ class ImGuiManager {
 
     // アセットブラウザ窓（resources/images をサムネ一覧表示、各サムネをD&Dのドラッグ元にする）
     void ShowAssetBrowserWindow();
+
+    // ゲームパラメータHub窓（コード登録済みパラメータを実行中に仕分け・調整する）
+    void ShowGameParamWindow();
 
     void FixAspectRatio();
 
@@ -234,11 +234,13 @@ class ImGuiManager {
     bool showShortcutWindow_ = false;
     bool showGizmoView_ = true;
     bool showHierarchyView_ = true;
+    bool showMotionEditorView_ = true;
     bool showSpriteManagerView_ = true;
     bool showColliderTagManagerView_ = false;
     bool showAudioManagerView_ = false;
     bool showShadowMapView_ = true;
     bool showDrawSystemView_ = true;
+    bool showGameParamView_ = true; // ゲームパラメータHub窓
     bool showAssetBrowserView_ = false; // アセットブラウザ窓
 
     // グリッド設定用メンバ変数

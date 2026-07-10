@@ -9,21 +9,11 @@
 
 namespace Hagine {
 class CsvLoad {
-  private:
+  public:
     CsvLoad() = default;
     ~CsvLoad() = default;
     CsvLoad(CsvLoad &) = delete;
     CsvLoad &operator=(CsvLoad &) = delete;
-
-  public:
-    /// <summary>
-    /// シングルトンインスタンスの取得
-    /// </summary>
-    /// <returns></returns>
-      static CsvLoad* GetInstance() {
-        static CsvLoad instance;
-          return &instance;
-    }
 
     /// <summary>
     /// 終了

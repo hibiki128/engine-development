@@ -17,8 +17,9 @@ class ModelManager {
     /// <summary>
     /// 初期化
     /// </summary>
-    /// <param name="dxCommon"></param>
-    void Initialize(SrvManager *srvManager_);
+    /// <param name="srvManager">SRVマネージャー</param>
+    /// <param name="modelCommon">モデル共通部（Framework が所有・注入する）</param>
+    void Initialize(SrvManager *srvManager, ModelCommon *modelCommon);
 
     /// <summary>
     /// 終了
