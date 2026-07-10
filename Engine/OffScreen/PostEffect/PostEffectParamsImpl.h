@@ -5,6 +5,7 @@
 #include <type/Vector3.h>
 #include <type/Vector4.h>
 #include <Graphics/Texture/TextureManager.h>
+#include <Asset/AssetPath.h>
 #ifdef _DEBUG
 #include "imgui.h"
 #endif
@@ -678,8 +679,8 @@ class ShockwaveParams : public IPostEffectParams {
     }
     void Apply(ID3D12GraphicsCommandList *cmd, SrvManager *, DirectXCommon *) override {
         // 専用RootSig: [0]=srcRT(Renderer側で設定済), [1]=flareTex, [2]=cbuffer
-        // GetSrvHandleGPU は内部 prepend しないのでフルパスで渡す
-        const std::string fullPath = std::string("resources/images/") + kFlareTexPath_;
+        // GetSrvHandleGPU は内部 prepend しないのでフルパス(＝マップキー)で渡す
+        const std::string fullPath = AssetPath::Image(kFlareTexPath_);
         auto flareGpu = TextureManager::GetInstance()->GetSrvHandleGPU(fullPath);
         cmd->SetGraphicsRootDescriptorTable(1, flareGpu);
         cmd->SetGraphicsRootConstantBufferView(2, resource_->GetGPUVirtualAddress());

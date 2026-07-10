@@ -289,6 +289,7 @@ copy "$(WindowsSdkDIr)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClInclude Include="Engine\Base\Shader\ShaderCompiler.h" />
     <ClInclude Include="Engine\Base\SwapChain\DXSwapChain.h" />
     <ClInclude Include="Engine\Base\WinApp\WinApp.h" />
+    <ClInclude Include="Engine\Utility\Asset\AssetPath.h" />
     <ClInclude Include="Engine\Utility\Debug\CpuProfiler\CpuProfiler.h" />
     <ClInclude Include="Engine\Utility\Debug\GameParam\GameParamHub.h" />
     <ClInclude Include="Engine\Utility\Debug\ImGui\AssetDragDrop.h" />

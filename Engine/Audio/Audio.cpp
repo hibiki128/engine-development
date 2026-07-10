@@ -235,9 +235,9 @@ void Audio::Finalize() {
 void Audio::DebugScanWavFiles() {
     debugWavFileList_.clear();
 
-    // ソリューション直下の Resources\sounds\ を走査
-    // 実行ファイルがソリューション直下に置かれている前提
-    std::filesystem::path dir("Resources/sounds");
+    // Application/Assets/sounds/ を走査
+    // 作業ディレクトリがプロジェクトルートである前提
+    std::filesystem::path dir("Application/Assets/sounds");
 
     if (!std::filesystem::exists(dir)) {
         return;
@@ -471,7 +471,7 @@ void Audio::Debug() {
     ImGui::Spacing();
 
     // ── ファイルブラウザ ──
-    SectionHeader("[ ファイルブラウザ  Resources\\sounds\\ ]", DebugTheme::kAccentGreen);
+    SectionHeader("[ ファイルブラウザ  Application/Assets/sounds/ ]", DebugTheme::kAccentGreen);
     ImGui::PushStyleColor(ImGuiCol_Button, DebugTheme::kBgGreen);
     ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.45f, 0.68f, 0.52f, 0.40f));
     if (ImGui::Button("WAVファイルをスキャン")) {
@@ -535,9 +535,9 @@ void Audio::Debug() {
             ImGui::PushStyleColor(ImGuiCol_Button, DebugTheme::kBgBlue);
             ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.45f, 0.60f, 0.78f, 0.40f));
             if (ImGui::Button("ロード", ImVec2(120, 0))) {
-                // デバッグ用に Resources/sounds から一時的にロードする
+                // デバッグ用に Application/Assets/sounds から一時的にロードする
                 std::string savedDir = directoryPath_;
-                directoryPath_ = "Resources/sounds";
+                directoryPath_ = "Application/Assets/sounds";
                 uint32_t newIdx = LoadWave(selectedName);
                 directoryPath_ = savedDir;
                 debugLoadedMap_[selectedName] = newIdx;

@@ -212,7 +212,7 @@ Microsoft::WRL::ComPtr<ID3D12PipelineState> ComputePipeLineManager::CreateSkinni
     Microsoft::WRL::ComPtr<ID3D12PipelineState> graphicsPipelineState;
 
     IDxcBlob *computerShaderBlob = nullptr;
-    computerShaderBlob = dxCommon_->CompileShader(L"./Resources/shaders/Skinning/Skinning.CS.hlsl", L"cs_6_0");
+    computerShaderBlob = dxCommon_->CompileShader(L"./Engine/EngineAssets/shaders/Skinning/Skinning.CS.hlsl", L"cs_6_0");
     assert(computerShaderBlob != nullptr);
 
     D3D12_COMPUTE_PIPELINE_STATE_DESC computePipelineStateDesc = {};
@@ -308,7 +308,7 @@ Microsoft::WRL::ComPtr<ID3D12PipelineState> ComputePipeLineManager::CreateInitPa
     Microsoft::WRL::ComPtr<ID3D12PipelineState> graphicsPipelineState;
 
     IDxcBlob *computerShaderBlob = nullptr;
-    computerShaderBlob = dxCommon_->CompileShader(L"./Resources/shaders/Particle/CSParticle/InitParticle.CS.hlsl", L"cs_6_0");
+    computerShaderBlob = dxCommon_->CompileShader(L"./Engine/EngineAssets/shaders/Particle/CSParticle/InitParticle.CS.hlsl", L"cs_6_0");
     assert(computerShaderBlob != nullptr);
 
     D3D12_COMPUTE_PIPELINE_STATE_DESC computePipelineStateDesc = {};
@@ -403,7 +403,7 @@ Microsoft::WRL::ComPtr<ID3D12PipelineState> ComputePipeLineManager::CreateEmitte
     Microsoft::WRL::ComPtr<ID3D12PipelineState> graphicsPipelineState;
 
     IDxcBlob *computerShaderBlob = nullptr;
-    computerShaderBlob = dxCommon_->CompileShader(L"./Resources/shaders/Particle/CSParticle/EmitParticle.CS.hlsl", L"cs_6_0");
+    computerShaderBlob = dxCommon_->CompileShader(L"./Engine/EngineAssets/shaders/Particle/CSParticle/EmitParticle.CS.hlsl", L"cs_6_0");
     assert(computerShaderBlob != nullptr);
 
     D3D12_COMPUTE_PIPELINE_STATE_DESC computePipelineStateDesc = {};
@@ -515,7 +515,7 @@ Microsoft::WRL::ComPtr<ID3D12PipelineState> ComputePipeLineManager::CreateUpdate
     Microsoft::WRL::ComPtr<ID3D12PipelineState> graphicsPipelineState;
 
     IDxcBlob *computerShaderBlob = nullptr;
-    computerShaderBlob = dxCommon_->CompileShader(L"./Resources/shaders/Particle/CSParticle/UpdateParticle.CS.hlsl", L"cs_6_0");
+    computerShaderBlob = dxCommon_->CompileShader(L"./Engine/EngineAssets/shaders/Particle/CSParticle/UpdateParticle.CS.hlsl", L"cs_6_0");
     assert(computerShaderBlob != nullptr);
 
     D3D12_COMPUTE_PIPELINE_STATE_DESC computePipelineStateDesc = {};
@@ -534,7 +534,7 @@ Microsoft::WRL::ComPtr<ID3D12PipelineState> ComputePipeLineManager::CreateUpdate
     Microsoft::WRL::ComPtr<ID3D12PipelineState> graphicsPipelineState;
 
     IDxcBlob *computerShaderBlob = nullptr;
-    computerShaderBlob = dxCommon_->CompileShader(L"./Resources/shaders/Particle/CSParticle/UpdateParticleLite.CS.hlsl", L"cs_6_0");
+    computerShaderBlob = dxCommon_->CompileShader(L"./Engine/EngineAssets/shaders/Particle/CSParticle/UpdateParticleLite.CS.hlsl", L"cs_6_0");
     assert(computerShaderBlob != nullptr);
 
     D3D12_COMPUTE_PIPELINE_STATE_DESC computePipelineStateDesc = {};
@@ -594,7 +594,7 @@ Microsoft::WRL::ComPtr<ID3D12PipelineState> ComputePipeLineManager::CreateResetA
     Microsoft::WRL::ComPtr<ID3D12PipelineState> graphicsPipelineState;
 
     IDxcBlob *computerShaderBlob = nullptr;
-    computerShaderBlob = dxCommon_->CompileShader(L"./Resources/shaders/Particle/CSParticle/ResetArgs.CS.hlsl", L"cs_6_0");
+    computerShaderBlob = dxCommon_->CompileShader(L"./Engine/EngineAssets/shaders/Particle/CSParticle/ResetArgs.CS.hlsl", L"cs_6_0");
     assert(computerShaderBlob != nullptr);
 
     D3D12_COMPUTE_PIPELINE_STATE_DESC computePipelineStateDesc = {};
@@ -668,7 +668,7 @@ Microsoft::WRL::ComPtr<ID3D12PipelineState> ComputePipeLineManager::CreateCountG
     Microsoft::WRL::ComPtr<ID3D12PipelineState> graphicsPipelineState;
 
     IDxcBlob *computerShaderBlob = nullptr;
-    computerShaderBlob = dxCommon_->CompileShader(L"./Resources/shaders/Particle/CSParticle/CountParticle.CS.hlsl", L"cs_6_0");
+    computerShaderBlob = dxCommon_->CompileShader(L"./Engine/EngineAssets/shaders/Particle/CSParticle/CountParticle.CS.hlsl", L"cs_6_0");
     assert(computerShaderBlob != nullptr);
 
     D3D12_COMPUTE_PIPELINE_STATE_DESC computePipelineStateDesc = {};

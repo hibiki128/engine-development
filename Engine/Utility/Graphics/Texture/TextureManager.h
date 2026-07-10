@@ -70,13 +70,13 @@ class TextureManager {
     void LoadTexture(const std::string &filePath);
 
     /// <summary>
-    /// resources/images/ 配下のテクスチャを再帰的に全て読み込む
+    /// Application/Assets/images/ 配下のテクスチャを再帰的に全て読み込む
     /// </summary>
     void LoadAllTextures();
 
     /// <summary>
     /// TTFフォントファイルからグリフアトラステクスチャを生成してSRVに登録する
-    /// fontFilePath : resources/fonts/ からの相対パス
+    /// fontFilePath : Engine/EngineAssets/fonts/ からの相対パス
     /// fontSize     : ベイクするフォントサイズ（ピクセル単位）
     /// atlasWidth   : アトラステクスチャの幅（2のべき乗推奨）
     /// atlasHeight  : アトラステクスチャの高さ（2のべき乗推奨）

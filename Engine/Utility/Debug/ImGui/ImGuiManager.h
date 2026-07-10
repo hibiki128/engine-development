@@ -165,7 +165,7 @@ class ImGuiManager {
 
     void ShowDrawSystemWindow();
 
-    // アセットブラウザ窓（resources/images をサムネ一覧表示、各サムネをD&Dのドラッグ元にする）
+    // アセットブラウザ窓（Application/Assets/images をサムネ一覧表示、各サムネをD&Dのドラッグ元にする）
     void ShowAssetBrowserWindow();
 
     // ゲームパラメータHub窓（コード登録済みパラメータを実行中に仕分け・調整する）
@@ -254,7 +254,8 @@ class ImGuiManager {
     SpriteManager *spriteManager_ = nullptr;
     Audio *audio_ = nullptr;
 
-    std::string editorIniFilePath_ = "imgui_editor.ini";
-    std::string gameIniFilePath_ = "imgui_game.ini";
+    // ImGui レイアウト ini は Application/Config/ 配下に生成する（プロジェクトルートを散らかさない）。
+    std::string editorIniFilePath_ = "Application/Config/imgui_editor.ini";
+    std::string gameIniFilePath_ = "Application/Config/imgui_game.ini";
 };
 } // namespace Hagine

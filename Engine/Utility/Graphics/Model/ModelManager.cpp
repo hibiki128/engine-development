@@ -1,4 +1,5 @@
 #include "ModelManager.h"
+#include <Asset/AssetPath.h>
 #include "Utility/Debug/ImGui/ImGuiNotification.h"
 #include <fstream>
 #include <functional>
@@ -16,7 +17,7 @@ void ModelManager::LoadModel(const std::string &filePath) {
         // モデルの生成とファイル読み込み、初期化
         std::unique_ptr<Model> model = std::make_unique<Model>();
         model->Initialize(modelCommon_);
-        model->CreateModel("resources/models/", filePath);
+        model->CreateModel(AssetPath::ModelsRoot(filePath), filePath);
         model->SetSrv(srvManager_);
 
         // モデルをmapコンテナに格納する
@@ -32,7 +33,7 @@ void ModelManager::LoadModel(const std::string &filePath) {
 
     std::unique_ptr<Model> model = std::make_unique<Model>();
     model->Initialize(modelCommon_);
-    model->CreateModel("resources/models/", filePath);
+    model->CreateModel(AssetPath::ModelsRoot(filePath), filePath);
     model->SetSrv(srvManager_);
     models_.insert(std::make_pair(filePath, std::move(model)));
     ImGuiNotification::Post("モデルを読み込みました: " + filePath, {0.2f, 0.8f, 0.8f, 1.0f});

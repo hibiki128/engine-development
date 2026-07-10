@@ -220,7 +220,7 @@ ModelData Model::LoadModelFile(const std::string &directoryPath, const std::stri
         // デフォルトのメッシュとマテリアルを作成
         MeshData defaultMesh;
         MaterialData defaultMaterial;
-        defaultMaterial.textureFilePath = "resources/images/debug/white1x1.png";
+        defaultMaterial.textureFilePath = "debug/white1x1.png";
 
         modelData.meshes.push_back(defaultMesh);
         modelData.materials.push_back(defaultMaterial);

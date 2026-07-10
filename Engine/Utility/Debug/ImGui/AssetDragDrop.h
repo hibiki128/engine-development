@@ -3,7 +3,7 @@
 // アセット（テクスチャ）のドラッグ&ドロップ共通ヘルパー。
 //   アセットブラウザ等の「ドラッグ元」と、各種テクスチャ設定UIの「ドロップ先」を
 //   1つのペイロード種別で繋ぐ。プロジェクト全体でテクスチャをD&D設定できるようにする。
-//   ・ペイロード = テクスチャの相対パス文字列（"debug/circle2.png" 等。resources/images 基準）
+//   ・ペイロード = テクスチャの相対パス文字列（"debug/circle2.png" 等。Application/Assets/images 基準）
 //   ・USE_IMGUI のときのみ有効（リリースビルドでは空実装）。
 // =============================================================
 #ifdef USE_IMGUI
@@ -19,7 +19,7 @@ inline constexpr const char *kTexturePayloadId = "ASSET_TEX_PATH";
 /// <summary>
 /// 直前に描いたアイテム（Selectable/Image 等）をテクスチャパスのドラッグ元にする。
 /// </summary>
-/// <param name="relPath">ドラッグするテクスチャの相対パス（resources/images 基準）</param>
+/// <param name="relPath">ドラッグするテクスチャの相対パス（Application/Assets/images 基準）</param>
 /// <param name="previewTexId">ドラッグ中に表示するサムネ（0 なら名前のみ表示）</param>
 inline void TextureSource(const std::string &relPath, ImTextureID previewTexId = 0) {
     if (ImGui::BeginDragDropSource(ImGuiDragDropFlags_None)) {

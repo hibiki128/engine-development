@@ -474,7 +474,7 @@ void ParticleCSFieldManager::LoadOverrideData(DataHandler &data, ParticleFieldSe
 }
 
 void ParticleCSFieldManager::SaveField(const ParticleField &field) {
-    // フォルダ: resources/jsons/ParticleField/  ファイル名: field.name.json
+    // フォルダ: Application/Assets/jsons/ParticleField/  ファイル名: field.name.json
     std::unique_ptr<DataHandler> data = std::make_unique<DataHandler>("ParticleField", field.name);
     SaveFieldData(*data, field);
     ImGuiNotification::Post("パーティクルフィールドを保存しました: " + field.name, {0.2f, 0.8f, 0.2f, 1.0f});
