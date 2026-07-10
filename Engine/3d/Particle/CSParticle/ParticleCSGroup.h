@@ -83,7 +83,7 @@ class ParticleCSGroup {
     uint32_t GetAliveCounterSrvForVSIndex() const { return aliveCounterSrvForVSIndex_[alivePhase_]; }
     // 直近フレームに読み戻した生存数(描画 instanceCount のヒント)
     uint32_t GetAliveDrawCount() const { return aliveDrawCount_; }
-    // 生存リスト ping-pong のフェーズを反転する（§8: 毎フレーム先頭で呼び、out/in を入れ替える）。
+    // 生存リスト ping-pong のフェーズを反転する（毎フレーム先頭で呼び、out/in を入れ替える）。
     void AdvanceAliveFrame() { alivePhase_ ^= 1u; }
     // 生存コンパクションカウンタを 0 にリセットする 1スレッドパス
     void ResetAliveCounterDispatch(ID3D12GraphicsCommandList *cmdList);
@@ -256,7 +256,7 @@ class ParticleCSGroup {
     std::vector<CurvePoint> alphaCurvePoints_;
     bool lifeCurvesDirty_ = true;
 
-    // ===== 生存コンパクション（生存リスト間接ディスパッチの ping-pong 基盤・§8）=====
+    // ===== 生存コンパクション（生存リスト間接ディスパッチの ping-pong 基盤）=====
     // listBuf[2]/counterBuf[2] を毎フレーム ping-pong する。
     //   out = alivePhase_      : 今フレームの生存リスト書込先（Reset/Update/Readback/Draw が参照）
     //   in  = 1 - alivePhase_  : 前フレームの生存リスト（Step3 で Update の入力に使う・現状未使用）

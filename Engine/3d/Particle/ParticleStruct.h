@@ -459,7 +459,7 @@ struct ParticleFieldSettingsOverride {
 ///   （Resources/shaders/Particle/Particle.hlsli）と**バイト単位で一致**させること。
 ///   メンバの追加/削除/並べ替えは両方を同時に直し、下の static_assert を更新する。
 ///
-/// 【責務（1構造体に混載。Phase 6 で論理グループとして整理）】
+/// 【責務（1構造体に混載）】
 ///   1. Force        : position / radius / direction / strength / fieldType / falloff
 ///                     （ApplyFields の速度系エフェクト。Wind/Attract/Repel/Vortex）
 ///   2. LifeDrain    : lifeTimeDrain / enableLifeDrain（範囲内で寿命を削る）

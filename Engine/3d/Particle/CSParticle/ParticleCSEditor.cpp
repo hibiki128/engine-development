@@ -24,9 +24,6 @@ void ParticleCSEditor::Initialize() {
     InitializePreview();
 }
 
-// =============================================
-// プレビュー窓 (Phase 8a: 専用RT生成 + 暗くクリア + ImGui表示)
-// =============================================
 void ParticleCSEditor::InitializePreview() {
     if (previewInitialized_) {
         return;

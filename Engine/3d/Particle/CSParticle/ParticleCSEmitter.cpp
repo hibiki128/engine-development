@@ -104,7 +104,7 @@ void ParticleCSEmitter::DrawCompute(const ViewProjection &vp) {
     // receiveFields_=false なら shader へ渡る fieldCount は 0 なので影響なし扱い。
     const bool fieldsActive = receiveFields_ && (fieldMgr->GetActiveFieldCount() > 0);
 
-    // §8 生存リスト間接ディスパッチ:
+    // 生存リスト間接ディスパッチ:
     //   Emit と Update がどちらも out リストへ append するため、フレーム順序は
     //   「reset(out) → Emit(append) → barrier → Update(read in, append out) → readback」。
     //   Emit は全グループを一括ディスパッチするので、reset/フェーズ反転は全グループ分先に行う。
@@ -159,7 +159,7 @@ void ParticleCSEmitter::DrawGraphics(const ViewProjection &vp) {
 
     int drawSpan = GpuProfiler::GetInstance()->OpenGraphics(commandList_, "Draw");
     for (auto &group : particleGroups_) {
-        // Phase 2: 旧 CountParticle 全Nディスパッチは廃止（生存数は aliveCounter に統合）
+        // 旧 CountParticle 全Nディスパッチは廃止（生存数は aliveCounter に統合）
 
         // 生存数を読み戻し、描画 instanceCount を決定する。
         // VS 側で instanceId >= 実生存数 を確実にカリングするため、

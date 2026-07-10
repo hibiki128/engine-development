@@ -92,10 +92,9 @@ Model *ModelManager::FindModel(const std::string &filePath) {
     return nullptr;
 }
 
-void ModelManager::Initialize(SrvManager *srvManager_) {
-    modelCommon_ = ModelCommon::GetInstance();
-    modelCommon_->Initialize();
-    this->srvManager_ = srvManager_;
+void ModelManager::Initialize(SrvManager *srvManager, ModelCommon *modelCommon) {
+    modelCommon_ = modelCommon;
+    srvManager_ = srvManager;
 }
 
 void ModelManager::Finalize() {

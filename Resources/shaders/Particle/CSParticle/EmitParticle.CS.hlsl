@@ -16,7 +16,7 @@ RWStructuredBuffer<uint2>     gOverride : register(u5);
 RWStructuredBuffer<int>  gFreeListIndex     : register(u6);
 RWStructuredBuffer<uint> gFreeList          : register(u7);
 RWStructuredBuffer<int>  gFreeListTailIndex : register(u8);
-// 生存リスト間接ディスパッチ（§8）: 新規粒子を out リストへ append する。
+// 生存リスト間接ディスパッチ: 新規粒子を out リストへ append する。
 //   out リスト = [今フレームEmitした粒子] + [Update後も生存した粒子]。
 //   描画用 renderCompact にも同じ idx で書き、今フレームから即描画する（1F遅延なし）。
 RWStructuredBuffer<uint>      gAliveList     : register(u9);  // out: 生存slot indexリスト
@@ -472,7 +472,7 @@ void main(uint3 DTid : SV_DispatchThreadID)
     gOverride[particleIndex] = uint2(0u, 0u);
     gLife[particleIndex] = life;
 
-    // 生存リスト間接ディスパッチ（§8）: 新規粒子を out リストへ append する。
+    // 生存リスト間接ディスパッチ: 新規粒子を out リストへ append する。
     //   これにより次フレームの Update がこの粒子を sim 対象にする。
     //   renderCompact にも同じ idx で書き、今フレームから即描画する（drawCount=out カウンタ）。
     uint emitDst;

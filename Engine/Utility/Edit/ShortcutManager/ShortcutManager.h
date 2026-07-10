@@ -7,13 +7,13 @@ namespace Hagine {
 class Input;
 
 /// <summary>
-/// キーボードショートカットを登録・実行するシングルトン
+/// キーボードショートカットを登録・実行するクラス
 /// 単一キー・複数キー同時押しのコマンドに対応する
 /// </summary>
 class ShortcutManager {
-  private:
+  public:
     /// ===================================================
-    /// private method
+    /// public method
     /// ===================================================
 
     /// <summary>
@@ -27,20 +27,6 @@ class ShortcutManager {
     ~ShortcutManager() = default;
     ShortcutManager(ShortcutManager &) = delete;
     ShortcutManager &operator=(ShortcutManager &) = delete;
-
-  public:
-    /// ===================================================
-    /// public method
-    /// ===================================================
-
-    /// <summary>
-    /// インスタンスを取得
-    /// </summary>
-    /// <returns>ShortcutManager*: シングルトンインスタンス</returns>
-    static ShortcutManager *GetInstance() {
-        static ShortcutManager instance;
-        return &instance;
-    }
 
     /// <summary>
     /// 単一キーのショートカットを登録

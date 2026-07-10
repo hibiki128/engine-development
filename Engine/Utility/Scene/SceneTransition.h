@@ -4,22 +4,11 @@
 #include "vector"
 namespace Hagine {
 class SceneTransition {
-  private:
-
+  public:
     SceneTransition() = default;
     ~SceneTransition() = default;
     SceneTransition(SceneTransition &) = delete;
     SceneTransition &operator=(SceneTransition &) = delete;
-
-  public:
-    /// <summary>
-    /// シングルトンインスタンスの取得
-    /// </summary>
-    /// <returns></returns>
-      static SceneTransition* GetInstance() {
-        static SceneTransition instance;
-          return &instance;
-    }
 
     /// <summary>
     /// 終了

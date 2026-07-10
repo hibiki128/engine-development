@@ -29,8 +29,10 @@
 #include "SpriteCommon.h"
 #include "SpriteManager.h"
 #include "line/DrawLine3D.h"
+#include "Edit/MotionEditor/MotionEditor.h"
 #include"Utility/LoadFile/Csv/CsvLoad.h"
 #include "Render/DrawSystem.h"
+#include <memory>
 namespace Hagine {
 class Framework {
   public: // メンバ関数
@@ -81,32 +83,39 @@ class Framework {
 
   protected:
     D3DResourceLeakChecker LeakChecker_;
+
+    // ---- Framework が所有するインスタンス（生成・寿命を管理し、必要な所へ注入する）----
+    std::unique_ptr<WinApp> winApp_;
+    std::unique_ptr<SceneTransition> sceneTransition_;
+    std::unique_ptr<ImGuiManager> imGuiManager_;
+    std::unique_ptr<ShortcutManager> shortcutManager_;
+    std::unique_ptr<ModelCommon> modelCommon_;
+    std::unique_ptr<CsvLoad> csvLoad_;
+    std::unique_ptr<OffScreen> offscreen_;
+    std::unique_ptr<DrawSystem> drawSystem_;
+
+    // ---- 広域サービス（App 全域から参照されるため、現状は意図的にシングルトンのまま）----
     Input *input_ = nullptr;
     Audio *audio_ = nullptr;
     DirectXCommon *dxCommon_ = nullptr;
-    WinApp *winApp_ = nullptr;
     DrawLine3D *line3d_ = nullptr;
     SkyBox *skyBox_ = nullptr;
-
-    SceneTransition *sceneTransition_ = nullptr;
 
     SceneManager *sceneManager_ = nullptr;
     SrvManager *srvManager_ = nullptr;
     TextureManager *textureManager_ = nullptr;
     ModelManager *modelManager_ = nullptr;
-    ImGuiManager *imGuiManager_ = nullptr;
     ImGuizmoManager *imGuizmoManager_ = nullptr;
     BaseObjectManager *baseObjectManager_ = nullptr;
     ParticleGroupManager *particleGroupManager_ = nullptr;
     ParticleCSGroupManager *particleCSGroupManager_ = nullptr;
     PipeLineManager *pipeLineManager_ = nullptr;
+    MotionEditor *motionEditor_ = nullptr;
     ComputePipeLineManager *computePipeLineManager_ = nullptr;
-    ShortcutManager *shortcutManager_ = nullptr;
     SpriteManager *spriteManager_ = nullptr;
 
     SpriteCommon *spriteCommon_ = nullptr;
     ParticleCommon *particleCommon_ = nullptr;
-    ModelCommon *modelCommon_ = nullptr;
 
     LightGroup *lightGroup_ = nullptr;
 
@@ -117,12 +126,6 @@ class Framework {
     PrimitiveModel *primitiveModel_ = nullptr;
 
     CollisionManager *collisionManager_ = nullptr;
-
-    CsvLoad* csvLoad_ = nullptr;
-
-    std::unique_ptr<OffScreen> offscreen_;
-
-    DrawSystem *drawSystem_ = nullptr;
 
     bool endRequest_;
 };

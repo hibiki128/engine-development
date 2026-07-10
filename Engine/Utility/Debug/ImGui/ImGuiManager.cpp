@@ -15,11 +15,13 @@
 #include <algorithm>
 #include <filesystem>
 #include <map>
+#include "Edit/MotionEditor/MotionEditor.h"
 #include <Data/DataHandler.h>
 #include <Frame/Frame.h>
 #include <Line/DrawLine3D.h>
 #include <Particle/CSParticle/ParticleCSFieldManager.h>
 #include <Render/DrawSystem.h>
+#include <Debug/GameParam/GameParamHub.h>
 #include <Debug/GpuProfiler/GpuProfiler.h>
 #include <Debug/CpuProfiler/CpuProfiler.h>
 #include <Shadow/ShadowMap.h>
@@ -58,6 +60,7 @@ void ImGuiSrvFree(ImGui_ImplDX12_InitInfo * /*info*/,
 
 void ImGuiManager::Initialize(WinApp *winApp, ImGuizmoManager *imguizmoManager) {
 
+    winApp_ = winApp;
     dxCommon_ = DirectXCommon::GetInstance();
     baseObjectManager_ = BaseObjectManager::GetInstance();
     spriteManager_ = SpriteManager::GetInstance();
@@ -354,7 +357,7 @@ void ImGuiManager::ShowMainMenu() {
             ImGui::Separator();
             if (ImGui::MenuItem(ICON_FA_DOOR_OPEN " 終了", "Alt+F4")) {
                 // アプリケーション終了処理
-                WinApp::GetInstance()->ClosedWindow(); // 終了メッセージ送信
+                winApp_->ClosedWindow(); // 終了メッセージ送信
             }
             ImGui::EndMenu();
         }
@@ -401,6 +404,7 @@ void ImGuiManager::ShowMainMenu() {
                 windowToggle(ICON_FA_SQUARE " スプライトマネージャ", showSpriteManagerView_);
                 windowToggle(ICON_FA_SHAPES " コライダー", showColliderTagManagerView_);
                 windowToggle(ICON_FA_BULLHORN " オーディオ", showAudioManagerView_);
+                windowToggle(ICON_FA_CODE_BRANCH " モーションエディター", showMotionEditorView_);
 
                 ImGui::SeparatorText("パーティクル");
                 windowToggle(ICON_FA_STAR " パーティクルビュー", showParticleView_);
@@ -414,6 +418,7 @@ void ImGuiManager::ShowMainMenu() {
 
                 ImGui::SeparatorText("統計・デバッグ");
                 windowToggle(ICON_FA_DATABASE " FPS統計", showFPSView_);
+                windowToggle(ICON_FA_SLIDERS_H " ゲームパラメータ", showGameParamView_);
 
                 ImGui::EndMenu();
             }
@@ -487,7 +492,7 @@ void ImGuiManager::ShowMainMenu() {
             }
             ImGui::Separator();
             if (ImGui::MenuItem(ICON_FA_EXPAND " フルスクリーン切替", "F11")) {
-                WinApp::GetInstance()->ToggleFullScreen();
+                winApp_->ToggleFullScreen();
             }
             ImGui::EndMenu();
         }
@@ -647,32 +652,19 @@ void ImGuiManager::ShowMainMenu() {
             ImGui::EndMenu();
         }
 
-        // シーンメニュー
+        // シーンメニュー（SceneRegistry に自己登録された全シーンを列挙する）
         if (ImGui::BeginMenu(ICON_FA_GLOBE " シーン選択")) { // 地球アイコン（意味：全体メニュー）
 
-            if (ImGui::MenuItem(ICON_FA_HOME " タイトルシーン", "Ctrl+1")) { // home アイコン
-                SceneManager::GetInstance()->NextSceneReservation("TITLE");
-                ImGuiNotification::Post("タイトルシーンへ移行します", {0.4f, 0.8f, 1.0f, 1.0f});
-            }
-            if (ImGui::MenuItem(ICON_FA_BARS " セレクトシーン", "Ctrl+2")) { // bars アイコン（メニュー選択感）
-                SceneManager::GetInstance()->NextSceneReservation("SELECT");
-                ImGuiNotification::Post("セレクトシーンへ移行します", {0.4f, 0.8f, 1.0f, 1.0f});
-            }
-            if (ImGui::MenuItem(ICON_FA_GAMEPAD " ゲームシーン", "Ctrl+3")) { // gamepad アイコン
-                SceneManager::GetInstance()->NextSceneReservation("GAME");
-                ImGuiNotification::Post("ゲームシーンへ移行します", {0.4f, 0.8f, 1.0f, 1.0f});
-            }
-            if (ImGui::MenuItem(ICON_FA_TROPHY " クリアシーン", "Ctrl+4")) { // trophy アイコン
-                SceneManager::GetInstance()->NextSceneReservation("CLEAR");
-                ImGuiNotification::Post("クリアシーンへ移行します", {0.4f, 0.8f, 1.0f, 1.0f});
-            }
-            if (ImGui::MenuItem(ICON_FA_FILM " デモシーン", "Ctrl+5")) { // film アイコン
-                SceneManager::GetInstance()->NextSceneReservation("DEMO");
-                ImGuiNotification::Post("デモシーンへ移行します", {0.4f, 0.8f, 1.0f, 1.0f});
-            }
-            if (ImGui::MenuItem(ICON_FA_BOOK_OPEN " チュートリアルシーン", "Ctrl+6")) {
-                SceneManager::GetInstance()->NextSceneReservation("TUTORIAL");
-                ImGuiNotification::Post("チュートリアルシーンへ移行します", {0.4f, 0.8f, 1.0f, 1.0f});
+            const std::vector<std::string> sceneNames = SceneRegistry::GetInstance()->GetSceneNames();
+            for (size_t i = 0; i < sceneNames.size(); ++i) {
+                const std::string &sceneName = sceneNames[i];
+                const std::string label = std::string(ICON_FA_GAMEPAD " ") + sceneName;
+                // Framework::RegisterShortcutKey と同じ名前順で Ctrl+数字 が割り当てられている
+                const std::string shortcut = (i < 9) ? "Ctrl+" + std::to_string(i + 1) : "";
+                if (ImGui::MenuItem(label.c_str(), shortcut.empty() ? nullptr : shortcut.c_str())) {
+                    SceneManager::GetInstance()->NextSceneReservation(sceneName);
+                    ImGuiNotification::Post(sceneName + " シーンへ移行します", {0.4f, 0.8f, 1.0f, 1.0f});
+                }
             }
 
             ImGui::EndMenu();
@@ -733,6 +725,10 @@ void ImGuiManager::ShowParticlePreviewWindow() {
     if (!showParticlePreviewView_)
         return;
     ParticleCSEditor::GetInstance()->ShowPreviewWindow(&showParticlePreviewView_);
+}
+
+void ImGuiManager::ShowGameParamWindow() {
+    GameParamHub::GetInstance()->DrawImGui(&showGameParamView_);
 }
 
 void ImGuiManager::ShowStatisticsWindow() {
@@ -850,6 +846,19 @@ void ImGuiManager::ShowHierarchyWindow() {
     ImGui::End();
 }
 
+void ImGuiManager::ShowMotionEditorWindow() {
+    if (!showMotionEditorView_)
+        return; // 表示しない場合は早期リターン
+
+    ImGuiWindowFlags flags = ImGuiWindowFlags_NoFocusOnAppearing;
+
+    ImGui::Begin("モーションエディター", &showMotionEditorView_, flags);
+
+    MotionEditor::GetInstance()->DrawImGui();
+
+    ImGui::End();
+}
+
 void ImGuiManager::ShowSpriteManagerWindow() {
     if (!showSpriteManagerView_)
         return; // 表示しない場合は早期リターン
@@ -916,7 +925,9 @@ void ImGuiManager::ShowDrawSystemWindow() {
         return; // 表示しない場合は早期リターン
 
     // ウィンドウの生成・閉じるボタンは DrawSystem 側に委譲する
-    DrawSystem::GetInstance()->UpdateImGui(&showDrawSystemView_);
+    if (drawSystem_) {
+        drawSystem_->UpdateImGui(&showDrawSystemView_);
+    }
 }
 
 void ImGuiManager::ShowAssetBrowserWindow() {
@@ -1184,6 +1195,8 @@ void ImGuiManager::ShowMainUI(OffScreen *offscreen) {
     ShowGizmoWindow();
     // 階層エディターウィンドウを描画
     ShowHierarchyWindow();
+    // モーションエディターウィンドウを描画
+    ShowMotionEditorWindow();
     // スプライトマネージャウィンドウを描画
     ShowSpriteManagerWindow();
     // コライダータグマネージャウィンドウを描画
@@ -1196,6 +1209,8 @@ void ImGuiManager::ShowMainUI(OffScreen *offscreen) {
     ShowDrawSystemWindow();
     // アセットブラウザ窓を描画
     ShowAssetBrowserWindow();
+    // ゲームパラメータHub窓を描画
+    ShowGameParamWindow();
 
     ShowHelpWindow();
     baseObjectManager_->UpdateImGui();
@@ -1666,11 +1681,13 @@ void ImGuiManager::SaveFlag() {
     data->Save("showLightView", showLightView_);
     data->Save("showGizmoView", showGizmoView_);
     data->Save("showHierarchyView", showHierarchyView_);
+    data->Save("showMotionEditorView", showMotionEditorView_);
     data->Save("showShortcutWindow", showShortcutWindow_);
     data->Save("showSpriteManagerView", showSpriteManagerView_);
     data->Save("showShadowMapView", showShadowMapView_);
     data->Save("showDrawSystemView", showDrawSystemView_);
     data->Save("showAssetBrowserView", showAssetBrowserView_);
+    data->Save("showGameParamView", showGameParamView_);
     data->Save("isEditorMode", isEditorMode_);
     data->Save("gridColor", gridColor_);
 #ifdef _DEBUG
@@ -1691,11 +1708,13 @@ void ImGuiManager::LoadFlag() {
     showLightView_ = data->Load("showLightView", false);
     showGizmoView_ = data->Load("showGizmoView", false);
     showHierarchyView_ = data->Load("showHierarchyView", true);
+    showMotionEditorView_ = data->Load("showMotionEditorView", false);
     showShortcutWindow_ = data->Load("showShortcutWindow", false);
     showSpriteManagerView_ = data->Load("showSpriteManagerView", false);
     showShadowMapView_ = data->Load("showShadowMapView", true);
     showDrawSystemView_ = data->Load("showDrawSystemView", true);
     showAssetBrowserView_ = data->Load("showAssetBrowserView", false);
+    showGameParamView_ = data->Load("showGameParamView", true);
     isEditorMode_ = data->Load("isEditorMode", true);
     gridColor_ = data->Load("gridColor", Vector4(0.5f, 0.5f, 0.5f, 1.0f));
 }
