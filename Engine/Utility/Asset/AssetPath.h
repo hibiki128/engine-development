@@ -24,7 +24,7 @@ inline const std::string &EngineRoot() {
 
 /// <summary>アプリケーションアセットのルート (末尾スラッシュ付き)。</summary>
 inline const std::string &AppRoot() {
-    static const std::string kRoot = "../Assets/app/Assets/";
+    static const std::string kRoot = "../app/Assets/";
     return kRoot;
 }
 
