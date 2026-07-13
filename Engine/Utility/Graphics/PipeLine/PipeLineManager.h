@@ -8,7 +8,8 @@
 #include <unordered_map>
 
 namespace Hagine {
-enum class BlendMode {
+enum class BlendMode
+{
     // ブレンドなし
     kNone,
     // 通常ブレンド
@@ -23,7 +24,8 @@ enum class BlendMode {
     kScreen,
 };
 
-enum class ShaderMode {
+enum class ShaderMode
+{
     kNone,
     kGray,
     kVigneet,
@@ -43,7 +45,8 @@ enum class ShaderMode {
     kCount,
 };
 
-enum class PipelineType {
+enum class PipelineType
+{
     kStandard,
     kParticle,
     kSprite,
@@ -55,7 +58,8 @@ enum class PipelineType {
     kShadowMap,
 };
 
-class PipeLineManager {
+class PipeLineManager
+{
   private:
     /// ====================================
     /// public method

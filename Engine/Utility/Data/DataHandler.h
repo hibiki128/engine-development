@@ -20,35 +20,40 @@ namespace fs = std::filesystem;
 /// JSONファイルへのデータの保存・読み込みを管理するクラス
 /// メモリ上にキャッシュし、変更があればデストラクタやFlushでファイルへ書き出す
 /// </summary>
-class DataHandler {
+class DataHandler
+{
   private:
     /// ===================================================
-    /// private variants
+    /// private variables
     /// ===================================================
 
     std::string basePath_ = AssetPath::JsonRoot(); // 固定の基準パス（Application/Assets/jsons）
-    std::string folderPath_ = "";              // インスタンスごとのフォルダパス
-    std::string fileName_ = "data.json";       // インスタンスごとのファイル名
-    json cachedJson_;                          // メモリ上にキャッシュしたJSONデータ
-    bool isDirty_ = false;                     // Saveによる変更がある場合にファイル書き出しが必要かを示すフラグ
+    std::string folderPath_ = "";                  // インスタンスごとのフォルダパス
+    std::string fileName_ = "data.json";           // インスタンスごとのファイル名
+    json cachedJson_;                              // メモリ上にキャッシュしたJSONデータ
+    bool isDirty_ = false;                         // Saveによる変更がある場合にファイル書き出しが必要かを示すフラグ
 
     /// <summary>
     /// ファイルからJSONを読み込んでキャッシュに格納する
     /// </summary>
-    void LoadFromFile() {
+    void LoadFromFile()
+    {
         std::string filePath = folderPath_ + "/" + fileName_;
         std::ifstream inFile(filePath);
-        if (inFile.is_open()) {
-            try {
+        if (inFile.is_open())
+        {
+            try
+            {
                 inFile >> cachedJson_;
-            } catch (const json::exception &e) {
+            }
+            catch (const json::exception &e)
+            {
                 // ファイルは開けたが中身が壊れている（JSONとして不正な）ケース
                 Logger::Error("Failed to parse JSON: \"" + filePath + "\". " + e.what());
             }
             inFile.close();
         }
     }
-
 
   public:
     /// ===================================================
@@ -59,12 +64,14 @@ class DataHandler {
     /// キャッシュ内容をファイルに書き出す
     /// </summary>
     /// <returns>bool: 書き出しに成功（または変更なし）なら true</returns>
-    bool Flush() {
+    bool Flush()
+    {
         if (!isDirty_)
             return true;
         std::string filePath = folderPath_ + "/" + fileName_;
         std::ofstream outFile(filePath);
-        if (outFile.is_open()) {
+        if (outFile.is_open())
+        {
             outFile << cachedJson_.dump(4);
             outFile.close();
             isDirty_ = false;
@@ -124,32 +131,38 @@ class DataHandler {
 /// ===================================================
 
 // Vector2
-inline void to_json(json &j, const Vector2 &v) {
+inline void to_json(json &j, const Vector2 &v)
+{
     j = json{{"x", v.x}, {"y", v.y}};
 }
 
-inline void from_json(const json &j, Vector2 &v) {
+inline void from_json(const json &j, Vector2 &v)
+{
     v.x = j.at("x").get<float>();
     v.y = j.at("y").get<float>();
 }
 
 // JSON変換の定義 (Vector3)
-inline void to_json(json &j, const Vector3 &v) {
+inline void to_json(json &j, const Vector3 &v)
+{
     j = json{{"x", v.x}, {"y", v.y}, {"z", v.z}};
 }
 
-inline void from_json(const json &j, Vector3 &v) {
+inline void from_json(const json &j, Vector3 &v)
+{
     v.x = j.at("x").get<float>();
     v.y = j.at("y").get<float>();
     v.z = j.at("z").get<float>();
 }
 
 // JSON変換の定義 (Vector4)
-inline void to_json(json &j, const Vector4 &v) {
+inline void to_json(json &j, const Vector4 &v)
+{
     j = json{{"x", v.x}, {"y", v.y}, {"z", v.z}, {"w", v.w}};
 }
 
-inline void from_json(const json &j, Vector4 &v) {
+inline void from_json(const json &j, Vector4 &v)
+{
     v.x = j.at("x").get<float>();
     v.y = j.at("y").get<float>();
     v.z = j.at("z").get<float>();
@@ -157,11 +170,13 @@ inline void from_json(const json &j, Vector4 &v) {
 }
 
 // JSON変換の定義 (Quaternion)
-inline void to_json(json &j, const Quaternion &q) {
+inline void to_json(json &j, const Quaternion &q)
+{
     j = json{{"x", q.x}, {"y", q.y}, {"z", q.z}, {"w", q.w}};
 }
 
-inline void from_json(const json &j, Quaternion &q) {
+inline void from_json(const json &j, Quaternion &q)
+{
     q.x = j.at("x").get<float>();
     q.y = j.at("y").get<float>();
     q.z = j.at("z").get<float>();
@@ -169,57 +184,73 @@ inline void from_json(const json &j, Quaternion &q) {
 }
 
 // JSON変換の定義 (Matrix4x4)
-inline void to_json(json &j, const Matrix4x4 &matrix) {
+inline void to_json(json &j, const Matrix4x4 &matrix)
+{
     j = json::array();
-    for (int i = 0; i < 4; ++i) {
+    for (int i = 0; i < 4; ++i)
+    {
         json row = json::array();
-        for (int k = 0; k < 4; ++k) {
+        for (int k = 0; k < 4; ++k)
+        {
             row.push_back(matrix.m[i][k]);
         }
         j.push_back(row);
     }
 }
 
-inline void from_json(const json &j, Matrix4x4 &matrix) {
-    for (int i = 0; i < 4; ++i) {
-        for (int k = 0; k < 4; ++k) {
+inline void from_json(const json &j, Matrix4x4 &matrix)
+{
+    for (int i = 0; i < 4; ++i)
+    {
+        for (int k = 0; k < 4; ++k)
+        {
             matrix.m[i][k] = j[i][k].get<float>();
         }
     }
 }
 
 // JSON変換の定義 (PrimitiveType)
-inline void to_json(json &j, const PrimitiveType &type) {
+inline void to_json(json &j, const PrimitiveType &type)
+{
     j = static_cast<int>(type);
 }
 
-inline void from_json(const json &j, PrimitiveType &type) {
+inline void from_json(const json &j, PrimitiveType &type)
+{
     type = static_cast<PrimitiveType>(j.get<int>());
 }
 
 // JSON変換の定義 (BlendMode)
-inline void to_json(json &j, const BlendMode &mode) {
+inline void to_json(json &j, const BlendMode &mode)
+{
     j = static_cast<int>(mode);
 }
 
-inline void from_json(const json &j, BlendMode &mode) {
+inline void from_json(const json &j, BlendMode &mode)
+{
     mode = static_cast<BlendMode>(j.get<int>());
 }
 
 // キャッシュに書き込み、ダーティフラグを立てる
 template <typename T>
-void DataHandler::Save(const std::string &key, const T &value) {
+void DataHandler::Save(const std::string &key, const T &value)
+{
     cachedJson_[key] = value;
     isDirty_ = true;
 }
 
 // キャッシュから直接読み込む（ファイルアクセスなし）
 template <typename T>
-T DataHandler::Load(const std::string &key, const T &defaultValue) {
-    if (cachedJson_.contains(key)) {
-        try {
+T DataHandler::Load(const std::string &key, const T &defaultValue)
+{
+    if (cachedJson_.contains(key))
+    {
+        try
+        {
             return cachedJson_[key].get<T>();
-        } catch (const json::exception &e) {
+        }
+        catch (const json::exception &e)
+        {
             std::cerr << "JSON Load Error: " << e.what() << " (Key: " << key << ")" << std::endl;
         }
     }

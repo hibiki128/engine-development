@@ -9,7 +9,8 @@ namespace Hagine {
 /// <summary>
 /// プリミティブ形状の種類
 /// </summary>
-enum class PrimitiveType {
+enum class PrimitiveType
+{
     None = 0,
     Plane,
     Sphere,
@@ -27,7 +28,8 @@ enum class PrimitiveType {
 /// 円形プリミティブ（Ring/Sphere/Cylinder/Cone）の生成パラメータ。
 /// 既定値は従来の固定形状と同一なので、未指定時は見た目が変わらない。
 /// </summary>
-struct PrimitiveParams {
+struct PrimitiveParams
+{
     uint32_t divide = 32;         // 円周方向の分割数（多いほど滑らか）
     uint32_t heightDivide = 1;    // Cylinder の高さ方向の分割数（格子の横リング本数 = heightDivide+1）
     float ringOuterRadius = 1.0f; // Ring の外半径
@@ -40,7 +42,8 @@ bool IsParametricPrimitive(PrimitiveType type);
 /// <summary>
 /// 各種プリミティブ形状の頂点データを生成・保持するシングルトン
 /// </summary>
-class PrimitiveModel {
+class PrimitiveModel
+{
   private:
     /// ====================================================
     /// private method
@@ -61,7 +64,8 @@ class PrimitiveModel {
     /// <summary>
     /// プリミティブ1種類分の頂点・インデックス・UV・色データ
     /// </summary>
-    struct PrimitiveData {
+    struct PrimitiveData
+    {
         std::vector<VertexData> vertices; // 頂点データ
         std::vector<uint32_t> indices;    // インデックスデータ
         Matrix4x4 uvMatrix;               // UV変換行列
@@ -82,7 +86,8 @@ class PrimitiveModel {
     /// インスタンスを取得
     /// </summary>
     /// <returns>PrimitiveModel*: シングルトンインスタンス</returns>
-    static PrimitiveModel* GetInstance() {
+    static PrimitiveModel *GetInstance()
+    {
         static PrimitiveModel instance;
         return &instance;
     }
@@ -97,9 +102,11 @@ class PrimitiveModel {
     /// </summary>
     /// <param name="type">プリミティブの種類</param>
     /// <returns>PrimitiveData: 該当する頂点データ（なければ空）</returns>
-    PrimitiveData GetPrimitiveData(const PrimitiveType &type) {
+    PrimitiveData GetPrimitiveData(const PrimitiveType &type)
+    {
         auto it = primitiveDataMap_.find(type);
-        if (it != primitiveDataMap_.end()) {
+        if (it != primitiveDataMap_.end())
+        {
             return it->second;
         }
         return {};
@@ -180,7 +187,7 @@ class PrimitiveModel {
 
   private:
     /// ===================================================
-    /// private variants
+    /// private variables
     /// ===================================================
 
     std::unordered_map<PrimitiveType, PrimitiveData> primitiveDataMap_; // 種類ごとのプリミティブデータ
