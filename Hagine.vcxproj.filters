@@ -1,110 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
-    <FxCompile Include="resources\shaders\Line\Line3d.PS.hlsl">
-      <Filter>Resources\shaders\Line</Filter>
-    </FxCompile>
-    <FxCompile Include="resources\shaders\Line\Line3d.VS.hlsl">
-      <Filter>Resources\shaders\Line</Filter>
-    </FxCompile>
-    <FxCompile Include="resources\shaders\Object\Object3d.PS.hlsl">
-      <Filter>Resources\shaders\Object</Filter>
-    </FxCompile>
-    <FxCompile Include="resources\shaders\Object\Object3d.VS.hlsl">
-      <Filter>Resources\shaders\Object</Filter>
-    </FxCompile>
-    <FxCompile Include="Resources\shaders\Particle\Particle.PS.hlsl">
-      <Filter>Resources\shaders\Particle</Filter>
-    </FxCompile>
-    <FxCompile Include="Resources\shaders\Particle\CSParticle\ParticleCS.PS.hlsl">
-      <Filter>Resources\shaders\Particle\CSParticle</Filter>
-    </FxCompile>
-    <FxCompile Include="Resources\shaders\Particle\CSParticle\ParticleCS.VS.hlsl">
-      <Filter>Resources\shaders\Particle\CSParticle</Filter>
-    </FxCompile>
-    <FxCompile Include="Resources\shaders\Particle\CSParticle\CountParticle.CS.hlsl">
-      <Filter>Resources\shaders\Particle\CSParticle</Filter>
-    </FxCompile>
-    <FxCompile Include="Resources\shaders\Particle\CSParticle\EmitParticle.CS.hlsl">
-      <Filter>Resources\shaders\Particle\CSParticle</Filter>
-    </FxCompile>
-    <FxCompile Include="Resources\shaders\Particle\CSParticle\InitParticle.CS.hlsl">
-      <Filter>Resources\shaders\Particle\CSParticle</Filter>
-    </FxCompile>
-    <FxCompile Include="Resources\shaders\Particle\CSParticle\UpdateParticle.CS.hlsl">
-      <Filter>Resources\shaders\Particle\CSParticle</Filter>
-    </FxCompile>
-    <FxCompile Include="Resources\shaders\Skinning\Skinning.VS.hlsl">
-      <Filter>Resources\shaders\Skinning</Filter>
-    </FxCompile>
-    <FxCompile Include="Resources\shaders\Skinning\Skinning.CS.hlsl">
-      <Filter>Resources\shaders\Skinning</Filter>
-    </FxCompile>
-    <FxCompile Include="Resources\shaders\Skybox\Skybox.PS.hlsl">
-      <Filter>Resources\shaders\Skybox</Filter>
-    </FxCompile>
-    <FxCompile Include="Resources\shaders\Skybox\Skybox.VS.hlsl">
-      <Filter>Resources\shaders\Skybox</Filter>
-    </FxCompile>
-    <FxCompile Include="resources\shaders\Sprite\Sprite.PS.hlsl">
-      <Filter>Resources\shaders\Sprite</Filter>
-    </FxCompile>
-    <FxCompile Include="resources\shaders\Sprite\Sprite.VS.hlsl">
-      <Filter>Resources\shaders\Sprite</Filter>
-    </FxCompile>
-    <FxCompile Include="resources\shaders\OffScreen\Vignette.PS.hlsl">
-      <Filter>Resources\shaders\OffScreen</Filter>
-    </FxCompile>
-    <FxCompile Include="resources\shaders\OffScreen\BoxFilter.PS.hlsl">
-      <Filter>Resources\shaders\OffScreen</Filter>
-    </FxCompile>
-    <FxCompile Include="resources\shaders\OffScreen\Cinematic.PS.hlsl">
-      <Filter>Resources\shaders\OffScreen</Filter>
-    </FxCompile>
-    <FxCompile Include="resources\shaders\OffScreen\CopyImage.PS.hlsl">
-      <Filter>Resources\shaders\OffScreen</Filter>
-    </FxCompile>
-    <FxCompile Include="resources\shaders\OffScreen\DepthBasedOutline.PS.hlsl">
-      <Filter>Resources\shaders\OffScreen</Filter>
-    </FxCompile>
-    <FxCompile Include="Resources\shaders\OffScreen\Dissolve.PS.hlsl">
-      <Filter>Resources\shaders\OffScreen</Filter>
-    </FxCompile>
-    <FxCompile Include="Resources\shaders\OffScreen\FocusLine.PS.hlsl">
-      <Filter>Resources\shaders\OffScreen</Filter>
-    </FxCompile>
-    <FxCompile Include="resources\shaders\OffScreen\FullScreen.VS.hlsl">
-      <Filter>Resources\shaders\OffScreen</Filter>
-    </FxCompile>
-    <FxCompile Include="resources\shaders\OffScreen\GaussianFilter.PS.hlsl">
-      <Filter>Resources\shaders\OffScreen</Filter>
-    </FxCompile>
-    <FxCompile Include="resources\shaders\OffScreen\Grayscale.PS.hlsl">
-      <Filter>Resources\shaders\OffScreen</Filter>
-    </FxCompile>
-    <FxCompile Include="resources\shaders\OffScreen\LuminanceBasedOutline.PS.hlsl">
-      <Filter>Resources\shaders\OffScreen</Filter>
-    </FxCompile>
-    <FxCompile Include="Resources\shaders\OffScreen\Pixelate.PS.hlsl">
-      <Filter>Resources\shaders\OffScreen</Filter>
-    </FxCompile>
-    <FxCompile Include="resources\shaders\OffScreen\RadialBlur.PS.hlsl">
-      <Filter>Resources\shaders\OffScreen</Filter>
-    </FxCompile>
-    <FxCompile Include="Resources\shaders\OffScreen\Random.PS.hlsl">
-      <Filter>Resources\shaders\OffScreen</Filter>
-    </FxCompile>
-    <FxCompile Include="Resources\shaders\OffScreen\Bloom.PS.hlsl">
-      <Filter>Resources\shaders\OffScreen</Filter>
-    </FxCompile>
-    <FxCompile Include="Resources\shaders\Particle\CSParticle\UpdateParticleLite.CS.hlsl">
-      <Filter>Resources\shaders\Particle\CSParticle</Filter>
-    </FxCompile>
-    <FxCompile Include="Resources\shaders\Particle\CSParticle\ResetArgs.CS.hlsl">
-      <Filter>Resources\shaders\Particle\CSParticle</Filter>
-    </FxCompile>
-  </ItemGroup>
-  <ItemGroup>
     <ClCompile Include="Engine\2d\Sprite.cpp">
       <Filter>Engine\2d</Filter>
     </ClCompile>
@@ -817,47 +713,46 @@
     <ClInclude Include="Engine\Render\DrawGroupManager.h">
       <Filter>Engine\Renderer</Filter>
     </ClInclude>
-    <ClInclude Include="Engine\Utility\Asset\AssetPath.h" />
+    <ClInclude Include="Engine\Utility\Asset\AssetPath.h">
+      <Filter>Engine\Utility\Asset</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include=".editorconfig" />
     <None Include=".gitattributes" />
     <None Include=".gitignore" />
     <None Include="README.md" />
-    <None Include="resources\shaders\Line\Line3d.hlsli">
-      <Filter>Resources\shaders\Line</Filter>
-    </None>
-    <None Include="resources\shaders\Object\Object3d.hlsli">
-      <Filter>Resources\shaders\Object</Filter>
-    </None>
-    <None Include="resources\shaders\Particle\Particle.hlsli">
-      <Filter>Resources\shaders\Particle</Filter>
-    </None>
-    <None Include="Resources\shaders\Particle\Particle.VS.hlsl">
-      <Filter>Resources\shaders\Particle</Filter>
-    </None>
-    <None Include="Resources\shaders\Random\Random.hlsli">
-      <Filter>Resources\shaders\Random</Filter>
-    </None>
-    <None Include="Resources\shaders\Skinning\Skinning.hlsli">
-      <Filter>Resources\shaders\Skinning</Filter>
-    </None>
-    <None Include="Resources\shaders\Skybox\Skybox.hlsli">
-      <Filter>Resources\shaders\Skybox</Filter>
-    </None>
-    <None Include="resources\shaders\Sprite\Sprite.hlsli">
-      <Filter>Resources\shaders\Sprite</Filter>
-    </None>
-    <None Include="resources\shaders\OffScreen\FullScreen.hlsli">
-      <Filter>Resources\shaders\OffScreen</Filter>
-    </None>
     <None Include=".clang-format" />
     <None Include="exclusion.dic" />
     <None Include="Hagine.aps" />
     <None Include="Hagine.vcxproj.user" />
-    <None Include="imgui_editor.ini" />
-    <None Include="imgui_game.ini" />
-    <None Include="Resources\shaders\Particle\CSParticle\CurlNoise.hlsli" />
+    <None Include="Engine\EngineAssets\shaders\Line\Line3d.hlsli">
+      <Filter>Engine\EngineAssets\shaders\Line</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\Object\Object3d.hlsli">
+      <Filter>Engine\EngineAssets\shaders\Object</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\OffScreen\FullScreen.hlsli">
+      <Filter>Engine\EngineAssets\shaders\OffScreen</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\Particle\Particle.hlsli">
+      <Filter>Engine\EngineAssets\shaders\Particle</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\Particle\CSParticle\CurlNoise.hlsli">
+      <Filter>Engine\EngineAssets\shaders\Particle\CSParticle</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\Random\Random.hlsli">
+      <Filter>Engine\EngineAssets\shaders\Random</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\Skinning\Skinning.hlsli">
+      <Filter>Engine\EngineAssets\shaders\Skinning</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\Skybox\Skybox.hlsli">
+      <Filter>Engine\EngineAssets\shaders\Skybox</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\Sprite\Sprite.hlsli">
+      <Filter>Engine\EngineAssets\shaders\Sprite</Filter>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="Engine">
@@ -865,9 +760,6 @@
     </Filter>
     <Filter Include="Externals">
       <UniqueIdentifier>{1c323e53-2ff7-4c83-99ab-373e4dedf576}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Resources">
-      <UniqueIdentifier>{c87fcc78-7c33-4acf-b7f5-cb53f66386d5}</UniqueIdentifier>
     </Filter>
     <Filter Include="Engine\2d">
       <UniqueIdentifier>{f6580ddd-27d8-4bcd-9721-7b8876ed7ec3}</UniqueIdentifier>
@@ -1016,36 +908,6 @@
     <Filter Include="Engine\Utility\LoadFile\Csv">
       <UniqueIdentifier>{c1216338-3048-4806-be59-7ccef6b4d2eb}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Resources\shaders">
-      <UniqueIdentifier>{a4e81e65-f36f-4452-97b7-4bb84ab22d51}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Resources\shaders\Line">
-      <UniqueIdentifier>{d046da19-14b1-4e7e-b0be-94fe12f58107}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Resources\shaders\Object">
-      <UniqueIdentifier>{b453a91d-a4c8-4e72-a35d-e4b918ea65d1}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Resources\shaders\OffScreen">
-      <UniqueIdentifier>{663fd2ca-b598-4706-b53a-daa62d03acfd}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Resources\shaders\Particle">
-      <UniqueIdentifier>{0f1a74aa-72db-4ac1-8b2b-4981ca69f7a3}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Resources\shaders\Random">
-      <UniqueIdentifier>{e65d9b4f-f6cc-4254-a622-090b5fa48a94}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Resources\shaders\Skinning">
-      <UniqueIdentifier>{068a5c53-11bd-4d7d-80d0-93f02af64be9}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Resources\shaders\Skybox">
-      <UniqueIdentifier>{3096e1a9-726d-42e1-b0f4-08fc7f94c929}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Resources\shaders\Sprite">
-      <UniqueIdentifier>{e228ab96-c657-445b-86c0-1ebed1a3ddf4}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Resources\shaders\Particle\CSParticle">
-      <UniqueIdentifier>{e2eb09d7-9dac-416f-a3f9-ff37395e3766}</UniqueIdentifier>
-    </Filter>
     <Filter Include="Externals\imgui">
       <UniqueIdentifier>{71d8d931-e159-48e7-8c9a-f19c704253b7}</UniqueIdentifier>
     </Filter>
@@ -1097,6 +959,48 @@
     <Filter Include="Engine\Utility\Graphics\Rtv">
       <UniqueIdentifier>{a1b2c3d4-000c-4a10-9c01-00000000000c}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Engine\EngineAssets">
+      <UniqueIdentifier>{cdd04cb0-b93c-48fb-9c74-253d4c742f3a}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Engine\EngineAssets\fonts">
+      <UniqueIdentifier>{db3251bd-9fc5-4c2e-9554-9d55c8bd5bb9}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Engine\EngineAssets\shaders">
+      <UniqueIdentifier>{ae0b8ffa-ff3a-47b3-bbb8-e67aab0ba534}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Engine\EngineAssets\shaders\Line">
+      <UniqueIdentifier>{fd5e0873-d744-44a8-84be-975ebfdda2b1}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Engine\EngineAssets\shaders\Sprite">
+      <UniqueIdentifier>{f1db0266-b297-4419-97d8-19b65e2e8d7b}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Engine\EngineAssets\shaders\Skybox">
+      <UniqueIdentifier>{78209ade-7f1c-44f9-abc3-ed4683e04a12}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Engine\EngineAssets\shaders\Skinning">
+      <UniqueIdentifier>{6d85794c-37ef-4e03-85b2-e78820586d9a}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Engine\EngineAssets\shaders\Shadow">
+      <UniqueIdentifier>{177932af-a09a-4933-9cda-dbe169e196a8}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Engine\EngineAssets\shaders\Random">
+      <UniqueIdentifier>{c63e793d-f8a2-49f9-8e0b-9f42cfb2a7db}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Engine\EngineAssets\shaders\Particle">
+      <UniqueIdentifier>{92420cf0-5fdc-41c2-a258-8ee8f295cf5c}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Engine\EngineAssets\shaders\OffScreen">
+      <UniqueIdentifier>{4d863a53-e4c4-4328-83e4-b899904ef68d}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Engine\EngineAssets\shaders\Object">
+      <UniqueIdentifier>{6d25e338-2e1d-45c7-9329-e8bfd4a08cf9}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Engine\EngineAssets\shaders\Particle\CSParticle">
+      <UniqueIdentifier>{0f2ada04-876c-4bf9-8aa2-a05963713fe2}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Engine\Utility\Asset">
+      <UniqueIdentifier>{81585a63-6541-4e3d-8cd6-b8de26b87bd9}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <Text Include="externals\imgui\LICENSE.txt">
@@ -1104,8 +1008,130 @@
     </Text>
   </ItemGroup>
   <ItemGroup>
-    <Font Include="Resources\fonts\fa-solid-900.ttf" />
-    <Font Include="Resources\fonts\NotoSansJP-Medium.ttf" />
-    <Font Include="Resources\fonts\PixelMplus12-Regular.ttf" />
+    <Font Include="Engine\EngineAssets\fonts\fa-solid-900.ttf">
+      <Filter>Engine\EngineAssets\fonts</Filter>
+    </Font>
+    <Font Include="Engine\EngineAssets\fonts\NotoSansJP-Medium.ttf">
+      <Filter>Engine\EngineAssets\fonts</Filter>
+    </Font>
+    <Font Include="Engine\EngineAssets\fonts\PixelMplus12-Regular.ttf">
+      <Filter>Engine\EngineAssets\fonts</Filter>
+    </Font>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Engine\EngineAssets\shaders\Line\Line3d.PS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\Line</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\Line\Line3d.VS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\Line</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\Object\Object3d.PS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\Object</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\Object\Object3d.VS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\Object</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Bloom.PS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\OffScreen</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\OffScreen\BoxFilter.PS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\OffScreen</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Cinematic.PS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\OffScreen</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\OffScreen\CopyImage.PS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\OffScreen</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\OffScreen\DepthBasedOutline.PS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\OffScreen</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Dissolve.PS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\OffScreen</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\OffScreen\FocusLine.PS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\OffScreen</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\OffScreen\FullScreen.VS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\OffScreen</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\OffScreen\GaussianFilter.PS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\OffScreen</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Grayscale.PS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\OffScreen</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\OffScreen\LuminanceBasedOutline.PS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\OffScreen</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Pixelate.PS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\OffScreen</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\OffScreen\RadialBlur.PS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\OffScreen</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Random.PS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\OffScreen</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Shockwave.PS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\OffScreen</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Vignette.PS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\OffScreen</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Retro.PS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\OffScreen</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\Particle\Particle.PS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\Particle</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\Particle\Particle.VS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\Particle</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\Particle\CSParticle\CountParticle.CS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\Particle\CSParticle</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\Particle\CSParticle\EmitParticle.CS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\Particle\CSParticle</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\Particle\CSParticle\InitParticle.CS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\Particle\CSParticle</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\Particle\CSParticle\ParticleCS.PS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\Particle\CSParticle</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\Particle\CSParticle\ParticleCS.VS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\Particle\CSParticle</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\Particle\CSParticle\ResetArgs.CS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\Particle\CSParticle</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\Particle\CSParticle\UpdateParticle.CS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\Particle\CSParticle</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\Particle\CSParticle\UpdateParticleLite.CS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\Particle\CSParticle</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\Shadow\ShadowMap.VS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\Shadow</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\Skinning\Skinning.CS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\Skinning</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\Skinning\Skinning.VS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\Skinning</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\Skybox\Skybox.PS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\Skybox</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\Skybox\Skybox.VS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\Skybox</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\Sprite\Sprite.PS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\Sprite</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\Sprite\Sprite.VS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\Sprite</Filter>
+    </None>
   </ItemGroup>
 </Project>

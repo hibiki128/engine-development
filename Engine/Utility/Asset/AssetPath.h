@@ -17,8 +17,13 @@ namespace Hagine {
 namespace AssetPath {
 
 /// <summary>エンジンアセットのルート (末尾スラッシュ付き)。</summary>
+/// <remarks>
+/// 作業ディレクトリはアプリ側 (app/) を基準とする (AppRoot が "../app/Assets/" である
+/// のと同じ前提)。エンジンアセットはサブモジュール module/Hagine/ 配下にあるため、
+/// app/ からの相対で "../module/Hagine/Engine/EngineAssets/" を指す。
+/// </remarks>
 inline const std::string &EngineRoot() {
-    static const std::string kRoot = "Engine/EngineAssets/";
+    static const std::string kRoot = "../module/Hagine/Engine/EngineAssets/";
     return kRoot;
 }
 

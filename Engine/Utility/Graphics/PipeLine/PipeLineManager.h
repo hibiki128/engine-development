@@ -1,6 +1,8 @@
 #pragma once
 #include "d3d12.h"
+#include "string/stringUtility.h"
 #include "wrl.h"
+#include <Asset/AssetPath.h>
 #include <DirectXCommon.h>
 #include <string>
 #include <unordered_map>
@@ -69,8 +71,7 @@ class PipeLineManager
     PipeLineManager &operator=(PipeLineManager &) = delete;
 
   public:
-    static PipeLineManager *GetInstance()
-    {
+    static PipeLineManager *GetInstance() {
         static PipeLineManager instance;
         return &instance;
     }
@@ -185,8 +186,11 @@ class PipeLineManager
   private:
     DirectXCommon *dxCommon_;
 
+    std::wstring shaderPath = Hagine::StringUtility::ConvertString(AssetPath::EngineRoot());
+
     // パイプラインとルートシグネチャの格納用マップ
-    std::unordered_map<std::string, Microsoft::WRL::ComPtr<ID3D12PipelineState>> pipelines_;
+    std::unordered_map<std::string, Microsoft::WRL::ComPtr<ID3D12PipelineState>>
+        pipelines_;
     std::unordered_map<std::string, Microsoft::WRL::ComPtr<ID3D12RootSignature>> rootSignatures_;
 
     // キー文字列を生成するヘルパー関数
