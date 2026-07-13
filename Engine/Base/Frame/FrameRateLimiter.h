@@ -8,7 +8,8 @@ namespace Hagine {
 /// FPS固定クラス
 /// 目標FPSに合わせてフレーム末尾の余剰時間を待機する
 /// </summary>
-class FrameRateLimiter {
+class FrameRateLimiter
+{
   public:
     FrameRateLimiter() = default;
     ~FrameRateLimiter() = default;

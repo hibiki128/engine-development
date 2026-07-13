@@ -10,12 +10,14 @@
 
 namespace Hagine {
 
-GpuProfiler *GpuProfiler::GetInstance() {
+GpuProfiler *GpuProfiler::GetInstance()
+{
     static GpuProfiler instance;
     return &instance;
 }
 
-void GpuProfiler::EnsureInit() {
+void GpuProfiler::EnsureInit()
+{
     if (initialized_)
         return;
 
@@ -70,7 +72,8 @@ void GpuProfiler::EnsureInit() {
     initialized_ = true;
 }
 
-void GpuProfiler::BeginFrame() {
+void GpuProfiler::BeginFrame()
+{
     EnsureInit();
     if (!initialized_)
         return;
@@ -81,10 +84,12 @@ void GpuProfiler::BeginFrame() {
     pairCursor_ = 0;
     RingFrame &rf = rings_[ringIndex_];
 
-    if (rf.valid && mappedGraphics_ && mappedCompute_) {
+    if (rf.valid && mappedGraphics_ && mappedCompute_)
+    {
         results_.clear();
         const uint32_t ringBase = ringIndex_ * kSlotsPerRing;
-        for (const auto &e : rf.entries) {
+        for (const auto &e : rf.entries)
+        {
             const uint64_t *src = e.isCompute ? mappedCompute_ : mappedGraphics_;
             uint64_t t0 = src[ringBase + e.pair * 2];
             uint64_t t1 = src[ringBase + e.pair * 2 + 1];
@@ -93,8 +98,10 @@ void GpuProfiler::BeginFrame() {
 
             // 同ラベル（複数エミッターの同名パス）は合算する
             bool merged = false;
-            for (auto &r : results_) {
-                if (r.isCompute == e.isCompute && r.label == e.label) {
+            for (auto &r : results_)
+            {
+                if (r.isCompute == e.isCompute && r.label == e.label)
+                {
                     r.ms += ms;
                     merged = true;
                     break;
@@ -110,7 +117,8 @@ void GpuProfiler::BeginFrame() {
     rf.valid = true;
 }
 
-int GpuProfiler::Open(ID3D12GraphicsCommandList *cl, const char *label, bool isCompute) {
+int GpuProfiler::Open(ID3D12GraphicsCommandList *cl, const char *label, bool isCompute)
+{
     if (!enabled_ || !initialized_ || !cl)
         return -1;
     if (pairCursor_ >= kMaxPairsPerFrame)
@@ -126,15 +134,18 @@ int GpuProfiler::Open(ID3D12GraphicsCommandList *cl, const char *label, bool isC
     return handle;
 }
 
-int GpuProfiler::OpenCompute(ID3D12GraphicsCommandList *cl, const char *label) {
+int GpuProfiler::OpenCompute(ID3D12GraphicsCommandList *cl, const char *label)
+{
     return Open(cl, label, true);
 }
 
-int GpuProfiler::OpenGraphics(ID3D12GraphicsCommandList *cl, const char *label) {
+int GpuProfiler::OpenGraphics(ID3D12GraphicsCommandList *cl, const char *label)
+{
     return Open(cl, label, false);
 }
 
-void GpuProfiler::Close(ID3D12GraphicsCommandList *cl, int handle) {
+void GpuProfiler::Close(ID3D12GraphicsCommandList *cl, int handle)
+{
     if (!enabled_ || !initialized_ || !cl || handle < 0)
         return;
     RingFrame &rf = rings_[ringIndex_];
@@ -145,12 +156,14 @@ void GpuProfiler::Close(ID3D12GraphicsCommandList *cl, int handle) {
     cl->EndQuery(queryHeap_.Get(), D3D12_QUERY_TYPE_TIMESTAMP, slot);
 }
 
-void GpuProfiler::Resolve(ID3D12GraphicsCommandList *cl, bool isCompute) {
+void GpuProfiler::Resolve(ID3D12GraphicsCommandList *cl, bool isCompute)
+{
     if (!enabled_ || !initialized_ || !cl)
         return;
     RingFrame &rf = rings_[ringIndex_];
     const uint32_t ringBase = ringIndex_ * kSlotsPerRing;
-    for (const auto &e : rf.entries) {
+    for (const auto &e : rf.entries)
+    {
         if (e.isCompute != isCompute)
             continue;
         uint32_t startSlot = ringBase + e.pair * 2;
@@ -164,7 +177,8 @@ void GpuProfiler::Resolve(ID3D12GraphicsCommandList *cl, bool isCompute) {
 void GpuProfiler::ResolveCompute(ID3D12GraphicsCommandList *cl) { Resolve(cl, true); }
 void GpuProfiler::ResolveGraphics(ID3D12GraphicsCommandList *cl) { Resolve(cl, false); }
 
-void GpuProfiler::DrawImGui() {
+void GpuProfiler::DrawImGui()
+{
 #ifdef USE_IMGUI
     if (!ImGui::CollapsingHeader("GPU プロファイラ (パス別)"))
         return;
@@ -183,7 +197,8 @@ void GpuProfiler::DrawImGui() {
 
     // ---- 集計 ----
     double computeTotal = 0.0, graphicsTotal = 0.0, maxMs = 1e-6;
-    for (const auto &r : results_) {
+    for (const auto &r : results_)
+    {
         (r.isCompute ? computeTotal : graphicsTotal) += r.ms;
         if (r.ms > maxMs)
             maxMs = r.ms;
@@ -218,7 +233,8 @@ void GpuProfiler::DrawImGui() {
     ImPlot::PushStyleColor(ImPlotCol_PlotBg, ImVec4(0.05f, 0.05f, 0.07f, 1.0f));
     if (ImPlot::BeginPlot("##gpuHist", ImVec2(-1, 90),
                           ImPlotFlags_NoTitle | ImPlotFlags_NoLegend | ImPlotFlags_NoInputs |
-                              ImPlotFlags_NoMenus | ImPlotFlags_NoBoxSelect | ImPlotFlags_NoMouseText)) {
+                              ImPlotFlags_NoMenus | ImPlotFlags_NoBoxSelect | ImPlotFlags_NoMouseText))
+    {
         ImPlot::SetupAxes(nullptr, "ms",
                           ImPlotAxisFlags_NoTickLabels | ImPlotAxisFlags_NoTickMarks | ImPlotAxisFlags_NoGridLines,
                           ImPlotAxisFlags_None);
@@ -235,19 +251,23 @@ void GpuProfiler::DrawImGui() {
     // ---- パス別テーブル（占有バー付き）----
     ImGui::Spacing();
     SectionHeader("[ パス別 ]", DebugTheme::kAccentBlue);
-    if (results_.empty()) {
+    if (results_.empty())
+    {
         ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kTextDim);
         ImGui::TextUnformatted("（計測データなし — 計測ON かつ数フレーム経過で表示されます）");
         ImGui::PopStyleColor();
-    } else if (ImGui::BeginTable("##gpuprofTable", 4,
-                                 ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_SizingFixedFit)) {
+    }
+    else if (ImGui::BeginTable("##gpuprofTable", 4,
+                               ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_SizingFixedFit))
+    {
         ImGui::TableSetupColumn("キュー", ImGuiTableColumnFlags_WidthFixed, 72.0f);
         ImGui::TableSetupColumn("パス", ImGuiTableColumnFlags_WidthStretch);
         ImGui::TableSetupColumn("ms", ImGuiTableColumnFlags_WidthFixed, 64.0f);
         ImGui::TableSetupColumn("占有", ImGuiTableColumnFlags_WidthFixed, 110.0f);
         ImGui::TableHeadersRow();
 
-        for (const auto &r : results_) {
+        for (const auto &r : results_)
+        {
             const ImVec4 qc = r.isCompute ? kCompute : kGraphics;
             ImGui::TableNextRow();
 

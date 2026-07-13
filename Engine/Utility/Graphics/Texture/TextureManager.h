@@ -11,7 +11,8 @@
 #include <memory>
 
 namespace Hagine {
-class TextureManager {
+class TextureManager
+{
   private:
     TextureManager() = default;
     ~TextureManager() = default;
@@ -27,7 +28,8 @@ class TextureManager {
   public:
     // フォントアトラス1つ分のデータ
     // ASCII 32('space') 〜 127 の96文字をベイク対象とする
-    struct FontData {
+    struct FontData
+    {
         std::array<stbtt_bakedchar, 96> charData; // 各グリフのUV・オフセット情報
         int atlasWidth;
         int atlasHeight;
@@ -54,7 +56,8 @@ class TextureManager {
     /// <summary>
     /// シングルトンインスタンスの取得
     /// </summary>
-    static TextureManager *GetInstance() {
+    static TextureManager *GetInstance()
+    {
         static TextureManager instance;
         return &instance;
     }
@@ -125,7 +128,8 @@ class TextureManager {
     // -----------------------------------------------------------------------
   private:
     // テクスチャ1枚分のデータ
-    struct TextureData {
+    struct TextureData
+    {
         DirectX::TexMetadata metadata;                   // 画像の幅や高さなどの情報
         Microsoft::WRL::ComPtr<ID3D12Resource> resource; // テクスチャリソース
         Microsoft::WRL::ComPtr<ID3D12Resource> intermediateResource;

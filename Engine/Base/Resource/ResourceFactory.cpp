@@ -6,17 +6,21 @@
 
 namespace Hagine {
 
-void ResourceFactory::Initialize(DXDevice *device) {
+void ResourceFactory::Initialize(DXDevice *device)
+{
     assert(device);
     device_ = device;
 }
 
-void ResourceFactory::Finalize() {
+void ResourceFactory::Finalize()
+{
     dispatchIndirectCommandSignature_.Reset();
 }
 
-Microsoft::WRL::ComPtr<ID3D12Resource> ResourceFactory::CreateBufferResource(size_t sizeInBytes, bool isUAV) {
-    if (!isUAV) {
+Microsoft::WRL::ComPtr<ID3D12Resource> ResourceFactory::CreateBufferResource(size_t sizeInBytes, bool isUAV)
+{
+    if (!isUAV)
+    {
         // リソース用のヒープの設定
         D3D12_HEAP_PROPERTIES uploadHeapProperties{};
         uploadHeapProperties.Type = D3D12_HEAP_TYPE_UPLOAD; // UploadHeapを使う
@@ -40,7 +44,9 @@ Microsoft::WRL::ComPtr<ID3D12Resource> ResourceFactory::CreateBufferResource(siz
         assert(SUCCEEDED(hr));
 
         return resource;
-    } else {
+    }
+    else
+    {
 
         // UAVを使う場合は、デフォルトヒープを使う
         D3D12_HEAP_PROPERTIES defaultHeapProperties{};
@@ -64,7 +70,8 @@ Microsoft::WRL::ComPtr<ID3D12Resource> ResourceFactory::CreateBufferResource(siz
     }
 }
 
-Microsoft::WRL::ComPtr<ID3D12Resource> ResourceFactory::CreateTextureResource(const DirectX::TexMetadata &metadata) {
+Microsoft::WRL::ComPtr<ID3D12Resource> ResourceFactory::CreateTextureResource(const DirectX::TexMetadata &metadata)
+{
     // metadataを基にResourceの設定
     D3D12_RESOURCE_DESC resourceDesc{};
     resourceDesc.Width = UINT(metadata.width);                             // Textureの幅
@@ -94,7 +101,8 @@ Microsoft::WRL::ComPtr<ID3D12Resource> ResourceFactory::CreateTextureResource(co
     return resource;
 }
 
-Microsoft::WRL::ComPtr<ID3D12Resource> ResourceFactory::CreateRenderTextureResource(uint32_t width, uint32_t height, DXGI_FORMAT format, D3D12_CLEAR_VALUE color) {
+Microsoft::WRL::ComPtr<ID3D12Resource> ResourceFactory::CreateRenderTextureResource(uint32_t width, uint32_t height, DXGI_FORMAT format, D3D12_CLEAR_VALUE color)
+{
     D3D12_RESOURCE_DESC resourceDesc{};
     resourceDesc.Width = width;
     resourceDesc.Height = height;
@@ -120,7 +128,8 @@ Microsoft::WRL::ComPtr<ID3D12Resource> ResourceFactory::CreateRenderTextureResou
     return resource;
 }
 
-Microsoft::WRL::ComPtr<ID3D12Resource> ResourceFactory::CreateDepthStencilTextureResource(int32_t width, int32_t height) {
+Microsoft::WRL::ComPtr<ID3D12Resource> ResourceFactory::CreateDepthStencilTextureResource(int32_t width, int32_t height)
+{
     // 生成するResourceの設定
     D3D12_RESOURCE_DESC resourceDesc{};
     resourceDesc.Width = width;                          // Textureの幅
@@ -156,7 +165,8 @@ Microsoft::WRL::ComPtr<ID3D12Resource> ResourceFactory::CreateDepthStencilTextur
     return resource;
 }
 
-Microsoft::WRL::ComPtr<ID3D12Resource> ResourceFactory::UploadTextureData(Microsoft::WRL::ComPtr<ID3D12Resource> texture, const DirectX::ScratchImage &mipImages, ID3D12GraphicsCommandList *commandList) {
+Microsoft::WRL::ComPtr<ID3D12Resource> ResourceFactory::UploadTextureData(Microsoft::WRL::ComPtr<ID3D12Resource> texture, const DirectX::ScratchImage &mipImages, ID3D12GraphicsCommandList *commandList)
+{
     std::vector<D3D12_SUBRESOURCE_DATA> subresources;
     DirectX::PrepareUpload(device_->Get(), mipImages.GetImages(), mipImages.GetImageCount(), mipImages.GetMetadata(), subresources);
     uint64_t intermediateSize = GetRequiredIntermediateSize(texture.Get(), 0, UINT(subresources.size()));
@@ -174,9 +184,11 @@ Microsoft::WRL::ComPtr<ID3D12Resource> ResourceFactory::UploadTextureData(Micros
     return intermediateResource;
 }
 
-ID3D12CommandSignature *ResourceFactory::GetDispatchIndirectCommandSignature() {
+ID3D12CommandSignature *ResourceFactory::GetDispatchIndirectCommandSignature()
+{
     // 初回呼び出し時に遅延生成する（未使用なら一切作られない）
-    if (!dispatchIndirectCommandSignature_) {
+    if (!dispatchIndirectCommandSignature_)
+    {
         D3D12_INDIRECT_ARGUMENT_DESC arg{};
         arg.Type = D3D12_INDIRECT_ARGUMENT_TYPE_DISPATCH;
 

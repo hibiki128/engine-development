@@ -6,7 +6,8 @@
 #include <unordered_map>
 
 namespace Hagine {
-enum class BlendMode {
+enum class BlendMode
+{
     // ブレンドなし
     kNone,
     // 通常ブレンド
@@ -21,7 +22,8 @@ enum class BlendMode {
     kScreen,
 };
 
-enum class ShaderMode {
+enum class ShaderMode
+{
     kNone,
     kGray,
     kVigneet,
@@ -41,7 +43,8 @@ enum class ShaderMode {
     kCount,
 };
 
-enum class PipelineType {
+enum class PipelineType
+{
     kStandard,
     kParticle,
     kSprite,
@@ -53,7 +56,8 @@ enum class PipelineType {
     kShadowMap,
 };
 
-class PipeLineManager {
+class PipeLineManager
+{
   private:
     /// ====================================
     /// public method
@@ -65,9 +69,10 @@ class PipeLineManager {
     PipeLineManager &operator=(PipeLineManager &) = delete;
 
   public:
-      static PipeLineManager* GetInstance() {
+    static PipeLineManager *GetInstance()
+    {
         static PipeLineManager instance;
-          return &instance;
+        return &instance;
     }
 
     void Finalize();
@@ -141,7 +146,6 @@ class PipeLineManager {
     Microsoft::WRL::ComPtr<ID3D12RootSignature> CreateShadowMapRootSignature();
     Microsoft::WRL::ComPtr<ID3D12PipelineState> CreateShadowMapGraphicsPipeLine(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature);
 
-
     // シェーダーモード別のルートシグネチャ作成
     Microsoft::WRL::ComPtr<ID3D12RootSignature> CreateBaseRootSignature();
     Microsoft::WRL::ComPtr<ID3D12RootSignature> CreateGrayRootSignature();
@@ -193,7 +197,7 @@ class PipeLineManager {
 
     Microsoft::WRL::ComPtr<ID3D12RootSignature> CreateCommonRootSignature(bool hasCBV);
 
-    Microsoft::WRL::ComPtr<ID3D12PipelineState> CreateFullScreenPostEffectPipeline(const std::wstring& psPath,Microsoft::WRL::ComPtr<ID3D12RootSignature>rootSignature);
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> CreateFullScreenPostEffectPipeline(const std::wstring &psPath, Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature);
 
     D3D12_DEPTH_STENCIL_DESC SettingDepthStencilDesc(bool depth);
 };

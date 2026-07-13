@@ -13,7 +13,8 @@
 #include <vector>
 
 namespace Hagine {
-void ShowTextureFile(std::string &selectedTexturePath) {
+void ShowTextureFile(std::string &selectedTexturePath)
+{
     namespace fs = std::filesystem;
     ImGuiStyle &style = ImGui::GetStyle();
 
@@ -28,10 +29,12 @@ void ShowTextureFile(std::string &selectedTexturePath) {
     static ImGuiTextFilter filter;
 
     // ルート切り替え
-    for (int i = 0; i < 2; ++i) {
+    for (int i = 0; i < 2; ++i)
+    {
         if (i > 0)
             ImGui::SameLine();
-        if (ImGui::RadioButton(kRootNamesTex[i], rootSelTex == i)) {
+        if (ImGui::RadioButton(kRootNamesTex[i], rootSelTex == i))
+        {
             rootSelTex = i;
             currentDirTex = kRootsTex[rootSelTex];
             selectedFolderTex = selectedFileTex = "";
@@ -46,18 +49,22 @@ void ShowTextureFile(std::string &selectedTexturePath) {
         ImGui::PushStyleColor(ImGuiCol_ButtonActive, {0.5f, 0.5f, 0.5f, 0.8f});
 
         fs::path tmpPath = baseDirTex;
-        if (ImGui::Button("home##texhome")) {
+        if (ImGui::Button("home##texhome"))
+        {
             currentDirTex = baseDirTex;
             selectedFolderTex = selectedFileTex = "";
         }
         fs::path rel = currentDirTex.lexically_relative(baseDirTex);
-        if (!rel.empty() && rel != ".") {
-            for (auto &part : rel) {
+        if (!rel.empty() && rel != ".")
+        {
+            for (auto &part : rel)
+            {
                 ImGui::SameLine();
                 ImGui::TextUnformatted(" > ");
                 ImGui::SameLine();
                 tmpPath /= part;
-                if (ImGui::Button(part.string().c_str())) {
+                if (ImGui::Button(part.string().c_str()))
+                {
                     currentDirTex = tmpPath;
                     selectedFolderTex = selectedFileTex = "";
                 }
@@ -85,11 +92,16 @@ void ShowTextureFile(std::string &selectedTexturePath) {
     }
 
     std::vector<std::string> folders, files;
-    try {
-        for (const auto &e : fs::directory_iterator(currentDirTex)) {
-            if (e.is_directory()) {
+    try
+    {
+        for (const auto &e : fs::directory_iterator(currentDirTex))
+        {
+            if (e.is_directory())
+            {
                 folders.push_back(e.path().filename().string());
-            } else {
+            }
+            else
+            {
                 auto ext = e.path().extension();
                 if (ext == ".png" || ext == ".jpg")
                     files.push_back(e.path().filename().string());
@@ -97,7 +109,9 @@ void ShowTextureFile(std::string &selectedTexturePath) {
         }
         std::sort(folders.begin(), folders.end());
         std::sort(files.begin(), files.end());
-    } catch (std::exception &ex) {
+    }
+    catch (std::exception &ex)
+    {
         ImGui::TextColored({1.0f, 0.3f, 0.3f, 1.0f}, "Error: %s", ex.what());
     }
 
@@ -107,15 +121,18 @@ void ShowTextureFile(std::string &selectedTexturePath) {
                       ImGuiWindowFlags_AlwaysVerticalScrollbar);
 
     // フォルダ
-    if (!folders.empty()) {
+    if (!folders.empty())
+    {
         ImGui::PushStyleColor(ImGuiCol_Header, {0.3f, 0.3f, 0.7f, 0.5f});
         ImGui::PushStyleColor(ImGuiCol_HeaderHovered, {0.4f, 0.4f, 0.8f, 0.6f});
         ImGui::PushStyleColor(ImGuiCol_HeaderActive, {0.5f, 0.5f, 0.9f, 0.7f});
-        if (ImGui::CollapsingHeader("Folders##texfolders", ImGuiTreeNodeFlags_DefaultOpen)) {
+        if (ImGui::CollapsingHeader("Folders##texfolders", ImGuiTreeNodeFlags_DefaultOpen))
+        {
             ImGui::Indent(10.0f);
             ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
                                 ImVec2(style.ItemSpacing.x, 8.0f));
-            for (auto &folder : folders) {
+            for (auto &folder : folders)
+            {
                 if (!filter.PassFilter(folder.c_str()))
                     continue;
                 ImGui::PushStyleColor(ImGuiCol_Text, {1.0f, 0.9f, 0.4f, 1.0f});
@@ -123,15 +140,19 @@ void ShowTextureFile(std::string &selectedTexturePath) {
                 ImGui::PopStyleColor();
                 ImGui::SameLine();
                 if (ImGui::Selectable(folder.c_str(), selectedFolderTex == folder,
-                                      ImGuiSelectableFlags_AllowDoubleClick)) {
-                    if (ImGui::IsMouseDoubleClicked(0)) {
+                                      ImGuiSelectableFlags_AllowDoubleClick))
+                {
+                    if (ImGui::IsMouseDoubleClicked(0))
+                    {
                         selectedFolderTex = folder;
                         currentDirTex /= folder;
                         selectedFileTex = "";
                     }
                 }
-                if (ImGui::BeginPopupContextItem(folder.c_str())) {
-                    if (ImGui::MenuItem("Open")) {
+                if (ImGui::BeginPopupContextItem(folder.c_str()))
+                {
+                    if (ImGui::MenuItem("Open"))
+                    {
                         selectedFolderTex = folder;
                         currentDirTex /= folder;
                         selectedFileTex = "";
@@ -146,18 +167,21 @@ void ShowTextureFile(std::string &selectedTexturePath) {
     }
 
     // テクスチャファイル（グリッド）
-    if (!files.empty()) {
+    if (!files.empty())
+    {
         ImGui::PushStyleColor(ImGuiCol_Header, {0.3f, 0.7f, 0.3f, 0.5f});
         ImGui::PushStyleColor(ImGuiCol_HeaderHovered, {0.4f, 0.8f, 0.4f, 0.6f});
         ImGui::PushStyleColor(ImGuiCol_HeaderActive, {0.5f, 0.9f, 0.5f, 0.7f});
-        if (ImGui::CollapsingHeader("Textures##texfiles", ImGuiTreeNodeFlags_DefaultOpen)) {
+        if (ImGui::CollapsingHeader("Textures##texfiles", ImGuiTreeNodeFlags_DefaultOpen))
+        {
             ImGui::Indent(10.0f);
 
             const float kCell = 140.0f; // プレビューサイズを拡大
             int cols = std::max(1, (int)(ImGui::GetContentRegionAvail().x / kCell));
             ImGui::Columns(cols, "TexGrid##g", false);
 
-            for (const auto &file : files) {
+            for (const auto &file : files)
+            {
                 if (!filter.PassFilter(file.c_str()))
                     continue;
 
@@ -165,7 +189,8 @@ void ShowTextureFile(std::string &selectedTexturePath) {
                 std::string rel = fullPath.lexically_relative(baseDirTex).string();
                 std::replace(rel.begin(), rel.end(), '\\', '/');
 
-                if (!texCache.contains(rel)) {
+                if (!texCache.contains(rel))
+                {
                     auto *mgr = TextureManager::GetInstance();
                     mgr->LoadTexture(rel);
                     uint32_t idx = mgr->GetTextureIndexByFilePath(rel);
@@ -205,7 +230,8 @@ void ShowTextureFile(std::string &selectedTexturePath) {
                     {bMin.x + 4.f, bMax.y - 19.f},
                     IM_COL32(220, 220, 220, 255), name.c_str());
 
-                if (sel) {
+                if (sel)
+                {
                     ImGui::GetWindowDrawList()->AddRect(
                         bMin, bMax, IM_COL32(80, 160, 255, 220), 3.0f, 0, 2.0f);
                 }
@@ -231,7 +257,8 @@ void ShowTextureFile(std::string &selectedTexturePath) {
 // ============================================================
 // ShowModelFile  (BeginChild 高さ固定化)
 // ============================================================
-void ShowModelFile(std::string &selectedModelPath) {
+void ShowModelFile(std::string &selectedModelPath)
+{
     namespace fs = std::filesystem;
     ImGuiStyle &style = ImGui::GetStyle();
 
@@ -246,10 +273,12 @@ void ShowModelFile(std::string &selectedModelPath) {
     static bool showDetails = true;
 
     // ルート切り替え
-    for (int i = 0; i < 2; ++i) {
+    for (int i = 0; i < 2; ++i)
+    {
         if (i > 0)
             ImGui::SameLine();
-        if (ImGui::RadioButton(kRootNamesModel[i], rootSelModel == i)) {
+        if (ImGui::RadioButton(kRootNamesModel[i], rootSelModel == i))
+        {
             rootSelModel = i;
             currentDirModel = kRootsModel[rootSelModel];
             selectedFolderModel = selectedFileModel = "";
@@ -262,18 +291,22 @@ void ShowModelFile(std::string &selectedModelPath) {
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, {0.3f, 0.3f, 0.3f, 0.5f});
         ImGui::PushStyleColor(ImGuiCol_ButtonActive, {0.5f, 0.5f, 0.5f, 0.8f});
         fs::path tmpPath = baseDirModel;
-        if (ImGui::Button("home##mdlhome")) {
+        if (ImGui::Button("home##mdlhome"))
+        {
             currentDirModel = baseDirModel;
             selectedFolderModel = selectedFileModel = "";
         }
         fs::path rel = currentDirModel.lexically_relative(baseDirModel);
-        if (!rel.empty() && rel != ".") {
-            for (auto &part : rel) {
+        if (!rel.empty() && rel != ".")
+        {
+            for (auto &part : rel)
+            {
                 ImGui::SameLine();
                 ImGui::TextUnformatted(" > ");
                 ImGui::SameLine();
                 tmpPath /= part;
-                if (ImGui::Button(part.string().c_str())) {
+                if (ImGui::Button(part.string().c_str()))
+                {
                     currentDirModel = tmpPath;
                     selectedFolderModel = selectedFileModel = "";
                 }
@@ -290,11 +323,16 @@ void ShowModelFile(std::string &selectedModelPath) {
     ImGui::Spacing();
 
     std::vector<std::string> folders, files;
-    try {
-        for (const auto &e : fs::directory_iterator(currentDirModel)) {
-            if (e.is_directory()) {
+    try
+    {
+        for (const auto &e : fs::directory_iterator(currentDirModel))
+        {
+            if (e.is_directory())
+            {
                 folders.push_back(e.path().filename().string());
-            } else {
+            }
+            else
+            {
                 auto ext = e.path().extension().string();
                 if (ext == ".obj" || ext == ".fbx" || ext == ".gltf" || ext == ".glb" ||
                     ext == ".dae" || ext == ".3ds" || ext == ".ply" || ext == ".x3d")
@@ -303,7 +341,9 @@ void ShowModelFile(std::string &selectedModelPath) {
         }
         std::sort(folders.begin(), folders.end());
         std::sort(files.begin(), files.end());
-    } catch (std::exception &ex) {
+    }
+    catch (std::exception &ex)
+    {
         ImGui::TextColored({1.0f, 0.3f, 0.3f, 1.0f}, "Error: %s", ex.what());
     }
 
@@ -311,14 +351,17 @@ void ShowModelFile(std::string &selectedModelPath) {
     ImGui::BeginChild("MdlBrowser##child", ImVec2(0, kBrowserH), true,
                       ImGuiWindowFlags_AlwaysVerticalScrollbar);
 
-    if (!folders.empty()) {
+    if (!folders.empty())
+    {
         ImGui::PushStyleColor(ImGuiCol_Header, {0.3f, 0.3f, 0.7f, 0.5f});
         ImGui::PushStyleColor(ImGuiCol_HeaderHovered, {0.4f, 0.4f, 0.8f, 0.6f});
         ImGui::PushStyleColor(ImGuiCol_HeaderActive, {0.5f, 0.5f, 0.9f, 0.7f});
-        if (ImGui::CollapsingHeader("Folders##mdlfolders", ImGuiTreeNodeFlags_DefaultOpen)) {
+        if (ImGui::CollapsingHeader("Folders##mdlfolders", ImGuiTreeNodeFlags_DefaultOpen))
+        {
             ImGui::Indent(10.0f);
             ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(style.ItemSpacing.x, 8.0f));
-            for (auto &folder : folders) {
+            for (auto &folder : folders)
+            {
                 if (!filter.PassFilter(folder.c_str()))
                     continue;
                 ImGui::PushStyleColor(ImGuiCol_Text, {1.0f, 0.9f, 0.4f, 1.0f});
@@ -326,15 +369,19 @@ void ShowModelFile(std::string &selectedModelPath) {
                 ImGui::PopStyleColor();
                 ImGui::SameLine();
                 if (ImGui::Selectable(folder.c_str(), selectedFolderModel == folder,
-                                      ImGuiSelectableFlags_AllowDoubleClick)) {
-                    if (ImGui::IsMouseDoubleClicked(0)) {
+                                      ImGuiSelectableFlags_AllowDoubleClick))
+                {
+                    if (ImGui::IsMouseDoubleClicked(0))
+                    {
                         selectedFolderModel = folder;
                         currentDirModel /= folder;
                         selectedFileModel = "";
                     }
                 }
-                if (ImGui::BeginPopupContextItem(folder.c_str())) {
-                    if (ImGui::MenuItem("Open")) {
+                if (ImGui::BeginPopupContextItem(folder.c_str()))
+                {
+                    if (ImGui::MenuItem("Open"))
+                    {
                         selectedFolderModel = folder;
                         currentDirModel /= folder;
                         selectedFileModel = "";
@@ -348,11 +395,13 @@ void ShowModelFile(std::string &selectedModelPath) {
         ImGui::PopStyleColor(3);
     }
 
-    if (!files.empty()) {
+    if (!files.empty())
+    {
         ImGui::PushStyleColor(ImGuiCol_Header, {0.7f, 0.3f, 0.3f, 0.5f});
         ImGui::PushStyleColor(ImGuiCol_HeaderHovered, {0.8f, 0.4f, 0.4f, 0.6f});
         ImGui::PushStyleColor(ImGuiCol_HeaderActive, {0.9f, 0.5f, 0.5f, 0.7f});
-        if (ImGui::CollapsingHeader("Model Files##mdlfiles", ImGuiTreeNodeFlags_DefaultOpen)) {
+        if (ImGui::CollapsingHeader("Model Files##mdlfiles", ImGuiTreeNodeFlags_DefaultOpen))
+        {
             ImGui::Indent(10.0f);
 
             auto getColor = [](const std::string &ext) -> ImVec4 {
@@ -368,7 +417,8 @@ void ShowModelFile(std::string &selectedModelPath) {
                 return p;
             };
 
-            if (showDetails) {
+            if (showDetails)
+            {
                 ImGui::Columns(2, "MdlList##c", true);
                 ImGui::SetColumnWidth(0, ImGui::GetWindowWidth() * 0.7f);
                 ImGui::TextUnformatted("Name");
@@ -376,7 +426,8 @@ void ShowModelFile(std::string &selectedModelPath) {
                 ImGui::TextUnformatted("Ext");
                 ImGui::NextColumn();
                 ImGui::Separator();
-                for (const auto &file : files) {
+                for (const auto &file : files)
+                {
                     if (!filter.PassFilter(file.c_str()))
                         continue;
                     std::string ext = fs::path(file).extension().string();
@@ -385,7 +436,8 @@ void ShowModelFile(std::string &selectedModelPath) {
                     ImGui::PopStyleColor();
                     ImGui::SameLine();
                     bool sel = (file == selectedFileModel);
-                    if (ImGui::Selectable(file.c_str(), sel, ImGuiSelectableFlags_SpanAllColumns)) {
+                    if (ImGui::Selectable(file.c_str(), sel, ImGuiSelectableFlags_SpanAllColumns))
+                    {
                         selectedFileModel = file;
                         selectedModelPath = getRelPath(file);
                     }
@@ -394,18 +446,22 @@ void ShowModelFile(std::string &selectedModelPath) {
                     ImGui::NextColumn();
                 }
                 ImGui::Columns(1);
-            } else {
+            }
+            else
+            {
                 const float kCell = 100.0f;
                 int cols = std::max(1, (int)(ImGui::GetContentRegionAvail().x / kCell));
                 ImGui::Columns(cols, "MdlGrid##g", false);
-                for (const auto &file : files) {
+                for (const auto &file : files)
+                {
                     if (!filter.PassFilter(file.c_str()))
                         continue;
                     bool sel = (file == selectedFileModel);
                     ImGui::PushStyleColor(ImGuiCol_Button,
                                           sel ? ImVec4{0.7f, 0.5f, 0.5f, 0.7f} : ImVec4{0.3f, 0.3f, 0.3f, 0.0f});
                     ImGui::PushID(file.c_str());
-                    if (ImGui::Button("##mbtn", ImVec2(kCell - 10, kCell - 10))) {
+                    if (ImGui::Button("##mbtn", ImVec2(kCell - 10, kCell - 10)))
+                    {
                         selectedFileModel = file;
                         selectedModelPath = getRelPath(file);
                     }
@@ -434,7 +490,8 @@ void ShowModelFile(std::string &selectedModelPath) {
 // ============================================================
 // ShowJsonFile  (BeginChild 高さ固定化)
 // ============================================================
-void ShowJsonFile(std::string &selectedJsonPath, std::string &startPath) {
+void ShowJsonFile(std::string &selectedJsonPath, std::string &startPath)
+{
     namespace fs = std::filesystem;
     ImGuiStyle &style = ImGui::GetStyle();
 
@@ -450,18 +507,22 @@ void ShowJsonFile(std::string &selectedJsonPath, std::string &startPath) {
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, {0.3f, 0.3f, 0.3f, 0.5f});
         ImGui::PushStyleColor(ImGuiCol_ButtonActive, {0.5f, 0.5f, 0.5f, 0.8f});
         fs::path tmpPath = baseDirJson;
-        if (ImGui::Button("home##jsonhome")) {
+        if (ImGui::Button("home##jsonhome"))
+        {
             currentDirJson = baseDirJson;
             selectedFolderJson = selectedFileJson = "";
         }
         fs::path rel = currentDirJson.lexically_relative(baseDirJson);
-        if (!rel.empty() && rel != ".") {
-            for (auto &part : rel) {
+        if (!rel.empty() && rel != ".")
+        {
+            for (auto &part : rel)
+            {
                 ImGui::SameLine();
                 ImGui::TextUnformatted(" > ");
                 ImGui::SameLine();
                 tmpPath /= part;
-                if (ImGui::Button(part.string().c_str())) {
+                if (ImGui::Button(part.string().c_str()))
+                {
                     currentDirJson = tmpPath;
                     selectedFolderJson = selectedFileJson = "";
                 }
@@ -478,11 +539,16 @@ void ShowJsonFile(std::string &selectedJsonPath, std::string &startPath) {
     ImGui::Spacing();
 
     std::vector<std::string> folders, files;
-    try {
-        for (const auto &e : fs::directory_iterator(currentDirJson)) {
-            if (e.is_directory()) {
+    try
+    {
+        for (const auto &e : fs::directory_iterator(currentDirJson))
+        {
+            if (e.is_directory())
+            {
                 folders.push_back(e.path().filename().string());
-            } else {
+            }
+            else
+            {
                 auto ext = e.path().extension().string();
                 if (ext == ".json" || ext == ".jsonl" || ext == ".geojson")
                     files.push_back(e.path().filename().string());
@@ -490,7 +556,9 @@ void ShowJsonFile(std::string &selectedJsonPath, std::string &startPath) {
         }
         std::sort(folders.begin(), folders.end());
         std::sort(files.begin(), files.end());
-    } catch (std::exception &ex) {
+    }
+    catch (std::exception &ex)
+    {
         ImGui::TextColored({1.0f, 0.3f, 0.3f, 1.0f}, "Error: %s", ex.what());
     }
 
@@ -498,14 +566,17 @@ void ShowJsonFile(std::string &selectedJsonPath, std::string &startPath) {
     ImGui::BeginChild("JsonBrowser##child", ImVec2(0, kBrowserH), true,
                       ImGuiWindowFlags_AlwaysVerticalScrollbar);
 
-    if (!folders.empty()) {
+    if (!folders.empty())
+    {
         ImGui::PushStyleColor(ImGuiCol_Header, {0.3f, 0.3f, 0.7f, 0.5f});
         ImGui::PushStyleColor(ImGuiCol_HeaderHovered, {0.4f, 0.4f, 0.8f, 0.6f});
         ImGui::PushStyleColor(ImGuiCol_HeaderActive, {0.5f, 0.5f, 0.9f, 0.7f});
-        if (ImGui::CollapsingHeader("Folders##jsonfolders", ImGuiTreeNodeFlags_DefaultOpen)) {
+        if (ImGui::CollapsingHeader("Folders##jsonfolders", ImGuiTreeNodeFlags_DefaultOpen))
+        {
             ImGui::Indent(10.0f);
             ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(style.ItemSpacing.x, 8.0f));
-            for (auto &folder : folders) {
+            for (auto &folder : folders)
+            {
                 if (!filter.PassFilter(folder.c_str()))
                     continue;
                 ImGui::PushStyleColor(ImGuiCol_Text, {1.0f, 0.9f, 0.4f, 1.0f});
@@ -513,15 +584,19 @@ void ShowJsonFile(std::string &selectedJsonPath, std::string &startPath) {
                 ImGui::PopStyleColor();
                 ImGui::SameLine();
                 if (ImGui::Selectable(folder.c_str(), selectedFolderJson == folder,
-                                      ImGuiSelectableFlags_AllowDoubleClick)) {
-                    if (ImGui::IsMouseDoubleClicked(0)) {
+                                      ImGuiSelectableFlags_AllowDoubleClick))
+                {
+                    if (ImGui::IsMouseDoubleClicked(0))
+                    {
                         selectedFolderJson = folder;
                         currentDirJson /= folder;
                         selectedFileJson = "";
                     }
                 }
-                if (ImGui::BeginPopupContextItem(folder.c_str())) {
-                    if (ImGui::MenuItem("Open")) {
+                if (ImGui::BeginPopupContextItem(folder.c_str()))
+                {
+                    if (ImGui::MenuItem("Open"))
+                    {
                         selectedFolderJson = folder;
                         currentDirJson /= folder;
                         selectedFileJson = "";
@@ -535,11 +610,13 @@ void ShowJsonFile(std::string &selectedJsonPath, std::string &startPath) {
         ImGui::PopStyleColor(3);
     }
 
-    if (!files.empty()) {
+    if (!files.empty())
+    {
         ImGui::PushStyleColor(ImGuiCol_Header, {0.3f, 0.7f, 0.7f, 0.5f});
         ImGui::PushStyleColor(ImGuiCol_HeaderHovered, {0.4f, 0.8f, 0.8f, 0.6f});
         ImGui::PushStyleColor(ImGuiCol_HeaderActive, {0.5f, 0.9f, 0.9f, 0.7f});
-        if (ImGui::CollapsingHeader("JSON Files##jsonfiles", ImGuiTreeNodeFlags_DefaultOpen)) {
+        if (ImGui::CollapsingHeader("JSON Files##jsonfiles", ImGuiTreeNodeFlags_DefaultOpen))
+        {
             ImGui::Indent(10.0f);
 
             auto getIconColor = [](const std::string &ext) -> ImVec4 {
@@ -557,7 +634,8 @@ void ShowJsonFile(std::string &selectedJsonPath, std::string &startPath) {
                 return p;
             };
 
-            if (showDetails) {
+            if (showDetails)
+            {
                 ImGui::Columns(2, "JsonList##c", true);
                 ImGui::SetColumnWidth(0, ImGui::GetWindowWidth() * 0.7f);
                 ImGui::TextUnformatted("Name");
@@ -565,7 +643,8 @@ void ShowJsonFile(std::string &selectedJsonPath, std::string &startPath) {
                 ImGui::TextUnformatted("Ext");
                 ImGui::NextColumn();
                 ImGui::Separator();
-                for (const auto &file : files) {
+                for (const auto &file : files)
+                {
                     if (!filter.PassFilter(file.c_str()))
                         continue;
                     std::string ext = fs::path(file).extension().string();
@@ -574,7 +653,8 @@ void ShowJsonFile(std::string &selectedJsonPath, std::string &startPath) {
                     ImGui::PopStyleColor();
                     ImGui::SameLine();
                     bool sel = (file == selectedFileJson);
-                    if (ImGui::Selectable(file.c_str(), sel, ImGuiSelectableFlags_SpanAllColumns)) {
+                    if (ImGui::Selectable(file.c_str(), sel, ImGuiSelectableFlags_SpanAllColumns))
+                    {
                         selectedFileJson = file;
                         selectedJsonPath = getRelPath(file);
                     }
@@ -583,18 +663,22 @@ void ShowJsonFile(std::string &selectedJsonPath, std::string &startPath) {
                     ImGui::NextColumn();
                 }
                 ImGui::Columns(1);
-            } else {
+            }
+            else
+            {
                 const float kCell = 100.0f;
                 int cols = std::max(1, (int)(ImGui::GetContentRegionAvail().x / kCell));
                 ImGui::Columns(cols, "JsonGrid##g", false);
-                for (const auto &file : files) {
+                for (const auto &file : files)
+                {
                     if (!filter.PassFilter(file.c_str()))
                         continue;
                     bool sel = (file == selectedFileJson);
                     ImGui::PushStyleColor(ImGuiCol_Button,
                                           sel ? ImVec4{0.5f, 0.7f, 0.7f, 0.7f} : ImVec4{0.3f, 0.3f, 0.3f, 0.0f});
                     ImGui::PushID(file.c_str());
-                    if (ImGui::Button("##jbtn", ImVec2(kCell - 10, kCell - 10))) {
+                    if (ImGui::Button("##jbtn", ImVec2(kCell - 10, kCell - 10)))
+                    {
                         selectedFileJson = file;
                         selectedJsonPath = getRelPath(file);
                     }
@@ -625,7 +709,8 @@ void ShowJsonFile(std::string &selectedJsonPath, std::string &startPath) {
 //                 選択されたパスは Application/Assets/models を基点とした相対パスで返す
 //                 例: animation/walk.gltf
 // ============================================================
-void ShowGltfFile(std::string &selectedGltfPath) {
+void ShowGltfFile(std::string &selectedGltfPath)
+{
     namespace fs = std::filesystem;
     ImGuiStyle &style = ImGui::GetStyle();
 
@@ -645,18 +730,22 @@ void ShowGltfFile(std::string &selectedGltfPath) {
         ImGui::PushStyleColor(ImGuiCol_ButtonActive, {0.5f, 0.5f, 0.5f, 0.8f});
 
         fs::path tmpPath = baseDirGltf;
-        if (ImGui::Button("home##gltfhome")) {
+        if (ImGui::Button("home##gltfhome"))
+        {
             currentDirGltf = baseDirGltf;
             selectedFolderGltf = selectedFileGltf = "";
         }
         fs::path rel = currentDirGltf.lexically_relative(baseDirGltf);
-        if (!rel.empty() && rel != ".") {
-            for (auto &part : rel) {
+        if (!rel.empty() && rel != ".")
+        {
+            for (auto &part : rel)
+            {
                 ImGui::SameLine();
                 ImGui::TextUnformatted(" > ");
                 ImGui::SameLine();
                 tmpPath /= part;
-                if (ImGui::Button(part.string().c_str())) {
+                if (ImGui::Button(part.string().c_str()))
+                {
                     currentDirGltf = tmpPath;
                     selectedFolderGltf = selectedFileGltf = "";
                 }
@@ -675,11 +764,16 @@ void ShowGltfFile(std::string &selectedGltfPath) {
 
     // カレントディレクトリのフォルダ・ファイルを列挙
     std::vector<std::string> folders, files;
-    try {
-        for (const auto &e : fs::directory_iterator(currentDirGltf)) {
-            if (e.is_directory()) {
+    try
+    {
+        for (const auto &e : fs::directory_iterator(currentDirGltf))
+        {
+            if (e.is_directory())
+            {
                 folders.push_back(e.path().filename().string());
-            } else {
+            }
+            else
+            {
                 auto ext = e.path().extension().string();
                 if (ext == ".gltf" || ext == ".glb")
                     files.push_back(e.path().filename().string());
@@ -687,7 +781,9 @@ void ShowGltfFile(std::string &selectedGltfPath) {
         }
         std::sort(folders.begin(), folders.end());
         std::sort(files.begin(), files.end());
-    } catch (std::exception &ex) {
+    }
+    catch (std::exception &ex)
+    {
         ImGui::TextColored({1.0f, 0.3f, 0.3f, 1.0f}, "Error: %s", ex.what());
     }
 
@@ -696,14 +792,17 @@ void ShowGltfFile(std::string &selectedGltfPath) {
                       ImGuiWindowFlags_AlwaysVerticalScrollbar);
 
     // フォルダ一覧セクション
-    if (!folders.empty()) {
+    if (!folders.empty())
+    {
         ImGui::PushStyleColor(ImGuiCol_Header, {0.3f, 0.3f, 0.7f, 0.5f});
         ImGui::PushStyleColor(ImGuiCol_HeaderHovered, {0.4f, 0.4f, 0.8f, 0.6f});
         ImGui::PushStyleColor(ImGuiCol_HeaderActive, {0.5f, 0.5f, 0.9f, 0.7f});
-        if (ImGui::CollapsingHeader("Folders##gltffolders", ImGuiTreeNodeFlags_DefaultOpen)) {
+        if (ImGui::CollapsingHeader("Folders##gltffolders", ImGuiTreeNodeFlags_DefaultOpen))
+        {
             ImGui::Indent(10.0f);
             ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(style.ItemSpacing.x, 8.0f));
-            for (auto &folder : folders) {
+            for (auto &folder : folders)
+            {
                 if (!filter.PassFilter(folder.c_str()))
                     continue;
                 ImGui::PushStyleColor(ImGuiCol_Text, {1.0f, 0.9f, 0.4f, 1.0f});
@@ -711,15 +810,19 @@ void ShowGltfFile(std::string &selectedGltfPath) {
                 ImGui::PopStyleColor();
                 ImGui::SameLine();
                 if (ImGui::Selectable(folder.c_str(), selectedFolderGltf == folder,
-                                      ImGuiSelectableFlags_AllowDoubleClick)) {
-                    if (ImGui::IsMouseDoubleClicked(0)) {
+                                      ImGuiSelectableFlags_AllowDoubleClick))
+                {
+                    if (ImGui::IsMouseDoubleClicked(0))
+                    {
                         selectedFolderGltf = folder;
                         currentDirGltf /= folder;
                         selectedFileGltf = "";
                     }
                 }
-                if (ImGui::BeginPopupContextItem(folder.c_str())) {
-                    if (ImGui::MenuItem("Open")) {
+                if (ImGui::BeginPopupContextItem(folder.c_str()))
+                {
+                    if (ImGui::MenuItem("Open"))
+                    {
                         selectedFolderGltf = folder;
                         currentDirGltf /= folder;
                         selectedFileGltf = "";
@@ -734,12 +837,14 @@ void ShowGltfFile(std::string &selectedGltfPath) {
     }
 
     // アニメーションファイル一覧セクション
-    if (!files.empty()) {
+    if (!files.empty())
+    {
         // 紫系：モデル（赤）・テクスチャ（緑）・JSON（青緑）と被らない色
         ImGui::PushStyleColor(ImGuiCol_Header, {0.5f, 0.3f, 0.7f, 0.5f});
         ImGui::PushStyleColor(ImGuiCol_HeaderHovered, {0.6f, 0.4f, 0.8f, 0.6f});
         ImGui::PushStyleColor(ImGuiCol_HeaderActive, {0.7f, 0.5f, 0.9f, 0.7f});
-        if (ImGui::CollapsingHeader("Animation Files##gltffiles", ImGuiTreeNodeFlags_DefaultOpen)) {
+        if (ImGui::CollapsingHeader("Animation Files##gltffiles", ImGuiTreeNodeFlags_DefaultOpen))
+        {
             ImGui::Indent(10.0f);
 
             // 拡張子ごとのアイコン色（.gltf = 水色 / .glb = 薄紫）
@@ -760,7 +865,8 @@ void ShowGltfFile(std::string &selectedGltfPath) {
                 return p;
             };
 
-            if (showDetails) {
+            if (showDetails)
+            {
                 // 詳細ビュー：名前 + 拡張子を 2 列表示
                 ImGui::Columns(2, "GltfList##c", true);
                 ImGui::SetColumnWidth(0, ImGui::GetWindowWidth() * 0.7f);
@@ -770,7 +876,8 @@ void ShowGltfFile(std::string &selectedGltfPath) {
                 ImGui::NextColumn();
                 ImGui::Separator();
 
-                for (const auto &file : files) {
+                for (const auto &file : files)
+                {
                     if (!filter.PassFilter(file.c_str()))
                         continue;
                     std::string ext = fs::path(file).extension().string();
@@ -780,7 +887,8 @@ void ShowGltfFile(std::string &selectedGltfPath) {
                     ImGui::SameLine();
                     bool sel = (file == selectedFileGltf);
                     if (ImGui::Selectable(file.c_str(), sel,
-                                          ImGuiSelectableFlags_SpanAllColumns)) {
+                                          ImGuiSelectableFlags_SpanAllColumns))
+                    {
                         selectedFileGltf = file;
                         selectedGltfPath = getRelPath(file);
                     }
@@ -789,13 +897,16 @@ void ShowGltfFile(std::string &selectedGltfPath) {
                     ImGui::NextColumn();
                 }
                 ImGui::Columns(1);
-            } else {
+            }
+            else
+            {
                 // シンプルビュー：グリッド表示
                 const float kCell = 100.0f;
                 int cols = std::max(1, (int)(ImGui::GetContentRegionAvail().x / kCell));
                 ImGui::Columns(cols, "GltfGrid##g", false);
 
-                for (const auto &file : files) {
+                for (const auto &file : files)
+                {
                     if (!filter.PassFilter(file.c_str()))
                         continue;
                     bool sel = (file == selectedFileGltf);
@@ -803,7 +914,8 @@ void ShowGltfFile(std::string &selectedGltfPath) {
                                           sel ? ImVec4{0.5f, 0.4f, 0.7f, 0.7f}
                                               : ImVec4{0.3f, 0.3f, 0.3f, 0.0f});
                     ImGui::PushID(file.c_str());
-                    if (ImGui::Button("##gbtn", ImVec2(kCell - 10, kCell - 10))) {
+                    if (ImGui::Button("##gbtn", ImVec2(kCell - 10, kCell - 10)))
+                    {
                         selectedFileGltf = file;
                         selectedGltfPath = getRelPath(file);
                     }
