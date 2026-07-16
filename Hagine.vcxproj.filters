@@ -25,15 +25,6 @@
     <ClCompile Include="Engine\3d\Animation\Skin.cpp">
       <Filter>Engine\3d\Animation</Filter>
     </ClCompile>
-    <ClCompile Include="Engine\3d\Camera\BaseFollowCamera\BaseFollowCamera.cpp">
-      <Filter>Engine\3d\Camera\BaseFollowCamera</Filter>
-    </ClCompile>
-    <ClCompile Include="Engine\3d\Camera\DebugCamera\DebugCamera.cpp">
-      <Filter>Engine\3d\Camera\DebugCamera</Filter>
-    </ClCompile>
-    <ClCompile Include="Engine\3d\Camera\ViewProjection\ViewProjection.cpp">
-      <Filter>Engine\3d\Camera\ViewProjection</Filter>
-    </ClCompile>
     <ClCompile Include="Engine\3d\Light\LightGroup.cpp">
       <Filter>Engine\3d\Light</Filter>
     </ClCompile>
@@ -81,18 +72,6 @@
     </ClCompile>
     <ClCompile Include="Engine\3d\Particle\ParticleStruct.cpp">
       <Filter>Engine\3d\Particle</Filter>
-    </ClCompile>
-    <ClCompile Include="Engine\3d\Particle\CSParticle\ParticleCSEditor.cpp">
-      <Filter>Engine\3d\Particle\CSParticle</Filter>
-    </ClCompile>
-    <ClCompile Include="Engine\3d\Particle\CSParticle\ParticleCSEmitter.cpp">
-      <Filter>Engine\3d\Particle\CSParticle</Filter>
-    </ClCompile>
-    <ClCompile Include="Engine\3d\Particle\CSParticle\ParticleCSGroup.cpp">
-      <Filter>Engine\3d\Particle\CSParticle</Filter>
-    </ClCompile>
-    <ClCompile Include="Engine\3d\Particle\CSParticle\ParticleCSGroupManager.cpp">
-      <Filter>Engine\3d\Particle\CSParticle</Filter>
     </ClCompile>
     <ClCompile Include="Engine\3d\Particle\ParticleCommon.cpp">
       <Filter>Engine\3d\Particle</Filter>
@@ -142,18 +121,6 @@
     <ClCompile Include="Engine\Math\type\Quaternion.cpp">
       <Filter>Engine\Math\type</Filter>
     </ClCompile>
-    <ClCompile Include="Engine\OffScreen\PostEffect\PostEffectChain.cpp">
-      <Filter>Engine\OffScreen\PostEffect</Filter>
-    </ClCompile>
-    <ClCompile Include="Engine\OffScreen\PostEffect\PostEffectDataManager.cpp">
-      <Filter>Engine\OffScreen\PostEffect</Filter>
-    </ClCompile>
-    <ClCompile Include="Engine\OffScreen\PostEffect\PostEffectParameters.cpp">
-      <Filter>Engine\OffScreen\PostEffect</Filter>
-    </ClCompile>
-    <ClCompile Include="Engine\OffScreen\PostEffect\PostEffectRenderer.cpp">
-      <Filter>Engine\OffScreen\PostEffect</Filter>
-    </ClCompile>
     <ClCompile Include="Engine\OffScreen\OffScreen.cpp">
       <Filter>Engine\OffScreen</Filter>
     </ClCompile>
@@ -187,14 +154,8 @@
     <ClCompile Include="Engine\Utility\Debug\Log\Logger.cpp">
       <Filter>Engine\Utility\Debug\Log</Filter>
     </ClCompile>
-    <ClCompile Include="Engine\Utility\Debug\ResourceLeakChecker\D3DResourceLeakChecker.cpp">
-      <Filter>Engine\Utility\Debug\ResourceLeakChecker</Filter>
-    </ClCompile>
     <ClCompile Include="Engine\Utility\Edit\LevelData.cpp">
       <Filter>Engine\Utility\Edit</Filter>
-    </ClCompile>
-    <ClCompile Include="Engine\Utility\Edit\ShortcutManager\ShortcutManager.cpp">
-      <Filter>Engine\Utility\Edit\ShortcutManager</Filter>
     </ClCompile>
     <ClCompile Include="Engine\Utility\Graphics\Model\ModelManager.cpp">
       <Filter>Engine\Utility\Graphics\Model</Filter>
@@ -211,17 +172,11 @@
     <ClCompile Include="Engine\Utility\Graphics\Texture\TextureManager.cpp">
       <Filter>Engine\Utility\Graphics\Texture</Filter>
     </ClCompile>
-    <ClCompile Include="Engine\Utility\LoadFile\Csv\CsvLoad.cpp">
-      <Filter>Engine\Utility\LoadFile\Csv</Filter>
-    </ClCompile>
     <ClCompile Include="Engine\Utility\Scene\SceneManager.cpp">
       <Filter>Engine\Utility\Scene</Filter>
     </ClCompile>
     <ClCompile Include="Engine\Utility\Scene\SceneTransition.cpp">
       <Filter>Engine\Utility\Scene</Filter>
-    </ClCompile>
-    <ClCompile Include="Engine\Utility\ShowFolder\ShowFolder.cpp">
-      <Filter>Engine\Utility\ShowFolder</Filter>
     </ClCompile>
     <ClCompile Include="Engine\Utility\String\StringUtility.cpp">
       <Filter>Engine\Utility\String</Filter>
@@ -268,12 +223,6 @@
     <ClCompile Include="Engine\Render\DrawSystem.cpp">
       <Filter>Engine\Renderer</Filter>
     </ClCompile>
-    <ClCompile Include="Engine\3d\Particle\CSParticle\ParticleCSFieldManager.cpp">
-      <Filter>Engine\3d\Particle\CSParticle</Filter>
-    </ClCompile>
-    <ClCompile Include="Engine\OffScreen\PostEffect\PostEffectParamsImpl.cpp">
-      <Filter>Engine\OffScreen\PostEffect</Filter>
-    </ClCompile>
     <ClCompile Include="Engine\2d\Text\TextRenderer.cpp">
       <Filter>Engine\2d\Text</Filter>
     </ClCompile>
@@ -288,12 +237,6 @@
     </ClCompile>
     <ClCompile Include="Engine\Utility\Debug\ImGui\ImGuizmoManager.cpp">
       <Filter>Engine\Utility\Debug\ImGui</Filter>
-    </ClCompile>
-    <ClCompile Include="Engine\Scene\TestScene.cpp">
-      <Filter>Engine\Scene</Filter>
-    </ClCompile>
-    <ClCompile Include="Engine\Utility\Debug\GpuProfiler\GpuProfiler.cpp">
-      <Filter>Engine\Utility\Debug\GPUProfiler</Filter>
     </ClCompile>
     <ClCompile Include="Engine\Base\Command\DXCommandList.cpp">
       <Filter>Engine\Base\Command</Filter>
@@ -315,15 +258,6 @@
     </ClCompile>
     <ClCompile Include="Engine\Base\SwapChain\DXSwapChain.cpp">
       <Filter>Engine\Base\SwapChain</Filter>
-    </ClCompile>
-    <ClCompile Include="Engine\Utility\Debug\CpuProfiler\CpuProfiler.cpp">
-      <Filter>Engine\Utility\Debug\CpuProfiler</Filter>
-    </ClCompile>
-    <ClCompile Include="Engine\Utility\Debug\GameParam\GameParamHub.cpp">
-      <Filter>Engine\Utility\Debug\GameParam</Filter>
-    </ClCompile>
-    <ClCompile Include="Engine\Utility\Edit\MotionEditor\MotionEditor.cpp">
-      <Filter>Engine\Utility\Edit\MotionEditor</Filter>
     </ClCompile>
     <ClCompile Include="Engine\Utility\Graphics\Dsv\DsvManager.cpp">
       <Filter>Engine\Utility\Graphics\Dsv</Filter>
@@ -387,15 +321,6 @@
     <ClInclude Include="Engine\3d\Animation\Skin.h">
       <Filter>Engine\3d\Animation</Filter>
     </ClInclude>
-    <ClInclude Include="Engine\3d\Camera\BaseFollowCamera\BaseFollowCamera.h">
-      <Filter>Engine\3d\Camera\BaseFollowCamera</Filter>
-    </ClInclude>
-    <ClInclude Include="Engine\3d\Camera\DebugCamera\DebugCamera.h">
-      <Filter>Engine\3d\Camera\DebugCamera</Filter>
-    </ClInclude>
-    <ClInclude Include="Engine\3d\Camera\ViewProjection\ViewProjection.h">
-      <Filter>Engine\3d\Camera\ViewProjection</Filter>
-    </ClInclude>
     <ClInclude Include="Engine\3d\Light\LightGroup.h">
       <Filter>Engine\3d\Light</Filter>
     </ClInclude>
@@ -446,18 +371,6 @@
     </ClInclude>
     <ClInclude Include="Engine\3d\Particle\ParticleStruct.h">
       <Filter>Engine\3d\Particle</Filter>
-    </ClInclude>
-    <ClInclude Include="Engine\3d\Particle\CSParticle\ParticleCSEditor.h">
-      <Filter>Engine\3d\Particle\CSParticle</Filter>
-    </ClInclude>
-    <ClInclude Include="Engine\3d\Particle\CSParticle\ParticleCSEmitter.h">
-      <Filter>Engine\3d\Particle\CSParticle</Filter>
-    </ClInclude>
-    <ClInclude Include="Engine\3d\Particle\CSParticle\ParticleCSGroup.h">
-      <Filter>Engine\3d\Particle\CSParticle</Filter>
-    </ClInclude>
-    <ClInclude Include="Engine\3d\Particle\CSParticle\ParticleCSGroupManager.h">
-      <Filter>Engine\3d\Particle\CSParticle</Filter>
     </ClInclude>
     <ClInclude Include="Engine\3d\Particle\ParticleCommon.h">
       <Filter>Engine\3d\Particle</Filter>
@@ -522,18 +435,6 @@
     <ClInclude Include="Engine\Math\type\Matrix4x4.h">
       <Filter>Engine\Math\type</Filter>
     </ClInclude>
-    <ClInclude Include="Engine\OffScreen\PostEffect\PostEffectChain.h">
-      <Filter>Engine\OffScreen\PostEffect</Filter>
-    </ClInclude>
-    <ClInclude Include="Engine\OffScreen\PostEffect\PostEffectDataManager.h">
-      <Filter>Engine\OffScreen\PostEffect</Filter>
-    </ClInclude>
-    <ClInclude Include="Engine\OffScreen\PostEffect\PostEffectParameters.h">
-      <Filter>Engine\OffScreen\PostEffect</Filter>
-    </ClInclude>
-    <ClInclude Include="Engine\OffScreen\PostEffect\PostEffectRenderer.h">
-      <Filter>Engine\OffScreen\PostEffect</Filter>
-    </ClInclude>
     <ClInclude Include="Engine\OffScreen\OffScreen.h">
       <Filter>Engine\OffScreen</Filter>
     </ClInclude>
@@ -567,14 +468,8 @@
     <ClInclude Include="Engine\Utility\Debug\Log\Logger.h">
       <Filter>Engine\Utility\Debug\Log</Filter>
     </ClInclude>
-    <ClInclude Include="Engine\Utility\Debug\ResourceLeakChecker\D3DResourceLeakChecker.h">
-      <Filter>Engine\Utility\Debug\ResourceLeakChecker</Filter>
-    </ClInclude>
     <ClInclude Include="Engine\Utility\Edit\LevelData.h">
       <Filter>Engine\Utility\Edit</Filter>
-    </ClInclude>
-    <ClInclude Include="Engine\Utility\Edit\ShortcutManager\ShortcutManager.h">
-      <Filter>Engine\Utility\Edit\ShortcutManager</Filter>
     </ClInclude>
     <ClInclude Include="Engine\Utility\Graphics\Model\ModelManager.h">
       <Filter>Engine\Utility\Graphics\Model</Filter>
@@ -591,17 +486,11 @@
     <ClInclude Include="Engine\Utility\Graphics\Texture\TextureManager.h">
       <Filter>Engine\Utility\Graphics\Texture</Filter>
     </ClInclude>
-    <ClInclude Include="Engine\Utility\LoadFile\Csv\CsvLoad.h">
-      <Filter>Engine\Utility\LoadFile\Csv</Filter>
-    </ClInclude>
     <ClInclude Include="Engine\Utility\Scene\SceneManager.h">
       <Filter>Engine\Utility\Scene</Filter>
     </ClInclude>
     <ClInclude Include="Engine\Utility\Scene\SceneTransition.h">
       <Filter>Engine\Utility\Scene</Filter>
-    </ClInclude>
-    <ClInclude Include="Engine\Utility\ShowFolder\ShowFolder.h">
-      <Filter>Engine\Utility\ShowFolder</Filter>
     </ClInclude>
     <ClInclude Include="Engine\Utility\String\StringUtility.h">
       <Filter>Engine\Utility\String</Filter>
@@ -648,21 +537,6 @@
     <ClInclude Include="Engine\Render\DrawSystem.h">
       <Filter>Engine\Renderer</Filter>
     </ClInclude>
-    <ClInclude Include="Engine\3d\Particle\CSParticle\ParticleCSFieldManager.h">
-      <Filter>Engine\3d\Particle\CSParticle</Filter>
-    </ClInclude>
-    <ClInclude Include="Engine\3d\Particle\CSParticle\ParticleCSFieldSettingOverride.h">
-      <Filter>Engine\3d\Particle\CSParticle</Filter>
-    </ClInclude>
-    <ClInclude Include="Engine\OffScreen\PostEffect\IPostEffectParams.h">
-      <Filter>Engine\OffScreen\PostEffect</Filter>
-    </ClInclude>
-    <ClInclude Include="Engine\OffScreen\PostEffect\PostEffectParamsFactory.h">
-      <Filter>Engine\OffScreen\PostEffect</Filter>
-    </ClInclude>
-    <ClInclude Include="Engine\OffScreen\PostEffect\PostEffectParamsImpl.h">
-      <Filter>Engine\OffScreen\PostEffect</Filter>
-    </ClInclude>
     <ClInclude Include="Engine\2d\Text\TextRenderer.h">
       <Filter>Engine\2d\Text</Filter>
     </ClInclude>
@@ -678,17 +552,8 @@
     <ClInclude Include="Engine\Utility\Debug\ImGui\ImGuizmoManager.h">
       <Filter>Engine\Utility\Debug\ImGui</Filter>
     </ClInclude>
-    <ClInclude Include="Engine\Scene\TestScene.h">
-      <Filter>Engine\Scene</Filter>
-    </ClInclude>
-    <ClInclude Include="Engine\Utility\Debug\ImGui\Debugui_improved.h">
-      <Filter>Engine\Utility\Debug\ImGui</Filter>
-    </ClInclude>
     <ClInclude Include="Engine\Utility\Scene\SceneRegistry.h">
       <Filter>Engine\Utility\Scene</Filter>
-    </ClInclude>
-    <ClInclude Include="Engine\Utility\Debug\GpuProfiler\GpuProfiler.h">
-      <Filter>Engine\Utility\Debug\GPUProfiler</Filter>
     </ClInclude>
     <ClInclude Include="Engine\Base\Command\DXCommandList.h">
       <Filter>Engine\Base\Command</Filter>
@@ -711,17 +576,8 @@
     <ClInclude Include="Engine\Base\SwapChain\DXSwapChain.h">
       <Filter>Engine\Base\SwapChain</Filter>
     </ClInclude>
-    <ClInclude Include="Engine\Utility\Debug\CpuProfiler\CpuProfiler.h">
-      <Filter>Engine\Utility\Debug\CpuProfiler</Filter>
-    </ClInclude>
-    <ClInclude Include="Engine\Utility\Debug\GameParam\GameParamHub.h">
-      <Filter>Engine\Utility\Debug\GameParam</Filter>
-    </ClInclude>
     <ClInclude Include="Engine\Utility\Debug\ImGui\AssetDragDrop.h">
       <Filter>Engine\Utility\Debug\ImGui</Filter>
-    </ClInclude>
-    <ClInclude Include="Engine\Utility\Edit\MotionEditor\MotionEditor.h">
-      <Filter>Engine\Utility\Edit\MotionEditor</Filter>
     </ClInclude>
     <ClInclude Include="Engine\Utility\Graphics\Dsv\DsvManager.h">
       <Filter>Engine\Utility\Graphics\Dsv</Filter>

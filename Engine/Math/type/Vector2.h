@@ -10,6 +10,9 @@ struct Vector2 final
     float x;
     float y;
 
+    // コンストラクタ
+    constexpr Vector2(float x = 0.0f, float y = 0.0f) : x(x), y(y) {}
+
     // 加算演算子
     Vector2 operator+(const Vector2 &other) const
     {
@@ -73,6 +76,9 @@ struct Vector2Int final
 {
     int x;
     int y;
+
+    // コンストラクタ
+    constexpr Vector2Int(int x = 0, int y = 0) : x(x), y(y) {}
 
     // 加算演算子
     Vector2Int operator+(const Vector2Int &other) const
