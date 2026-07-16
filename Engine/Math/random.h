@@ -7,8 +7,9 @@ namespace Hagine {
 /// 乱数生成ユーティリティ
 /// メルセンヌ・ツイスタを用いて範囲指定の乱数を返す
 /// </summary>
-class Random {
-public:
+class Random
+{
+  public:
     /// ===================================================
     /// public method
     /// ===================================================
@@ -29,7 +30,7 @@ public:
     /// <returns>float: min〜maxの範囲の乱数</returns>
     static float Range(float min, float max);
 
-private:
+  private:
     /// ===================================================
     /// private method
     /// ===================================================
@@ -38,6 +39,6 @@ private:
     /// 乱数生成器（メルセンヌ・ツイスタ）を取得
     /// </summary>
     /// <returns>std::mt19937&: 乱数生成エンジン</returns>
-    static std::mt19937& GetEngine();
+    static std::mt19937 &GetEngine();
 };
 } // namespace Hagine

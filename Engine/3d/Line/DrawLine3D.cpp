@@ -1,15 +1,15 @@
 #include "DrawLine3D.h"
 #include "DirectXCommon.h"
-#include <myMath.h>
-
+#include <MyMath.h>
 
 namespace Hagine {
-std::unique_ptr<DrawLine3D::LineData> DrawLine3D::CreateMesh(UINT vertexCount, UINT indexCount) {
+std::unique_ptr<DrawLine3D::LineData> DrawLine3D::CreateMesh(UINT vertexCount, UINT indexCount)
+{
 
     std::unique_ptr<LineData> mesh = std::make_unique<LineData>();
 
     UINT vertBufferSize = sizeof(VertexPosColor) * vertexCount;
-    mesh->vertBuffer = dxCommon_->CreateBufferResource(vertBufferSize);
+    mesh->vertBuffer = pDxCommon_->CreateBufferResource(vertBufferSize);
 
     mesh->vbView.BufferLocation = mesh->vertBuffer->GetGPUVirtualAddress();
     mesh->vbView.StrideInBytes = sizeof(VertexPosColor);
@@ -19,8 +19,9 @@ std::unique_ptr<DrawLine3D::LineData> DrawLine3D::CreateMesh(UINT vertexCount, U
     mesh->vertBuffer->Map(0, &readRange, reinterpret_cast<void **>(&mesh->vertMap));
 
     UINT indexBufferSize = sizeof(uint16_t) * indexCount;
-    if (indexCount > 0) {
-        mesh->indexBuffer = dxCommon_->CreateBufferResource(indexBufferSize);
+    if (indexCount > 0)
+    {
+        mesh->indexBuffer = pDxCommon_->CreateBufferResource(indexBufferSize);
 
         mesh->ibView.BufferLocation = mesh->indexBuffer->GetGPUVirtualAddress();
         mesh->ibView.Format = DXGI_FORMAT_R16_UINT;
@@ -32,25 +33,30 @@ std::unique_ptr<DrawLine3D::LineData> DrawLine3D::CreateMesh(UINT vertexCount, U
     return mesh;
 }
 
-void DrawLine3D::Initialize() {
-    dxCommon_ = DirectXCommon::GetInstance();
+void DrawLine3D::Initialize()
+{
+    pDxCommon_ = DirectXCommon::GetInstance();
     CreateMeshes();
     CreateResource();
-    psoManager_ = PipeLineManager::GetInstance();
+    pPsoManager_ = PipelineManager::GetInstance();
 }
 
-void DrawLine3D::Finalize() {
+void DrawLine3D::Finalize()
+{
     cBufferResource_.Reset();
-    if (line_) {
+    if (line_)
+    {
         line_->vertBuffer.Reset();
         line_->indexBuffer.Reset();
         line_.reset();
     }
 }
 
-void DrawLine3D::SetPoints(const Vector3 &p1, const Vector3 &p2, const Vector4 &color) {
+void DrawLine3D::SetPoints(const Vector3 &p1, const Vector3 &p2, const Vector4 &color)
+{
 
-    if (indexLine_ < kMaxLineCount) {
+    if (indexLine_ < kMaxLineCount)
+    {
         line_->vertMap[indexLine_ * 2] = {p1, color};
         line_->vertMap[indexLine_ * 2 + 1] = {p2, color};
 
@@ -58,42 +64,49 @@ void DrawLine3D::SetPoints(const Vector3 &p1, const Vector3 &p2, const Vector4 &
     }
 }
 
-void DrawLine3D::Reset() {
+void DrawLine3D::Reset()
+{
     indexLine_ = 0;
 }
 
-void DrawLine3D::Draw(const ViewProjection &viewProjection) {
+void DrawLine3D::Draw(const ViewProjection &viewProjection)
+{
 
-    if (indexLine_ == 0) {
+    if (indexLine_ == 0)
+    {
         return;
     }
-    cBufferData_->viewProject = viewProjection.matView_ * viewProjection.matProjection_;
+    pCBufferData_->viewProject = viewProjection.matView_ * viewProjection.matProjection_;
 
-    psoManager_->DrawCommonSetting(PipelineType::kLine3d);
+    pPsoManager_->DrawCommonSetting(PipelineType::Line3d);
     D3D12_VERTEX_BUFFER_VIEW vbView = line_->vbView;
-    dxCommon_->GetCommandList()->IASetVertexBuffers(0, 1, &vbView);
-    dxCommon_->GetCommandList()->SetGraphicsRootConstantBufferView(0, cBufferResource_->GetGPUVirtualAddress());
-    dxCommon_->GetCommandList()->DrawInstanced(indexLine_ * 2, 1, 0, 0);
+    pDxCommon_->GetCommandList()->IASetVertexBuffers(0, 1, &vbView);
+    pDxCommon_->GetCommandList()->SetGraphicsRootConstantBufferView(0, cBufferResource_->GetGPUVirtualAddress());
+    pDxCommon_->GetCommandList()->DrawInstanced(indexLine_ * 2, 1, 0, 0);
 
     Reset();
 }
 
-void DrawLine3D::DrawWithExternalCB(ID3D12GraphicsCommandList *cl, D3D12_GPU_VIRTUAL_ADDRESS viewProjCB) {
-    if (indexLine_ == 0) {
+void DrawLine3D::DrawWithExternalCB(ID3D12GraphicsCommandList *cl, D3D12_GPU_VIRTUAL_ADDRESS viewProjCB)
+{
+    if (indexLine_ == 0)
+    {
         return;
     }
     // Reset しない: この後シーン側の Draw(sceneVP) が同じ線をシーンVPで描画して Reset する。
     // 定数バッファは自前の cBufferResource_ ではなく呼び出し側の CB を使う（VP をシーンと共有しないため）。
-    psoManager_->DrawCommonSetting(PipelineType::kLine3d);
+    pPsoManager_->DrawCommonSetting(PipelineType::Line3d);
     D3D12_VERTEX_BUFFER_VIEW vbView = line_->vbView;
     cl->IASetVertexBuffers(0, 1, &vbView);
     cl->SetGraphicsRootConstantBufferView(0, viewProjCB);
     cl->DrawInstanced(indexLine_ * 2, 1, 0, 0);
 }
 
-void DrawLine3D::DrawGrid(float y, int division, float size, Vector4 color) {
+void DrawLine3D::DrawGrid(float y, int division, float size, Vector4 color)
+{
     // 分割数が無効な場合は何もしない
-    if (division <= 0 || size <= 0.0f) {
+    if (division <= 0 || size <= 0.0f)
+    {
         return;
     }
 
@@ -103,7 +116,8 @@ void DrawLine3D::DrawGrid(float y, int division, float size, Vector4 color) {
     // グリッド線の色（薄いグレー）
     const Vector4 gridColor = color;
 
-    for (int i = 0; i <= division; ++i) {
+    for (int i = 0; i <= division; ++i)
+    {
         // 現在の位置
         float offset = -size + i * interval;
 
@@ -119,7 +133,8 @@ void DrawLine3D::DrawGrid(float y, int division, float size, Vector4 color) {
     }
 }
 
-void DrawLine3D::CreateMeshes() {
+void DrawLine3D::CreateMeshes()
+{
 
     const UINT maxVertex = kMaxLineCount * kVertexCountLine;
     const UINT maxIndices = 20;
@@ -127,14 +142,16 @@ void DrawLine3D::CreateMeshes() {
     line_ = CreateMesh(maxVertex, maxIndices);
 }
 
-void DrawLine3D::CreateResource() {
-    cBufferResource_ = dxCommon_->CreateBufferResource(sizeof(CBuffer));
-    cBufferData_ = nullptr;
-    cBufferResource_->Map(0, nullptr, reinterpret_cast<void **>(&cBufferData_));
-    cBufferData_->viewProject = MakeIdentity4x4();
+void DrawLine3D::CreateResource()
+{
+    cBufferResource_ = pDxCommon_->CreateBufferResource(sizeof(CBuffer));
+    pCBufferData_ = nullptr;
+    cBufferResource_->Map(0, nullptr, reinterpret_cast<void **>(&pCBufferData_));
+    pCBufferData_->viewProject = MakeIdentity4x4();
 }
 
-void DrawLine3D::DrawCube(const Vector3 &position, const Vector4 &color, float size) {
+void DrawLine3D::DrawCube(const Vector3 &position, const Vector4 &color, float size)
+{
     // 半サイズ（中心から各辺までの距離）
     float hs = size * 0.5f;
 
@@ -163,12 +180,14 @@ void DrawLine3D::DrawCube(const Vector3 &position, const Vector4 &color, float s
         {3, 7} // 側面
     };
 
-    for (int i = 0; i < 12; ++i) {
+    for (int i = 0; i < 12; ++i)
+    {
         SetPoints(corners[edges[i][0]], corners[edges[i][1]], color);
     }
 }
 
-void DrawLine3D::DrawSphere(const Vector3 &position, const Vector4 &color, float radius, int divisions) {
+void DrawLine3D::DrawSphere(const Vector3 &position, const Vector4 &color, float radius, int divisions)
+{
     // 分割数が最低限必要
     if (divisions < 3)
         return;
@@ -176,12 +195,14 @@ void DrawLine3D::DrawSphere(const Vector3 &position, const Vector4 &color, float
     const float PI = 3.1415926535f;
 
     // 緯度方向（Y軸周り）の分割
-    for (int i = 0; i <= divisions; ++i) {
-        float theta1 = PI * (float)(i) / divisions - PI / 2.0f;
-        float theta2 = PI * (float)(i + 1) / divisions - PI / 2.0f;
+    for (int i = 0; i <= divisions; ++i)
+    {
+        float theta1 = PI * static_cast<float>(i) / divisions - PI / 2.0f;
+        float theta2 = PI * static_cast<float>(i + 1) / divisions - PI / 2.0f;
 
-        for (int j = 0; j <= divisions; ++j) {
-            float phi = 2.0f * PI * (float)(j) / divisions;
+        for (int j = 0; j <= divisions; ++j)
+        {
+            float phi = 2.0f * PI * static_cast<float>(j) / divisions;
 
             // 緯線用の点1・点2
             Vector3 p1 = {
@@ -199,12 +220,14 @@ void DrawLine3D::DrawSphere(const Vector3 &position, const Vector4 &color, float
     }
 
     // 経度方向（Z軸周り）の分割
-    for (int j = 0; j <= divisions; ++j) {
-        float phi1 = 2.0f * PI * (float)(j) / divisions;
-        float phi2 = 2.0f * PI * (float)(j + 1) / divisions;
+    for (int j = 0; j <= divisions; ++j)
+    {
+        float phi1 = 2.0f * PI * static_cast<float>(j) / divisions;
+        float phi2 = 2.0f * PI * static_cast<float>(j + 1) / divisions;
 
-        for (int i = 0; i <= divisions; ++i) {
-            float theta = PI * (float)(i) / divisions - PI / 2.0f;
+        for (int i = 0; i <= divisions; ++i)
+        {
+            float theta = PI * static_cast<float>(i) / divisions - PI / 2.0f;
 
             Vector3 p1 = {
                 position.x + radius * cosf(theta) * cosf(phi1),

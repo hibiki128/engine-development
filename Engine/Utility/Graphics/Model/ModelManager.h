@@ -2,11 +2,12 @@
 #include "map"
 #include "memory"
 #include "string"
-#include <Graphics/Srv/SrvManager.h>
-#include <Model/Model.h>
+#include <graphics/srv/SrvManager.h>
+#include <model/Model.h>
 
 namespace Hagine {
-class ModelManager {
+class ModelManager
+{
   private:
     ModelManager() = default;
     ~ModelManager() = default;
@@ -30,7 +31,8 @@ class ModelManager {
     /// シングルトンインスタンスの取得
     /// </summary>
     /// <returns></returns>
-    static ModelManager *GetInstance() {
+    static ModelManager *GetInstance()
+    {
         static ModelManager instance;
         return &instance;
     }
@@ -63,7 +65,7 @@ class ModelManager {
     std::unordered_map<std::string, std::unique_ptr<Model>> models_;
 
   private:
-    ModelCommon *modelCommon_ = nullptr;
-    SrvManager *srvManager_ = nullptr;
+    ModelCommon *pModelCommon_ = nullptr;
+    SrvManager *pSrvManager_ = nullptr;
 };
 } // namespace Hagine

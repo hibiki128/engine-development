@@ -10,19 +10,20 @@ namespace Hagine {
 /// クォータニオン（回転を表す四元数）
 /// 回転の合成・補間・オイラー角や行列との相互変換などを提供する
 /// </summary>
-class Quaternion final {
+class Quaternion final
+{
   public:
     float x, y, z, w; // 四元数の各成分
 
     /// <summary>
     /// コンストラクタ（単位クォータニオンで初期化）
     /// </summary>
-    Quaternion() : x(0.0f), y(0.0f), z(0.0f), w(1.0f) {}
+    constexpr Quaternion() : x(0.0f), y(0.0f), z(0.0f), w(1.0f) {}
 
     /// <summary>
     /// コンストラクタ（各成分を指定）
     /// </summary>
-    Quaternion(float x, float y, float z, float w) : x(x), y(y), z(z), w(w) {}
+    constexpr Quaternion(float x, float y, float z, float w) : x(x), y(y), z(z), w(w) {}
 
     /// <summary>
     /// クォータニオン同士の掛け算（回転の合成）

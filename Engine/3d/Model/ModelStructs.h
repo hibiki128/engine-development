@@ -1,9 +1,9 @@
 #pragma once
-#include "Graphics/PipeLine/PipeLineManager.h"
-#include "Transform/WorldTransform.h"
+#include "graphics/pipeline/PipelineManager.h"
+#include "transform/WorldTransform.h"
 #include "array"
 #include "wrl.h"
-#include <Transform/WorldTransform.h>
+#include <transform/WorldTransform.h>
 #include <d3d12.h>
 #include <list>
 #include <map>
@@ -216,7 +216,7 @@ struct SkinCluster
 
     // スキニング情報
     Microsoft::WRL::ComPtr<ID3D12Resource> skinningInformationResource{}; // リソース
-    SkinningInformationForGPU *SkinningInfomationData = nullptr;          // データポインタ
+    SkinningInformationForGPU *SkinningInformationData = nullptr;          // データポインタ
 };
 
 /// <summary>

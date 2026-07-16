@@ -3,21 +3,21 @@
 #include <d3d12.h>
 #include <queue> // 空きインデックスの管理用
 #include <wrl.h>
-#include"DirectXTex/DirectXTex.h"
+#include "DirectXTex/DirectXTex.h"
 
 namespace Hagine {
 class DirectXCommon;
 
-class SrvManager {
+class SrvManager
+{
   private:
-
     SrvManager() = default;
     ~SrvManager() = default;
     SrvManager(SrvManager &) = delete;
     SrvManager &operator=(SrvManager &) = delete;
 
   private:
-    DirectXCommon *dxCommon_ = nullptr;
+    DirectXCommon *pDxCommon_ = nullptr;
 
     // SRV用のでスクリプタサイズ
     uint32_t descriptorSize_;
@@ -36,7 +36,8 @@ class SrvManager {
     /// シングルトンインスタンスの取得
     /// </summary>
     /// <returns></returns>
-    static SrvManager* GetInstance() {
+    static SrvManager *GetInstance()
+    {
         static SrvManager instance;
         return &instance;
     }
@@ -123,7 +124,8 @@ class SrvManager {
     /// <returns></returns>
     D3D12_CPU_DESCRIPTOR_HANDLE GetCPUDescriptorHandle(uint32_t index);
     D3D12_GPU_DESCRIPTOR_HANDLE GetGPUDescriptorHandle(uint32_t index);
-    ID3D12DescriptorHeap *GetDescriptorHeap() const {
+    ID3D12DescriptorHeap *GetDescriptorHeap() const
+    {
         return descriptorHeap_.Get(); // 管理してるSRVヒープ
     }
 

@@ -7,7 +7,8 @@ namespace Hagine {
 /// 有向境界ボックス（OBB）のコライダー
 /// 回転を考慮したボックス判定を行う
 /// </summary>
-class OBBCollider : public ColliderBase {
+class OBBCollider : public ColliderBase
+{
   public:
     /// ===================================================
     /// public method
@@ -127,13 +128,13 @@ class OBBCollider : public ColliderBase {
     void DrawRotationCenter(const ViewProjection &viewProjection);
 
     /// ===================================================
-    /// private variants
+    /// private variables
     /// ===================================================
 
     Vector3 size_ = {1.0f, 1.0f, 1.0f};           // サイズ
-    Vector3 rotationOffset_ = {0.0f, 0.0f, 0.0f};  // 回転オフセット
-    Vector3 positionOffset_ = {0.0f, 0.0f, 0.0f};  // 位置オフセット
-    OBB cachedOBB_;                                // 計算済みのOBB形状データ
-    Vector3 anchorPoint_ = {0.5f, 0.5f, 0.5f};     // 回転基準のアンカーポイント
+    Vector3 rotationOffset_ = {0.0f, 0.0f, 0.0f}; // 回転オフセット
+    Vector3 positionOffset_ = {0.0f, 0.0f, 0.0f}; // 位置オフセット
+    OBB cachedOBB_;                               // 計算済みのOBB形状データ
+    Vector3 anchorPoint_ = {0.5f, 0.5f, 0.5f};    // 回転基準のアンカーポイント
 };
 } // namespace Hagine

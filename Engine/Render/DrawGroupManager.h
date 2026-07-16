@@ -14,7 +14,8 @@ namespace Hagine {
 /// 各マネージャーは描画時に IsGroupVisible() を参照し、非表示グループをスキップする。
 /// 所属（どの要素がどのグループか）は各要素側が文字列で保持する。
 /// </summary>
-class DrawGroupManager {
+class DrawGroupManager
+{
   public:
     /// <summary>
     /// 描画グループ＝描画ステージ（パス）。この2つのみを正準値として扱う。
@@ -31,7 +32,8 @@ class DrawGroupManager {
     /// <summary>
     /// グループ名を描画ステージ番号へ変換する（"UI" 以外はすべて 3D 扱い）
     /// </summary>
-    static int StageOf(const std::string &group) {
+    static int StageOf(const std::string &group)
+    {
         return (group == kLayerUI) ? kStageUI : kStage3D;
     }
 
@@ -39,7 +41,8 @@ class DrawGroupManager {
     static constexpr const char *kDefaultGroup = kLayer3D;
 
     /// <summary>インスタンスを取得</summary>
-    static DrawGroupManager *GetInstance() {
+    static DrawGroupManager *GetInstance()
+    {
         static DrawGroupManager instance;
         return &instance;
     }
@@ -48,8 +51,10 @@ class DrawGroupManager {
     /// グループを登録する（未登録なら表示状態で追加。既存なら何もしない）
     /// </summary>
     /// <param name="group">グループ名（空文字は無視）</param>
-    void RegisterGroup(const std::string &group) {
-        if (group.empty()) {
+    void RegisterGroup(const std::string &group)
+    {
+        if (group.empty())
+        {
             return;
         }
         groupVisible_.try_emplace(group, true);
@@ -60,7 +65,8 @@ class DrawGroupManager {
     /// </summary>
     /// <param name="group">グループ名</param>
     /// <returns>表示中なら true</returns>
-    bool IsGroupVisible(const std::string &group) const {
+    bool IsGroupVisible(const std::string &group) const
+    {
         auto it = groupVisible_.find(group);
         return (it == groupVisible_.end()) ? true : it->second;
     }
@@ -68,8 +74,10 @@ class DrawGroupManager {
     /// <summary>グループの表示／非表示を設定する</summary>
     /// <param name="group">グループ名</param>
     /// <param name="visible">表示するか</param>
-    void SetGroupVisible(const std::string &group, bool visible) {
-        if (group.empty()) {
+    void SetGroupVisible(const std::string &group, bool visible)
+    {
+        if (group.empty())
+        {
             return;
         }
         groupVisible_[group] = visible;
@@ -79,11 +87,13 @@ class DrawGroupManager {
     /// 既知のグループ名一覧を取得する（昇順。kDefaultGroup を必ず含む）
     /// </summary>
     /// <returns>グループ名一覧</returns>
-    std::vector<std::string> GetGroups() const {
+    std::vector<std::string> GetGroups() const
+    {
         std::set<std::string> set;
         set.insert(kLayer3D); // 2つの正準レイヤーは常に存在させる
         set.insert(kLayerUI);
-        for (const auto &[group, _] : groupVisible_) {
+        for (const auto &[group, _] : groupVisible_)
+        {
             set.insert(group);
         }
         return std::vector<std::string>(set.begin(), set.end());

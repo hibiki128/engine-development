@@ -10,7 +10,8 @@ namespace Hagine {
 /// シェーダーコンパイラクラス
 /// DXC（DirectX Shader Compiler）の初期化と HLSL のコンパイルを担当する
 /// </summary>
-class ShaderCompiler {
+class ShaderCompiler
+{
   public:
     ShaderCompiler() = default;
     ~ShaderCompiler() = default;
@@ -35,14 +36,14 @@ class ShaderCompiler {
     /// <returns>コンパイル済みバイナリ</returns>
     IDxcBlob *Compile(const std::wstring &filePath, const wchar_t *profile);
 
-    IDxcUtils *GetDxcUtils() const { return dxcUtils_; }
-    IDxcCompiler3 *GetDxcCompiler() const { return dxcCompiler_; }
+    IDxcUtils *GetDxcUtils() const { return pDxcUtils_; }
+    IDxcCompiler3 *GetDxcCompiler() const { return pDxcCompiler_; }
 
   private:
     // DXCコンパイラ関連
-    IDxcUtils *dxcUtils_ = nullptr;
-    IDxcCompiler3 *dxcCompiler_ = nullptr;
+    IDxcUtils *pDxcUtils_ = nullptr;
+    IDxcCompiler3 *pDxcCompiler_ = nullptr;
     // 現時点ではincludeはしないが、includeに対応するための設定を行っておく
-    IDxcIncludeHandler *includeHandler_ = nullptr;
+    IDxcIncludeHandler *pIncludeHandler_ = nullptr;
 };
 } // namespace Hagine

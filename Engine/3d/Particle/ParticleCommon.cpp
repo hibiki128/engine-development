@@ -1,40 +1,48 @@
 #include "ParticleCommon.h"
 
 namespace Hagine {
-void ParticleCommon::Finalize() {
-    dxCommon_ = nullptr;
-    psoManager_ = nullptr;
-    computePsoManager_ = nullptr;
+void ParticleCommon::Finalize()
+{
+    pDxCommon_ = nullptr;
+    pPsoManager_ = nullptr;
+    pComputePsoManager_ = nullptr;
 }
 
-void ParticleCommon::Initialize(DirectXCommon *dxCommon) {
+void ParticleCommon::Initialize(DirectXCommon *dxCommon)
+{
     assert(dxCommon);
-    dxCommon_ = dxCommon;
-    psoManager_ = PipeLineManager::GetInstance();
-    computePsoManager_ = ComputePipeLineManager::GetInstance();
+    pDxCommon_ = dxCommon;
+    pPsoManager_ = PipelineManager::GetInstance();
+    pComputePsoManager_ = ComputePipelineManager::GetInstance();
 }
 
-void ParticleCommon::DrawCommonSetting(BlendMode blendMode) {
-    psoManager_->DrawCommonSetting(PipelineType::kParticle, blendMode);
+void ParticleCommon::DrawCommonSetting(BlendMode blendMode)
+{
+    pPsoManager_->DrawCommonSetting(PipelineType::Particle, blendMode);
 }
 
-void ParticleCommon::GPUDrawCommonSetting(BlendMode blendMode) {
-    psoManager_->DrawCommonSetting(PipelineType::kGPUParticle, blendMode);
+void ParticleCommon::GPUDrawCommonSetting(BlendMode blendMode)
+{
+    pPsoManager_->DrawCommonSetting(PipelineType::GPUParticle, blendMode);
 }
 
-void ParticleCommon::ComputeInitDrawCommonSetting() {
-    computePsoManager_->DrawCommonSetting(ComputePipelineType::kInitParticle);
+void ParticleCommon::ComputeInitDrawCommonSetting()
+{
+    pComputePsoManager_->DrawCommonSetting(ComputePipelineType::InitParticle);
 }
 
-void ParticleCommon::ComputeEmitterDrawCommonSetting() {
-    computePsoManager_->DrawCommonSetting(ComputePipelineType::kEmitter);
+void ParticleCommon::ComputeEmitterDrawCommonSetting()
+{
+    pComputePsoManager_->DrawCommonSetting(ComputePipelineType::Emitter);
 }
 
-void ParticleCommon::ComputeUpdateEmitterDrawCommonSetting() {
-    computePsoManager_->DrawCommonSetting(ComputePipelineType::kUpdateEmitter);
+void ParticleCommon::ComputeUpdateEmitterDrawCommonSetting()
+{
+    pComputePsoManager_->DrawCommonSetting(ComputePipelineType::UpdateEmitter);
 }
 
-void ParticleCommon::ComputeCountDrawCommonSetting() {
-    computePsoManager_->DrawCommonSetting(ComputePipelineType::kCount);
+void ParticleCommon::ComputeCountDrawCommonSetting()
+{
+    pComputePsoManager_->DrawCommonSetting(ComputePipelineType::Count);
 }
 } // namespace Hagine

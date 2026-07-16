@@ -9,7 +9,8 @@
 /// Animator、Bone、Skinを統合してモデルのアニメーションを制御する
 /// </summary>
 namespace Hagine {
-class ModelAnimation {
+class ModelAnimation
+{
   public:
     /// ===================================================
     /// public method
@@ -25,8 +26,8 @@ class ModelAnimation {
     /// <summary>
     /// 更新処理
     /// </summary>
-    /// <param name="roop">ループ再生フラグ</param>
-    void Update(bool roop);
+    /// <param name="loop">ループ再生フラグ</param>
+    void Update(bool loop);
 
     /// <summary>
     /// アニメーション再生
@@ -52,7 +53,7 @@ class ModelAnimation {
 
   private:
     /// ===================================================
-    /// private variants
+    /// private variables
     /// ===================================================
 
     std::unique_ptr<Animator> animator_; // アニメーター

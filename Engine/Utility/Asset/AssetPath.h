@@ -17,25 +17,23 @@ namespace Hagine {
 namespace AssetPath {
 
 /// <summary>エンジンアセットのルート (末尾スラッシュ付き)。</summary>
-/// <remarks>
-/// 作業ディレクトリはアプリ側 (app/) を基準とする (AppRoot が "../app/Assets/" である
-/// のと同じ前提)。エンジンアセットはサブモジュール module/Hagine/ 配下にあるため、
-/// app/ からの相対で "../module/Hagine/Engine/EngineAssets/" を指す。
-/// </remarks>
-inline const std::string &EngineRoot() {
-    static const std::string kRoot = "../module/Hagine/Engine/EngineAssets/";
+inline const std::string &EngineRoot()
+{
+    static const std::string kRoot = "Engine/EngineAssets/";
     return kRoot;
 }
 
 /// <summary>アプリケーションアセットのルート (末尾スラッシュ付き)。</summary>
-inline const std::string &AppRoot() {
-    static const std::string kRoot = "../app/Assets/";
+inline const std::string &AppRoot()
+{
+    static const std::string kRoot = "Application/Assets/";
     return kRoot;
 }
 
 /// <summary>相対パスがエンジン側 (debug 配下) かどうかを判定する。</summary>
 /// <param name="rel">images / models ルートからの相対パス</param>
-inline bool IsEngineRelative(const std::string &rel) {
+inline bool IsEngineRelative(const std::string &rel)
+{
     return rel.rfind("debug/", 0) == 0 || rel.rfind("debug\\", 0) == 0 || rel == "debug";
 }
 
@@ -50,7 +48,8 @@ inline std::string Shader(const std::string &rel) { return EngineRoot() + "shade
 // --- images (debug=エンジン / その他=アプリ) -----------------------------
 
 /// <summary>rel が属する images ルート (末尾スラッシュ付き)。</summary>
-inline std::string ImagesRoot(const std::string &rel) {
+inline std::string ImagesRoot(const std::string &rel)
+{
     return (IsEngineRelative(rel) ? EngineRoot() : AppRoot()) + "images/";
 }
 
@@ -60,7 +59,8 @@ inline std::string Image(const std::string &rel) { return ImagesRoot(rel) + rel;
 // --- models (debug=エンジン / その他=アプリ) -----------------------------
 
 /// <summary>rel が属する models ルート (末尾スラッシュ付き)。</summary>
-inline std::string ModelsRoot(const std::string &rel) {
+inline std::string ModelsRoot(const std::string &rel)
+{
     return (IsEngineRelative(rel) ? EngineRoot() : AppRoot()) + "models/";
 }
 
@@ -81,12 +81,14 @@ inline std::string SoundRoot() { return AppRoot() + "sounds"; }
 // --- ブラウザ用: 全走査ルート一覧 (エンジン→アプリの順) ------------------
 
 /// <summary>images を全走査するときの物理ルート一覧 (末尾スラッシュ無し)。</summary>
-inline std::vector<std::string> ImageScanRoots() {
+inline std::vector<std::string> ImageScanRoots()
+{
     return {EngineRoot() + "images", AppRoot() + "images"};
 }
 
 /// <summary>models を全走査するときの物理ルート一覧 (末尾スラッシュ無し)。</summary>
-inline std::vector<std::string> ModelScanRoots() {
+inline std::vector<std::string> ModelScanRoots()
+{
     return {EngineRoot() + "models", AppRoot() + "models"};
 }
 

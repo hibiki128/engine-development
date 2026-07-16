@@ -2,16 +2,18 @@
 #include "DirectXCommon.h"
 #include "type/Quaternion.h"
 #include "d3d12.h"
-#include "myMath.h"
+#include "MyMath.h"
 #include "wrl.h"
 
 // 定数バッファ用データ構造体
 namespace Hagine {
-struct ConstBufferDataWorldTransform {
+struct ConstBufferDataWorldTransform
+{
     Matrix4x4 matWorld; // ローカル → ワールド変換行列
 };
 
-class WorldTransform {
+class WorldTransform
+{
   public:
     // クォータニオン角を使うかどうか（falseの場合はオイラー角）
     bool isUseQuaternion_ = true;
@@ -28,7 +30,7 @@ class WorldTransform {
     // ローカルからワールド変換行列
     Matrix4x4 matWorld_;
     // 親となるワールド変換へのポインタ
-    const WorldTransform *parent_ = nullptr;
+    const WorldTransform *pParent_ = nullptr;
 
     WorldTransform();
     ~WorldTransform();
@@ -101,7 +103,6 @@ class WorldTransform {
     const Microsoft::WRL::ComPtr<ID3D12Resource> &GetConstBuffer() const { return constBuffer_; }
 
   private:
-    
     /// <summary>
     /// 定数バッファ生成
     /// </summary>
@@ -112,7 +113,7 @@ class WorldTransform {
     /// </summary>
     void Map();
 
-     // オイラー角→クォータニオン変換用
+    // オイラー角→クォータニオン変換用
     Vector3 preRotate_ = {0.0f, 0.0f, 0.0f};
 
     void UpdateEuler();
@@ -120,12 +121,12 @@ class WorldTransform {
     void RotateQuaternion();
 
   private:
-    DirectXCommon *dxCommon_ = nullptr;
+    DirectXCommon *pDxCommon_ = nullptr;
 
     // 定数バッファ
     Microsoft::WRL::ComPtr<ID3D12Resource> constBuffer_;
     // マッピング済み
-    ConstBufferDataWorldTransform *constMap_ = nullptr;
+    ConstBufferDataWorldTransform *pConstMap_ = nullptr;
     //// コピー禁止
     // WorldTransform(const WorldTransform&) = delete;
     // WorldTransform& operator=(const WorldTransform&) = delete;

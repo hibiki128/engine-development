@@ -1,35 +1,43 @@
 #include "DataHandler.h"
 
 namespace Hagine {
-DataHandler::DataHandler(const std::string &folder, const std::string &file) {
+DataHandler::DataHandler(const std::string &folder, const std::string &file)
+{
     folderPath_ = basePath_ + "/" + folder;
     fileName_ = file + ".json";
     fs::create_directories(folderPath_); // フォルダを作成
-    LoadFromFile();                     // コンストラクタで一度だけファイルを読み込む
+    LoadFromFile();                      // コンストラクタで一度だけファイルを読み込む
 }
 
-void DataHandler::DeleteJson(const std::string &jsonName) {
+void DataHandler::DeleteJson(const std::string &jsonName)
+{
     std::string filePath = folderPath_ + "/" + jsonName + ".json";
 
-    if (fs::exists(filePath)) {
+    if (fs::exists(filePath))
+    {
         fs::remove(filePath);
     }
 }
 
-bool DataHandler::Exists() const {
+bool DataHandler::Exists() const
+{
     std::string filePath = folderPath_ + "/" + fileName_;
     return fs::exists(filePath);
 }
 
-void DataHandler::DeleteAllJsonsInFolder() {
+void DataHandler::DeleteAllJsonsInFolder()
+{
     std::string fullFolderPath = folderPath_;
 
-    if (!fs::exists(fullFolderPath) || !fs::is_directory(fullFolderPath)) {
+    if (!fs::exists(fullFolderPath) || !fs::is_directory(fullFolderPath))
+    {
         return;
     }
 
-    for (const auto &entry : fs::directory_iterator(fullFolderPath)) {
-        if (entry.is_regular_file() && entry.path().extension() == ".json") {
+    for (const auto &entry : fs::directory_iterator(fullFolderPath))
+    {
+        if (entry.is_regular_file() && entry.path().extension() == ".json")
+        {
             fs::remove(entry.path()); // ファイルごと削除
         }
     }

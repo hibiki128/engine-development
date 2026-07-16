@@ -2,19 +2,20 @@
 #include "DirectXCommon.h"
 #include "WinApp.h"
 #include <BaseScene.h>
-#include "Object/Base/BaseObjectManager.h"
-#include"SpriteManager.h"
+#include "object/base/BaseObjectManager.h"
+#include "SpriteManager.h"
 #include <Audio.h>
 
 namespace Hagine {
 class ImGuizmoManager;
 class OffScreen;
 class DrawSystem;
-class ImGuiManager {
+class ImGuiManager
+{
   private:
-    ImGuizmoManager *imGuizmoManager_ = nullptr;
-    WinApp *winApp_ = nullptr;
-    DrawSystem *drawSystem_ = nullptr;
+    ImGuizmoManager *pImGuizmoManager_ = nullptr;
+    WinApp *pWinApp_ = nullptr;
+    DrawSystem *pDrawSystem_ = nullptr;
 
   public:
     /// ====================================
@@ -36,7 +37,7 @@ class ImGuiManager {
     /// <summary>
     /// 統計ウィンドウで参照する DrawSystem を設定（Framework が注入する）
     /// </summary>
-    void SetDrawSystem(DrawSystem *drawSystem) { drawSystem_ = drawSystem; }
+    void SetDrawSystem(DrawSystem *drawSystem) { pDrawSystem_ = drawSystem; }
 
     /// <summary>
     /// 終了
@@ -87,19 +88,22 @@ class ImGuiManager {
     void DisplayFPS();
 
     bool &GetIsShowMainUI();
-    void SetCurrentScene(BaseScene *currentScene) { currentScene_ = currentScene; };
+    void SetCurrentScene(BaseScene *currentScene) { pCurrentScene_ = currentScene; };
 
-    void SetImGuizmoManager(ImGuizmoManager *manager) {
-        imGuizmoManager_ = manager;
+    void SetImGuizmoManager(ImGuizmoManager *manager)
+    {
+        pImGuizmoManager_ = manager;
     }
 
-    void SetShortcutWindow(bool show) {
+    void SetShortcutWindow(bool show)
+    {
         showShortcutWindow_ = show;
     }
 
     // 必要に応じてImGuizmoManagerへのアクセサを追加
-    ImGuizmoManager *GetImGuizmoManager() const {
-        return imGuizmoManager_;
+    ImGuizmoManager *GetImGuizmoManager() const
+    {
+        return pImGuizmoManager_;
     }
 
     /// <summary>
@@ -107,17 +111,21 @@ class ImGuiManager {
     /// </summary>
     void ShowSceneWindow(OffScreen *offScreen, const std::string &sceneName);
 #ifdef USE_IMGUI
-    Vector2 GetSceneSize() const {
-        return Vector2(sceneTextureSize_.x, sceneTextureSize_.y);
-    }
-    // レイ計算用のシーン位置（クライアント座標系。Mouse::GetMousePos と同じ空間）。
-    // マルチビューポートで ImGui 座標がスクリーン全体座標になってもマウスと整合させるため。
-    Vector2 GetScenePos() const {
+    // レイ計算用のシーン矩形（仮想解像度座標系。Mouse::GetMousePos と同じ空間）。
+    // ImGui 座標のシーン矩形をマウスと同じレターボックス逆変換に通してあり、
+    // ウィンドウサイズ変更・マルチビューポート時もレイ計算と整合する。
+    Vector2 GetScenePosForRay() const
+    {
         return Vector2(scenePosForRay_.x, scenePosForRay_.y);
+    }
+    Vector2 GetSceneSizeForRay() const
+    {
+        return Vector2(sceneSizeForRay_.x, sceneSizeForRay_.y);
     }
 #endif // USE_IMGUI
 
-    bool GetEditorMode() const {
+    bool GetEditorMode() const
+    {
         return isEditorMode_;
     }
 
@@ -148,7 +156,7 @@ class ImGuiManager {
     void ShowOffScreenSettingWindow(OffScreen *offscreen);
 
     void ShowLightSettingWindow();
-    
+
     void ShowGizmoWindow();
 
     void ShowHierarchyWindow();
@@ -195,18 +203,19 @@ class ImGuiManager {
 
     // SRV用デスクリプタヒープ
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> srvHeap_;
-    SrvManager *srvManager_ = nullptr;
-    BaseScene *currentScene_ = nullptr;
+    SrvManager *pSrvManager_ = nullptr;
+    BaseScene *pCurrentScene_ = nullptr;
 
-    DirectXCommon *dxCommon_;
+    DirectXCommon *pDxCommon_;
 #ifdef USE_IMGUI
     // ヒエラルキーウィンドウ
     ImVec2 hierarchyWindowPosition_ = {0.0f, 64.0f};
 
     // シーンウィンドウ
     ImVec2 sceneTextureSize_ = {800.0f, 450.0f};
-    ImVec2 actualScenePos_ = {};   // ImGui座標系（ImGuizmo用）
-    ImVec2 scenePosForRay_ = {};   // クライアント座標系（レイ計算用）
+    ImVec2 actualScenePos_ = {};  // ImGui座標系（ImGuizmo用）
+    ImVec2 scenePosForRay_ = {};  // 仮想解像度座標系（レイ計算用）
+    ImVec2 sceneSizeForRay_ = {}; // 仮想解像度座標系（レイ計算用）
 
 #endif // USE_IMGUI
     int cubeCount_ = 0;
@@ -229,8 +238,8 @@ class ImGuiManager {
     bool showFPSView_ = true;
     bool showOfScreenView_ = true;
     bool showLightView_ = true;
-    bool isEditorMode_ = true;    // エディターモードフラグ
-    bool multiViewport_ = false;  // マルチビューポート有効フラグ
+    bool isEditorMode_ = true;   // エディターモードフラグ
+    bool multiViewport_ = false; // マルチビューポート有効フラグ
     bool showShortcutWindow_ = false;
     bool showGizmoView_ = true;
     bool showHierarchyView_ = true;
@@ -240,7 +249,7 @@ class ImGuiManager {
     bool showAudioManagerView_ = false;
     bool showShadowMapView_ = true;
     bool showDrawSystemView_ = true;
-    bool showGameParamView_ = true; // ゲームパラメータHub窓
+    bool showGameParamView_ = true;     // ゲームパラメータHub窓
     bool showAssetBrowserView_ = false; // アセットブラウザ窓
 
     // グリッド設定用メンバ変数
@@ -250,12 +259,12 @@ class ImGuiManager {
     float gridSize_ = 5000.0f;
     Vector4 gridColor_ = {0.5f, 0.5f, 0.5f, 1.0f}; // グレー
 
-    BaseObjectManager *baseObjectManager_ = nullptr;
-    SpriteManager *spriteManager_ = nullptr;
-    Audio *audio_ = nullptr;
+    BaseObjectManager *pBaseObjectManager_ = nullptr;
+    SpriteManager *pSpriteManager_ = nullptr;
+    Audio *pAudio_ = nullptr;
 
     // ImGui レイアウト ini は Application/Config/ 配下に生成する（プロジェクトルートを散らかさない）。
-    std::string editorIniFilePath_ = "src/Config/imgui_editor.ini";
-    std::string gameIniFilePath_ = "src/Config/imgui_game.ini";
+    std::string editorIniFilePath_ = "Application/Config/imgui_editor.ini";
+    std::string gameIniFilePath_ = "Application/Config/imgui_game.ini";
 };
 } // namespace Hagine

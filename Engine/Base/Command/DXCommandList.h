@@ -10,7 +10,8 @@ class DXDevice;
 /// ID3D12GraphicsCommandList とフレーム数分のコマンドアロケータを管理する
 /// Direct / Compute それぞれのリストを別インスタンスとして生成して使う
 /// </summary>
-class DXCommandList {
+class DXCommandList
+{
   public:
     // フレームごとのコマンドアロケータ数（ダブルバッファ）
     static constexpr UINT kFrameCount = 2;

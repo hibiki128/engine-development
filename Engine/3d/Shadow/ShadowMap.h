@@ -18,8 +18,9 @@ class SrvManager;
 /// 平行光源からの深度テクスチャを生成し、影の描画に使用する。
 /// ImGui でオン/オフ・パラメータ調整が可能。設定は JSON に保存/復元できる。
 /// </summary>
-class ShadowMap {
-public:
+class ShadowMap
+{
+  public:
     /// ===================================================
     /// public method
     /// ===================================================
@@ -28,7 +29,8 @@ public:
     /// インスタンスを取得
     /// </summary>
     /// <returns>ShadowMap*: シングルトンインスタンス</returns>
-    static ShadowMap *GetInstance() {
+    static ShadowMap *GetInstance()
+    {
         static ShadowMap instance;
         return &instance;
     }
@@ -148,7 +150,7 @@ public:
     /// <param name="target">ターゲット位置</param>
     void SetLightTarget(const Vector3 &target) { lightTarget_ = target; }
 
-private:
+  private:
     /// ===================================================
     /// private method
     /// ===================================================
@@ -177,29 +179,30 @@ private:
     void CreateShadowSRV();
 
     /// ===================================================
-    /// private variants
+    /// private variables
     /// ===================================================
 
     // GPUリソース
     static constexpr UINT kShadowMapSize = 2048; // シャドウマップの解像度
 
-    Microsoft::WRL::ComPtr<ID3D12Resource> depthResource_;     // 深度リソース
-    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> dsvHeap_;     // DSVヒープ
-    D3D12_CPU_DESCRIPTOR_HANDLE dsvHandle_{};                  // DSVハンドル
+    Microsoft::WRL::ComPtr<ID3D12Resource> depthResource_; // 深度リソース
+    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> dsvHeap_; // DSVヒープ
+    D3D12_CPU_DESCRIPTOR_HANDLE dsvHandle_{};              // DSVハンドル
 
     uint32_t srvIndex_ = UINT32_MAX; // シャドウマップのSRVインデックス
 
     /// <summary>
     /// シェーダーへ渡すシャドウ設定（定数バッファ）
     /// </summary>
-    struct ShadowDataGPU {
+    struct ShadowDataGPU
+    {
         int32_t enabled; // 有効フラグ
         float bias;      // 深度バイアス
         float strength;  // 影の濃さ
         float padding;   // パディング
     };
     Microsoft::WRL::ComPtr<ID3D12Resource> shadowDataResource_; // ShadowData定数バッファ
-    ShadowDataGPU *shadowDataPtr_ = nullptr;                    // 定数バッファのマップ先
+    ShadowDataGPU *pShadowDataPtr_ = nullptr;                    // 定数バッファのマップ先
 
     // パラメータ
     Matrix4x4 lightViewProj_{}; // ライトのView×Projection行列
@@ -219,7 +222,7 @@ private:
 
     D3D12_RESOURCE_STATES currentState_ = D3D12_RESOURCE_STATE_DEPTH_WRITE; // 現在のリソース状態
 
-    DirectXCommon *dxCommon_ = nullptr;   // DirectX共通処理
-    SrvManager *srvManager_ = nullptr;    // SRVマネージャー
+    DirectXCommon *pDxCommon_ = nullptr; // DirectX共通処理
+    SrvManager *pSrvManager_ = nullptr;  // SRVマネージャー
 };
 } // namespace Hagine

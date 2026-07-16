@@ -12,7 +12,8 @@ namespace Hagine {
 /// スワップチェーンクラス
 /// IDXGISwapChain4 とバックバッファの管理・Present を担当する
 /// </summary>
-class DXSwapChain {
+class DXSwapChain
+{
   public:
     DXSwapChain() = default;
     ~DXSwapChain() = default;
@@ -35,11 +36,20 @@ class DXSwapChain {
     void Finalize();
 
     /// <summary>
+    /// バックバッファをリサイズする（呼び出し前にGPUの完了待ちが必要）
+    /// </summary>
+    /// <param name="width">新しい幅</param>
+    /// <param name="height">新しい高さ</param>
+    void Resize(uint32_t width, uint32_t height);
+
+    /// <summary>
     /// 画面を表示する（VSync 待ち）
     /// </summary>
     void Present();
 
     UINT GetCurrentBackBufferIndex() const { return swapChain_->GetCurrentBackBufferIndex(); }
+    uint32_t GetWidth() const { return swapChainDesc_.Width; }   // 現在のバックバッファ幅
+    uint32_t GetHeight() const { return swapChainDesc_.Height; } // 現在のバックバッファ高さ
     ID3D12Resource *GetBackBuffer(uint32_t index) const { return backBuffers_[index].Get(); }
     size_t GetBackBufferCount() const { return backBuffers_.size(); }
     IDXGISwapChain4 *Get() const { return swapChain_.Get(); }

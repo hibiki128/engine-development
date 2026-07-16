@@ -14,7 +14,8 @@ namespace Hagine {
 /// アプリ側の各シーンが REGISTER_SCENE マクロで自己登録するため、
 /// エンジンは具体的なシーンクラスを一切知らなくてよい。
 /// </summary>
-class SceneRegistry {
+class SceneRegistry
+{
   public:
     using Creator = std::function<std::unique_ptr<BaseScene>()>;
 
@@ -22,7 +23,8 @@ class SceneRegistry {
     /// シングルトンインスタンスの取得
     /// （関数ローカル static で静的初期化順序問題を回避）
     /// </summary>
-    static SceneRegistry *GetInstance() {
+    static SceneRegistry *GetInstance()
+    {
         static SceneRegistry instance;
         return &instance;
     }
@@ -32,7 +34,8 @@ class SceneRegistry {
     /// </summary>
     /// <param name="name">シーン名</param>
     /// <param name="creator">生成関数</param>
-    void Register(const std::string &name, Creator creator) {
+    void Register(const std::string &name, Creator creator)
+    {
         creators_[name] = std::move(creator);
     }
 
@@ -41,9 +44,11 @@ class SceneRegistry {
     /// </summary>
     /// <param name="name">シーン名</param>
     /// <returns>生成された BaseScene（未登録時は nullptr）</returns>
-    std::unique_ptr<BaseScene> Create(const std::string &name) const {
+    std::unique_ptr<BaseScene> Create(const std::string &name) const
+    {
         auto it = creators_.find(name);
-        if (it == creators_.end()) {
+        if (it == creators_.end())
+        {
             return nullptr;
         }
         return it->second();
@@ -52,7 +57,8 @@ class SceneRegistry {
     /// <summary>
     /// シーンが登録済みか
     /// </summary>
-    bool Contains(const std::string &name) const {
+    bool Contains(const std::string &name) const
+    {
         return creators_.find(name) != creators_.end();
     }
 
@@ -61,10 +67,12 @@ class SceneRegistry {
     /// シーン切替メニューやショートカットの動的生成に使う
     /// </summary>
     /// <returns>std::vector&lt;std::string&gt;: シーン名一覧</returns>
-    std::vector<std::string> GetSceneNames() const {
+    std::vector<std::string> GetSceneNames() const
+    {
         std::vector<std::string> names;
         names.reserve(creators_.size());
-        for (const auto &pair : creators_) {
+        for (const auto &pair : creators_)
+        {
             names.push_back(pair.first);
         }
         std::sort(names.begin(), names.end());
@@ -83,8 +91,10 @@ class SceneRegistry {
 /// <summary>
 /// 静的初期化時にシーンを自己登録するためのヘルパ
 /// </summary>
-struct SceneRegistrar {
-    SceneRegistrar(const std::string &name, SceneRegistry::Creator creator) {
+struct SceneRegistrar
+{
+    SceneRegistrar(const std::string &name, SceneRegistry::Creator creator)
+    {
         SceneRegistry::GetInstance()->Register(name, std::move(creator));
     }
 };
@@ -97,7 +107,7 @@ struct SceneRegistrar {
 ///   REGISTER_SCENE("GAME", GameScene)
 /// 中央の SceneFactory を編集する必要はない。
 /// </summary>
-#define REGISTER_SCENE(NAME, TYPE)                                                                     \
-    namespace {                                                                                        \
+#define REGISTER_SCENE(NAME, TYPE)                                                                         \
+    namespace {                                                                                            \
     const ::Hagine::SceneRegistrar _scene_registrar_##TYPE{NAME, [] { return std::make_unique<TYPE>(); }}; \
     }

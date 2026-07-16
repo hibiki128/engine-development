@@ -1,10 +1,11 @@
 #include "PrimitiveModel.h"
 #include <DirectXMath.h>
-#include <myMath.h>
+#include <MyMath.h>
 namespace Hagine {
 using namespace DirectX;
 
-void PrimitiveModel::Initialize() {
+void PrimitiveModel::Initialize()
+{
     CreateSphere();
     CreatePlane();
     CreateCube();
@@ -16,21 +17,25 @@ void PrimitiveModel::Initialize() {
     CreateClosedCylinder();
 }
 
-void PrimitiveModel::Finalize() {
+void PrimitiveModel::Finalize()
+{
     primitiveDataMap_.clear();
 }
 
-bool IsParametricPrimitive(PrimitiveType type) {
+bool IsParametricPrimitive(PrimitiveType type)
+{
     return type == PrimitiveType::Ring ||
            type == PrimitiveType::Sphere ||
            type == PrimitiveType::Cylinder ||
            type == PrimitiveType::Cone;
 }
 
-PrimitiveModel::PrimitiveData PrimitiveModel::BuildParametricData(const PrimitiveType &type, const PrimitiveParams &params) {
+PrimitiveModel::PrimitiveData PrimitiveModel::BuildParametricData(const PrimitiveType &type, const PrimitiveParams &params)
+{
     // 分割数は最低3（潰れ防止）。Ring の内半径は外半径以下にクランプする。
     const uint32_t divide = params.divide < 3u ? 3u : params.divide;
-    switch (type) {
+    switch (type)
+    {
     case PrimitiveType::Sphere:
         return BuildSphere(divide);
     case PrimitiveType::Cylinder:
@@ -50,11 +55,13 @@ PrimitiveModel::PrimitiveData PrimitiveModel::BuildParametricData(const Primitiv
     }
 }
 
-void PrimitiveModel::CreateSphere() {
+void PrimitiveModel::CreateSphere()
+{
     primitiveDataMap_.insert(std::make_pair(PrimitiveType::Sphere, BuildSphere(32)));
 }
 
-PrimitiveModel::PrimitiveData PrimitiveModel::BuildSphere(uint32_t divide) {
+PrimitiveModel::PrimitiveData PrimitiveModel::BuildSphere(uint32_t divide)
+{
     // Sphereの頂点データ
     PrimitiveData primitiveData{};
     // 球分割数
@@ -63,12 +70,14 @@ PrimitiveModel::PrimitiveData PrimitiveModel::BuildSphere(uint32_t divide) {
     const float kLatEvery = std::numbers::pi_v<float> / static_cast<float>(kSubdivision);
 
     // 頂点の生成
-    for (uint32_t latIndex = 0; latIndex <= kSubdivision; ++latIndex) {
+    for (uint32_t latIndex = 0; latIndex <= kSubdivision; ++latIndex)
+    {
         float lat = -std::numbers::pi_v<float> / 2.0f + kLatEvery * latIndex;
         float sinLat = std::sinf(lat);
         float cosLat = std::cosf(lat);
 
-        for (uint32_t lonIndex = 0; lonIndex <= kSubdivision; ++lonIndex) {
+        for (uint32_t lonIndex = 0; lonIndex <= kSubdivision; ++lonIndex)
+        {
             float lon = kLonEvery * lonIndex;
             float sinLon = std::sinf(lon);
             float cosLon = std::cosf(lon);
@@ -83,8 +92,10 @@ PrimitiveModel::PrimitiveData PrimitiveModel::BuildSphere(uint32_t divide) {
     }
 
     // インデックスの生成
-    for (uint32_t latIndex = 0; latIndex < kSubdivision; ++latIndex) {
-        for (uint32_t lonIndex = 0; lonIndex < kSubdivision; ++lonIndex) {
+    for (uint32_t latIndex = 0; latIndex < kSubdivision; ++latIndex)
+    {
+        for (uint32_t lonIndex = 0; lonIndex < kSubdivision; ++lonIndex)
+        {
             uint32_t first = latIndex * (kSubdivision + 1) + lonIndex;
             uint32_t second = first + kSubdivision + 1;
 
@@ -106,7 +117,8 @@ PrimitiveModel::PrimitiveData PrimitiveModel::BuildSphere(uint32_t divide) {
     return primitiveData;
 }
 
-void PrimitiveModel::CreatePlane() {
+void PrimitiveModel::CreatePlane()
+{
     // Planeの頂点データ（垂直配置）
     PrimitiveData primitiveData{};
 
@@ -130,7 +142,8 @@ void PrimitiveModel::CreatePlane() {
     primitiveDataMap_.insert(std::make_pair(PrimitiveType::Plane, primitiveData));
 }
 
-void PrimitiveModel::CreateCube() {
+void PrimitiveModel::CreateCube()
+{
     // Cubeの頂点データ
     PrimitiveData primitiveData{};
 
@@ -168,7 +181,8 @@ void PrimitiveModel::CreateCube() {
         {{1.0f, 1.0f, -1.0f, 1.0f}, {0.0f, 0.0f}, {1.0f, 0.0f, 0.0f}},  // 10: 左上
         {{1.0f, 1.0f, 1.0f, 1.0f}, {1.0f, 0.0f}, {1.0f, 0.0f, 0.0f}}    // 11: 右上
     };
-    for (int i = 0; i < 4; i++) {
+    for (int i = 0; i < 4; i++)
+    {
         primitiveData.vertices.push_back(rightFace[i]);
     }
 
@@ -179,7 +193,8 @@ void PrimitiveModel::CreateCube() {
         {{-1.0f, 1.0f, 1.0f, 1.0f}, {0.0f, 0.0f}, {-1.0f, 0.0f, 0.0f}},   // 14: 左上
         {{-1.0f, 1.0f, -1.0f, 1.0f}, {1.0f, 0.0f}, {-1.0f, 0.0f, 0.0f}}   // 15: 右上
     };
-    for (int i = 0; i < 4; i++) {
+    for (int i = 0; i < 4; i++)
+    {
         primitiveData.vertices.push_back(leftFace[i]);
     }
 
@@ -190,7 +205,8 @@ void PrimitiveModel::CreateCube() {
         {{-1.0f, 1.0f, 1.0f, 1.0f}, {0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}},  // 18: 左上
         {{1.0f, 1.0f, 1.0f, 1.0f}, {1.0f, 0.0f}, {0.0f, 1.0f, 0.0f}}    // 19: 右上
     };
-    for (int i = 0; i < 4; i++) {
+    for (int i = 0; i < 4; i++)
+    {
         primitiveData.vertices.push_back(topFace[i]);
     }
 
@@ -201,12 +217,14 @@ void PrimitiveModel::CreateCube() {
         {{-1.0f, -1.0f, -1.0f, 1.0f}, {0.0f, 0.0f}, {0.0f, -1.0f, 0.0f}}, // 22: 左上
         {{1.0f, -1.0f, -1.0f, 1.0f}, {1.0f, 0.0f}, {0.0f, -1.0f, 0.0f}}   // 23: 右上
     };
-    for (int i = 0; i < 4; i++) {
+    for (int i = 0; i < 4; i++)
+    {
         primitiveData.vertices.push_back(bottomFace[i]);
     }
 
     // 各面のインデックスを設定（2つの三角形で1つの四角形）
-    for (int face = 0; face < 6; face++) {
+    for (int face = 0; face < 6; face++)
+    {
         uint32_t baseIndex = face * 4;
         // 三角形1
         primitiveData.indices.push_back(baseIndex + 0);
@@ -224,11 +242,13 @@ void PrimitiveModel::CreateCube() {
     primitiveDataMap_.insert(std::make_pair(PrimitiveType::Cube, primitiveData));
 }
 
-void PrimitiveModel::CreateCylinder() {
+void PrimitiveModel::CreateCylinder()
+{
     primitiveDataMap_.insert(std::make_pair(PrimitiveType::Cylinder, BuildCylinder(32, 1)));
 }
 
-PrimitiveModel::PrimitiveData PrimitiveModel::BuildCylinder(uint32_t divide, uint32_t heightDivide) {
+PrimitiveModel::PrimitiveData PrimitiveModel::BuildCylinder(uint32_t divide, uint32_t heightDivide)
+{
     // Cylinderの頂点データ（側面を円周・高さ方向に格子状へ分割）
     PrimitiveData primitiveData{};
 
@@ -241,12 +261,14 @@ PrimitiveModel::PrimitiveData PrimitiveModel::BuildCylinder(uint32_t divide, uin
 
     // 頂点の生成（下→上へ heightDivide+1 段のリング）。
     // レイアウト: index = row * (kRingDivide + 1) + col
-    for (uint32_t row = 0; row <= kHeightDivide; ++row) {
+    for (uint32_t row = 0; row <= kHeightDivide; ++row)
+    {
         float t = float(row) / float(kHeightDivide); // 0=下, 1=上
         float y = -halfHeight + kHeight * t;
         float v = 1.0f - t; // 下(row=0)=1, 上=0（従来と同じ）
 
-        for (uint32_t col = 0; col <= kRingDivide; ++col) {
+        for (uint32_t col = 0; col <= kRingDivide; ++col)
+        {
             float angle = col * radianPerDivide;
             float sinTheta = std::sinf(angle);
             float cosTheta = std::cosf(angle);
@@ -262,8 +284,10 @@ PrimitiveModel::PrimitiveData PrimitiveModel::BuildCylinder(uint32_t divide, uin
 
     // インデックスの生成（各セルを2三角形で埋める）
     const uint32_t stride = kRingDivide + 1;
-    for (uint32_t row = 0; row < kHeightDivide; ++row) {
-        for (uint32_t col = 0; col < kRingDivide; ++col) {
+    for (uint32_t row = 0; row < kHeightDivide; ++row)
+    {
+        for (uint32_t col = 0; col < kRingDivide; ++col)
+        {
             uint32_t bottomLeft = row * stride + col;
             uint32_t bottomRight = bottomLeft + 1;
             uint32_t topLeft = bottomLeft + stride;
@@ -288,7 +312,8 @@ PrimitiveModel::PrimitiveData PrimitiveModel::BuildCylinder(uint32_t divide, uin
     return primitiveData;
 }
 
-std::vector<std::pair<Vector3, Vector3>> PrimitiveModel::BuildCylinderGridLines(uint32_t divide, uint32_t heightDivide) {
+std::vector<std::pair<Vector3, Vector3>> PrimitiveModel::BuildCylinderGridLines(uint32_t divide, uint32_t heightDivide)
+{
     std::vector<std::pair<Vector3, Vector3>> lines;
 
     const uint32_t kRingDivide = divide < 3u ? 3u : divide;
@@ -308,15 +333,19 @@ std::vector<std::pair<Vector3, Vector3>> PrimitiveModel::BuildCylinderGridLines(
     lines.reserve(kRingDivide * kHeightDivide + (kHeightDivide + 1) * kRingDivide);
 
     // 縦線（各列を下から上へ）。col=kRingDivide は col=0 と重なるので 0..kRingDivide-1 のみ。
-    for (uint32_t col = 0; col < kRingDivide; ++col) {
-        for (uint32_t row = 0; row < kHeightDivide; ++row) {
+    for (uint32_t col = 0; col < kRingDivide; ++col)
+    {
+        for (uint32_t row = 0; row < kHeightDivide; ++row)
+        {
             lines.emplace_back(pos(col, row), pos(col, row + 1));
         }
     }
 
     // 横リング（各段の円周を col→col+1 で1周）
-    for (uint32_t row = 0; row <= kHeightDivide; ++row) {
-        for (uint32_t col = 0; col < kRingDivide; ++col) {
+    for (uint32_t row = 0; row <= kHeightDivide; ++row)
+    {
+        for (uint32_t col = 0; col < kRingDivide; ++col)
+        {
             lines.emplace_back(pos(col, row), pos(col + 1, row));
         }
     }
@@ -324,11 +353,13 @@ std::vector<std::pair<Vector3, Vector3>> PrimitiveModel::BuildCylinderGridLines(
     return lines;
 }
 
-void PrimitiveModel::CreateRing() {
+void PrimitiveModel::CreateRing()
+{
     primitiveDataMap_.insert(std::make_pair(PrimitiveType::Ring, BuildRing(32, 1.0f, 0.5f)));
 }
 
-PrimitiveModel::PrimitiveData PrimitiveModel::BuildRing(uint32_t divide, float outerRadius, float innerRadius) {
+PrimitiveModel::PrimitiveData PrimitiveModel::BuildRing(uint32_t divide, float outerRadius, float innerRadius)
+{
     // Ringの頂点データ（垂直配置）
     PrimitiveData primitiveData{};
 
@@ -338,7 +369,8 @@ PrimitiveModel::PrimitiveData PrimitiveModel::BuildRing(uint32_t divide, float o
     const float radianPerDivide = 2.0f * std::numbers::pi_v<float> / float(kRingDivide);
 
     // 頂点の生成（垂直にするためにX軸90度回転）
-    for (uint32_t i = 0; i <= kRingDivide; ++i) {
+    for (uint32_t i = 0; i <= kRingDivide; ++i)
+    {
         float angle = i * radianPerDivide;
         float sinTheta = std::sinf(angle);
         float cosTheta = std::cosf(angle);
@@ -360,7 +392,8 @@ PrimitiveModel::PrimitiveData PrimitiveModel::BuildRing(uint32_t divide, float o
     }
 
     // インデックスの生成
-    for (uint32_t i = 0; i < kRingDivide; ++i) {
+    for (uint32_t i = 0; i < kRingDivide; ++i)
+    {
         uint32_t outerCurrent = i * 2;
         uint32_t innerCurrent = outerCurrent + 1;
         uint32_t outerNext = outerCurrent + 2;
@@ -383,7 +416,8 @@ PrimitiveModel::PrimitiveData PrimitiveModel::BuildRing(uint32_t divide, float o
     return primitiveData;
 }
 
-void PrimitiveModel::CreateTriangle() {
+void PrimitiveModel::CreateTriangle()
+{
     // 三角形の頂点データ（XY平面上で垂直配置）
     PrimitiveData primitiveData{};
 
@@ -412,11 +446,13 @@ void PrimitiveModel::CreateTriangle() {
     primitiveDataMap_.insert(std::make_pair(PrimitiveType::Triangle, primitiveData));
 }
 
-void PrimitiveModel::CreateCone() {
+void PrimitiveModel::CreateCone()
+{
     primitiveDataMap_.insert(std::make_pair(PrimitiveType::Cone, BuildCone(32)));
 }
 
-PrimitiveModel::PrimitiveData PrimitiveModel::BuildCone(uint32_t divide) {
+PrimitiveModel::PrimitiveData PrimitiveModel::BuildCone(uint32_t divide)
+{
     // 円錐の頂点データ
     PrimitiveData primitiveData{};
 
@@ -433,7 +469,8 @@ PrimitiveModel::PrimitiveData PrimitiveModel::BuildCone(uint32_t divide) {
     primitiveData.vertices.push_back(apex);
 
     // 底面の頂点を作成
-    for (uint32_t i = 0; i <= kBaseDivide; ++i) {
+    for (uint32_t i = 0; i <= kBaseDivide; ++i)
+    {
         float angle = i * radianPerDivide;
         float sinTheta = std::sinf(angle);
         float cosTheta = std::cosf(angle);
@@ -457,7 +494,8 @@ PrimitiveModel::PrimitiveData PrimitiveModel::BuildCone(uint32_t divide) {
     }
 
     // 側面の三角形を作成
-    for (uint32_t i = 0; i < kBaseDivide; ++i) {
+    for (uint32_t i = 0; i < kBaseDivide; ++i)
+    {
         uint32_t current = i + 1;
         uint32_t next = i + 2;
 
@@ -476,7 +514,8 @@ PrimitiveModel::PrimitiveData PrimitiveModel::BuildCone(uint32_t divide) {
     primitiveData.vertices.push_back(baseCenter);
 
     // 底面の三角形を作成
-    for (uint32_t i = 0; i < kBaseDivide; ++i) {
+    for (uint32_t i = 0; i < kBaseDivide; ++i)
+    {
         uint32_t current = i + 1;
         uint32_t next = i + 2;
 
@@ -492,7 +531,8 @@ PrimitiveModel::PrimitiveData PrimitiveModel::BuildCone(uint32_t divide) {
     return primitiveData;
 }
 
-void PrimitiveModel::CreatePyramid() {
+void PrimitiveModel::CreatePyramid()
+{
     // 四角錐（ピラミッド）の頂点データ
     PrimitiveData primitiveData{};
 
@@ -594,7 +634,8 @@ void PrimitiveModel::CreatePyramid() {
 
     // インデックスの生成
     // 四つの側面（それぞれ三角形）
-    for (uint32_t i = 0; i < 4; ++i) {
+    for (uint32_t i = 0; i < 4; ++i)
+    {
         uint32_t baseIndex = i * 3;
         primitiveData.indices.push_back(baseIndex);
         primitiveData.indices.push_back(baseIndex + 1);
@@ -617,7 +658,8 @@ void PrimitiveModel::CreatePyramid() {
     primitiveDataMap_.insert(std::make_pair(PrimitiveType::Pyramid, primitiveData));
 }
 
-void PrimitiveModel::CreateClosedCylinder() {
+void PrimitiveModel::CreateClosedCylinder()
+{
     // ClosedCylinder（上下に蓋あり円柱）の頂点データ
     PrimitiveData primitiveData{};
 
@@ -631,7 +673,8 @@ void PrimitiveModel::CreateClosedCylinder() {
     // 側面（CreateCylinder と同じ構造）
     // 頂点レイアウト: [i*2+0]=下リング, [i*2+1]=上リング
     // -------------------------------------------------------
-    for (uint32_t i = 0; i <= kRingDivide; ++i) {
+    for (uint32_t i = 0; i <= kRingDivide; ++i)
+    {
         float angle = i * radianPerDivide;
         float sinTheta = std::sinf(angle);
         float cosTheta = std::cosf(angle);
@@ -653,7 +696,8 @@ void PrimitiveModel::CreateClosedCylinder() {
     }
 
     // 側面インデックス
-    for (uint32_t i = 0; i < kRingDivide; ++i) {
+    for (uint32_t i = 0; i < kRingDivide; ++i)
+    {
         uint32_t bottomLeft = i * 2;
         uint32_t topLeft = bottomLeft + 1;
         uint32_t bottomRight = bottomLeft + 2;
@@ -682,7 +726,8 @@ void PrimitiveModel::CreateClosedCylinder() {
         center.texcoord = {0.5f, 0.5f};
         primitiveData.vertices.push_back(center);
 
-        for (uint32_t i = 0; i <= kRingDivide; ++i) {
+        for (uint32_t i = 0; i <= kRingDivide; ++i)
+        {
             float angle = i * radianPerDivide;
             float sinTheta = std::sinf(angle);
             float cosTheta = std::cosf(angle);
@@ -696,7 +741,8 @@ void PrimitiveModel::CreateClosedCylinder() {
     }
 
     // 上蓋インデックス（時計回り＝表が上向き）
-    for (uint32_t i = 0; i < kRingDivide; ++i) {
+    for (uint32_t i = 0; i < kRingDivide; ++i)
+    {
         uint32_t current = topCapCenterIndex + 1 + i;
         uint32_t next = topCapCenterIndex + 1 + i + 1;
 
@@ -716,7 +762,8 @@ void PrimitiveModel::CreateClosedCylinder() {
         center.texcoord = {0.5f, 0.5f};
         primitiveData.vertices.push_back(center);
 
-        for (uint32_t i = 0; i <= kRingDivide; ++i) {
+        for (uint32_t i = 0; i <= kRingDivide; ++i)
+        {
             float angle = i * radianPerDivide;
             float sinTheta = std::sinf(angle);
             float cosTheta = std::cosf(angle);
@@ -730,7 +777,8 @@ void PrimitiveModel::CreateClosedCylinder() {
     }
 
     // 下蓋インデックス（反時計回り＝表が下向き）
-    for (uint32_t i = 0; i < kRingDivide; ++i) {
+    for (uint32_t i = 0; i < kRingDivide; ++i)
+    {
         uint32_t current = bottomCapCenterIndex + 1 + i;
         uint32_t next = bottomCapCenterIndex + 1 + i + 1;
 

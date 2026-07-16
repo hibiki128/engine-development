@@ -14,21 +14,22 @@
 #include <XInput.h>
 #include <dinput.h>
 // input
-#include "Input/GamePad.h"
 #include "Mouse.h"
-#include <Camera/ViewProjection/ViewProjection.h>
-#include <myMath.h>
+#include <camera/projection/ViewProjection.h>
+#include <MyMath.h>
 #include <type/Vector3.h>
 #include <type/Vector4.h>
 
 namespace Hagine {
-struct Ray {
+struct Ray
+{
     Vector3 origin;    // レイの開始点
     Vector3 direction; // レイの方向（正規化済み）
     float length;      // レイの最大長
 };
 
-struct RayHitInfo {
+struct RayHitInfo
+{
     bool hit;               // ヒットしたかどうか
     Vector3 hitPoint;       // ヒット点
     Vector3 hitNormal;      // ヒット面の法線
@@ -37,22 +38,26 @@ struct RayHitInfo {
 };
 
 // ImGuiシーン描画領域情報
-struct SceneViewport {
+struct SceneViewport
+{
     Vector2 position; // シーンウィンドウの左上座標
     Vector2 size;     // シーンウィンドウのサイズ
 };
 
 class BaseObject;
-class Input {
+class Input
+{
 
   private:
-    enum class PadType {
+    enum class PadType
+    {
         DirectInput,
         XInput,
     };
     using State = std::variant<DIJOYSTATE2, XINPUT_STATE>;
 
-    struct Joystick {
+    struct Joystick
+    {
         Microsoft::WRL::ComPtr<IDirectInputDevice8> device_;
         int32_t deadZoneL_;
         int32_t deadZoneR_;
@@ -67,11 +72,8 @@ class Input {
     std::array<BYTE, 256> key_;
     std::array<BYTE, 256> keyPre_;
     std::vector<Joystick> joysticks_;
-
     // マウス
     static std::unique_ptr<Mouse> mouse_;
-    // ゲームパッド
-    std::unique_ptr<GamePad> gamePad_;
 
     Ray currentRay_;
     SceneViewport currentViewport_;
@@ -229,11 +231,5 @@ class Input {
 
     const BYTE *GetKeyState() const { return key_.data(); }
     const BYTE *GetPreviousKeyState() const { return keyPre_.data(); }
-
-    /// <summary>
-    /// ゲームパッドポインタの取得
-    /// </summary>
-    /// <returns></returns>
-    GamePad *GetGamePad() const { return gamePad_.get(); }
 };
 } // namespace Hagine

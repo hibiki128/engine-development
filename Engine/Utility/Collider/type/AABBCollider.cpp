@@ -3,15 +3,18 @@
 #include <array>
 
 namespace Hagine {
-void AABBCollider::UpdateWorldTransform() {
+void AABBCollider::UpdateWorldTransform()
+{
     Vector3 center = GetCenterPosition() + offset_;
     Vector3 halfSize = size_ * 0.5f;
     cachedAABB_.min = center - halfSize;
     cachedAABB_.max = center + halfSize;
 }
 
-void AABBCollider::DebugDraw(const ViewProjection &viewProjection) {
-    if (!isVisible_ || !isEnabled_) {
+void AABBCollider::DebugDraw(const ViewProjection &viewProjection)
+{
+    if (!isVisible_ || !isEnabled_)
+    {
         return;
     }
 
@@ -30,19 +33,22 @@ void AABBCollider::DebugDraw(const ViewProjection &viewProjection) {
         std::make_pair(4, 5), std::make_pair(5, 7), std::make_pair(7, 6), std::make_pair(6, 4),
         std::make_pair(0, 4), std::make_pair(1, 5), std::make_pair(2, 6), std::make_pair(3, 7)};
 
-    for (const auto &edge : edges) {
+    for (const auto &edge : edges)
+    {
         DrawLine3D::GetInstance()->SetPoints(vertices[edge.first], vertices[edge.second], color_);
     }
 }
 
-void AABBCollider::SaveToJson() {
+void AABBCollider::SaveToJson()
+{
     ColliderBase::SaveToJson();
 
     dataHandler_->Save("size", size_);
     dataHandler_->Save("offset", offset_);
 }
 
-void AABBCollider::LoadFromJson() {
+void AABBCollider::LoadFromJson()
+{
     ColliderBase::LoadFromJson();
 
     size_ = dataHandler_->Load<Vector3>("size", {1.0f, 1.0f, 1.0f});

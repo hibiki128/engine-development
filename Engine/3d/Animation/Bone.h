@@ -1,12 +1,13 @@
 #pragma once
-#include "Model/ModelStructs.h"
+#include "model/ModelStructs.h"
 
 /// <summary>
 /// ボーン管理クラス
 /// スケルトン構造の構築、アニメーション適用、ジョイント情報の取得を行う
 /// </summary>
 namespace Hagine {
-class Bone {
+class Bone
+{
   public:
     /// ===================================================
     /// public method
@@ -22,8 +23,8 @@ class Bone {
     /// 更新処理
     /// </summary>
     /// <param name="animation">アニメーションデータ</param>
-    /// <param name="animtaionTime">アニメーション時間</param>
-    void Update(const Animation &animation, float animtaionTime);
+    /// <param name="animationTime">アニメーション時間</param>
+    void Update(const Animation &animation, float animationTime);
 
     /// <summary>
     /// ジョイントのワールド座標を取得
@@ -88,7 +89,7 @@ class Bone {
 
   private:
     /// ===================================================
-    /// private variants
+    /// private variables
     /// ===================================================
 
     Skeleton skeleton_; // スケルトンデータ

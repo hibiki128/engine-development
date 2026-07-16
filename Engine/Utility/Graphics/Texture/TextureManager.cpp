@@ -2,10 +2,10 @@
 #define STB_TRUETYPE_IMPLEMENTATION
 #include "TextureManager.h"
 #include "DirectXCommon.h"
-#include <Asset/AssetPath.h>
-#include "Utility/Debug/ImGui/ImGuiNotification.h"
-#include <Debug/Log/Logger.h>
-#include <String/StringUtility.h>
+#include <asset/AssetPath.h>
+#include "utility/debug/imgui/ImGuiNotification.h"
+#include <debug/log/Logger.h>
+#include <string/StringUtility.h>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
@@ -18,30 +18,36 @@
 namespace Hagine {
 uint32_t TextureManager::kSRVIndexTop = 1;
 
-void TextureManager::LoadTexture(const std::string &filePath) {
+void TextureManager::LoadTexture(const std::string &filePath)
+{
     // 相対パスから実パス(＝マップキー)を作る。debug/配下はエンジン、それ以外はアプリのルート。
     std::string newFilePath = AssetPath::Image(filePath);
 
     // 読み込み済みテクスチャを検索
-    if (textureDatas_.contains(newFilePath)) {
+    if (textureDatas_.contains(newFilePath))
+    {
         return;
     }
 
     // テクスチャ枚数上限をチェック
-    assert(srvManager_->CanAllocate());
+    assert(pSrvManager_->CanAllocate());
 
     // テクスチャファイルを読んでプログラムで扱えるようにする
     DirectX::ScratchImage image{};
     std::wstring filePathW = StringUtility::ConvertString(newFilePath);
     HRESULT hr;
-    if (filePathW.ends_with(L".dds")) {
+    if (filePathW.ends_with(L".dds"))
+    {
         isDDS_ = true;
         hr = DirectX::LoadFromDDSFile(filePathW.c_str(), DirectX::DDS_FLAGS_NONE, nullptr, image);
-    } else {
+    }
+    else
+    {
         isDDS_ = false;
         hr = DirectX::LoadFromWICFile(filePathW.c_str(), DirectX::WIC_FLAGS_FORCE_SRGB, nullptr, image);
     }
-    if (FAILED(hr)) {
+    if (FAILED(hr))
+    {
         char hrText[16] = {};
         snprintf(hrText, sizeof(hrText), "0x%08X", static_cast<unsigned int>(hr));
         Logger::Error("Failed to load texture: \"" + newFilePath + "\" (HRESULT=" + hrText + "). The file may be missing or its format unsupported.");
@@ -53,13 +59,17 @@ void TextureManager::LoadTexture(const std::string &filePath) {
 
     // ミニマップの作成
     DirectX::ScratchImage mipImages{};
-    if (DirectX::IsCompressed(image.GetMetadata().format)) {
+    if (DirectX::IsCompressed(image.GetMetadata().format))
+    {
         mipImages = std::move(image);
-    } else {
+    }
+    else
+    {
         hr = DirectX::GenerateMipMaps(image.GetImages(), image.GetImageCount(), image.GetMetadata(), DirectX::TEX_FILTER_SRGB, 4, mipImages);
     }
 
-    if (SUCCEEDED(hr)) {
+    if (SUCCEEDED(hr))
+    {
         imageToUse = &mipImages; // ミップマップが生成された場合はこれを使用
     }
 
@@ -67,30 +77,33 @@ void TextureManager::LoadTexture(const std::string &filePath) {
     TextureData &textureData = textureDatas_[newFilePath];
 
     textureData.metadata = imageToUse->GetMetadata();
-    textureData.resource = dxCommon_->CreateTextureResource(textureData.metadata);
-    textureData.intermediateResource = dxCommon_->UploadTextureData(textureData.resource, *imageToUse);
+    textureData.resource = pDxCommon_->CreateTextureResource(textureData.metadata);
+    textureData.intermediateResource = pDxCommon_->UploadTextureData(textureData.resource, *imageToUse);
 
-    textureData.srvIndex = srvManager_->Allocate() + kSRVIndexTop;
-    textureData.srvHandleCPU = srvManager_->GetCPUDescriptorHandle(textureData.srvIndex);
-    textureData.srvHandleGPU = srvManager_->GetGPUDescriptorHandle(textureData.srvIndex);
+    textureData.srvIndex = pSrvManager_->Allocate() + kSRVIndexTop;
+    textureData.srvHandleCPU = pSrvManager_->GetCPUDescriptorHandle(textureData.srvIndex);
+    textureData.srvHandleGPU = pSrvManager_->GetGPUDescriptorHandle(textureData.srvIndex);
 
-    srvManager_->CreateSRVforTexture2D(textureData.srvIndex, textureData.resource.Get(), textureData.metadata, UINT(textureData.metadata.mipLevels));
+    pSrvManager_->CreateSRVforTexture2D(textureData.srvIndex, textureData.resource.Get(), textureData.metadata, UINT(textureData.metadata.mipLevels));
     ImGuiNotification::Post("テクスチャを読み込みました: " + filePath, {0.2f, 0.8f, 0.8f, 1.0f});
 }
 
-void TextureManager::LoadFontTexture(const std::string &fontFilePath, float fontSize, int atlasWidth, int atlasHeight) {
+void TextureManager::LoadFontTexture(const std::string &fontFilePath, float fontSize, int atlasWidth, int atlasHeight)
+{
     // フォントキーで重複ロードを防ぐ
     const std::string fontKey = MakeFontKey(fontFilePath, fontSize);
-    if (fontDatas_.contains(fontKey)) {
+    if (fontDatas_.contains(fontKey))
+    {
         return;
     }
 
-    assert(srvManager_->CanAllocate());
+    assert(pSrvManager_->CanAllocate());
 
     // TTFファイルをバイナリとして丸ごと読み込む
     const std::string fullPath = AssetPath::Font(fontFilePath);
     std::ifstream file(fullPath, std::ios::binary | std::ios::ate);
-    if (!file.is_open()) {
+    if (!file.is_open())
+    {
         Logger::Error("Failed to open font file: \"" + fullPath + "\". The file was not found.");
         assert(file.is_open());
         return;
@@ -118,7 +131,8 @@ void TextureManager::LoadFontTexture(const std::string &fontFilePath, float font
         fontData.charData.data());
 
     // bakeResultが負の場合はアトラスサイズが不足している
-    if (bakeResult <= 0) {
+    if (bakeResult <= 0)
+    {
         Logger::Error("Failed to bake font atlas: \"" + fontFilePath + "\". The atlas size (" +
                       std::to_string(atlasWidth) + "x" + std::to_string(atlasHeight) + ") is too small for the requested font size.");
         assert(bakeResult > 0);
@@ -142,8 +156,10 @@ void TextureManager::LoadFontTexture(const std::string &fontFilePath, float font
     uint8_t *dest = img->pixels;
     const size_t rowPitch = img->rowPitch; // D3D12のアライメントを考慮したピッチ
 
-    for (int y = 0; y < atlasHeight; ++y) {
-        for (int x = 0; x < atlasWidth; ++x) {
+    for (int y = 0; y < atlasHeight; ++y)
+    {
+        for (int x = 0; x < atlasWidth; ++x)
+        {
             const uint8_t alpha = grayscaleBitmap[y * atlasWidth + x];
             uint8_t *pixel = dest + y * rowPitch + x * 4;
             pixel[0] = 255;   // R
@@ -163,49 +179,55 @@ void TextureManager::LoadFontTexture(const std::string &fontFilePath, float font
     metadata.format = DXGI_FORMAT_R8G8B8A8_UNORM;
     metadata.dimension = DirectX::TEX_DIMENSION_TEXTURE2D;
 
-    fontData.resource = dxCommon_->CreateTextureResource(metadata);
-    fontData.intermediateResource = dxCommon_->UploadTextureData(fontData.resource, scratchImage);
+    fontData.resource = pDxCommon_->CreateTextureResource(metadata);
+    fontData.intermediateResource = pDxCommon_->UploadTextureData(fontData.resource, scratchImage);
     fontData.ttfBuffer = std::make_shared<std::vector<uint8_t>>(ttfBuffer);
     fontData.fontSize = fontSize;
 
     // SRVを割り当てて登録する
-    fontData.srvIndex = srvManager_->Allocate() + kSRVIndexTop;
-    fontData.srvHandleCPU = srvManager_->GetCPUDescriptorHandle(fontData.srvIndex);
-    fontData.srvHandleGPU = srvManager_->GetGPUDescriptorHandle(fontData.srvIndex);
+    fontData.srvIndex = pSrvManager_->Allocate() + kSRVIndexTop;
+    fontData.srvHandleCPU = pSrvManager_->GetCPUDescriptorHandle(fontData.srvIndex);
+    fontData.srvHandleGPU = pSrvManager_->GetGPUDescriptorHandle(fontData.srvIndex);
 
-    srvManager_->CreateSRVforTexture2D(fontData.srvIndex, fontData.resource.Get(), metadata, 1);
+    pSrvManager_->CreateSRVforTexture2D(fontData.srvIndex, fontData.resource.Get(), metadata, 1);
 
     fontDatas_[fontKey] = std::move(fontData);
     ImGuiNotification::Post("フォントテクスチャを読み込みました: " + fontFilePath, {0.2f, 0.8f, 0.8f, 1.0f});
 }
 
-void TextureManager::Initialize(SrvManager *srvManager) {
-    dxCommon_ = DirectXCommon::GetInstance();
-    srvManager_ = srvManager;
+void TextureManager::Initialize(SrvManager *srvManager)
+{
+    pDxCommon_ = DirectXCommon::GetInstance();
+    pSrvManager_ = srvManager;
     // SRVの数と同数
     textureDatas_.reserve(SrvManager::kMaxSRVCount);
 }
 
-void TextureManager::Finalize() {
+void TextureManager::Finalize()
+{
     // 通常テクスチャのSRVインデックスを解放する
-    for (auto &pair : textureDatas_) {
-        srvManager_->Free(pair.second.srvIndex - kSRVIndexTop);
+    for (auto &pair : textureDatas_)
+    {
+        pSrvManager_->Free(pair.second.srvIndex - kSRVIndexTop);
     }
     textureDatas_.clear();
 
     // フォントアトラスのSRVインデックスを解放する
-    for (auto &pair : fontDatas_) {
-        srvManager_->Free(pair.second.srvIndex - kSRVIndexTop);
+    for (auto &pair : fontDatas_)
+    {
+        pSrvManager_->Free(pair.second.srvIndex - kSRVIndexTop);
     }
     fontDatas_.clear();
 }
 
-uint32_t TextureManager::GetTextureIndexByFilePath(const std::string &filePath) {
+uint32_t TextureManager::GetTextureIndexByFilePath(const std::string &filePath)
+{
     // 相対パスから実パス(＝マップキー)を作る。
     std::string newFilePath = AssetPath::Image(filePath);
 
     auto it = textureDatas_.find(newFilePath);
-    if (it != textureDatas_.end()) {
+    if (it != textureDatas_.end())
+    {
         return it->second.srvIndex;
     }
 
@@ -215,9 +237,11 @@ uint32_t TextureManager::GetTextureIndexByFilePath(const std::string &filePath) 
     return 0;
 }
 
-D3D12_GPU_DESCRIPTOR_HANDLE TextureManager::GetSrvHandleGPU(const std::string &filePath) {
+D3D12_GPU_DESCRIPTOR_HANDLE TextureManager::GetSrvHandleGPU(const std::string &filePath)
+{
     // 指定されたファイルパスが存在するかチェック
-    if (textureDatas_.find(filePath) == textureDatas_.end()) {
+    if (textureDatas_.find(filePath) == textureDatas_.end())
+    {
         Logger::Error("Texture handle not found: \"" + filePath + "\". The texture was never loaded (the path may be wrong).");
         assert(textureDatas_.find(filePath) != textureDatas_.end());
     }
@@ -226,10 +250,12 @@ D3D12_GPU_DESCRIPTOR_HANDLE TextureManager::GetSrvHandleGPU(const std::string &f
     return textureData.srvHandleGPU;
 }
 
-const DirectX::TexMetadata &TextureManager::GetMetaData(const std::string &filePath) {
+const DirectX::TexMetadata &TextureManager::GetMetaData(const std::string &filePath)
+{
     std::string fullPath = AssetPath::Image(filePath);
     // 指定されたファイルパスが存在するかチェック
-    if (textureDatas_.find(fullPath) == textureDatas_.end()) {
+    if (textureDatas_.find(fullPath) == textureDatas_.end())
+    {
         Logger::Error("Texture metadata not found: \"" + fullPath + "\". The texture was never loaded (the path may be wrong).");
         assert(textureDatas_.find(fullPath) != textureDatas_.end());
     }
@@ -238,41 +264,50 @@ const DirectX::TexMetadata &TextureManager::GetMetaData(const std::string &fileP
     return textureData.metadata;
 }
 
-const TextureManager::FontData *TextureManager::GetFontData(const std::string &fontKey) const {
+const TextureManager::FontData *TextureManager::GetFontData(const std::string &fontKey) const
+{
     auto it = fontDatas_.find(fontKey);
-    if (it != fontDatas_.end()) {
+    if (it != fontDatas_.end())
+    {
         return &it->second;
     }
     return nullptr;
 }
 
-std::string TextureManager::MakeFontKey(const std::string &fontFilePath, float fontSize) {
+std::string TextureManager::MakeFontKey(const std::string &fontFilePath, float fontSize)
+{
     // フォントパスとサイズを組み合わせて一意なキーを生成する
     // floatをそのまま文字列化すると精度問題が出るためintに丸める
     return fontFilePath + "_" + std::to_string(static_cast<int>(fontSize));
 }
 
-std::vector<std::string> TextureManager::GetAllFontKeys() const {
+std::vector<std::string> TextureManager::GetAllFontKeys() const
+{
     std::vector<std::string> keys;
     keys.reserve(fontDatas_.size());
-    for (const auto &pair : fontDatas_) {
+    for (const auto &pair : fontDatas_)
+    {
         keys.push_back(pair.first);
     }
     return keys;
 }
 
-void TextureManager::LoadAllTextures() {
+void TextureManager::LoadAllTextures()
+{
     // images はエンジン(debug)とアプリの 2 ルートに分割されているため両方を走査する。
     // 相対パスは各ルート基点で作るので AssetPath::Image() が正しいルートへ振り分ける。
-    for (const std::string &baseDir : AssetPath::ImageScanRoots()) {
+    for (const std::string &baseDir : AssetPath::ImageScanRoots())
+    {
 
         // ディレクトリが存在しない場合はスキップ
-        if (!std::filesystem::exists(baseDir)) {
+        if (!std::filesystem::exists(baseDir))
+        {
             continue;
         }
 
         // 再帰的探索
-        for (auto &entry : std::filesystem::recursive_directory_iterator(baseDir)) {
+        for (auto &entry : std::filesystem::recursive_directory_iterator(baseDir))
+        {
 
             // ファイルでなければスキップ
             if (!entry.is_regular_file())
@@ -293,7 +328,8 @@ void TextureManager::LoadAllTextures() {
             std::replace(file.begin(), file.end(), '\\', '/');
 
             // 既にロード済みならスキップ
-            if (textureDatas_.contains(AssetPath::Image(file))) {
+            if (textureDatas_.contains(AssetPath::Image(file)))
+            {
                 continue;
             }
 

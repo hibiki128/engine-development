@@ -12,7 +12,8 @@ class DXDevice;
 /// バッファ・テクスチャ・レンダーテクスチャ・深度ステンシルなど各種リソースの生成と
 /// テクスチャデータのアップロードを担当する
 /// </summary>
-class ResourceFactory {
+class ResourceFactory
+{
   public:
     ResourceFactory() = default;
     ~ResourceFactory() = default;
@@ -71,7 +72,7 @@ class ResourceFactory {
 
   private:
     // デバイス（DirectXCommon が所有）
-    DXDevice *device_ = nullptr;
+    DXDevice *pDevice_ = nullptr;
     // DispatchIndirect 用コマンドシグネチャ（遅延生成）
     Microsoft::WRL::ComPtr<ID3D12CommandSignature> dispatchIndirectCommandSignature_;
 };

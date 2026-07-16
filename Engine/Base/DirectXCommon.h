@@ -5,11 +5,11 @@
 #include "DXSwapChain.h"
 #include "DirectXTex/DirectXTex.h"
 #include "FrameRateLimiter.h"
-#include "Graphics/Dsv/DsvManager.h"
-#include "Graphics/Rtv/RtvManager.h"
+#include "graphics/dsv/DsvManager.h"
+#include "graphics/rtv/RtvManager.h"
 #include "ResourceFactory.h"
 #include "ShaderCompiler.h"
-#include "WinApp.h"
+#include "window/WinApp.h"
 #include "d3d12.h"
 #include "dxcapi.h"
 #include "dxgi1_6.h"
@@ -25,7 +25,8 @@ namespace Hagine {
 /// デバイス・コマンド・スワップチェーン・RTV/DSV・シェーダーコンパイラ等の
 /// 各コンポーネントを所有し、フレーム進行（PreDraw/PostDraw）とリソースバリアを統括する
 /// </summary>
-class DirectXCommon {
+class DirectXCommon
+{
   private:
     DirectXCommon() = default;
     ~DirectXCommon() = default;
@@ -37,7 +38,8 @@ class DirectXCommon {
     /// シングルトンインスタンスの取得
     /// </summary>
     /// <returns></returns>
-    static DirectXCommon *GetInstance() {
+    static DirectXCommon *GetInstance()
+    {
         static DirectXCommon instance;
         return &instance;
     }
@@ -61,6 +63,15 @@ class DirectXCommon {
     /// depthのSRV作成
     /// </summary>
     void CreateDepthSRV();
+
+    /// <summary>
+    /// スワップチェーンを実ウィンドウサイズへリサイズする
+    /// 内部レンダリング解像度（オフスクリーン等）は変えず、
+    /// バックバッファと最終合成用ビューポート（レターボックス）のみ更新する
+    /// </summary>
+    /// <param name="width">新しいクライアント幅</param>
+    /// <param name="height">新しいクライアント高さ</param>
+    void ResizeSwapChain(uint32_t width, uint32_t height);
 
     /// <summary>
     /// 描画前処理(RenderTexture)
@@ -156,14 +167,16 @@ class DirectXCommon {
     /// <summary>
     /// DescriptorHeapの作成
     /// </summary>
-    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> CreateDescriptorHeap(D3D12_DESCRIPTOR_HEAP_TYPE heapType, UINT numDescriptors, bool shaderVisible) {
+    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> CreateDescriptorHeap(D3D12_DESCRIPTOR_HEAP_TYPE heapType, UINT numDescriptors, bool shaderVisible)
+    {
         return dxDevice_->CreateDescriptorHeap(heapType, numDescriptors, shaderVisible);
     }
     ID3D12Resource *GetOffScreenResource() { return offScreenResource_.Get(); }
     IDxcUtils *GetDxcUtils() { return shaderCompiler_->GetDxcUtils(); }
     IDxcCompiler3 *GetDxcCompiler() { return shaderCompiler_->GetDxcCompiler(); }
 
-    Vector4 GetClearColor() const {
+    Vector4 GetClearColor() const
+    {
         return Vector4(
             clearColorValue_.Color[0], // R
             clearColorValue_.Color[1], // G
@@ -184,6 +197,12 @@ class DirectXCommon {
     uint32_t GetDepthSrvIndex() { return depthSrvIndex_; }
     D3D12_CLEAR_VALUE GetClearColorValue() const { return clearColorValue_; }
     IDXGISwapChain4 *GetSwapChain() { return swapChain_->Get(); }
+    // バックバッファへの最終合成に使うビューポート／シザー（レターボックス済み）
+    const D3D12_VIEWPORT &GetPresentViewport() const { return presentViewport_; }
+    const D3D12_RECT &GetPresentScissorRect() const { return presentScissorRect_; }
+    // オフスクリーン描画用のビューポート／シザー（仮想解像度固定）
+    const D3D12_VIEWPORT &GetRenderViewport() const { return viewport_; }
+    const D3D12_RECT &GetRenderScissorRect() const { return scissorRect_; }
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> GetRTVDescriptorHeap() { return rtvManager_->GetHeap(); }
 
     // ---- 非同期コンピュートキュー API ----
@@ -201,6 +220,13 @@ class DirectXCommon {
     void BeginComputeFrame();
     /// シャットダウン時：コンピュートキューの全作業を CPU 側で完了させる
     void FlushComputeQueue();
+
+    /// <summary>
+    /// GPU の全作業完了を CPU 側で待つ（Direct/Compute 両キューをフラッシュ）。
+    /// シーン破棄など、GPU がまだ参照している可能性のあるリソースを解放する前に呼ぶこと。
+    /// （デバッグレイヤーは「使用中リソースの解放」を ERROR としてブレークするため）
+    /// </summary>
+    void WaitForGPU();
 #pragma endregion
 
   private: // メンバ関数
@@ -219,22 +245,29 @@ class DirectXCommon {
     /// </summary>
     void ScissorRectInitialize();
 
+    /// <summary>
+    /// 最終合成用ビューポート／シザーをクライアントサイズから再計算する（レターボックス）
+    /// </summary>
+    /// <param name="clientWidth">実クライアント幅</param>
+    /// <param name="clientHeight">実クライアント高さ</param>
+    void UpdatePresentViewport(uint32_t clientWidth, uint32_t clientHeight);
+
   private:
     // WindowsAPI
-    WinApp *winApp_ = nullptr;
+    WinApp *pWinApp_ = nullptr;
 
     // ---- 分割された各コンポーネント（DirectXCommon が所有・統括する）----
-    std::unique_ptr<DXDevice> dxDevice_;                  // デバイス・アダプタ・ファクトリ
-    std::unique_ptr<ResourceFactory> resourceFactory_;    // 各種GPUリソースの生成
-    std::unique_ptr<DXCommandQueue> directQueue_;         // Direct キュー＋フェンス
-    std::unique_ptr<DXCommandList> directCommandList_;    // Direct リスト＋アロケータ
-    std::unique_ptr<DXCommandQueue> computeQueue_;        // 非同期 Compute キュー＋フェンス
-    std::unique_ptr<DXCommandList> computeCommandList_;   // Compute リスト＋アロケータ
-    std::unique_ptr<DXSwapChain> swapChain_;              // スワップチェーン＋バックバッファ
-    std::unique_ptr<RtvManager> rtvManager_;              // RTVヒープ・ビュー管理
-    std::unique_ptr<DsvManager> dsvManager_;              // DSVヒープ・ビュー管理
-    std::unique_ptr<ShaderCompiler> shaderCompiler_;      // DXCシェーダーコンパイラ
-    std::unique_ptr<FrameRateLimiter> fpsLimiter_;        // FPS固定
+    std::unique_ptr<DXDevice> dxDevice_;                // デバイス・アダプタ・ファクトリ
+    std::unique_ptr<ResourceFactory> resourceFactory_;  // 各種GPUリソースの生成
+    std::unique_ptr<DXCommandQueue> directQueue_;       // Direct キュー＋フェンス
+    std::unique_ptr<DXCommandList> directCommandList_;  // Direct リスト＋アロケータ
+    std::unique_ptr<DXCommandQueue> computeQueue_;      // 非同期 Compute キュー＋フェンス
+    std::unique_ptr<DXCommandList> computeCommandList_; // Compute リスト＋アロケータ
+    std::unique_ptr<DXSwapChain> swapChain_;            // スワップチェーン＋バックバッファ
+    std::unique_ptr<RtvManager> rtvManager_;            // RTVヒープ・ビュー管理
+    std::unique_ptr<DsvManager> dsvManager_;            // DSVヒープ・ビュー管理
+    std::unique_ptr<ShaderCompiler> shaderCompiler_;    // DXCシェーダーコンパイラ
+    std::unique_ptr<FrameRateLimiter> fpsLimiter_;      // FPS固定
 
     // ---- メインの描画先リソース ----
     Microsoft::WRL::ComPtr<ID3D12Resource> offScreenResource_;
@@ -245,10 +278,14 @@ class DirectXCommon {
     UINT64 fenceValues_[DXCommandList::kFrameCount] = {}; // フレームごとの最終 Signal 値
     UINT frameIndex_ = 0;                                 // 現在の描画フレームスロット（0 or 1）
 
-    // ビューポート
+    // ビューポート（オフスクリーン描画用・仮想解像度固定）
     D3D12_VIEWPORT viewport_{};
-    // シザー矩形
+    // シザー矩形（オフスクリーン描画用・仮想解像度固定）
     D3D12_RECT scissorRect_{};
+    // 最終合成用ビューポート（実ウィンドウサイズ・レターボックス済み）
+    D3D12_VIEWPORT presentViewport_{};
+    // 最終合成用シザー矩形
+    D3D12_RECT presentScissorRect_{};
     // TransitionBarrierの設定
     D3D12_RESOURCE_BARRIER barrier_{};
 

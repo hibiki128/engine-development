@@ -7,7 +7,8 @@
 /// 内側に押し戻す用途にも、外側に押し出す用途にも使える汎用円柱判定
 /// </summary>
 namespace Hagine {
-class CylinderCollider : public ColliderBase {
+class CylinderCollider : public ColliderBase
+{
   public:
     CylinderCollider() = default;
     ~CylinderCollider() override = default;
@@ -35,7 +36,8 @@ class CylinderCollider : public ColliderBase {
     /// inward=true  → 外に出たら内側へ
     /// inward=false → 内側に入ったら外側へ
     /// </summary>
-    void Clamp(Vector3 &position, Vector3 &velocity) const {
+    void Clamp(Vector3 &position, Vector3 &velocity) const
+    {
         Vector3 center = GetCenterPosition();
 
         float dx = position.x - center.x;
@@ -46,11 +48,13 @@ class CylinderCollider : public ColliderBase {
 
         // inward=true  のとき: 外にいれば押し戻す
         // inward=false のとき: 内にいれば押し出す
-        if (inward_ != outside) {
+        if (inward_ != outside)
+        {
             return; // 押し戻し不要
         }
 
-        if (distXZ < 0.0001f) {
+        if (distXZ < 0.0001f)
+        {
             // 中心と完全に重なっている場合はZ方向に逃がす
             position.z = center.z + (inward_ ? -radius_ : radius_);
             return;
@@ -67,10 +71,13 @@ class CylinderCollider : public ColliderBase {
         // inward=true  → 外向き(dot>0)の速度を除去
         // inward=false → 内向き(dot<0)の速度を除去
         float dot = velocity.x * nx + velocity.z * nz;
-        if (inward_ && dot > 0.0f) {
+        if (inward_ && dot > 0.0f)
+        {
             velocity.x -= nx * dot;
             velocity.z -= nz * dot;
-        } else if (!inward_ && dot < 0.0f) {
+        }
+        else if (!inward_ && dot < 0.0f)
+        {
             velocity.x -= nx * dot;
             velocity.z -= nz * dot;
         }

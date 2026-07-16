@@ -6,7 +6,8 @@
 /// モデルシステムで共有するDirectXCommonを管理する
 /// </summary>
 namespace Hagine {
-class ModelCommon {
+class ModelCommon
+{
   public:
     /// ===================================================
     /// public method
@@ -30,13 +31,13 @@ class ModelCommon {
     /// <summary>
     /// Getter
     /// </summary>
-    DirectXCommon *GetDxCommon() const { return dxCommon_; }
+    DirectXCommon *GetDxCommon() const { return pDxCommon_; }
 
   private:
     /// ===================================================
     /// private varians
     /// ===================================================
 
-    DirectXCommon *dxCommon_;     // DirectX共通クラス
+    DirectXCommon *pDxCommon_; // DirectX共通クラス
 };
 } // namespace Hagine

@@ -1,18 +1,20 @@
 #include "DXDevice.h"
 #include "cassert"
 #include "format"
-#include <Debug/Log/Logger.h>
-#include <String/StringUtility.h>
+#include <debug/log/Logger.h>
+#include <string/StringUtility.h>
 
 namespace Hagine {
 using namespace Logger;
 using namespace StringUtility;
 
-void DXDevice::Initialize() {
+void DXDevice::Initialize()
+{
 
 #ifdef _DEBUG
     Microsoft::WRL::ComPtr<ID3D12Debug1> debugController = nullptr;
-    if (SUCCEEDED(D3D12GetDebugInterface(IID_PPV_ARGS(&debugController)))) {
+    if (SUCCEEDED(D3D12GetDebugInterface(IID_PPV_ARGS(&debugController))))
+    {
         // デバッグレイヤーを有効化する（API誤用の検出。相対的に軽い）
         debugController->EnableDebugLayer();
 
@@ -20,7 +22,8 @@ void DXDevice::Initialize() {
         // 描画/ディスパッチを数倍重くする。Debugビルドが極端に重くなる主因になり得るので
         // 通常はOFF。ディスクリプタ範囲外アクセス等のGPU側クラッシュ/破損を追う時だけ true にする。
         constexpr bool kEnableGpuBasedValidation = false;
-        if (kEnableGpuBasedValidation) {
+        if (kEnableGpuBasedValidation)
+        {
             debugController->SetEnableGPUBasedValidation(TRUE);
         }
     }
@@ -35,15 +38,17 @@ void DXDevice::Initialize() {
     Microsoft::WRL::ComPtr<IDXGIAdapter4> useAdapter = nullptr;
     // 良い順にアダプタを頼む
     for (UINT i = 0; dxgiFactory_->EnumAdapterByGpuPreference(i,
-                                                             DXGI_GPU_PREFERENCE_HIGH_PERFORMANCE, IID_PPV_ARGS(&useAdapter)) !=
+                                                              DXGI_GPU_PREFERENCE_HIGH_PERFORMANCE, IID_PPV_ARGS(&useAdapter)) !=
                      DXGI_ERROR_NOT_FOUND;
-         ++i) {
+         ++i)
+    {
         // アダプターの情報を取得する
         DXGI_ADAPTER_DESC3 adapterDesc{};
         hr = useAdapter->GetDesc3(&adapterDesc);
         assert(SUCCEEDED(hr)); // 取得できないのは一大事
         // ソフトウェアアダプタでなければ採用！
-        if (!(adapterDesc.Flags & DXGI_ADAPTER_FLAG3_SOFTWARE)) {
+        if (!(adapterDesc.Flags & DXGI_ADAPTER_FLAG3_SOFTWARE))
+        {
             // 採用したアダプタ情報をログに出力。wstringの方なので注意
             Log(ConvertString(std::format(L"Use Adapter:{}\n", adapterDesc.Description)));
             break;
@@ -56,15 +61,17 @@ void DXDevice::Initialize() {
     // 機能レベルとログ出力用の文字列
     D3D_FEATURE_LEVEL featureLevels[] = {
         D3D_FEATURE_LEVEL_12_2, D3D_FEATURE_LEVEL_12_1, D3D_FEATURE_LEVEL_12_0};
-    const char *fetureLevelStrings[] = {"12.2", "12.1", "12.0"};
+    const char *featureLevelStrings[] = {"12.2", "12.1", "12.0"};
     // 高い順に生成できるか試していく
-    for (size_t i = 0; i < _countof(featureLevels); ++i) {
+    for (size_t i = 0; i < _countof(featureLevels); ++i)
+    {
         // 採用したアダプターでデバイスを生成
         hr = D3D12CreateDevice(useAdapter.Get(), featureLevels[i], IID_PPV_ARGS(&device_));
         // 指定した機能レベルでデバイスが生成できたかを確認
-        if (SUCCEEDED(hr)) {
+        if (SUCCEEDED(hr))
+        {
             // 生成できたのでログ出力を行ってループを抜ける
-            Log(std::format("FeatureLevel : {}\n", fetureLevelStrings[i]));
+            Log(std::format("FeatureLevel : {}\n", featureLevelStrings[i]));
             break;
         }
     }
@@ -74,7 +81,8 @@ void DXDevice::Initialize() {
 
 #ifdef _DEBUG
     ID3D12InfoQueue *infoQueue = nullptr;
-    if (SUCCEEDED(device_->QueryInterface(IID_PPV_ARGS(&infoQueue)))) {
+    if (SUCCEEDED(device_->QueryInterface(IID_PPV_ARGS(&infoQueue))))
+    {
         // やばいエラー時に止まる
         infoQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_CORRUPTION, true);
         // エラー時に止まる
@@ -98,7 +106,8 @@ void DXDevice::Initialize() {
 #endif
 }
 
-Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> DXDevice::CreateDescriptorHeap(D3D12_DESCRIPTOR_HEAP_TYPE heapType, UINT numDescriptors, bool shaderVisible) {
+Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> DXDevice::CreateDescriptorHeap(D3D12_DESCRIPTOR_HEAP_TYPE heapType, UINT numDescriptors, bool shaderVisible)
+{
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> descriptorHeap = nullptr;
     D3D12_DESCRIPTOR_HEAP_DESC descriptorHeapDesc{};
     descriptorHeapDesc.Type = heapType;

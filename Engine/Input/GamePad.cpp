@@ -2,7 +2,8 @@
 #include <algorithm>
 
 namespace Hagine {
-void GamePad::Init(int32_t playerIndex) {
+void GamePad::Init(int32_t playerIndex)
+{
     playerIndex_ = playerIndex;
     isConnected_ = false;
 
@@ -16,14 +17,16 @@ void GamePad::Init(int32_t playerIndex) {
 
     // 接続チェック
     XINPUT_STATE testState;
-    if (XInputGetState(playerIndex_, &testState) == ERROR_SUCCESS) {
+    if (XInputGetState(playerIndex_, &testState) == ERROR_SUCCESS)
+    {
         isConnected_ = true;
         state_ = testState;
         statePre_ = testState;
     }
 }
 
-void GamePad::Update() {
+void GamePad::Update()
+{
     // 前フレームの状態を保存
     statePre_ = state_;
 
@@ -36,13 +39,15 @@ void GamePad::Update() {
 
 // ===== ボタン入力 =====
 
-bool GamePad::IsPress(WORD button) const {
+bool GamePad::IsPress(WORD button) const
+{
     if (!isConnected_)
         return false;
     return (state_.Gamepad.wButtons & button) != 0;
 }
 
-bool GamePad::IsTrigger(WORD button) const {
+bool GamePad::IsTrigger(WORD button) const
+{
     if (!isConnected_)
         return false;
     bool currentPress = (state_.Gamepad.wButtons & button) != 0;
@@ -50,7 +55,8 @@ bool GamePad::IsTrigger(WORD button) const {
     return currentPress && !previousPress;
 }
 
-bool GamePad::IsRelease(WORD button) const {
+bool GamePad::IsRelease(WORD button) const
+{
     if (!isConnected_)
         return false;
     bool currentPress = (state_.Gamepad.wButtons & button) != 0;
@@ -60,25 +66,29 @@ bool GamePad::IsRelease(WORD button) const {
 
 // ===== スティック入力 =====
 
-float GamePad::GetLeftStickX() const {
+float GamePad::GetLeftStickX() const
+{
     if (!isConnected_)
         return 0.0f;
     return ApplyDeadZone(state_.Gamepad.sThumbLX, leftStickDeadZone_);
 }
 
-float GamePad::GetLeftStickY() const {
+float GamePad::GetLeftStickY() const
+{
     if (!isConnected_)
         return 0.0f;
     return ApplyDeadZone(state_.Gamepad.sThumbLY, leftStickDeadZone_);
 }
 
-float GamePad::GetRightStickX() const {
+float GamePad::GetRightStickX() const
+{
     if (!isConnected_)
         return 0.0f;
     return ApplyDeadZone(state_.Gamepad.sThumbRX, rightStickDeadZone_);
 }
 
-float GamePad::GetRightStickY() const {
+float GamePad::GetRightStickY() const
+{
     if (!isConnected_)
         return 0.0f;
     return ApplyDeadZone(state_.Gamepad.sThumbRY, rightStickDeadZone_);
@@ -86,31 +96,36 @@ float GamePad::GetRightStickY() const {
 
 // ===== トリガー入力 =====
 
-float GamePad::GetLeftTrigger() const {
+float GamePad::GetLeftTrigger() const
+{
     if (!isConnected_)
         return 0.0f;
     // トリガーは 0-255 の範囲
     BYTE trigger = state_.Gamepad.bLeftTrigger;
     // デッドゾーン適用 (XInputの標準値: 30)
-    if (trigger < XINPUT_GAMEPAD_TRIGGER_THRESHOLD) {
+    if (trigger < XINPUT_GAMEPAD_TRIGGER_THRESHOLD)
+    {
         return 0.0f;
     }
     return (trigger - XINPUT_GAMEPAD_TRIGGER_THRESHOLD) /
            static_cast<float>(255 - XINPUT_GAMEPAD_TRIGGER_THRESHOLD);
 }
 
-float GamePad::GetRightTrigger() const {
+float GamePad::GetRightTrigger() const
+{
     if (!isConnected_)
         return 0.0f;
     BYTE trigger = state_.Gamepad.bRightTrigger;
-    if (trigger < XINPUT_GAMEPAD_TRIGGER_THRESHOLD) {
+    if (trigger < XINPUT_GAMEPAD_TRIGGER_THRESHOLD)
+    {
         return 0.0f;
     }
     return (trigger - XINPUT_GAMEPAD_TRIGGER_THRESHOLD) /
            static_cast<float>(255 - XINPUT_GAMEPAD_TRIGGER_THRESHOLD);
 }
 
-bool GamePad::IsLeftTriggerTriggered(float threshold) const {
+bool GamePad::IsLeftTriggerTriggered(float threshold) const
+{
     if (!isConnected_)
         return false;
 
@@ -120,7 +135,8 @@ bool GamePad::IsLeftTriggerTriggered(float threshold) const {
     // 前フレームのトリガー値を計算
     BYTE triggerPre = statePre_.Gamepad.bLeftTrigger;
     float prevTrigger = 0.0f;
-    if (triggerPre >= XINPUT_GAMEPAD_TRIGGER_THRESHOLD) {
+    if (triggerPre >= XINPUT_GAMEPAD_TRIGGER_THRESHOLD)
+    {
         prevTrigger = (triggerPre - XINPUT_GAMEPAD_TRIGGER_THRESHOLD) /
                       static_cast<float>(255 - XINPUT_GAMEPAD_TRIGGER_THRESHOLD);
     }
@@ -129,7 +145,8 @@ bool GamePad::IsLeftTriggerTriggered(float threshold) const {
     return currentTrigger >= threshold && prevTrigger < threshold;
 }
 
-bool GamePad::IsRightTriggerTriggered(float threshold) const {
+bool GamePad::IsRightTriggerTriggered(float threshold) const
+{
     if (!isConnected_)
         return false;
 
@@ -139,7 +156,8 @@ bool GamePad::IsRightTriggerTriggered(float threshold) const {
     // 前フレームのトリガー値を計算
     BYTE triggerPre = statePre_.Gamepad.bRightTrigger;
     float prevTrigger = 0.0f;
-    if (triggerPre >= XINPUT_GAMEPAD_TRIGGER_THRESHOLD) {
+    if (triggerPre >= XINPUT_GAMEPAD_TRIGGER_THRESHOLD)
+    {
         prevTrigger = (triggerPre - XINPUT_GAMEPAD_TRIGGER_THRESHOLD) /
                       static_cast<float>(255 - XINPUT_GAMEPAD_TRIGGER_THRESHOLD);
     }
@@ -150,7 +168,8 @@ bool GamePad::IsRightTriggerTriggered(float threshold) const {
 
 // ===== 振動 =====
 
-void GamePad::SetVibration(WORD leftMotor, WORD rightMotor) {
+void GamePad::SetVibration(WORD leftMotor, WORD rightMotor)
+{
     if (!isConnected_)
         return;
 
@@ -160,29 +179,34 @@ void GamePad::SetVibration(WORD leftMotor, WORD rightMotor) {
     XInputSetState(playerIndex_, &vibration);
 }
 
-void GamePad::StopVibration() {
+void GamePad::StopVibration()
+{
     SetVibration(0, 0);
 }
 
 // ===== デッドゾーン設定 =====
 
-void GamePad::SetLeftStickDeadZone(float deadZone) {
+void GamePad::SetLeftStickDeadZone(float deadZone)
+{
     leftStickDeadZone_ = std::clamp(deadZone, 0.0f, 1.0f);
 }
 
-void GamePad::SetRightStickDeadZone(float deadZone) {
+void GamePad::SetRightStickDeadZone(float deadZone)
+{
     rightStickDeadZone_ = std::clamp(deadZone, 0.0f, 1.0f);
 }
 
 // ===== プライベート関数 =====
 
-float GamePad::ApplyDeadZone(SHORT value, float deadZone) const {
+float GamePad::ApplyDeadZone(SHORT value, float deadZone) const
+{
     // -32768 ~ 32767 の範囲を -1.0f ~ 1.0f に正規化
     float normalizedValue = value / 32767.0f;
 
     // デッドゾーン適用
     float absValue = std::abs(normalizedValue);
-    if (absValue < deadZone) {
+    if (absValue < deadZone)
+    {
         return 0.0f;
     }
 

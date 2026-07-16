@@ -1,23 +1,25 @@
 #include "SkyBox.h"
 #include "DirectXCommon.h"
-#include "Graphics/PipeLine/PipeLineManager.h"
-#include "Graphics/Srv/SrvManager.h"
-#include "Graphics/Texture/TextureManager.h"
-#include <Shadow/ShadowMap.h>
-#include <myMath.h>
+#include "graphics/pipeline/PipelineManager.h"
+#include "graphics/srv/SrvManager.h"
+#include "graphics/texture/TextureManager.h"
+#include <shadow/ShadowMap.h>
+#include <MyMath.h>
 
 namespace Hagine {
-void SkyBox::Finalize() {
+void SkyBox::Finalize()
+{
     vertexResource_.Reset();
     indexResource_.Reset();
     skyBoxResource_.Reset();
     cameraResource_.Reset();
 }
 
-void SkyBox::Initialize(std::string filePath) {
-    psoManager_ = PipeLineManager::GetInstance();
-    dxCommon_ = DirectXCommon::GetInstance();
-    srvManager_ = SrvManager::GetInstance();
+void SkyBox::Initialize(std::string filePath)
+{
+    pPsoManager_ = PipelineManager::GetInstance();
+    pDxCommon_ = DirectXCommon::GetInstance();
+    pSrvManager_ = SrvManager::GetInstance();
     CreateShape();
     CreateVertex();
     CreateIndex();
@@ -27,7 +29,8 @@ void SkyBox::Initialize(std::string filePath) {
     textureIndex_ = TextureManager::GetInstance()->GetTextureIndexByFilePath(filePath);
 }
 
-void SkyBox::Update(const ViewProjection &viewProjection) {
+void SkyBox::Update(const ViewProjection &viewProjection)
+{
     // カメラ位置を抽出
     Vector3 cameraPosition = viewProjection.translation_;
 
@@ -39,7 +42,7 @@ void SkyBox::Update(const ViewProjection &viewProjection) {
     Matrix4x4 scaleMatrix = MakeScaleMatrix({skyboxScale, skyboxScale, skyboxScale});
 
     // ワールド行列
-    skyBoxData_->worldMatrix = scaleMatrix * translationMatrix;
+    pSkyBoxData_->worldMatrix = scaleMatrix * translationMatrix;
 
     // カメラの位置を消したビュー行列を作る
     Matrix4x4 viewWithoutTranslation = viewProjection.matView_;
@@ -51,15 +54,17 @@ void SkyBox::Update(const ViewProjection &viewProjection) {
     Matrix4x4 viewProjectionMatrix = viewWithoutTranslation * viewProjection.matProjection_;
 
     // GPUに送信
-    cameraData_->viewProjection = viewProjectionMatrix;
-    cameraData_->worldPosition = cameraPosition;
+    pCameraData_->viewProjection = viewProjectionMatrix;
+    pCameraData_->worldPosition = cameraPosition;
 }
 
-void SkyBox::Draw(const ViewProjection &viewProjection) {
-    if (ShadowMap::GetInstance()->IsShadowPassActive()) return;
+void SkyBox::Draw(const ViewProjection &viewProjection)
+{
+    if (ShadowMap::GetInstance()->IsShadowPassActive())
+        return;
     Update(viewProjection);
-    ID3D12GraphicsCommandList *commandList = dxCommon_->GetCommandList().Get();
-    psoManager_->DrawCommonSetting(PipelineType::kSkybox);
+    ID3D12GraphicsCommandList *commandList = pDxCommon_->GetCommandList().Get();
+    pPsoManager_->DrawCommonSetting(PipelineType::Skybox);
 
     commandList->IASetVertexBuffers(0, 1, &vertexBufferView_);
     commandList->IASetIndexBuffer(&indexBufferView_);
@@ -69,12 +74,13 @@ void SkyBox::Draw(const ViewProjection &viewProjection) {
     // CameraData（ビュープロジェクション行列とカメラ位置）をb1に設定
     commandList->SetGraphicsRootConstantBufferView(1, cameraResource_->GetGPUVirtualAddress());
     // テクスチャをt0に設定
-    commandList->SetGraphicsRootDescriptorTable(2, srvManager_->GetGPUDescriptorHandle(textureIndex_));
+    commandList->SetGraphicsRootDescriptorTable(2, pSrvManager_->GetGPUDescriptorHandle(textureIndex_));
 
     commandList->DrawIndexedInstanced(UINT(indices_.size()), 1, 0, 0, 0);
 }
 
-void SkyBox::CreateShape() {
+void SkyBox::CreateShape()
+{
     // 形状を作成
     vertices_.resize(24);
     indices_.resize(36);
@@ -125,8 +131,9 @@ void SkyBox::CreateShape() {
         20, 21, 22, 22, 21, 23};
 }
 
-void SkyBox::CreateVertex() {
-    vertexResource_ = dxCommon_->CreateBufferResource(sizeof(SkyBoxVertexData3D) * vertices_.size());
+void SkyBox::CreateVertex()
+{
+    vertexResource_ = pDxCommon_->CreateBufferResource(sizeof(SkyBoxVertexData3D) * vertices_.size());
     // リソースの先頭のアドレスから使う
     vertexBufferView_.BufferLocation = vertexResource_->GetGPUVirtualAddress();
     // 使用するリソースのサイズは頂点6つ分のサイズ
@@ -135,35 +142,38 @@ void SkyBox::CreateVertex() {
     vertexBufferView_.StrideInBytes = sizeof(SkyBoxVertexData3D);
 
     // 頂点データの設定
-    vertexResource_->Map(0, nullptr, reinterpret_cast<void **>(&vertexData_));
+    vertexResource_->Map(0, nullptr, reinterpret_cast<void **>(&pVertexData_));
 
-    std::memcpy(vertexData_, vertices_.data(), sizeof(SkyBoxVertexData3D) * vertices_.size());
+    std::memcpy(pVertexData_, vertices_.data(), sizeof(SkyBoxVertexData3D) * vertices_.size());
 }
 
-void SkyBox::CreateIndex() {
-    indexResource_ = dxCommon_->CreateBufferResource(sizeof(uint32_t) * indices_.size());
+void SkyBox::CreateIndex()
+{
+    indexResource_ = pDxCommon_->CreateBufferResource(sizeof(uint32_t) * indices_.size());
     indexBufferView_.BufferLocation = indexResource_->GetGPUVirtualAddress();
     indexBufferView_.SizeInBytes = UINT(sizeof(uint32_t) * indices_.size());
     indexBufferView_.Format = DXGI_FORMAT_R32_UINT;
-    indexResource_->Map(0, nullptr, reinterpret_cast<void **>(&indexData_));
-    std::memcpy(indexData_, indices_.data(), sizeof(uint32_t) * indices_.size());
+    indexResource_->Map(0, nullptr, reinterpret_cast<void **>(&pIndexData_));
+    std::memcpy(pIndexData_, indices_.data(), sizeof(uint32_t) * indices_.size());
 }
 
-void SkyBox::CreateSkyBox() {
-    skyBoxResource_ = dxCommon_->CreateBufferResource(sizeof(SkyBoxDataForGPU));
-    skyBoxData_ = nullptr;
-    skyBoxResource_->Map(0, nullptr, reinterpret_cast<void **>(&skyBoxData_));
-    skyBoxData_->worldMatrix = MakeIdentity4x4();
+void SkyBox::CreateSkyBox()
+{
+    skyBoxResource_ = pDxCommon_->CreateBufferResource(sizeof(SkyBoxDataForGPU));
+    pSkyBoxData_ = nullptr;
+    skyBoxResource_->Map(0, nullptr, reinterpret_cast<void **>(&pSkyBoxData_));
+    pSkyBoxData_->worldMatrix = MakeIdentity4x4();
 }
 
-void SkyBox::CreateCamera() {
-    cameraResource_ = dxCommon_->CreateBufferResource(sizeof(CameraDataForGPU));
-    cameraData_ = nullptr;
-    cameraResource_->Map(0, nullptr, reinterpret_cast<void **>(&cameraData_));
+void SkyBox::CreateCamera()
+{
+    cameraResource_ = pDxCommon_->CreateBufferResource(sizeof(CameraDataForGPU));
+    pCameraData_ = nullptr;
+    cameraResource_->Map(0, nullptr, reinterpret_cast<void **>(&pCameraData_));
 
     // 初期値を設定
-    cameraData_->viewProjection = MakeIdentity4x4();
-    cameraData_->worldPosition = {0.0f, 0.0f, 0.0f};
-    cameraData_->padding = 0.0f;
+    pCameraData_->viewProjection = MakeIdentity4x4();
+    pCameraData_->worldPosition = {0.0f, 0.0f, 0.0f};
+    pCameraData_->padding = 0.0f;
 }
 } // namespace Hagine

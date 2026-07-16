@@ -8,7 +8,8 @@
 /// XInput専用のラッパークラス
 /// </summary>
 namespace Hagine {
-class GamePad {
+class GamePad
+{
   private:
     XINPUT_STATE state_;    // 現在の状態
     XINPUT_STATE statePre_; // 前フレームの状態

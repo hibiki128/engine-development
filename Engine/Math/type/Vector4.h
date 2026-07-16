@@ -8,14 +8,15 @@
 /// 4次元ベクトル
 /// </summary>
 namespace Hagine {
-struct Vector4 final {
+struct Vector4 final
+{
     float x;
     float y;
     float z;
     float w;
 
     // コンストラクタ
-    Vector4(float _x = 0.0f, float _y = 0.0f, float _z = 0.0f, float _w = 0.0f) : x(_x), y(_y), z(_z), w(_w) {}
+    constexpr Vector4(float x = 0.0f, float y = 0.0f, float z = 0.0f, float w = 0.0f) : x(x), y(y), z(z), w(w) {}
 
     // 符号反転
     Vector4 operator-() const { return Vector4(-x, -y, -z, -w); }
@@ -43,7 +44,8 @@ struct Vector4 final {
     friend Vector4 operator/(const int &scalar, const Vector4 &vec) { return Vector4(scalar / vec.x, scalar / vec.y, scalar / vec.z, scalar / vec.w); }
 
     // +=
-    Vector4 &operator+=(const Vector4 &other) {
+    Vector4 &operator+=(const Vector4 &other)
+    {
         x += other.x;
         y += other.y;
         z += other.z;
@@ -51,7 +53,8 @@ struct Vector4 final {
         return *this;
     }
     // -=
-    Vector4 &operator-=(const Vector4 &other) {
+    Vector4 &operator-=(const Vector4 &other)
+    {
         x -= other.x;
         y -= other.y;
         z -= other.z;
@@ -59,7 +62,8 @@ struct Vector4 final {
         return *this;
     }
     // *=
-    Vector4 &operator*=(const Vector4 &other) {
+    Vector4 &operator*=(const Vector4 &other)
+    {
         x *= other.x;
         y *= other.y;
         z *= other.z;
@@ -67,7 +71,8 @@ struct Vector4 final {
         return *this;
     }
     // /=
-    Vector4 &operator/=(const Vector4 &other) {
+    Vector4 &operator/=(const Vector4 &other)
+    {
         x /= other.x;
         y /= other.y;
         z /= other.z;
@@ -75,7 +80,8 @@ struct Vector4 final {
         return *this;
     }
     // スカラー倍の+=
-    Vector4 &operator+=(const float &s) {
+    Vector4 &operator+=(const float &s)
+    {
         x += s;
         y += s;
         z += s;
@@ -83,7 +89,8 @@ struct Vector4 final {
         return *this;
     }
     // スカラー倍の-=
-    Vector4 &operator-=(const float &s) {
+    Vector4 &operator-=(const float &s)
+    {
         x -= s;
         y -= s;
         z -= s;
@@ -91,7 +98,8 @@ struct Vector4 final {
         return *this;
     }
     // スカラー倍の*=
-    Vector4 &operator*=(const float &s) {
+    Vector4 &operator*=(const float &s)
+    {
         x *= s;
         y *= s;
         z *= s;
@@ -99,7 +107,8 @@ struct Vector4 final {
         return *this;
     }
     // スカラー倍の/=
-    Vector4 &operator/=(const float &s) {
+    Vector4 &operator/=(const float &s)
+    {
         x /= s;
         y /= s;
         z /= s;
@@ -120,16 +129,19 @@ struct Vector4 final {
     float LengthSq() const { return x * x + y * y + z * z + w * w; }
 
     // ベクトルを正規化（単位ベクトルにする）
-    Vector4 Normalize() const {
+    Vector4 Normalize() const
+    {
         float len = Length();
-        if (len == 0.0f) {
+        if (len == 0.0f)
+        {
             return Vector4(0.0f, 0.0f, 0.0f, 0.0f);
         }
         return Vector4(x / len, y / len, z / len, w / len);
     }
 
     // ベクトルの内積
-    float Dot(const Vector4 &other) const {
+    float Dot(const Vector4 &other) const
+    {
         return x * other.x + y * other.y + z * other.z + w * other.w;
     }
 #ifdef _DEBUG

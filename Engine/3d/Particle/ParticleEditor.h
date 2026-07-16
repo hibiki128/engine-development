@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Camera/ViewProjection/ViewProjection.h"
+#include "camera/projection/ViewProjection.h"
 #include "ParticleEmitter.h"
 #include "ParticleGroup.h"
 #include "ParticleGroupManager.h"
@@ -11,6 +11,9 @@
 #include <vector>
 
 #include "ParticleStruct.h"
+#ifdef _DEBUG
+#include <edit/undo/ImGuiUndoTracker.h>
+#endif // _DEBUG
 
 namespace Hagine {
 
@@ -18,7 +21,8 @@ namespace Hagine {
 /// パーティクルのエミッター・グループをImGuiで編集するエディタ（シングルトン）
 /// エミッターの追加・描画・統計表示・テンプレート生成・保存/読み込みを行う
 /// </summary>
-class ParticleEditor {
+class ParticleEditor
+{
   private:
     /// ===================================================
     /// private method / variants
@@ -37,7 +41,7 @@ class ParticleEditor {
     std::string selectedEmitterName_; // 選択されたエミッターの名前
 
     // パーティクルグループマネージャーポインタ
-    ParticleGroupManager *particleGroupManager_ = nullptr;
+    ParticleGroupManager *pParticleGroupManager_ = nullptr;
 
     std::unordered_map<std::string, ParticleStats> currentFrameStats_; // 現在フレームの統計
     std::unordered_map<std::string, ParticleStats> displayStats_;      // 表示用の統計（前フレーム確定分）
@@ -87,7 +91,8 @@ class ParticleEditor {
 
     /// <summary>インスタンスを取得</summary>
     /// <returns>ParticleEditor*: シングルトンインスタンス</returns>
-    static ParticleEditor *GetInstance() {
+    static ParticleEditor *GetInstance()
+    {
         static ParticleEditor instance;
         return &instance;
     }
@@ -168,5 +173,25 @@ class ParticleEditor {
     /// <param name="name">エミッター名</param>
     /// <returns>ParticleEmitter*</returns>
     ParticleEmitter *GetEmitterByName(const std::string &name);
+
+#ifdef _DEBUG
+    /// <summary>
+    /// Undo用: 全エミッターの編集可能状態をJSON化する（トップレベル = エミッター名 → 状態）
+    /// </summary>
+    /// <returns>nlohmann::json: 状態JSON</returns>
+    nlohmann::json CaptureUndoState();
+
+    /// <summary>
+    /// Undo用: CaptureUndoState で得た状態（差分可）を適用する
+    /// 既存エミッターへの反映のみ行い、エミッターの追加・削除自体は対象外
+    /// </summary>
+    /// <param name="state">適用する状態JSON</param>
+    void RestoreUndoState(const nlohmann::json &state);
+
+  private:
+    ImGuiUndoTracker undoTracker_; // パーティクルエディタUIのUndoトラッカー
+
+  public:
+#endif // _DEBUG
 };
 } // namespace Hagine

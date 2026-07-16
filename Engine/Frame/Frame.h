@@ -5,7 +5,8 @@
 /// フレームクラス
 /// </summary>
 namespace Hagine {
-class Frame {
+class Frame
+{
   private:
     /// ========================================================
     /// 静的メンバ変数
@@ -16,7 +17,7 @@ class Frame {
     static int frameCount_;  ///< フレームカウント
     static float deltaTime_; ///< 前回のフレームからの経過時間
     static float fps_;       ///< FPS
-  
+
   public:
     /// ========================================================
     /// 静的メンバ関数

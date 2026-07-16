@@ -1,11 +1,12 @@
 #include "OBBCollider.h"
 #include "line/DrawLine3D.h"
-#include "myMath.h"
+#include "MyMath.h"
 #include <array>
 #include <numbers>
 
 namespace Hagine {
-void OBBCollider::UpdateWorldTransform() {
+void OBBCollider::UpdateWorldTransform()
+{
     cachedOBB_.rotationCenter = GetCenterPosition() + rotationOffset_;
 
     Vector3 anchorOffset = Vector3(
@@ -20,7 +21,8 @@ void OBBCollider::UpdateWorldTransform() {
     UpdateOBBScaleCenter();
 }
 
-void OBBCollider::MakeOBBOrientations(const Quaternion &rotation) {
+void OBBCollider::MakeOBBOrientations(const Quaternion &rotation)
+{
     Matrix4x4 rotateMatrix = QuaternionToMatrix4x4(rotation);
 
     cachedOBB_.orientations[0] = Vector3(rotateMatrix.m[0][0], rotateMatrix.m[0][1], rotateMatrix.m[0][2]);
@@ -28,7 +30,8 @@ void OBBCollider::MakeOBBOrientations(const Quaternion &rotation) {
     cachedOBB_.orientations[2] = Vector3(rotateMatrix.m[2][0], rotateMatrix.m[2][1], rotateMatrix.m[2][2]);
 }
 
-void OBBCollider::UpdateOBBScaleCenter() {
+void OBBCollider::UpdateOBBScaleCenter()
+{
     cachedOBB_.scaleCenterRotated =
         cachedOBB_.orientations[0] * (cachedOBB_.scaleCenter.x - cachedOBB_.rotationCenter.x) +
         cachedOBB_.orientations[1] * (cachedOBB_.scaleCenter.y - cachedOBB_.rotationCenter.y) +
@@ -36,15 +39,18 @@ void OBBCollider::UpdateOBBScaleCenter() {
         cachedOBB_.rotationCenter;
 }
 
-void OBBCollider::DebugDraw(const ViewProjection &viewProjection) {
-    if (!isVisible_ || !isEnabled_) {
+void OBBCollider::DebugDraw(const ViewProjection &viewProjection)
+{
+    if (!isVisible_ || !isEnabled_)
+    {
         return;
     }
 
     std::array<Vector3, 8> vertices;
     Vector3 halfSize = cachedOBB_.size;
 
-    for (int i = 0; i < 8; i++) {
+    for (int i = 0; i < 8; i++)
+    {
         Vector3 localPosition = Vector3(
             (i & 1) ? halfSize.x : -halfSize.x,
             (i & 2) ? halfSize.y : -halfSize.y,
@@ -65,23 +71,27 @@ void OBBCollider::DebugDraw(const ViewProjection &viewProjection) {
         std::make_pair(4, 5), std::make_pair(5, 7), std::make_pair(7, 6), std::make_pair(6, 4),
         std::make_pair(0, 4), std::make_pair(1, 5), std::make_pair(2, 6), std::make_pair(3, 7)};
 
-    for (const auto &edge : edges) {
+    for (const auto &edge : edges)
+    {
         DrawLine3D::GetInstance()->SetPoints(vertices[edge.first], vertices[edge.second], color_);
     }
 
     DrawRotationCenter(viewProjection);
 }
 
-void OBBCollider::DrawRotationCenter(const ViewProjection &viewProjection) {
+void OBBCollider::DrawRotationCenter(const ViewProjection &viewProjection)
+{
     float radius = 0.1f;
     const uint32_t kSubdivision = 10;
     const float kLonEvery = 2.0f * std::numbers::pi_v<float> / kSubdivision;
     const float kLatEvery = std::numbers::pi_v<float> / kSubdivision;
 
-    for (uint32_t latIndex = 0; latIndex < kSubdivision; ++latIndex) {
+    for (uint32_t latIndex = 0; latIndex < kSubdivision; ++latIndex)
+    {
         float lat = -std::numbers::pi_v<float> / 2.0f + kLatEvery * latIndex;
 
-        for (uint32_t lonIndex = 0; lonIndex < kSubdivision; ++lonIndex) {
+        for (uint32_t lonIndex = 0; lonIndex < kSubdivision; ++lonIndex)
+        {
             float lon = lonIndex * kLonEvery;
 
             Vector3 start = {
@@ -105,7 +115,8 @@ void OBBCollider::DrawRotationCenter(const ViewProjection &viewProjection) {
     }
 }
 
-void OBBCollider::SaveToJson() {
+void OBBCollider::SaveToJson()
+{
     ColliderBase::SaveToJson();
 
     dataHandler_->Save("size", size_);
@@ -114,7 +125,8 @@ void OBBCollider::SaveToJson() {
     dataHandler_->Save("anchorPoint", anchorPoint_);
 }
 
-void OBBCollider::LoadFromJson() {
+void OBBCollider::LoadFromJson()
+{
     ColliderBase::LoadFromJson();
 
     size_ = dataHandler_->Load<Vector3>("size", {1.0f, 1.0f, 1.0f});

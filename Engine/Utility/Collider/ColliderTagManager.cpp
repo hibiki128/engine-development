@@ -2,11 +2,12 @@
 
 #ifdef _DEBUG
 #include <imgui.h>
-#include "Utility/Debug/ImGui/ImGuiNotification.h"
-#include "Utility/Debug/ImGui/Debugui_improved.h"
+#include "utility/debug/imgui/ImGuiNotification.h"
+#include "utility/debug/imgui/DebugUIHelper.h"
 
 namespace Hagine {
-void ColliderTagManager::ImGuiTagManager() {
+void ColliderTagManager::ImGuiTagManager()
+{
 
     SectionHeader("[ 登録済みタグ ]", DebugTheme::kAccentBlue);
 
@@ -21,11 +22,13 @@ void ColliderTagManager::ImGuiTagManager() {
 
     if (ImGui::BeginTable("##TagTable", 2,
                           ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH |
-                              ImGuiTableFlags_SizingStretchProp)) {
+                              ImGuiTableFlags_SizingStretchProp))
+    {
         ImGui::TableSetupColumn("タグ", ImGuiTableColumnFlags_WidthStretch);
         ImGui::TableSetupColumn("操作", ImGuiTableColumnFlags_WidthFixed, 72.0f);
 
-        for (const auto &tag : tagList) {
+        for (const auto &tag : tagList)
+        {
             ImGui::TableNextRow();
 
             ImGui::TableNextColumn();
@@ -33,16 +36,20 @@ void ColliderTagManager::ImGuiTagManager() {
             ImGui::BulletText("%s", tag.c_str());
 
             ImGui::TableNextColumn();
-            if (isDefault(tag)) {
+            if (isDefault(tag))
+            {
                 ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kTextDim);
                 ImGui::TextUnformatted("既定");
                 ImGui::PopStyleColor();
                 ImGui::SetItemTooltip("既定タグは削除できません");
-            } else {
+            }
+            else
+            {
                 ImGui::PushID(tag.c_str());
                 ImGui::PushStyleColor(ImGuiCol_Button, DebugTheme::kBgRed);
                 ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.80f, 0.46f, 0.46f, 0.40f));
-                if (ImGui::SmallButton("削除")) {
+                if (ImGui::SmallButton("削除"))
+                {
                     RemoveTag(tag);
                     ImGuiNotification::Post("タグを削除しました: " + tag, {0.82f, 0.58f, 0.36f, 1.0f});
                 }
@@ -66,13 +73,19 @@ void ColliderTagManager::ImGuiTagManager() {
     bool clicked = ImGui::Button("追加", ImVec2(78.0f, 0.0f));
     ImGui::PopStyleColor(2);
 
-    if (entered || clicked) {
+    if (entered || clicked)
+    {
         std::string newTag = newTagBuffer;
-        if (newTag.empty()) {
+        if (newTag.empty())
+        {
             ImGuiNotification::Post("タグ名を入力してください", {0.82f, 0.58f, 0.36f, 1.0f});
-        } else if (HasTag(newTag)) {
+        }
+        else if (HasTag(newTag))
+        {
             ImGuiNotification::Post("既に存在するタグです: " + newTag, {0.82f, 0.58f, 0.36f, 1.0f});
-        } else {
+        }
+        else
+        {
             AddTag(newTag);
             ImGuiNotification::Post("タグを追加しました: " + newTag, {0.45f, 0.68f, 0.52f, 1.0f});
             newTagBuffer[0] = '\0';

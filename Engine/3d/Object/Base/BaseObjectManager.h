@@ -1,13 +1,17 @@
 #pragma once
-#include "Object/Base/BaseObject.h"
+#include "object/base/BaseObject.h"
 #include "unordered_map"
+#ifdef _DEBUG
+#include <edit/undo/ImGuiUndoTracker.h>
+#endif // _DEBUG
 namespace Hagine {
 
 /// <summary>
 /// シーン上の全BaseObjectを一元管理するシングルトン
 /// 生成・削除・更新・描画、親子付け、シーン/オブジェクトの保存・読み込みを行う
 /// </summary>
-class BaseObjectManager {
+class BaseObjectManager
+{
   private:
     /// ===================================================
     /// private method
@@ -34,7 +38,8 @@ class BaseObjectManager {
     /// インスタンスを取得
     /// </summary>
     /// <returns>BaseObjectManager*: シングルトンインスタンス</returns>
-    static BaseObjectManager* GetInstance() {
+    static BaseObjectManager *GetInstance()
+    {
         static BaseObjectManager instance;
         return &instance;
     }
@@ -65,13 +70,13 @@ class BaseObjectManager {
     /// 非所有でオブジェクトを登録（シーンが unique_ptr を保持したまま登録する）
     /// </summary>
     /// <param name="obj">登録するオブジェクト</param>
-    void RegisterExternal(BaseObject* obj);
+    void RegisterExternal(BaseObject *obj);
 
     /// <summary>
     /// 非所有登録したオブジェクトを登録解除
     /// </summary>
     /// <param name="obj">解除するオブジェクト</param>
-    void UnregisterExternal(BaseObject* obj);
+    void UnregisterExternal(BaseObject *obj);
 
     /// <summary>
     /// 全オブジェクトの更新
@@ -198,6 +203,23 @@ class BaseObjectManager {
     /// <returns>名前 → オブジェクトのマップ（読み取り専用）</returns>
     const std::unordered_map<std::string, BaseObject *> &GetObjects() const { return objects_; }
 
+#ifdef _DEBUG
+    /// <summary>
+    /// Undo用: 所有オブジェクトの編集可能状態をJSON化する（トップレベル = 名前 → 状態）
+    /// 対象は所有オブジェクトのみ（シーン所有のゲームエンティティはゲームロジックが
+    /// 毎フレーム書き換えるため追跡しない）
+    /// </summary>
+    /// <returns>nlohmann::json: 状態JSON</returns>
+    nlohmann::json CaptureUndoState();
+
+    /// <summary>
+    /// Undo用: CaptureUndoState で得た状態（差分可）を適用する
+    /// null のキーはオブジェクト削除、存在しない名前は再生成として扱う
+    /// </summary>
+    /// <param name="state">適用する状態JSON</param>
+    void RestoreUndoState(const nlohmann::json &state);
+#endif // _DEBUG
+
   private:
     /// ===================================================
     /// private method（各機能の個別描画・内部処理）
@@ -258,13 +280,13 @@ class BaseObjectManager {
 
   private:
     /// ===================================================
-    /// private variants
+    /// private variables
     /// ===================================================
 
     // LoadAll/CreateObject が所有するオブジェクト
     std::unordered_map<std::string, std::unique_ptr<BaseObject>> ownedObjects_;
     // Draw/Update/GetObjectByName で使う統合ビュー（所有・外部両方）
-    std::unordered_map<std::string, BaseObject*> objects_;
+    std::unordered_map<std::string, BaseObject *> objects_;
 
     std::string sceneName_ = "TitleScene"; // 現在のシーン名
     std::string objectName_;               // 入力中のオブジェクト名
@@ -277,5 +299,8 @@ class BaseObjectManager {
     bool showObjectCreationModal_ = false; // オブジェクト生成モーダル表示フラグ
     bool showObjectLoadModal_ = false;     // オブジェクト読み込みモーダル表示フラグ
     std::string selectedJsonPath_;         // 選択中のJsonパス
+#ifdef _DEBUG
+    ImGuiUndoTracker undoTracker_; // オブジェクト編集のUndoトラッカー
+#endif                             // _DEBUG
 };
 } // namespace Hagine

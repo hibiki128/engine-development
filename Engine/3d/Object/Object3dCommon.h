@@ -1,8 +1,9 @@
 #pragma once
-#include "Graphics/PipeLine/ComputePipeLineManager.h"
-#include "Graphics/PipeLine/PipeLineManager.h"
+#include "graphics/pipeline/ComputePipelineManager.h"
+#include "graphics/pipeline/PipelineManager.h"
 namespace Hagine {
-class Object3dCommon {
+class Object3dCommon
+{
   public: // メンバ関数
     /// <summary>
     ///  初期化
@@ -30,7 +31,7 @@ class Object3dCommon {
     void SetBlendMode(BlendMode blendMode);
 
   private:
-    PipeLineManager *psoManager_ = nullptr;
-    ComputePipeLineManager *computePsoManager_ = nullptr;
+    PipelineManager *pPsoManager_ = nullptr;
+    ComputePipelineManager *pComputePsoManager_ = nullptr;
 };
 } // namespace Hagine

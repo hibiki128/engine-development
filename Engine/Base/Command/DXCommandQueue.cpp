@@ -4,15 +4,18 @@
 
 namespace Hagine {
 
-DXCommandQueue::~DXCommandQueue() {
+DXCommandQueue::~DXCommandQueue()
+{
     // フェンスイベントハンドルを閉じる
-    if (fenceEvent_) {
+    if (fenceEvent_)
+    {
         CloseHandle(fenceEvent_);
         fenceEvent_ = nullptr;
     }
 }
 
-void DXCommandQueue::Initialize(DXDevice *device, D3D12_COMMAND_LIST_TYPE type) {
+void DXCommandQueue::Initialize(DXDevice *device, D3D12_COMMAND_LIST_TYPE type)
+{
     HRESULT hr;
 
     // コマンドキューを生成する
@@ -32,31 +35,38 @@ void DXCommandQueue::Initialize(DXDevice *device, D3D12_COMMAND_LIST_TYPE type) 
     assert(fenceEvent_ != nullptr);
 }
 
-void DXCommandQueue::Execute(ID3D12CommandList *commandList) {
+void DXCommandQueue::Execute(ID3D12CommandList *commandList)
+{
     ID3D12CommandList *lists[] = {commandList};
     queue_->ExecuteCommandLists(1, lists);
 }
 
-UINT64 DXCommandQueue::Signal() {
+UINT64 DXCommandQueue::Signal()
+{
     fenceCounter_++;
     queue_->Signal(fence_.Get(), fenceCounter_);
     return fenceCounter_;
 }
 
-void DXCommandQueue::WaitForFenceCPU(UINT64 value) {
-    if (fence_->GetCompletedValue() < value) {
+void DXCommandQueue::WaitForFenceCPU(UINT64 value)
+{
+    if (fence_->GetCompletedValue() < value)
+    {
         fence_->SetEventOnCompletion(value, fenceEvent_);
         WaitForSingleObject(fenceEvent_, INFINITE);
     }
 }
 
-void DXCommandQueue::WaitOnGPU(const DXCommandQueue &other) {
+void DXCommandQueue::WaitOnGPU(const DXCommandQueue &other)
+{
     // GPU側で相手キューの最終シグナル完了を待つ（CPUはブロックしない）
     queue_->Wait(other.GetFence(), other.GetLastSignaledValue());
 }
 
-void DXCommandQueue::Flush() {
-    if (fenceCounter_ == 0 || !fence_) {
+void DXCommandQueue::Flush()
+{
+    if (fenceCounter_ == 0 || !fence_)
+    {
         return;
     }
     WaitForFenceCPU(fenceCounter_);

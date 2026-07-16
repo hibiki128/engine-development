@@ -1,104 +1,118 @@
-#include "ComputePipeLineManager.h"
-#include <Debug/Log/Logger.h>
+#include "ComputePipelineManager.h"
+#include <debug/log/Logger.h>
 
 namespace Hagine {
-void ComputePipeLineManager::Finalize() {
+void ComputePipelineManager::Finalize()
+{
     pipelines_.clear();
     rootSignatures_.clear();
 }
 
-void ComputePipeLineManager::Initialize(DirectXCommon *dxCommon) {
-    dxCommon_ = dxCommon;
+void ComputePipelineManager::Initialize(DirectXCommon *dxCommon)
+{
+    pDxCommon_ = dxCommon;
 
     CreateAllPipelines();
 }
 
-Microsoft::WRL::ComPtr<ID3D12PipelineState> ComputePipeLineManager::GetPipeline(ComputePipelineType type, BlendMode blendMode, ShaderMode shaderMode) {
+Microsoft::WRL::ComPtr<ID3D12PipelineState> ComputePipelineManager::GetPipeline(ComputePipelineType type, BlendMode blendMode, ShaderMode shaderMode)
+{
     std::string key = MakePipelineKey(type, blendMode, shaderMode);
 
-    if (pipelines_.find(key) == pipelines_.end()) {
+    if (pipelines_.find(key) == pipelines_.end())
+    {
         assert(false && "指定されたパイプラインが存在しません");
-        return pipelines_[MakePipelineKey(ComputePipelineType::kSkinning, BlendMode::kNormal, ShaderMode::kNone)];
+        return pipelines_[MakePipelineKey(ComputePipelineType::Skinning, BlendMode::Normal, ShaderMode::None)];
     }
 
     return pipelines_[key];
 }
 
-Microsoft::WRL::ComPtr<ID3D12RootSignature> ComputePipeLineManager::GetRootSignature(ComputePipelineType type, ShaderMode shaderMode) {
+Microsoft::WRL::ComPtr<ID3D12RootSignature> ComputePipelineManager::GetRootSignature(ComputePipelineType type, ShaderMode shaderMode)
+{
     std::string key = MakeRootSignatureKey(type, shaderMode);
 
-    if (rootSignatures_.find(key) == rootSignatures_.end()) {
+    if (rootSignatures_.find(key) == rootSignatures_.end())
+    {
         assert(false && "指定されたルートシグネチャが存在しません");
-        return rootSignatures_[MakeRootSignatureKey(ComputePipelineType::kSkinning, ShaderMode::kNone)];
+        return rootSignatures_[MakeRootSignatureKey(ComputePipelineType::Skinning, ShaderMode::None)];
     }
 
     return rootSignatures_[key];
 }
 
-void ComputePipeLineManager::DrawCommonSetting(ComputePipelineType type, BlendMode blendMode, ShaderMode shaderMode, ID3D12GraphicsCommandList *cmdList) {
+void ComputePipelineManager::DrawCommonSetting(ComputePipelineType type, BlendMode blendMode, ShaderMode shaderMode, ID3D12GraphicsCommandList *cmdList)
+{
     auto pipeline = GetPipeline(type, blendMode, shaderMode);
     auto rootSignature = GetRootSignature(type, shaderMode);
 
-    ID3D12GraphicsCommandList *commandList = cmdList ? cmdList : dxCommon_->GetCommandList().Get();
+    ID3D12GraphicsCommandList *commandList = cmdList ? cmdList : pDxCommon_->GetCommandList().Get();
     commandList->SetPipelineState(pipeline.Get());
     commandList->SetComputeRootSignature(rootSignature.Get());
 }
 
-void ComputePipeLineManager::CreateSkinningPipelines() {
+void ComputePipelineManager::CreateSkinningPipelines()
+{
     auto rootSignature = CreateSkinningRootSignature();
-    rootSignatures_[MakeRootSignatureKey(ComputePipelineType::kSkinning, ShaderMode::kNone)] = rootSignature;
+    rootSignatures_[MakeRootSignatureKey(ComputePipelineType::Skinning, ShaderMode::None)] = rootSignature;
 
-    auto pipeline = CreateSkinningGraphicsPipeLine(rootSignature);
-    pipelines_[MakePipelineKey(ComputePipelineType::kSkinning, BlendMode::kNormal, ShaderMode::kNone)] = pipeline;
+    auto pipeline = CreateSkinningGraphicsPipeline(rootSignature);
+    pipelines_[MakePipelineKey(ComputePipelineType::Skinning, BlendMode::Normal, ShaderMode::None)] = pipeline;
 }
 
-void ComputePipeLineManager::CreateInitParticlePipelines() {
+void ComputePipelineManager::CreateInitParticlePipelines()
+{
     auto rootSignature = CreateInitParticleRootSignature();
-    rootSignatures_[MakeRootSignatureKey(ComputePipelineType::kInitParticle, ShaderMode::kNone)] = rootSignature;
+    rootSignatures_[MakeRootSignatureKey(ComputePipelineType::InitParticle, ShaderMode::None)] = rootSignature;
 
-    auto pipeline = CreateInitParticleGraphicsPipeLine(rootSignature);
-    pipelines_[MakePipelineKey(ComputePipelineType::kInitParticle, BlendMode::kNormal, ShaderMode::kNone)] = pipeline;
+    auto pipeline = CreateInitParticleGraphicsPipeline(rootSignature);
+    pipelines_[MakePipelineKey(ComputePipelineType::InitParticle, BlendMode::Normal, ShaderMode::None)] = pipeline;
 }
 
-void ComputePipeLineManager::CreateEmitterPipelines() {
+void ComputePipelineManager::CreateEmitterPipelines()
+{
     auto rootSignature = CreateEmitterRootSignature();
-    rootSignatures_[MakeRootSignatureKey(ComputePipelineType::kEmitter, ShaderMode::kNone)] = rootSignature;
+    rootSignatures_[MakeRootSignatureKey(ComputePipelineType::Emitter, ShaderMode::None)] = rootSignature;
 
-    auto pipeline = CreateEmitterGraphicsPipeLine(rootSignature);
-    pipelines_[MakePipelineKey(ComputePipelineType::kEmitter, BlendMode::kNormal, ShaderMode::kNone)] = pipeline;
+    auto pipeline = CreateEmitterGraphicsPipeline(rootSignature);
+    pipelines_[MakePipelineKey(ComputePipelineType::Emitter, BlendMode::Normal, ShaderMode::None)] = pipeline;
 }
 
-void ComputePipeLineManager::CreateUpdateEmitterPipelines() {
+void ComputePipelineManager::CreateUpdateEmitterPipelines()
+{
     auto rootSignature = CreateUpdateEmitterRootSignature();
-    rootSignatures_[MakeRootSignatureKey(ComputePipelineType::kUpdateEmitter, ShaderMode::kNone)] = rootSignature;
+    rootSignatures_[MakeRootSignatureKey(ComputePipelineType::UpdateEmitter, ShaderMode::None)] = rootSignature;
 
-    auto pipeline = CreateUpdateEmitterGraphicsPipeLine(rootSignature);
-    pipelines_[MakePipelineKey(ComputePipelineType::kUpdateEmitter, BlendMode::kNormal, ShaderMode::kNone)] = pipeline;
+    auto pipeline = CreateUpdateEmitterGraphicsPipeline(rootSignature);
+    pipelines_[MakePipelineKey(ComputePipelineType::UpdateEmitter, BlendMode::Normal, ShaderMode::None)] = pipeline;
 
     // 演出なし専用の軽量 Update。シェーダは触るレジスタが部分集合なので
     // ルートシグネチャはフル版と同一オブジェクトを共有する（両キーへ登録）。
-    rootSignatures_[MakeRootSignatureKey(ComputePipelineType::kUpdateEmitterLite, ShaderMode::kNone)] = rootSignature;
-    auto litePipeline = CreateUpdateEmitterLiteGraphicsPipeLine(rootSignature);
-    pipelines_[MakePipelineKey(ComputePipelineType::kUpdateEmitterLite, BlendMode::kNormal, ShaderMode::kNone)] = litePipeline;
+    rootSignatures_[MakeRootSignatureKey(ComputePipelineType::UpdateEmitterLite, ShaderMode::None)] = rootSignature;
+    auto litePipeline = CreateUpdateEmitterLiteGraphicsPipeline(rootSignature);
+    pipelines_[MakePipelineKey(ComputePipelineType::UpdateEmitterLite, BlendMode::Normal, ShaderMode::None)] = litePipeline;
 }
 
-void ComputePipeLineManager::CreateCountPipelines() {
+void ComputePipelineManager::CreateCountPipelines()
+{
     auto rootSignature = CreateCountRootSignature();
-    rootSignatures_[MakeRootSignatureKey(ComputePipelineType::kCount, ShaderMode::kNone)] = rootSignature;
+    rootSignatures_[MakeRootSignatureKey(ComputePipelineType::Count, ShaderMode::None)] = rootSignature;
 
-    auto pipeline = CreateCountGraphicsPipeLine(rootSignature);
-    pipelines_[MakePipelineKey(ComputePipelineType::kCount, BlendMode::kNormal, ShaderMode::kNone)] = pipeline;
+    auto pipeline = CreateCountGraphicsPipeline(rootSignature);
+    pipelines_[MakePipelineKey(ComputePipelineType::Count, BlendMode::Normal, ShaderMode::None)] = pipeline;
 }
 
-void ComputePipeLineManager::CreateResetArgsPipelines() {
+void ComputePipelineManager::CreateResetArgsPipelines()
+{
     auto rootSignature = CreateResetArgsRootSignature();
-    rootSignatures_[MakeRootSignatureKey(ComputePipelineType::kResetArgs, ShaderMode::kNone)] = rootSignature;
+    rootSignatures_[MakeRootSignatureKey(ComputePipelineType::ResetArgs, ShaderMode::None)] = rootSignature;
 
-    auto pipeline = CreateResetArgsGraphicsPipeLine(rootSignature);
-    pipelines_[MakePipelineKey(ComputePipelineType::kResetArgs, BlendMode::kNormal, ShaderMode::kNone)] = pipeline;
+    auto pipeline = CreateResetArgsGraphicsPipeline(rootSignature);
+    pipelines_[MakePipelineKey(ComputePipelineType::ResetArgs, BlendMode::Normal, ShaderMode::None)] = pipeline;
 }
 
-void ComputePipeLineManager::CreateAllPipelines() {
+void ComputePipelineManager::CreateAllPipelines()
+{
     CreateSkinningPipelines();
     CreateInitParticlePipelines();
     CreateEmitterPipelines();
@@ -107,14 +121,16 @@ void ComputePipeLineManager::CreateAllPipelines() {
     CreateResetArgsPipelines();
 }
 
-std::string ComputePipeLineManager::MakePipelineKey(ComputePipelineType type, BlendMode blendMode, ShaderMode shaderMode) {
+std::string ComputePipelineManager::MakePipelineKey(ComputePipelineType type, BlendMode blendMode, ShaderMode shaderMode)
+{
     return std::format("Pipeline_{}_{}_{}",
                        static_cast<int>(type),
                        static_cast<int>(blendMode),
                        static_cast<int>(shaderMode));
 }
 
-std::string ComputePipeLineManager::MakeRootSignatureKey(ComputePipelineType type, ShaderMode shaderMode) {
+std::string ComputePipelineManager::MakeRootSignatureKey(ComputePipelineType type, ShaderMode shaderMode)
+{
     return std::format("RootSignature_{}_{}",
                        static_cast<int>(type),
                        static_cast<int>(shaderMode));
@@ -123,7 +139,8 @@ std::string ComputePipeLineManager::MakeRootSignatureKey(ComputePipelineType typ
 // =============================================
 // Skinning
 // =============================================
-Microsoft::WRL::ComPtr<ID3D12RootSignature> ComputePipeLineManager::CreateSkinningRootSignature() {
+Microsoft::WRL::ComPtr<ID3D12RootSignature> ComputePipelineManager::CreateSkinningRootSignature()
+{
     Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature;
     HRESULT hr;
 
@@ -198,21 +215,23 @@ Microsoft::WRL::ComPtr<ID3D12RootSignature> ComputePipeLineManager::CreateSkinni
     ID3DBlob *signatureBlob = nullptr;
     ID3DBlob *errorBlob = nullptr;
     hr = D3D12SerializeRootSignature(&descriptionRootSignature, D3D_ROOT_SIGNATURE_VERSION_1, &signatureBlob, &errorBlob);
-    if (FAILED(hr)) {
+    if (FAILED(hr))
+    {
         Logger::Log(reinterpret_cast<char *>(errorBlob->GetBufferPointer()));
         assert(false);
     }
-    hr = dxCommon_->GetDevice()->CreateRootSignature(0, signatureBlob->GetBufferPointer(),
+    hr = pDxCommon_->GetDevice()->CreateRootSignature(0, signatureBlob->GetBufferPointer(),
                                                      signatureBlob->GetBufferSize(), IID_PPV_ARGS(&rootSignature));
     assert(SUCCEEDED(hr));
     return rootSignature;
 }
 
-Microsoft::WRL::ComPtr<ID3D12PipelineState> ComputePipeLineManager::CreateSkinningGraphicsPipeLine(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature) {
+Microsoft::WRL::ComPtr<ID3D12PipelineState> ComputePipelineManager::CreateSkinningGraphicsPipeline(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature)
+{
     Microsoft::WRL::ComPtr<ID3D12PipelineState> graphicsPipelineState;
 
     IDxcBlob *computerShaderBlob = nullptr;
-    computerShaderBlob = dxCommon_->CompileShader(shaderPath + L"shaders/Skinning/Skinning.CS.hlsl", L"cs_6_0");
+    computerShaderBlob = pDxCommon_->CompileShader(L"./Engine/EngineAssets/shaders/Skinning/Skinning.CS.hlsl", L"cs_6_0");
     assert(computerShaderBlob != nullptr);
 
     D3D12_COMPUTE_PIPELINE_STATE_DESC computePipelineStateDesc = {};
@@ -221,7 +240,7 @@ Microsoft::WRL::ComPtr<ID3D12PipelineState> ComputePipeLineManager::CreateSkinni
         .BytecodeLength = computerShaderBlob->GetBufferSize(),
     };
     computePipelineStateDesc.pRootSignature = rootSignature.Get();
-    HRESULT hr = dxCommon_->GetDevice()->CreateComputePipelineState(&computePipelineStateDesc, IID_PPV_ARGS(&graphicsPipelineState));
+    HRESULT hr = pDxCommon_->GetDevice()->CreateComputePipelineState(&computePipelineStateDesc, IID_PPV_ARGS(&graphicsPipelineState));
     assert(SUCCEEDED(hr));
     return graphicsPipelineState;
 }
@@ -229,7 +248,8 @@ Microsoft::WRL::ComPtr<ID3D12PipelineState> ComputePipeLineManager::CreateSkinni
 // =============================================
 // InitParticle
 // =============================================
-Microsoft::WRL::ComPtr<ID3D12RootSignature> ComputePipeLineManager::CreateInitParticleRootSignature() {
+Microsoft::WRL::ComPtr<ID3D12RootSignature> ComputePipelineManager::CreateInitParticleRootSignature()
+{
     Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature;
     HRESULT hr;
 
@@ -294,21 +314,23 @@ Microsoft::WRL::ComPtr<ID3D12RootSignature> ComputePipeLineManager::CreateInitPa
     ID3DBlob *signatureBlob = nullptr;
     ID3DBlob *errorBlob = nullptr;
     hr = D3D12SerializeRootSignature(&descriptionRootSignature, D3D_ROOT_SIGNATURE_VERSION_1, &signatureBlob, &errorBlob);
-    if (FAILED(hr)) {
+    if (FAILED(hr))
+    {
         Logger::Log(reinterpret_cast<char *>(errorBlob->GetBufferPointer()));
         assert(false);
     }
-    hr = dxCommon_->GetDevice()->CreateRootSignature(0, signatureBlob->GetBufferPointer(),
+    hr = pDxCommon_->GetDevice()->CreateRootSignature(0, signatureBlob->GetBufferPointer(),
                                                      signatureBlob->GetBufferSize(), IID_PPV_ARGS(&rootSignature));
     assert(SUCCEEDED(hr));
     return rootSignature;
 }
 
-Microsoft::WRL::ComPtr<ID3D12PipelineState> ComputePipeLineManager::CreateInitParticleGraphicsPipeLine(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature) {
+Microsoft::WRL::ComPtr<ID3D12PipelineState> ComputePipelineManager::CreateInitParticleGraphicsPipeline(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature)
+{
     Microsoft::WRL::ComPtr<ID3D12PipelineState> graphicsPipelineState;
 
     IDxcBlob *computerShaderBlob = nullptr;
-    computerShaderBlob = dxCommon_->CompileShader(shaderPath + L"shaders/Particle/CSParticle/InitParticle.CS.hlsl", L"cs_6_0");
+    computerShaderBlob = pDxCommon_->CompileShader(L"./Engine/EngineAssets/shaders/Particle/CSParticle/InitParticle.CS.hlsl", L"cs_6_0");
     assert(computerShaderBlob != nullptr);
 
     D3D12_COMPUTE_PIPELINE_STATE_DESC computePipelineStateDesc = {};
@@ -317,7 +339,7 @@ Microsoft::WRL::ComPtr<ID3D12PipelineState> ComputePipeLineManager::CreateInitPa
         .BytecodeLength = computerShaderBlob->GetBufferSize(),
     };
     computePipelineStateDesc.pRootSignature = rootSignature.Get();
-    HRESULT hr = dxCommon_->GetDevice()->CreateComputePipelineState(&computePipelineStateDesc, IID_PPV_ARGS(&graphicsPipelineState));
+    HRESULT hr = pDxCommon_->GetDevice()->CreateComputePipelineState(&computePipelineStateDesc, IID_PPV_ARGS(&graphicsPipelineState));
     assert(SUCCEEDED(hr));
     return graphicsPipelineState;
 }
@@ -325,7 +347,8 @@ Microsoft::WRL::ComPtr<ID3D12PipelineState> ComputePipeLineManager::CreateInitPa
 // =============================================
 // Emitter
 // =============================================
-Microsoft::WRL::ComPtr<ID3D12RootSignature> ComputePipeLineManager::CreateEmitterRootSignature() {
+Microsoft::WRL::ComPtr<ID3D12RootSignature> ComputePipelineManager::CreateEmitterRootSignature()
+{
     Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature;
     HRESULT hr;
 
@@ -333,7 +356,8 @@ Microsoft::WRL::ComPtr<ID3D12RootSignature> ComputePipeLineManager::CreateEmitte
     //   + フリーリスト UAV (u6-u8)
     //   + 生存リスト間接ディスパッチ UAV (u9:AliveList out / u10:AliveCounter out / u11:RenderCompact) = 計12本。
     D3D12_DESCRIPTOR_RANGE uavRanges[12] = {};
-    for (UINT i = 0; i < 12; ++i) {
+    for (UINT i = 0; i < 12; ++i)
+    {
         uavRanges[i].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_UAV;
         uavRanges[i].NumDescriptors = 1;
         uavRanges[i].BaseShaderRegister = i; // u0..u11
@@ -341,7 +365,8 @@ Microsoft::WRL::ComPtr<ID3D12RootSignature> ComputePipeLineManager::CreateEmitte
     }
     // SRV (t0:TriangleInfo / t1:TriangleCDF / t2:EdgeInfo / t3:ParticleField)
     D3D12_DESCRIPTOR_RANGE srvRanges[4] = {};
-    for (UINT i = 0; i < 4; ++i) {
+    for (UINT i = 0; i < 4; ++i)
+    {
         srvRanges[i].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
         srvRanges[i].NumDescriptors = 1;
         srvRanges[i].BaseShaderRegister = i; // t0..t3
@@ -354,25 +379,29 @@ Microsoft::WRL::ComPtr<ID3D12RootSignature> ComputePipeLineManager::CreateEmitte
     //   [13..16] t0..t3 (TriangleInfo / TriangleCDF / EdgeInfo / ParticleField)
     //   [17..19] u9..u11 (AliveList out / AliveCounter out / RenderCompact) ★生存リスト間接ディスパッチ
     D3D12_ROOT_PARAMETER rootParameters[20] = {};
-    for (UINT i = 0; i < 9; ++i) {
+    for (UINT i = 0; i < 9; ++i)
+    {
         rootParameters[i].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
         rootParameters[i].DescriptorTable.pDescriptorRanges = &uavRanges[i];
         rootParameters[i].DescriptorTable.NumDescriptorRanges = 1;
         rootParameters[i].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
     }
-    for (UINT i = 0; i < 4; ++i) {
+    for (UINT i = 0; i < 4; ++i)
+    {
         rootParameters[9 + i].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
         rootParameters[9 + i].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
         rootParameters[9 + i].Descriptor.ShaderRegister = i; // b0..b3
         rootParameters[9 + i].Descriptor.RegisterSpace = 0;
     }
-    for (UINT i = 0; i < 4; ++i) {
+    for (UINT i = 0; i < 4; ++i)
+    {
         rootParameters[13 + i].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
         rootParameters[13 + i].DescriptorTable.pDescriptorRanges = &srvRanges[i];
         rootParameters[13 + i].DescriptorTable.NumDescriptorRanges = 1;
         rootParameters[13 + i].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
     }
-    for (UINT i = 0; i < 3; ++i) {
+    for (UINT i = 0; i < 3; ++i)
+    {
         rootParameters[17 + i].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
         rootParameters[17 + i].DescriptorTable.pDescriptorRanges = &uavRanges[9 + i]; // u9..u11
         rootParameters[17 + i].DescriptorTable.NumDescriptorRanges = 1;
@@ -389,21 +418,23 @@ Microsoft::WRL::ComPtr<ID3D12RootSignature> ComputePipeLineManager::CreateEmitte
     ID3DBlob *signatureBlob = nullptr;
     ID3DBlob *errorBlob = nullptr;
     hr = D3D12SerializeRootSignature(&descriptionRootSignature, D3D_ROOT_SIGNATURE_VERSION_1, &signatureBlob, &errorBlob);
-    if (FAILED(hr)) {
+    if (FAILED(hr))
+    {
         Logger::Log(reinterpret_cast<char *>(errorBlob->GetBufferPointer()));
         assert(false);
     }
-    hr = dxCommon_->GetDevice()->CreateRootSignature(0, signatureBlob->GetBufferPointer(),
+    hr = pDxCommon_->GetDevice()->CreateRootSignature(0, signatureBlob->GetBufferPointer(),
                                                      signatureBlob->GetBufferSize(), IID_PPV_ARGS(&rootSignature));
     assert(SUCCEEDED(hr));
     return rootSignature;
 }
 
-Microsoft::WRL::ComPtr<ID3D12PipelineState> ComputePipeLineManager::CreateEmitterGraphicsPipeLine(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature) {
+Microsoft::WRL::ComPtr<ID3D12PipelineState> ComputePipelineManager::CreateEmitterGraphicsPipeline(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature)
+{
     Microsoft::WRL::ComPtr<ID3D12PipelineState> graphicsPipelineState;
 
     IDxcBlob *computerShaderBlob = nullptr;
-    computerShaderBlob = dxCommon_->CompileShader(shaderPath + L"shaders/Particle/CSParticle/EmitParticle.CS.hlsl", L"cs_6_0");
+    computerShaderBlob = pDxCommon_->CompileShader(L"./Engine/EngineAssets/shaders/Particle/CSParticle/EmitParticle.CS.hlsl", L"cs_6_0");
     assert(computerShaderBlob != nullptr);
 
     D3D12_COMPUTE_PIPELINE_STATE_DESC computePipelineStateDesc = {};
@@ -412,7 +443,7 @@ Microsoft::WRL::ComPtr<ID3D12PipelineState> ComputePipeLineManager::CreateEmitte
         .BytecodeLength = computerShaderBlob->GetBufferSize(),
     };
     computePipelineStateDesc.pRootSignature = rootSignature.Get();
-    HRESULT hr = dxCommon_->GetDevice()->CreateComputePipelineState(&computePipelineStateDesc, IID_PPV_ARGS(&graphicsPipelineState));
+    HRESULT hr = pDxCommon_->GetDevice()->CreateComputePipelineState(&computePipelineStateDesc, IID_PPV_ARGS(&graphicsPipelineState));
     assert(SUCCEEDED(hr));
     return graphicsPipelineState;
 }
@@ -442,7 +473,8 @@ Microsoft::WRL::ComPtr<ID3D12PipelineState> ComputePipeLineManager::CreateEmitte
 //   [17] t2  : gAliveListIn    (SRV) ★生存リスト間接ディスパッチの入力(前フレーム out リスト)
 //   [18] t3  : gAliveCounterIn (SRV) ★生存リスト間接ディスパッチの入力(リスト長)
 // =============================================
-Microsoft::WRL::ComPtr<ID3D12RootSignature> ComputePipeLineManager::CreateUpdateEmitterRootSignature() {
+Microsoft::WRL::ComPtr<ID3D12RootSignature> ComputePipelineManager::CreateUpdateEmitterRootSignature()
+{
     Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature;
     HRESULT hr;
 
@@ -450,7 +482,8 @@ Microsoft::WRL::ComPtr<ID3D12RootSignature> ComputePipeLineManager::CreateUpdate
     //   + フリーリスト UAV (u6-u8) + 生存コンパクション UAV (u9-u10)
     //   + 描画コンパクション UAV (u11: gRenderCompact) = 計12本。
     D3D12_DESCRIPTOR_RANGE uavRanges[12] = {};
-    for (UINT i = 0; i < 12; ++i) {
+    for (UINT i = 0; i < 12; ++i)
+    {
         uavRanges[i].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_UAV;
         uavRanges[i].NumDescriptors = 1;
         uavRanges[i].BaseShaderRegister = i; // u0..u11
@@ -459,7 +492,8 @@ Microsoft::WRL::ComPtr<ID3D12RootSignature> ComputePipeLineManager::CreateUpdate
     // SRV (t0:gFields / t1:gFieldsOverride / t2:gAliveListIn / t3:gAliveCounterIn)
     //   t2/t3 = 生存リスト間接ディスパッチの in（前フレームの out リスト/カウンタ）。
     D3D12_DESCRIPTOR_RANGE srvRanges[4] = {};
-    for (UINT i = 0; i < 4; ++i) {
+    for (UINT i = 0; i < 4; ++i)
+    {
         srvRanges[i].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
         srvRanges[i].NumDescriptors = 1;
         srvRanges[i].BaseShaderRegister = i; // t0..t3
@@ -472,19 +506,22 @@ Microsoft::WRL::ComPtr<ID3D12RootSignature> ComputePipeLineManager::CreateUpdate
     //   [15..16] t0..t1  (Fields / FieldsOverride)
     //   [17..18] t2..t3  (AliveListIn / AliveCounterIn) ★生存リスト間接ディスパッチの入力
     D3D12_ROOT_PARAMETER rootParameters[19] = {};
-    for (UINT i = 0; i < 12; ++i) {
+    for (UINT i = 0; i < 12; ++i)
+    {
         rootParameters[i].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
         rootParameters[i].DescriptorTable.pDescriptorRanges = &uavRanges[i];
         rootParameters[i].DescriptorTable.NumDescriptorRanges = 1;
         rootParameters[i].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
     }
-    for (UINT i = 0; i < 3; ++i) {
+    for (UINT i = 0; i < 3; ++i)
+    {
         rootParameters[12 + i].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
         rootParameters[12 + i].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
         rootParameters[12 + i].Descriptor.ShaderRegister = i; // b0..b2
         rootParameters[12 + i].Descriptor.RegisterSpace = 0;
     }
-    for (UINT i = 0; i < 4; ++i) {
+    for (UINT i = 0; i < 4; ++i)
+    {
         rootParameters[15 + i].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
         rootParameters[15 + i].DescriptorTable.pDescriptorRanges = &srvRanges[i];
         rootParameters[15 + i].DescriptorTable.NumDescriptorRanges = 1;
@@ -501,21 +538,23 @@ Microsoft::WRL::ComPtr<ID3D12RootSignature> ComputePipeLineManager::CreateUpdate
     ID3DBlob *signatureBlob = nullptr;
     ID3DBlob *errorBlob = nullptr;
     hr = D3D12SerializeRootSignature(&descriptionRootSignature, D3D_ROOT_SIGNATURE_VERSION_1, &signatureBlob, &errorBlob);
-    if (FAILED(hr)) {
+    if (FAILED(hr))
+    {
         Logger::Log(reinterpret_cast<char *>(errorBlob->GetBufferPointer()));
         assert(false);
     }
-    hr = dxCommon_->GetDevice()->CreateRootSignature(0, signatureBlob->GetBufferPointer(),
+    hr = pDxCommon_->GetDevice()->CreateRootSignature(0, signatureBlob->GetBufferPointer(),
                                                      signatureBlob->GetBufferSize(), IID_PPV_ARGS(&rootSignature));
     assert(SUCCEEDED(hr));
     return rootSignature;
 }
 
-Microsoft::WRL::ComPtr<ID3D12PipelineState> ComputePipeLineManager::CreateUpdateEmitterGraphicsPipeLine(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature) {
+Microsoft::WRL::ComPtr<ID3D12PipelineState> ComputePipelineManager::CreateUpdateEmitterGraphicsPipeline(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature)
+{
     Microsoft::WRL::ComPtr<ID3D12PipelineState> graphicsPipelineState;
 
     IDxcBlob *computerShaderBlob = nullptr;
-    computerShaderBlob = dxCommon_->CompileShader(shaderPath + L"shaders/Particle/CSParticle/UpdateParticle.CS.hlsl", L"cs_6_0");
+    computerShaderBlob = pDxCommon_->CompileShader(L"./Engine/EngineAssets/shaders/Particle/CSParticle/UpdateParticle.CS.hlsl", L"cs_6_0");
     assert(computerShaderBlob != nullptr);
 
     D3D12_COMPUTE_PIPELINE_STATE_DESC computePipelineStateDesc = {};
@@ -524,17 +563,18 @@ Microsoft::WRL::ComPtr<ID3D12PipelineState> ComputePipeLineManager::CreateUpdate
         .BytecodeLength = computerShaderBlob->GetBufferSize(),
     };
     computePipelineStateDesc.pRootSignature = rootSignature.Get();
-    HRESULT hr = dxCommon_->GetDevice()->CreateComputePipelineState(&computePipelineStateDesc, IID_PPV_ARGS(&graphicsPipelineState));
+    HRESULT hr = pDxCommon_->GetDevice()->CreateComputePipelineState(&computePipelineStateDesc, IID_PPV_ARGS(&graphicsPipelineState));
     assert(SUCCEEDED(hr));
     return graphicsPipelineState;
 }
 
 // 演出なし専用の軽量 Update PSO（root sig はフル版 UpdateEmitter と共有）。
-Microsoft::WRL::ComPtr<ID3D12PipelineState> ComputePipeLineManager::CreateUpdateEmitterLiteGraphicsPipeLine(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature) {
+Microsoft::WRL::ComPtr<ID3D12PipelineState> ComputePipelineManager::CreateUpdateEmitterLiteGraphicsPipeline(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature)
+{
     Microsoft::WRL::ComPtr<ID3D12PipelineState> graphicsPipelineState;
 
     IDxcBlob *computerShaderBlob = nullptr;
-    computerShaderBlob = dxCommon_->CompileShader(shaderPath + L"shaders/Particle/CSParticle/UpdateParticleLite.CS.hlsl", L"cs_6_0");
+    computerShaderBlob = pDxCommon_->CompileShader(L"./Engine/EngineAssets/shaders/Particle/CSParticle/UpdateParticleLite.CS.hlsl", L"cs_6_0");
     assert(computerShaderBlob != nullptr);
 
     D3D12_COMPUTE_PIPELINE_STATE_DESC computePipelineStateDesc = {};
@@ -543,7 +583,7 @@ Microsoft::WRL::ComPtr<ID3D12PipelineState> ComputePipeLineManager::CreateUpdate
         .BytecodeLength = computerShaderBlob->GetBufferSize(),
     };
     computePipelineStateDesc.pRootSignature = rootSignature.Get();
-    HRESULT hr = dxCommon_->GetDevice()->CreateComputePipelineState(&computePipelineStateDesc, IID_PPV_ARGS(&graphicsPipelineState));
+    HRESULT hr = pDxCommon_->GetDevice()->CreateComputePipelineState(&computePipelineStateDesc, IID_PPV_ARGS(&graphicsPipelineState));
     assert(SUCCEEDED(hr));
     return graphicsPipelineState;
 }
@@ -554,7 +594,8 @@ Microsoft::WRL::ComPtr<ID3D12PipelineState> ComputePipeLineManager::CreateUpdate
 //   スロット対応表:
 //     [0] u0 : gAliveCounter (UAV)
 // =============================================
-Microsoft::WRL::ComPtr<ID3D12RootSignature> ComputePipeLineManager::CreateResetArgsRootSignature() {
+Microsoft::WRL::ComPtr<ID3D12RootSignature> ComputePipelineManager::CreateResetArgsRootSignature()
+{
     Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature;
     HRESULT hr;
 
@@ -580,21 +621,23 @@ Microsoft::WRL::ComPtr<ID3D12RootSignature> ComputePipeLineManager::CreateResetA
     ID3DBlob *signatureBlob = nullptr;
     ID3DBlob *errorBlob = nullptr;
     hr = D3D12SerializeRootSignature(&descriptionRootSignature, D3D_ROOT_SIGNATURE_VERSION_1, &signatureBlob, &errorBlob);
-    if (FAILED(hr)) {
+    if (FAILED(hr))
+    {
         Logger::Log(reinterpret_cast<char *>(errorBlob->GetBufferPointer()));
         assert(false);
     }
-    hr = dxCommon_->GetDevice()->CreateRootSignature(0, signatureBlob->GetBufferPointer(),
+    hr = pDxCommon_->GetDevice()->CreateRootSignature(0, signatureBlob->GetBufferPointer(),
                                                      signatureBlob->GetBufferSize(), IID_PPV_ARGS(&rootSignature));
     assert(SUCCEEDED(hr));
     return rootSignature;
 }
 
-Microsoft::WRL::ComPtr<ID3D12PipelineState> ComputePipeLineManager::CreateResetArgsGraphicsPipeLine(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature) {
+Microsoft::WRL::ComPtr<ID3D12PipelineState> ComputePipelineManager::CreateResetArgsGraphicsPipeline(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature)
+{
     Microsoft::WRL::ComPtr<ID3D12PipelineState> graphicsPipelineState;
 
     IDxcBlob *computerShaderBlob = nullptr;
-    computerShaderBlob = dxCommon_->CompileShader(shaderPath + L"shaders/Particle/CSParticle/ResetArgs.CS.hlsl", L"cs_6_0");
+    computerShaderBlob = pDxCommon_->CompileShader(L"./Engine/EngineAssets/shaders/Particle/CSParticle/ResetArgs.CS.hlsl", L"cs_6_0");
     assert(computerShaderBlob != nullptr);
 
     D3D12_COMPUTE_PIPELINE_STATE_DESC computePipelineStateDesc = {};
@@ -603,7 +646,7 @@ Microsoft::WRL::ComPtr<ID3D12PipelineState> ComputePipeLineManager::CreateResetA
         .BytecodeLength = computerShaderBlob->GetBufferSize(),
     };
     computePipelineStateDesc.pRootSignature = rootSignature.Get();
-    HRESULT hr = dxCommon_->GetDevice()->CreateComputePipelineState(&computePipelineStateDesc, IID_PPV_ARGS(&graphicsPipelineState));
+    HRESULT hr = pDxCommon_->GetDevice()->CreateComputePipelineState(&computePipelineStateDesc, IID_PPV_ARGS(&graphicsPipelineState));
     assert(SUCCEEDED(hr));
     return graphicsPipelineState;
 }
@@ -611,7 +654,8 @@ Microsoft::WRL::ComPtr<ID3D12PipelineState> ComputePipeLineManager::CreateResetA
 // =============================================
 // Count
 // =============================================
-Microsoft::WRL::ComPtr<ID3D12RootSignature> ComputePipeLineManager::CreateCountRootSignature() {
+Microsoft::WRL::ComPtr<ID3D12RootSignature> ComputePipelineManager::CreateCountRootSignature()
+{
     Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature;
     HRESULT hr;
 
@@ -654,21 +698,23 @@ Microsoft::WRL::ComPtr<ID3D12RootSignature> ComputePipeLineManager::CreateCountR
     ID3DBlob *signatureBlob = nullptr;
     ID3DBlob *errorBlob = nullptr;
     hr = D3D12SerializeRootSignature(&descriptionRootSignature, D3D_ROOT_SIGNATURE_VERSION_1, &signatureBlob, &errorBlob);
-    if (FAILED(hr)) {
+    if (FAILED(hr))
+    {
         Logger::Log(reinterpret_cast<char *>(errorBlob->GetBufferPointer()));
         assert(false);
     }
-    hr = dxCommon_->GetDevice()->CreateRootSignature(0, signatureBlob->GetBufferPointer(),
+    hr = pDxCommon_->GetDevice()->CreateRootSignature(0, signatureBlob->GetBufferPointer(),
                                                      signatureBlob->GetBufferSize(), IID_PPV_ARGS(&rootSignature));
     assert(SUCCEEDED(hr));
     return rootSignature;
 }
 
-Microsoft::WRL::ComPtr<ID3D12PipelineState> ComputePipeLineManager::CreateCountGraphicsPipeLine(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature) {
+Microsoft::WRL::ComPtr<ID3D12PipelineState> ComputePipelineManager::CreateCountGraphicsPipeline(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature)
+{
     Microsoft::WRL::ComPtr<ID3D12PipelineState> graphicsPipelineState;
 
     IDxcBlob *computerShaderBlob = nullptr;
-    computerShaderBlob = dxCommon_->CompileShader(shaderPath + L"shaders/Particle/CSParticle/CountParticle.CS.hlsl", L"cs_6_0");
+    computerShaderBlob = pDxCommon_->CompileShader(L"./Engine/EngineAssets/shaders/Particle/CSParticle/CountParticle.CS.hlsl", L"cs_6_0");
     assert(computerShaderBlob != nullptr);
 
     D3D12_COMPUTE_PIPELINE_STATE_DESC computePipelineStateDesc = {};
@@ -677,7 +723,7 @@ Microsoft::WRL::ComPtr<ID3D12PipelineState> ComputePipeLineManager::CreateCountG
         .BytecodeLength = computerShaderBlob->GetBufferSize(),
     };
     computePipelineStateDesc.pRootSignature = rootSignature.Get();
-    HRESULT hr = dxCommon_->GetDevice()->CreateComputePipelineState(&computePipelineStateDesc, IID_PPV_ARGS(&graphicsPipelineState));
+    HRESULT hr = pDxCommon_->GetDevice()->CreateComputePipelineState(&computePipelineStateDesc, IID_PPV_ARGS(&graphicsPipelineState));
     assert(SUCCEEDED(hr));
     return graphicsPipelineState;
 }

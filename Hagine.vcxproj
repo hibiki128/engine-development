@@ -48,13 +48,13 @@
     <OutDir>$(ProjectDir)..\Generated\Outputs\$(Configuration)\</OutDir>
     <IntDir>$(ProjectDir)..\Generated\Obj\$(ProjectName)\$(Configuration)\</IntDir>
     <IncludePath>$(ProjectDir)Externals\imgui;$(ProjectDir)Externals\DirectXTex</IncludePath>
-    <PublicIncludeDirectories>$(SolutionDir);$(ProjectDir)Engine;$(ProjectDir)Engine\2d;$(ProjectDir)Engine\3d;$(ProjectDir)Engine\Audio;$(ProjectDir)Engine\Base;$(ProjectDir)Engine\Base\Command;$(ProjectDir)Engine\Base\Device;$(ProjectDir)Engine\Base\Frame;$(ProjectDir)Engine\Base\Resource;$(ProjectDir)Engine\Base\Shader;$(ProjectDir)Engine\Base\SwapChain;$(ProjectDir)Engine\Base\WinApp;$(ProjectDir)Engine\Core;$(ProjectDir)Engine\Frame;$(ProjectDir)Engine\Input;$(ProjectDir)Engine\Math;$(ProjectDir)Engine\OffScreen;$(ProjectDir)Engine\Scene;$(ProjectDir)Engine\Utility;$(ProjectDir)Externals;$(ProjectDir)Externals\imgui;$(ProjectDir)Externals\DirectXTex;$(ProjectDir)Externals\std_truetype;$(ProjectDir)Externals\assimp\include</PublicIncludeDirectories>
+    <PublicIncludeDirectories>$(SolutionDir);$(ProjectDir)Engine;$(ProjectDir)Engine\2d;$(ProjectDir)Engine\3d;$(ProjectDir)Engine\Audio;$(ProjectDir)Engine\Base;$(ProjectDir)Engine\Base\Command;$(ProjectDir)Engine\Base\Device;$(ProjectDir)Engine\Base\Frame;$(ProjectDir)Engine\Base\Resource;$(ProjectDir)Engine\Base\Shader;$(ProjectDir)Engine\Base\SwapChain;$(ProjectDir)Engine\base\window;$(ProjectDir)Engine\Core;$(ProjectDir)Engine\Frame;$(ProjectDir)Engine\Input;$(ProjectDir)Engine\Math;$(ProjectDir)Engine\OffScreen;$(ProjectDir)Engine\Scene;$(ProjectDir)Engine\Utility;$(ProjectDir)Externals;$(ProjectDir)Externals\imgui;$(ProjectDir)Externals\DirectXTex;$(ProjectDir)Externals\std_truetype;$(ProjectDir)Externals\assimp\include</PublicIncludeDirectories>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <OutDir>$(ProjectDir)..\Generated\Outputs\$(Configuration)\</OutDir>
     <IntDir>$(ProjectDir)..\Generated\Obj\$(ProjectName)\$(Configuration)\</IntDir>
     <IncludePath>$(ProjectDir)Externals\imgui;$(ProjectDir)Externals\DirectXTex</IncludePath>
-    <PublicIncludeDirectories>$(SolutionDir);$(ProjectDir)Engine;$(ProjectDir)Engine\2d;$(ProjectDir)Engine\3d;$(ProjectDir)Engine\Audio;$(ProjectDir)Engine\Base;$(ProjectDir)Engine\Base\Command;$(ProjectDir)Engine\Base\Device;$(ProjectDir)Engine\Base\Frame;$(ProjectDir)Engine\Base\Resource;$(ProjectDir)Engine\Base\Shader;$(ProjectDir)Engine\Base\SwapChain;$(ProjectDir)Engine\Base\WinApp;$(ProjectDir)Engine\Core;$(ProjectDir)Engine\Frame;$(ProjectDir)Engine\Input;$(ProjectDir)Engine\Math;$(ProjectDir)Engine\OffScreen;$(ProjectDir)Engine\Scene;$(ProjectDir)Engine\Utility;$(ProjectDir)Externals;$(ProjectDir)Externals\imgui;$(ProjectDir)Externals\DirectXTex;$(ProjectDir)Externals\std_truetype;$(ProjectDir)Externals\assimp\include</PublicIncludeDirectories>
+    <PublicIncludeDirectories>$(SolutionDir);$(ProjectDir)Engine;$(ProjectDir)Engine\2d;$(ProjectDir)Engine\3d;$(ProjectDir)Engine\Audio;$(ProjectDir)Engine\Base;$(ProjectDir)Engine\Base\Command;$(ProjectDir)Engine\Base\Device;$(ProjectDir)Engine\Base\Frame;$(ProjectDir)Engine\Base\Resource;$(ProjectDir)Engine\Base\Shader;$(ProjectDir)Engine\Base\SwapChain;$(ProjectDir)Engine\base\window;$(ProjectDir)Engine\Core;$(ProjectDir)Engine\Frame;$(ProjectDir)Engine\Input;$(ProjectDir)Engine\Math;$(ProjectDir)Engine\OffScreen;$(ProjectDir)Engine\Scene;$(ProjectDir)Engine\Utility;$(ProjectDir)Externals;$(ProjectDir)Externals\imgui;$(ProjectDir)Externals\DirectXTex;$(ProjectDir)Externals\std_truetype;$(ProjectDir)Externals\assimp\include</PublicIncludeDirectories>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
@@ -67,7 +67,7 @@
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
       <TreatWarningAsError>true</TreatWarningAsError>
-      <AdditionalIncludeDirectories>$(SolutionDir);$(ProjectDir)Externals;$(ProjectDir)Engine;$(ProjectDir)Engine\2d;$(ProjectDir)Engine\3d;$(ProjectDir)Engine\Audio;$(ProjectDir)Engine\Base;$(ProjectDir)Engine\Base\Command;$(ProjectDir)Engine\Base\Device;$(ProjectDir)Engine\Base\Frame;$(ProjectDir)Engine\Base\Resource;$(ProjectDir)Engine\Base\Shader;$(ProjectDir)Engine\Base\SwapChain;$(ProjectDir)Engine\Base\WinApp;$(ProjectDir)Engine\Core;$(ProjectDir)Engine\Frame;$(ProjectDir)Engine\Input;$(ProjectDir)Engine\Math;$(ProjectDir)Engine\OffScreen;$(ProjectDir)Engine\Scene;$(ProjectDir)Engine\Utility;$(ProjectDir)Externals\std_truetype;$(ProjectDir)Externals\assimp\include;$(ProjectDir)Externals\imgui;$(ProjectDir)Externals\DirectXTex</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir);$(ProjectDir)Externals;$(ProjectDir)Engine;$(ProjectDir)Engine\2d;$(ProjectDir)Engine\3d;$(ProjectDir)Engine\Audio;$(ProjectDir)Engine\Base;$(ProjectDir)Engine\Base\Command;$(ProjectDir)Engine\Base\Device;$(ProjectDir)Engine\Base\Frame;$(ProjectDir)Engine\Base\Resource;$(ProjectDir)Engine\Base\Shader;$(ProjectDir)Engine\Base\SwapChain;$(ProjectDir)Engine\base\window;$(ProjectDir)Engine\Core;$(ProjectDir)Engine\Frame;$(ProjectDir)Engine\Input;$(ProjectDir)Engine\Math;$(ProjectDir)Engine\OffScreen;$(ProjectDir)Engine\Scene;$(ProjectDir)Engine\Utility;$(ProjectDir)Externals\std_truetype;$(ProjectDir)Externals\assimp\include;$(ProjectDir)Externals\imgui;$(ProjectDir)Externals\DirectXTex</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -93,7 +93,7 @@ copy "$(WindowsSdkDIr)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
       <AdditionalOptions>/utf-8 /IGNORE:4049 /IGNORE:4099 </AdditionalOptions>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
-      <AdditionalIncludeDirectories>$(SolutionDir);$(ProjectDir)Externals;$(ProjectDir)Engine;$(ProjectDir)Engine\2d;$(ProjectDir)Engine\3d;$(ProjectDir)Engine\Audio;$(ProjectDir)Engine\Base;$(ProjectDir)Engine\Base\Command;$(ProjectDir)Engine\Base\Device;$(ProjectDir)Engine\Base\Frame;$(ProjectDir)Engine\Base\Resource;$(ProjectDir)Engine\Base\Shader;$(ProjectDir)Engine\Base\SwapChain;$(ProjectDir)Engine\Base\WinApp;$(ProjectDir)Engine\Core;$(ProjectDir)Engine\Frame;$(ProjectDir)Engine\Input;$(ProjectDir)Engine\Math;$(ProjectDir)Engine\OffScreen;$(ProjectDir)Engine\Scene;$(ProjectDir)Engine\Utility;$(ProjectDir)Externals\std_truetype;$(ProjectDir)Externals\assimp\include;$(ProjectDir)Externals\imgui;$(ProjectDir)Externals\DirectXTex</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir);$(ProjectDir)Externals;$(ProjectDir)Engine;$(ProjectDir)Engine\2d;$(ProjectDir)Engine\3d;$(ProjectDir)Engine\Audio;$(ProjectDir)Engine\Base;$(ProjectDir)Engine\Base\Command;$(ProjectDir)Engine\Base\Device;$(ProjectDir)Engine\Base\Frame;$(ProjectDir)Engine\Base\Resource;$(ProjectDir)Engine\Base\Shader;$(ProjectDir)Engine\Base\SwapChain;$(ProjectDir)Engine\base\window;$(ProjectDir)Engine\Core;$(ProjectDir)Engine\Frame;$(ProjectDir)Engine\Input;$(ProjectDir)Engine\Math;$(ProjectDir)Engine\OffScreen;$(ProjectDir)Engine\Scene;$(ProjectDir)Engine\Utility;$(ProjectDir)Externals\std_truetype;$(ProjectDir)Externals\assimp\include;$(ProjectDir)Externals\imgui;$(ProjectDir)Externals\DirectXTex</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -109,6 +109,14 @@ copy "$(WindowsSdkDIr)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="Engine\3d\camera\debug\DebugCamera.cpp" />
+    <ClCompile Include="Engine\3d\camera\follow\BaseFollowCamera.cpp" />
+    <ClCompile Include="Engine\3d\camera\projection\ViewProjection.cpp" />
+    <ClCompile Include="Engine\3d\particle\gpu\ParticleCSEditor.cpp" />
+    <ClCompile Include="Engine\3d\particle\gpu\ParticleCSEmitter.cpp" />
+    <ClCompile Include="Engine\3d\particle\gpu\ParticleCSFieldManager.cpp" />
+    <ClCompile Include="Engine\3d\particle\gpu\ParticleCSGroup.cpp" />
+    <ClCompile Include="Engine\3d\particle\gpu\ParticleCSGroupManager.cpp" />
     <ClCompile Include="Engine\Base\Command\DXCommandList.cpp" />
     <ClCompile Include="Engine\Base\Command\DXCommandQueue.cpp" />
     <ClCompile Include="Engine\Base\Device\DXDevice.cpp" />
@@ -116,15 +124,23 @@ copy "$(WindowsSdkDIr)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClCompile Include="Engine\Base\Resource\ResourceFactory.cpp" />
     <ClCompile Include="Engine\Base\Shader\ShaderCompiler.cpp" />
     <ClCompile Include="Engine\Base\SwapChain\DXSwapChain.cpp" />
-    <ClCompile Include="Engine\Base\WinApp\WinApp.cpp" />
-    <ClCompile Include="Engine\Utility\Debug\CpuProfiler\CpuProfiler.cpp" />
-    <ClCompile Include="Engine\Utility\Debug\GameParam\GameParamHub.cpp" />
-    <ClCompile Include="Engine\Utility\Edit\MotionEditor\MotionEditor.cpp" />
+    <ClCompile Include="Engine\base\window\WinApp.cpp" />
+    <ClCompile Include="Engine\offscreen\effect\PostEffectChain.cpp" />
+    <ClCompile Include="Engine\offscreen\effect\PostEffectDataManager.cpp" />
+    <ClCompile Include="Engine\offscreen\effect\PostEffectParameters.cpp" />
+    <ClCompile Include="Engine\offscreen\effect\PostEffectParamsImpl.cpp" />
+    <ClCompile Include="Engine\offscreen\effect\PostEffectRenderer.cpp" />
+    <ClCompile Include="Engine\utility\browser\ShowFolder.cpp" />
+    <ClCompile Include="Engine\utility\debug\leak\D3DResourceLeakChecker.cpp" />
+    <ClCompile Include="Engine\utility\debug\param\GameParamHub.cpp" />
+    <ClCompile Include="Engine\utility\debug\profiler\CpuProfiler.cpp" />
+    <ClCompile Include="Engine\utility\debug\profiler\GpuProfiler.cpp" />
+    <ClCompile Include="Engine\utility\edit\motion\MotionEditor.cpp" />
+    <ClCompile Include="Engine\utility\edit\shortcut\ShortcutManager.cpp" />
+    <ClCompile Include="Engine\utility\edit\undo\UndoRedoManager.cpp" />
     <ClCompile Include="Engine\Utility\Graphics\Dsv\DsvManager.cpp" />
     <ClCompile Include="Engine\Utility\Graphics\Rtv\RtvManager.cpp" />
-    <ClCompile Include="Engine\OffScreen\PostEffect\PostEffectParamsImpl.cpp" />
     <ClCompile Include="Engine\Utility\Collider\type\CylinderCollider.cpp" />
-    <ClCompile Include="Engine\3d\Camera\BaseFollowCamera\BaseFollowCamera.cpp" />
     <ClCompile Include="Engine\3d\Object\Base\BaseObject.cpp" />
     <ClCompile Include="Engine\3d\Particle\ParticleStruct.cpp" />
     <ClCompile Include="Engine\3d\Transform\ObjColor.cpp" />
@@ -139,7 +155,6 @@ copy "$(WindowsSdkDIr)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClCompile Include="Engine\Utility\Collider\type\MeshCollider.cpp" />
     <ClCompile Include="Engine\Utility\Collider\type\OBBCollider.cpp" />
     <ClCompile Include="Engine\Utility\Collider\type\SphereCollider.cpp" />
-    <ClCompile Include="Engine\Utility\Debug\GpuProfiler\GpuProfiler.cpp" />
     <ClCompile Include="Engine\Utility\Debug\ImGui\ImGuiManager.cpp" />
     <ClCompile Include="Engine\Utility\Debug\ImGui\ImGuiNotification.cpp" />
     <ClCompile Include="Engine\Utility\Debug\ImGui\ImGuizmoManager.cpp" />
@@ -151,7 +166,7 @@ copy "$(WindowsSdkDIr)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClCompile Include="Engine\3d\Shadow\ShadowMap.cpp" />
     <ClCompile Include="Engine\3d\Particle\ParticleGroup.cpp" />
     <ClCompile Include="Engine\3d\Particle\ParticleGroupManager.cpp" />
-    <ClCompile Include="Engine\Utility\LoadFile\Csv\CsvLoad.cpp" />
+    <ClCompile Include="Engine\utility\loader\csv\CsvLoad.cpp" />
     <ClCompile Include="externals\imgui\ImGuizmo.cpp" />
     <ClCompile Include="externals\imgui\ImCurveEdit.cpp">
       <TreatWarningAsError>false</TreatWarningAsError>
@@ -168,7 +183,6 @@ copy "$(WindowsSdkDIr)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClCompile Include="Engine\3d\Animation\ModelAnimation.cpp" />
     <ClCompile Include="Engine\3d\Animation\Bone.cpp" />
     <ClCompile Include="Engine\3d\Animation\Animator.cpp" />
-    <ClCompile Include="Engine\3d\Camera\DebugCamera\DebugCamera.cpp" />
     <ClCompile Include="Engine\3d\Light\LightGroup.cpp" />
     <ClCompile Include="Engine\3d\Line\DrawLine3D.cpp" />
     <ClCompile Include="Engine\Frame\Frame.cpp" />
@@ -178,7 +192,6 @@ copy "$(WindowsSdkDIr)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClCompile Include="Engine\3d\Particle\ParticleManager.cpp" />
     <ClCompile Include="Engine\Utility\Edit\LevelData.cpp" />
     <ClCompile Include="Engine\3d\Particle\ParticleEmitter.cpp" />
-    <ClCompile Include="Engine\3d\Camera\ViewProjection\ViewProjection.cpp" />
     <ClCompile Include="Engine\3d\Transform\WorldTransform.cpp" />
     <ClCompile Include="Engine\Core\Framework.cpp" />
     <ClCompile Include="Engine\Audio\Audio.cpp" />
@@ -190,7 +203,6 @@ copy "$(WindowsSdkDIr)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClCompile Include="externals\imgui\imgui_tables.cpp" />
     <ClCompile Include="externals\imgui\imgui_widgets.cpp" />
     <ClCompile Include="Engine\Input\GamePad.cpp" />
-    <ClCompile Include="Engine\Utility\Debug\ResourceLeakChecker\D3DResourceLeakChecker.cpp" />
     <ClCompile Include="Engine\Base\DirectXCommon.cpp" />
     <ClCompile Include="Engine\Input\Input.cpp" />
     <ClCompile Include="Engine\Utility\Debug\Log\Logger.cpp" />
@@ -210,22 +222,10 @@ copy "$(WindowsSdkDIr)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClCompile Include="Engine\OffScreen\OffScreen.cpp" />
     <ClCompile Include="Engine\Render\DrawSystem.cpp" />
     <ClCompile Include="Engine\3d\Animation\Skin.cpp" />
-    <ClCompile Include="Engine\Utility\ShowFolder\ShowFolder.cpp" />
     <ClCompile Include="Engine\3d\SkyBox\SkyBox.cpp" />
-    <ClCompile Include="Engine\Utility\Edit\ShortcutManager\ShortcutManager.cpp" />
-    <ClCompile Include="Engine\OffScreen\PostEffect\PostEffectChain.cpp" />
-    <ClCompile Include="Engine\OffScreen\PostEffect\PostEffectRenderer.cpp" />
     <ClCompile Include="Engine\OffScreen\RendererBuffer.cpp" />
-    <ClCompile Include="Engine\OffScreen\PostEffect\PostEffectParameters.cpp" />
-    <ClCompile Include="Engine\OffScreen\PostEffect\PostEffectDataManager.cpp" />
-    <ClCompile Include="Engine\3d\Particle\CSParticle\ParticleCSEmitter.cpp" />
-    <ClCompile Include="Engine\3d\Particle\CSParticle\ParticleCSGroup.cpp" />
-    <ClCompile Include="Engine\3d\Particle\CSParticle\ParticleCSGroupManager.cpp" />
-    <ClCompile Include="Engine\3d\Particle\CSParticle\ParticleCSEditor.cpp" />
     <ClCompile Include="Engine\2d\SpriteManager.cpp" />
-    <ClCompile Include="Engine\3d\Particle\CSParticle\ParticleCSFieldManager.cpp" />
     <ClCompile Include="Engine\2d\Text\TextRenderer.cpp" />
-    <ClCompile Include="Engine\Scene\TestScene.cpp" />
   </ItemGroup>
   <ItemGroup>
     <None Include=".clang-format" />
@@ -247,6 +247,15 @@ copy "$(WindowsSdkDIr)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <None Include="README.md" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="Engine\3d\camera\debug\DebugCamera.h" />
+    <ClInclude Include="Engine\3d\camera\follow\BaseFollowCamera.h" />
+    <ClInclude Include="Engine\3d\camera\projection\ViewProjection.h" />
+    <ClInclude Include="Engine\3d\particle\gpu\ParticleCSEditor.h" />
+    <ClInclude Include="Engine\3d\particle\gpu\ParticleCSEmitter.h" />
+    <ClInclude Include="Engine\3d\particle\gpu\ParticleCSFieldManager.h" />
+    <ClInclude Include="Engine\3d\particle\gpu\ParticleCSFieldSettingOverride.h" />
+    <ClInclude Include="Engine\3d\particle\gpu\ParticleCSGroup.h" />
+    <ClInclude Include="Engine\3d\particle\gpu\ParticleCSGroupManager.h" />
     <ClInclude Include="Engine\3d\Shadow\ShadowMap.h" />
     <ClInclude Include="Engine\Base\Command\DXCommandList.h" />
     <ClInclude Include="Engine\Base\Command\DXCommandQueue.h" />
@@ -255,22 +264,31 @@ copy "$(WindowsSdkDIr)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClInclude Include="Engine\Base\Resource\ResourceFactory.h" />
     <ClInclude Include="Engine\Base\Shader\ShaderCompiler.h" />
     <ClInclude Include="Engine\Base\SwapChain\DXSwapChain.h" />
-    <ClInclude Include="Engine\Base\WinApp\WinApp.h" />
+    <ClInclude Include="Engine\base\window\WinApp.h" />
+    <ClInclude Include="Engine\offscreen\effect\IPostEffectParams.h" />
+    <ClInclude Include="Engine\offscreen\effect\PostEffectChain.h" />
+    <ClInclude Include="Engine\offscreen\effect\PostEffectDataManager.h" />
+    <ClInclude Include="Engine\offscreen\effect\PostEffectParameters.h" />
+    <ClInclude Include="Engine\offscreen\effect\PostEffectParamsFactory.h" />
+    <ClInclude Include="Engine\offscreen\effect\PostEffectParamsImpl.h" />
+    <ClInclude Include="Engine\offscreen\effect\PostEffectRenderer.h" />
     <ClInclude Include="Engine\Utility\Asset\AssetPath.h" />
-    <ClInclude Include="Engine\Utility\Debug\CpuProfiler\CpuProfiler.h" />
-    <ClInclude Include="Engine\Utility\Debug\GameParam\GameParamHub.h" />
+    <ClInclude Include="Engine\utility\browser\ShowFolder.h" />
     <ClInclude Include="Engine\Utility\Debug\ImGui\AssetDragDrop.h" />
-    <ClInclude Include="Engine\Utility\Edit\MotionEditor\MotionEditor.h" />
+    <ClInclude Include="Engine\utility\debug\imgui\DebugUIHelper.h" />
+    <ClInclude Include="Engine\utility\debug\leak\D3DResourceLeakChecker.h" />
+    <ClInclude Include="Engine\utility\debug\param\GameParamHub.h" />
+    <ClInclude Include="Engine\utility\debug\profiler\CpuProfiler.h" />
+    <ClInclude Include="Engine\utility\debug\profiler\GpuProfiler.h" />
+    <ClInclude Include="Engine\utility\edit\motion\MotionEditor.h" />
+    <ClInclude Include="Engine\utility\edit\shortcut\ShortcutManager.h" />
+    <ClInclude Include="Engine\utility\edit\undo\ImGuiUndoTracker.h" />
+    <ClInclude Include="Engine\utility\edit\undo\UndoRedoManager.h" />
     <ClInclude Include="Engine\Utility\Graphics\Dsv\DsvManager.h" />
     <ClInclude Include="Engine\Utility\Graphics\Rtv\RtvManager.h" />
     <ClInclude Include="Engine\Render\DrawGroupManager.h" />
-    <ClInclude Include="Engine\OffScreen\PostEffect\IPostEffectParams.h" />
-    <ClInclude Include="Engine\OffScreen\PostEffect\PostEffectParamsFactory.h" />
-    <ClInclude Include="Engine\OffScreen\PostEffect\PostEffectParamsImpl.h" />
     <ClInclude Include="Engine\Utility\Collider\type\CylinderCollider.h" />
-    <ClInclude Include="Engine\3d\Particle\CSParticle\ParticleCSFieldSettingOverride.h" />
     <ClInclude Include="Engine\2d\SpriteStruct.h" />
-    <ClInclude Include="Engine\3d\Camera\BaseFollowCamera\BaseFollowCamera.h" />
     <ClInclude Include="Engine\3d\Object\Base\BaseObject.h" />
     <ClInclude Include="Engine\3d\Particle\ParticleStruct.h" />
     <ClInclude Include="Engine\3d\Transform\ObjColor.h" />
@@ -291,8 +309,6 @@ copy "$(WindowsSdkDIr)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClInclude Include="Engine\Utility\Collider\type\MeshCollider.h" />
     <ClInclude Include="Engine\Utility\Collider\type\OBBCollider.h" />
     <ClInclude Include="Engine\Utility\Collider\type\SphereCollider.h" />
-    <ClInclude Include="Engine\Utility\Debug\GpuProfiler\GpuProfiler.h" />
-    <ClInclude Include="Engine\Utility\Debug\ImGui\Debugui_improved.h" />
     <ClInclude Include="Engine\Utility\Debug\ImGui\ImGuiManager.h" />
     <ClInclude Include="Engine\Utility\Debug\ImGui\ImGuiNotification.h" />
     <ClInclude Include="Engine\Utility\Debug\ImGui\ImGuizmoManager.h" />
@@ -303,7 +319,7 @@ copy "$(WindowsSdkDIr)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClInclude Include="Engine\3d\Primitive\PrimitiveModel.h" />
     <ClInclude Include="Engine\3d\Particle\ParticleGroup.h" />
     <ClInclude Include="Engine\3d\Particle\ParticleGroupManager.h" />
-    <ClInclude Include="Engine\Utility\LoadFile\Csv\CsvLoad.h" />
+    <ClInclude Include="Engine\utility\loader\csv\CsvLoad.h" />
     <ClInclude Include="Engine\Utility\Scene\SceneRegistry.h" />
     <ClInclude Include="externals\imgui\ImGuizmo.h" />
     <ClInclude Include="externals\imgui\ImCurveEdit.h" />
@@ -315,7 +331,6 @@ copy "$(WindowsSdkDIr)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClInclude Include="Engine\3d\Animation\ModelAnimation.h" />
     <ClInclude Include="Engine\3d\Animation\Bone.h" />
     <ClInclude Include="Engine\3d\Animation\Animator.h" />
-    <ClInclude Include="Engine\3d\Camera\DebugCamera\DebugCamera.h" />
     <ClInclude Include="Engine\3d\Light\LightGroup.h" />
     <ClInclude Include="Engine\3d\Line\DrawLine3D.h" />
     <ClInclude Include="Engine\3d\Model\ModelStructs.h" />
@@ -325,7 +340,6 @@ copy "$(WindowsSdkDIr)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClInclude Include="Engine\3d\Particle\ParticleManager.h" />
     <ClInclude Include="Engine\Utility\Edit\LevelData.h" />
     <ClInclude Include="Engine\3d\Particle\ParticleEmitter.h" />
-    <ClInclude Include="Engine\3d\Camera\ViewProjection\ViewProjection.h" />
     <ClInclude Include="Engine\3d\Transform\WorldTransform.h" />
     <ClInclude Include="Engine\Core\Framework.h" />
     <ClInclude Include="Engine\Audio\Audio.h" />
@@ -337,7 +351,6 @@ copy "$(WindowsSdkDIr)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClInclude Include="externals\imgui\imstb_rectpack.h" />
     <ClInclude Include="externals\imgui\imstb_textedit.h" />
     <ClInclude Include="externals\imgui\imstb_truetype.h" />
-    <ClInclude Include="Engine\Utility\Debug\ResourceLeakChecker\D3DResourceLeakChecker.h" />
     <ClInclude Include="Engine\Base\DirectXCommon.h" />
     <ClInclude Include="Engine\Input\Input.h" />
     <ClInclude Include="Engine\Utility\Debug\Log\Logger.h" />
@@ -357,24 +370,12 @@ copy "$(WindowsSdkDIr)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClInclude Include="Engine\OffScreen\OffScreen.h" />
     <ClInclude Include="Engine\Render\DrawSystem.h" />
     <ClInclude Include="Engine\3d\Animation\Skin.h" />
-    <ClInclude Include="Engine\Utility\ShowFolder\ShowFolder.h" />
     <ClInclude Include="Engine\3d\SkyBox\SkyBox.h" />
-    <ClInclude Include="Engine\OffScreen\PostEffect\PostEffectChain.h" />
-    <ClInclude Include="Engine\OffScreen\PostEffect\PostEffectRenderer.h" />
     <ClInclude Include="Engine\OffScreen\RendererBuffer.h" />
-    <ClInclude Include="Engine\OffScreen\PostEffect\PostEffectParameters.h" />
-    <ClInclude Include="Engine\OffScreen\PostEffect\PostEffectDataManager.h" />
-    <ClInclude Include="Engine\3d\Particle\CSParticle\ParticleCSEmitter.h" />
-    <ClInclude Include="Engine\3d\Particle\CSParticle\ParticleCSGroup.h" />
-    <ClInclude Include="Engine\3d\Particle\CSParticle\ParticleCSGroupManager.h" />
-    <ClInclude Include="Engine\3d\Particle\CSParticle\ParticleCSEditor.h" />
     <ClInclude Include="Engine\Input\GamePad.h" />
-    <ClInclude Include="Engine\3d\Particle\CSParticle\ParticleCSFieldManager.h" />
     <ClInclude Include="resource.h" />
-    <ClInclude Include="Engine\Utility\Edit\ShortcutManager\ShortcutManager.h" />
     <ClInclude Include="Engine\2d\SpriteManager.h" />
     <ClInclude Include="Engine\2d\Text\TextRenderer.h" />
-    <ClInclude Include="Engine\Scene\TestScene.h" />
   </ItemGroup>
   <ItemGroup>
     <Text Include="externals\imgui\LICENSE.txt" />

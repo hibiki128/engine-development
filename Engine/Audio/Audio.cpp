@@ -1,6 +1,6 @@
 #include "Audio.h"
-#include "Utility/Debug/ImGui/ImGuiNotification.h"
-#include <Debug/Log/Logger.h>
+#include "utility/debug/imgui/ImGuiNotification.h"
+#include <debug/log/Logger.h>
 #include <cassert>
 #include <cmath>
 #include <cstring>
@@ -8,7 +8,7 @@
 
 #ifdef _DEBUG
 #include "imgui.h"
-#include "Utility/Debug/ImGui/Debugui_improved.h"
+#include "utility/debug/imgui/DebugUIHelper.h"
 #include <implot.h>
 #endif // _DEBUG
 
@@ -18,8 +18,10 @@ namespace {
 // PCM の 1 サンプル（1 チャンネル分）を [-1,1] の float へ正規化する。
 //   bits      : ビット深度（8 / 16 / 32）
 //   formatTag : WAVEFORMATEX.wFormatTag（32bit が float か整数かの判定に使う）
-float NormalizeSample(const uint8_t *p, uint16_t bits, uint16_t formatTag) {
-    switch (bits) {
+float NormalizeSample(const uint8_t *p, uint16_t bits, uint16_t formatTag)
+{
+    switch (bits)
+    {
     case 8:
         // 8bit PCM は符号なし（128 が無音）
         return (static_cast<float>(*p) - 128.0f) / 128.0f;
@@ -29,7 +31,8 @@ float NormalizeSample(const uint8_t *p, uint16_t bits, uint16_t formatTag) {
         return static_cast<float>(v) / 32768.0f;
     }
     case 32: {
-        if (formatTag == WAVE_FORMAT_IEEE_FLOAT) {
+        if (formatTag == WAVE_FORMAT_IEEE_FLOAT)
+        {
             float v = 0.0f;
             std::memcpy(&v, p, sizeof(v));
             return v;
@@ -43,20 +46,25 @@ float NormalizeSample(const uint8_t *p, uint16_t bits, uint16_t formatTag) {
     }
 }
 } // namespace
-void Audio::Initialize(const std::string &directoryPath) {
+void Audio::Initialize(const std::string &directoryPath)
+{
     HRESULT hr;
 
     directoryPath_ = directoryPath;
 
     hr = XAudio2Create(&xAudio2_, 0, XAUDIO2_DEFAULT_PROCESSOR);
-    hr = xAudio2_->CreateMasteringVoice(&masterVoice_);
+    hr = xAudio2_->CreateMasteringVoice(&pMasterVoice_);
 }
 
-uint32_t Audio::LoadWave(const std::string &filename) {
+uint32_t Audio::LoadWave(const std::string &filename)
+{
 
-    if (loadedFiles_.find(filename) != loadedFiles_.end()) {
-        for (size_t i = 0; i < kMaxSoundData; ++i) {
-            if (soundDatas_[i].name_ == filename) {
+    if (loadedFiles_.find(filename) != loadedFiles_.end())
+    {
+        for (size_t i = 0; i < kMaxSoundData; ++i)
+        {
+            if (soundDatas_[i].name_ == filename)
+            {
                 return static_cast<uint32_t>(i);
             }
         }
@@ -66,20 +74,23 @@ uint32_t Audio::LoadWave(const std::string &filename) {
 
     std::ifstream file;
     file.open(fullPath, std::ios_base::binary);
-    if (!file.is_open()) {
+    if (!file.is_open())
+    {
         Logger::Error("Failed to open audio file: \"" + fullPath + "\". The file was not found.");
         assert(file.is_open());
         return UINT32_MAX;
     }
 
     RiffHeader riff;
-    file.read((char *)&riff, sizeof(riff));
+    file.read(reinterpret_cast<char *>(&riff), sizeof(riff));
 
-    if (strncmp(riff.chunk.id, "RIFF", 4) != 0) {
+    if (strncmp(riff.chunk.id, "RIFF", 4) != 0)
+    {
         Logger::Error("Invalid audio file (missing RIFF header): \"" + fullPath + "\".");
         assert(0);
     }
-    if (strncmp(riff.type, "WAVE", 4) != 0) {
+    if (strncmp(riff.type, "WAVE", 4) != 0)
+    {
         Logger::Error("Invalid audio file (not WAVE format): \"" + fullPath + "\".");
         assert(0);
     }
@@ -87,32 +98,42 @@ uint32_t Audio::LoadWave(const std::string &filename) {
     ChunkHeader chunkHeader;
     FormatChunk format = {};
 
-    while (file.read((char *)&chunkHeader, sizeof(chunkHeader))) {
-        if (strncmp(chunkHeader.id, "fmt ", 4) == 0) {
+    while (file.read(reinterpret_cast<char *>(&chunkHeader), sizeof(chunkHeader)))
+    {
+        if (strncmp(chunkHeader.id, "fmt ", 4) == 0)
+        {
             assert(chunkHeader.size <= sizeof(format.fmt));
             format.chunk = chunkHeader;
-            file.read((char *)&format.fmt, chunkHeader.size);
+            file.read(reinterpret_cast<char *>(&format.fmt), chunkHeader.size);
             break;
-        } else {
+        }
+        else
+        {
             file.seekg(chunkHeader.size, std::ios_base::cur);
         }
     }
 
-    if (strncmp(format.chunk.id, "fmt ", 4) != 0) {
+    if (strncmp(format.chunk.id, "fmt ", 4) != 0)
+    {
         Logger::Error("Invalid audio file (missing fmt chunk): \"" + fullPath + "\".");
         assert(0);
     }
 
     ChunkHeader data;
-    while (file.read((char *)&data, sizeof(data))) {
-        if (strncmp(data.id, "data", 4) == 0) {
+    while (file.read(reinterpret_cast<char *>(&data), sizeof(data)))
+    {
+        if (strncmp(data.id, "data", 4) == 0)
+        {
             break;
-        } else {
+        }
+        else
+        {
             file.seekg(data.size, std::ios_base::cur);
         }
     }
 
-    if (strncmp(data.id, "data", 4) != 0) {
+    if (strncmp(data.id, "data", 4) != 0)
+    {
         Logger::Error("Invalid audio file (missing data chunk): \"" + fullPath + "\".");
         assert(0);
     }
@@ -135,7 +156,8 @@ uint32_t Audio::LoadWave(const std::string &filename) {
     return currentIndex;
 }
 
-void Audio::Unload(uint32_t soundIndex) {
+void Audio::Unload(uint32_t soundIndex)
+{
     SoundData &soundData = soundDatas_[soundIndex];
     std::string filename = soundData.name_;
     soundData.buffer.clear();
@@ -144,7 +166,8 @@ void Audio::Unload(uint32_t soundIndex) {
     ImGuiNotification::Post("音声ファイルをアンロードしました: " + filename, {0.9f, 0.7f, 0.2f, 1.0f});
 }
 
-void Audio::PlayWave(uint32_t soundIndex, float volume, bool loop) {
+void Audio::PlayWave(uint32_t soundIndex, float volume, bool loop)
+{
     HRESULT result;
 
     const SoundData &soundData = soundDatas_[soundIndex];
@@ -175,23 +198,32 @@ void Audio::PlayWave(uint32_t soundIndex, float volume, bool loop) {
     voices_.insert(std::move(voice));
 }
 
-void Audio::StopWave(uint32_t soundIndex) {
-    for (auto it = voices_.begin(); it != voices_.end();) {
-        if ((*it)->handle == soundIndex) {
-            if ((*it)->sourceVoice != nullptr) {
+void Audio::StopWave(uint32_t soundIndex)
+{
+    for (auto it = voices_.begin(); it != voices_.end();)
+    {
+        if ((*it)->handle == soundIndex)
+        {
+            if ((*it)->sourceVoice != nullptr)
+            {
                 (*it)->sourceVoice->Stop(0);
                 (*it)->sourceVoice->DestroyVoice();
             }
             it = voices_.erase(it);
-        } else {
+        }
+        else
+        {
             ++it;
         }
     }
 }
 
-void Audio::SetVolume(uint32_t soundIndex, float volume) {
-    for (auto &voice : voices_) {
-        if (voice->handle == soundIndex) {
+void Audio::SetVolume(uint32_t soundIndex, float volume)
+{
+    for (auto &voice : voices_)
+    {
+        if (voice->handle == soundIndex)
+        {
             voice->volume = volume;
             voice->sourceVoice->SetVolume(volume);
             break;
@@ -199,29 +231,39 @@ void Audio::SetVolume(uint32_t soundIndex, float volume) {
     }
 }
 
-void Audio::CleanupFinishedVoices() {
-    for (auto it = voices_.begin(); it != voices_.end();) {
-        if ((*it)->sourceVoice == nullptr) {
+void Audio::CleanupFinishedVoices()
+{
+    for (auto it = voices_.begin(); it != voices_.end();)
+    {
+        if ((*it)->sourceVoice == nullptr)
+        {
             it = voices_.erase(it);
-        } else {
+        }
+        else
+        {
             ++it;
         }
     }
 }
 
-void Audio::Finalize() {
-    if (masterVoice_) {
-        masterVoice_->DestroyVoice();
-        masterVoice_ = nullptr;
+void Audio::Finalize()
+{
+    if (pMasterVoice_)
+    {
+        pMasterVoice_->DestroyVoice();
+        pMasterVoice_ = nullptr;
     }
 
-    for (auto &voice : voices_) {
-        if (voice->sourceVoice) {
+    for (auto &voice : voices_)
+    {
+        if (voice->sourceVoice)
+        {
             voice->sourceVoice->DestroyVoice();
         }
     }
 
-    if (xAudio2_) {
+    if (xAudio2_)
+    {
         xAudio2_.Reset();
     }
 
@@ -232,22 +274,27 @@ void Audio::Finalize() {
 // デバッグ補助関数
 //==============================================================================
 
-void Audio::DebugScanWavFiles() {
+void Audio::DebugScanWavFiles()
+{
     debugWavFileList_.clear();
 
     // Application/Assets/sounds/ を走査
     // 作業ディレクトリがプロジェクトルートである前提
     std::filesystem::path dir("Application/Assets/sounds");
 
-    if (!std::filesystem::exists(dir)) {
+    if (!std::filesystem::exists(dir))
+    {
         return;
     }
 
-    for (auto &entry : std::filesystem::recursive_directory_iterator(dir)) {
-        if (!entry.is_regular_file()) {
+    for (auto &entry : std::filesystem::recursive_directory_iterator(dir))
+    {
+        if (!entry.is_regular_file())
+        {
             continue;
         }
-        if (entry.path().extension() != ".wav") {
+        if (entry.path().extension() != ".wav")
+        {
             continue;
         }
 
@@ -257,21 +304,27 @@ void Audio::DebugScanWavFiles() {
     }
 }
 
-float Audio::DebugGetDurationSec(uint32_t index) const {
+float Audio::DebugGetDurationSec(uint32_t index) const
+{
     const SoundData &sd = soundDatas_[index];
-    if (sd.wfex.nAvgBytesPerSec == 0) {
+    if (sd.wfex.nAvgBytesPerSec == 0)
+    {
         return 0.0f;
     }
     return static_cast<float>(sd.buffer.size()) /
            static_cast<float>(sd.wfex.nAvgBytesPerSec);
 }
 
-float Audio::DebugGetPositionSec(uint32_t index) const {
-    for (auto &voice : voices_) {
-        if (voice->handle != index) {
+float Audio::DebugGetPositionSec(uint32_t index) const
+{
+    for (auto &voice : voices_)
+    {
+        if (voice->handle != index)
+        {
             continue;
         }
-        if (!voice->sourceVoice) {
+        if (!voice->sourceVoice)
+        {
             continue;
         }
 
@@ -279,7 +332,8 @@ float Audio::DebugGetPositionSec(uint32_t index) const {
         voice->sourceVoice->GetState(&state);
 
         const SoundData &sd = soundDatas_[index];
-        if (sd.wfex.nAvgBytesPerSec == 0) {
+        if (sd.wfex.nAvgBytesPerSec == 0)
+        {
             return 0.0f;
         }
 
@@ -292,32 +346,41 @@ float Audio::DebugGetPositionSec(uint32_t index) const {
     return 0.0f;
 }
 
-bool Audio::DebugIsPlaying(uint32_t index) const {
-    for (auto &voice : voices_) {
-        if (voice->handle == index) {
+bool Audio::DebugIsPlaying(uint32_t index) const
+{
+    for (auto &voice : voices_)
+    {
+        if (voice->handle == index)
+        {
             return true;
         }
     }
     return false;
 }
 
-uint32_t Audio::DebugResolveIndex(const std::string &filename) const {
+uint32_t Audio::DebugResolveIndex(const std::string &filename) const
+{
     auto it = debugLoadedMap_.find(filename);
-    if (it != debugLoadedMap_.end()) {
+    if (it != debugLoadedMap_.end())
+    {
         return it->second;
     }
     return UINT32_MAX;
 }
 
-float Audio::GetCurrentAmplitude() const {
+float Audio::GetCurrentAmplitude() const
+{
     float maxAmp = 0.0f;
 
-    for (auto &voice : voices_) {
-        if (!voice || !voice->sourceVoice) {
+    for (auto &voice : voices_)
+    {
+        if (!voice || !voice->sourceVoice)
+        {
             continue;
         }
         uint32_t index = voice->handle;
-        if (index >= soundDatas_.size()) {
+        if (index >= soundDatas_.size())
+        {
             continue;
         }
         const SoundData &sd = soundDatas_[index];
@@ -326,16 +389,19 @@ float Audio::GetCurrentAmplitude() const {
         const uint16_t bits = fmt.wBitsPerSample;
         const uint8_t *data = sd.buffer.data();
         const size_t bytes = sd.buffer.size();
-        if (!data || bytes == 0 || bits == 0) {
+        if (!data || bytes == 0 || bits == 0)
+        {
             continue;
         }
         const size_t bytesPerSample = bits / 8u;
         const size_t frameBytes = bytesPerSample * channels;
-        if (frameBytes == 0) {
+        if (frameBytes == 0)
+        {
             continue;
         }
         const size_t totalFrames = bytes / frameBytes;
-        if (totalFrames == 0) {
+        if (totalFrames == 0)
+        {
             continue;
         }
 
@@ -348,26 +414,31 @@ float Audio::GetCurrentAmplitude() const {
         // ピークは RMS よりビート/打撃音に反応が良く、振動が音に合って見える。
         // 窓内は最大256点に間引いて一定コストにする。
         size_t window = (fmt.nSamplesPerSec ? fmt.nSamplesPerSec : 44100u) / 50u; // 20ms 相当
-        if (window < 64) {
+        if (window < 64)
+        {
             window = 64;
         }
         const size_t step = (window / 256u) + 1u;
 
         float peak = 0.0f;
-        for (size_t k = 0; k < window; k += step) {
+        for (size_t k = 0; k < window; k += step)
+        {
             const size_t fr = (curFrame + k) % totalFrames;
             float s = 0.0f;
-            for (uint16_t ch = 0; ch < channels; ++ch) {
+            for (uint16_t ch = 0; ch < channels; ++ch)
+            {
                 s += NormalizeSample(data + fr * frameBytes + ch * bytesPerSample, bits, fmt.wFormatTag);
             }
             s /= static_cast<float>(channels);
             const float a = s < 0.0f ? -s : s;
-            if (a > peak) {
+            if (a > peak)
+            {
                 peak = a;
             }
         }
 
-        if (peak > maxAmp) {
+        if (peak > maxAmp)
+        {
             maxAmp = peak;
         }
     }
@@ -376,13 +447,15 @@ float Audio::GetCurrentAmplitude() const {
 }
 
 #ifdef _DEBUG
-void Audio::DebugBuildWaveform(uint32_t index) {
+void Audio::DebugBuildWaveform(uint32_t index)
+{
     debugWaveformIndex_ = static_cast<int>(index);
     debugWaveformX_.clear();
     debugWaveformMin_.clear();
     debugWaveformMax_.clear();
 
-    if (index >= soundDatas_.size()) {
+    if (index >= soundDatas_.size())
+    {
         return;
     }
     const SoundData &sd = soundDatas_[index];
@@ -391,17 +464,20 @@ void Audio::DebugBuildWaveform(uint32_t index) {
     const uint16_t bits = fmt.wBitsPerSample;
     const uint8_t *data = sd.buffer.data();
     const size_t bytes = sd.buffer.size();
-    if (!data || bytes == 0 || bits == 0) {
+    if (!data || bytes == 0 || bits == 0)
+    {
         return;
     }
 
     const size_t bytesPerSample = bits / 8u;
     const size_t frameBytes = bytesPerSample * channels;
-    if (frameBytes == 0) {
+    if (frameBytes == 0)
+    {
         return;
     }
     const size_t totalFrames = bytes / frameBytes;
-    if (totalFrames == 0) {
+    if (totalFrames == 0)
+    {
         return;
     }
 
@@ -416,15 +492,18 @@ void Audio::DebugBuildWaveform(uint32_t index) {
     debugWaveformMin_.assign(buckets, 0.0f);
     debugWaveformMax_.assign(buckets, 0.0f);
 
-    for (int b = 0; b < buckets; ++b) {
+    for (int b = 0; b < buckets; ++b)
+    {
         debugWaveformX_[b] = static_cast<float>(b);
 
         size_t start = static_cast<size_t>((static_cast<double>(b) / buckets) * totalFrames);
         size_t end = static_cast<size_t>((static_cast<double>(b + 1) / buckets) * totalFrames);
-        if (end <= start) {
+        if (end <= start)
+        {
             end = start + 1;
         }
-        if (end > totalFrames) {
+        if (end > totalFrames)
+        {
             end = totalFrames;
         }
 
@@ -432,9 +511,11 @@ void Audio::DebugBuildWaveform(uint32_t index) {
         size_t step = ((end - start) / 256u) + 1u;
         float mn = 1.0f;
         float mx = -1.0f;
-        for (size_t fr = start; fr < end; fr += step) {
+        for (size_t fr = start; fr < end; fr += step)
+        {
             float s = 0.0f;
-            for (uint16_t ch = 0; ch < channels; ++ch) {
+            for (uint16_t ch = 0; ch < channels; ++ch)
+            {
                 s += sampleAt(fr, ch);
             }
             s /= static_cast<float>(channels);
@@ -451,7 +532,8 @@ void Audio::DebugBuildWaveform(uint32_t index) {
 // Debug() 本体
 //==============================================================================
 
-void Audio::Debug() {
+void Audio::Debug()
+{
 #ifdef _DEBUG
     // ── マスター音量 ──
     SectionHeader("[ マスター ]", DebugTheme::kAccentBlue);
@@ -461,9 +543,11 @@ void Audio::Debug() {
         ImGui::SetCursorPosX(ImGui::GetCursorPosX() +
                              (ImGui::GetContentRegionAvail().x - knobSize) * 0.5f);
         if (ThemedKnob("音量##master", &debugMasterVolume_, 0.0f, 1.0f, "%.2f",
-                       DebugTheme::kAccentBlue, knobSize)) {
-            if (masterVoice_) {
-                masterVoice_->SetVolume(debugMasterVolume_);
+                       DebugTheme::kAccentBlue, knobSize))
+        {
+            if (pMasterVoice_)
+            {
+                pMasterVoice_->SetVolume(debugMasterVolume_);
             }
         }
     }
@@ -474,7 +558,8 @@ void Audio::Debug() {
     SectionHeader("[ ファイルブラウザ  Application/Assets/sounds/ ]", DebugTheme::kAccentGreen);
     ImGui::PushStyleColor(ImGuiCol_Button, DebugTheme::kBgGreen);
     ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.45f, 0.68f, 0.52f, 0.40f));
-    if (ImGui::Button("WAVファイルをスキャン")) {
+    if (ImGui::Button("WAVファイルをスキャン"))
+    {
         DebugScanWavFiles();
         debugSelectedFile_ = -1;
         ImGuiNotification::Post("WAVを " + std::to_string(debugWavFileList_.size()) + " 件検出しました",
@@ -485,9 +570,11 @@ void Audio::Debug() {
     ImGui::TextDisabled("(%zu ファイル)", debugWavFileList_.size());
 
     ImGui::BeginChild("##filelist", ImVec2(0, 150), ImGuiChildFlags_Borders);
-    for (int i = 0; i < static_cast<int>(debugWavFileList_.size()); ++i) {
+    for (int i = 0; i < static_cast<int>(debugWavFileList_.size()); ++i)
+    {
         const bool selected = (debugSelectedFile_ == i);
-        if (ImGui::Selectable(debugWavFileList_[i].c_str(), selected)) {
+        if (ImGui::Selectable(debugWavFileList_[i].c_str(), selected))
+        {
             debugSelectedFile_ = i;
         }
     }
@@ -501,11 +588,14 @@ void Audio::Debug() {
     const bool hasSelection = (debugSelectedFile_ >= 0 &&
                                debugSelectedFile_ < static_cast<int>(debugWavFileList_.size()));
 
-    if (!hasSelection) {
+    if (!hasSelection)
+    {
         ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kTextDim);
         ImGui::TextUnformatted("上のリストからファイルを選択してください");
         ImGui::PopStyleColor();
-    } else {
+    }
+    else
+    {
         const std::string &selectedName = debugWavFileList_[debugSelectedFile_];
 
         uint32_t idx = DebugResolveIndex(selectedName);
@@ -516,10 +606,13 @@ void Audio::Debug() {
         ImGui::AlignTextToFramePadding();
         ImGui::Text("%s", selectedName.c_str());
         ImGui::SameLine();
-        if (loaded) {
+        if (loaded)
+        {
             StatusBadge(playing ? "再生中" : "ロード済み",
                         playing ? DebugTheme::kAccentGreen : DebugTheme::kAccentCyan);
-        } else {
+        }
+        else
+        {
             StatusBadge("未ロード", DebugTheme::kAccentOrange);
         }
 
@@ -530,11 +623,13 @@ void Audio::Debug() {
 
         ImGui::Spacing();
 
-        if (!loaded) {
+        if (!loaded)
+        {
             //-- Load ボタン
             ImGui::PushStyleColor(ImGuiCol_Button, DebugTheme::kBgBlue);
             ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.45f, 0.60f, 0.78f, 0.40f));
-            if (ImGui::Button("ロード", ImVec2(120, 0))) {
+            if (ImGui::Button("ロード", ImVec2(120, 0)))
+            {
                 // デバッグ用に Application/Assets/sounds から一時的にロードする
                 std::string savedDir = directoryPath_;
                 directoryPath_ = "Application/Assets/sounds";
@@ -544,10 +639,13 @@ void Audio::Debug() {
                 ImGuiNotification::Post("ロードしました: " + selectedName, {0.42f, 0.66f, 0.68f, 1.0f});
             }
             ImGui::PopStyleColor(2);
-        } else {
+        }
+        else
+        {
             //-- Play ボタン
             ImGui::BeginDisabled(playing);
-            if (ImGui::Button("再生")) {
+            if (ImGui::Button("再生"))
+            {
                 PlayWave(idx, debugVolume_, debugLoop_);
             }
             ImGui::EndDisabled();
@@ -556,7 +654,8 @@ void Audio::Debug() {
 
             //-- Stop ボタン
             ImGui::BeginDisabled(!playing);
-            if (ImGui::Button("停止")) {
+            if (ImGui::Button("停止"))
+            {
                 StopWave(idx);
             }
             ImGui::EndDisabled();
@@ -564,8 +663,10 @@ void Audio::Debug() {
             ImGui::SameLine();
 
             //-- 再生中のみ音量を即時反映
-            if (playing) {
-                if (ImGui::Button("音量を適用")) {
+            if (playing)
+            {
+                if (ImGui::Button("音量を適用"))
+                {
                     SetVolume(idx, debugVolume_);
                 }
                 ImGui::SameLine();
@@ -575,7 +676,8 @@ void Audio::Debug() {
             ImGui::BeginDisabled(playing);
             ImGui::PushStyleColor(ImGuiCol_Button, DebugTheme::kBgRed);
             ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.80f, 0.46f, 0.46f, 0.40f));
-            if (ImGui::Button("アンロード")) {
+            if (ImGui::Button("アンロード"))
+            {
                 StopWave(idx);
                 Unload(idx);
                 debugLoadedMap_.erase(selectedName);
@@ -586,12 +688,14 @@ void Audio::Debug() {
             ImGui::EndDisabled();
 
             //-- 再生時間バー
-            if (loaded) {
+            if (loaded)
+            {
                 float duration = DebugGetDurationSec(idx);
                 float position = playing ? DebugGetPositionSec(idx) : 0.0f;
 
                 // ループ時は position が duration を超えることがあるのでクランプ
-                if (duration > 0.0f) {
+                if (duration > 0.0f)
+                {
                     position = (position > duration) ? std::fmod(position, duration) : position;
                 }
 
@@ -606,7 +710,8 @@ void Audio::Debug() {
                 ImGui::PopStyleColor();
 
                 // 詳細情報
-                if (duration > 0.0f) {
+                if (duration > 0.0f)
+                {
                     const SoundData &sd = soundDatas_[idx];
                     ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kTextDim);
                     ImGui::Text("ch:%u   %u Hz   %u bit   %u B/s",
@@ -619,12 +724,15 @@ void Audio::Debug() {
 
                 // 波形プレビュー（PCM の min/max エンベロープを ImPlot で描画）
                 // 選択音が変わったときだけ再構築する
-                if (debugWaveformIndex_ != static_cast<int>(idx)) {
+                if (debugWaveformIndex_ != static_cast<int>(idx))
+                {
                     DebugBuildWaveform(idx);
                 }
-                if (!debugWaveformMax_.empty()) {
+                if (!debugWaveformMax_.empty())
+                {
                     ImGui::Spacing();
-                    if (ImPlot::BeginPlot("##waveform", ImVec2(-1.0f, 90.0f), ImPlotFlags_CanvasOnly)) {
+                    if (ImPlot::BeginPlot("##waveform", ImVec2(-1.0f, 90.0f), ImPlotFlags_CanvasOnly))
+                    {
                         ImPlot::SetupAxes(nullptr, nullptr,
                                           ImPlotAxisFlags_NoDecorations,
                                           ImPlotAxisFlags_NoDecorations);
@@ -639,7 +747,8 @@ void Audio::Debug() {
                                            debugWaveformMax_.data(), count);
 
                         // 再生ヘッド（再生中のみ縦線で表示）
-                        if (playing && duration > 0.0f) {
+                        if (playing && duration > 0.0f)
+                        {
                             double head = (position / duration) * bucketCount;
                             ImPlot::SetNextLineStyle(DebugTheme::kAccentOrange, 2.0f);
                             ImPlot::PlotInfLines("##playhead", &head, 1);
@@ -656,12 +765,14 @@ void Audio::Debug() {
     // ── ロード済みファイル一覧 ──
     SectionHeader("[ ロード済みファイル ]", DebugTheme::kAccentPurple);
     ImGui::BeginChild("##loadedlist", ImVec2(0, 120), ImGuiChildFlags_Borders);
-    if (debugLoadedMap_.empty()) {
+    if (debugLoadedMap_.empty())
+    {
         ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kTextDim);
         ImGui::TextUnformatted("（ロード済みファイルはありません）");
         ImGui::PopStyleColor();
     }
-    for (auto &[name, soundIdx] : debugLoadedMap_) {
+    for (auto &[name, soundIdx] : debugLoadedMap_)
+    {
         bool isPlaying = DebugIsPlaying(soundIdx);
         float dur = DebugGetDurationSec(soundIdx);
         float pos = isPlaying ? DebugGetPositionSec(soundIdx) : 0.0f;
@@ -678,8 +789,10 @@ void Audio::Debug() {
     ImGui::Spacing();
     ImGui::PushStyleColor(ImGuiCol_Button, DebugTheme::kBgRed);
     ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.80f, 0.46f, 0.46f, 0.40f));
-    if (ImGui::Button("すべて停止", ImVec2(-1.0f, 0.0f))) {
-        for (auto &[name, soundIdx] : debugLoadedMap_) {
+    if (ImGui::Button("すべて停止", ImVec2(-1.0f, 0.0f)))
+    {
+        for (auto &[name, soundIdx] : debugLoadedMap_)
+        {
             StopWave(soundIdx);
         }
         ImGuiNotification::Post("すべての再生を停止しました", {0.82f, 0.58f, 0.36f, 1.0f});

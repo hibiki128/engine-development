@@ -3,7 +3,7 @@
 #include "cmath"
 #include "type/Matrix4x4.h"
 #include "type/Vector4.h"
-#include <Camera/ViewProjection/ViewProjection.h>
+#include <camera/projection/ViewProjection.h>
 #include <type/Quaternion.h>
 #include <type/Vector3.h>
 
@@ -12,7 +12,8 @@ namespace Hagine {
 /// <summary>
 /// 球の形状データ
 /// </summary>
-struct Sphere {
+struct Sphere
+{
     Vector3 center = {0.0f, 0.0f, 0.0f}; //!< 中心点
     float radius = 0.0f;                 //!< 半径
 };
@@ -20,7 +21,8 @@ struct Sphere {
 /// <summary>
 /// 軸平行境界ボックス（AABB）の形状データ
 /// </summary>
-struct AABB {
+struct AABB
+{
     Vector3 min; //!< 最小点
     Vector3 max; //!< 最大点
 };
@@ -28,7 +30,8 @@ struct AABB {
 /// <summary>
 /// 有向境界ボックス（OBB）の形状データ
 /// </summary>
-struct OBB {
+struct OBB
+{
     Vector3 rotationCenter;     // 回転中心
     Vector3 scaleCenter;        // スケール中心
     Vector3 scaleCenterRotated; // 回転後のスケール中心
@@ -40,7 +43,8 @@ struct OBB {
 /// 三角形の形状データ
 /// メッシュコライダーの最小要素として利用する
 /// </summary>
-struct Triangle {
+struct Triangle
+{
     Vector3 v[3];   // 3頂点
     Vector3 normal; // 面法線（正規化済みを想定）
 };
@@ -51,9 +55,9 @@ static const int kColumnWidth = 60;
 static const int kRowHeight = 20;
 
 // 線形補間
-float Lerp(float _start, float _end, float _t);
-Vector3 Lerp(const Vector3 &_start, const Vector3 &_end, float _t);
-Vector4 Lerp(const Vector4 &_start, const Vector4 &_end, float _t);
+float Lerp(float start, float end, float t);
+Vector3 Lerp(const Vector3 &start, const Vector3 &end, float t);
+Vector4 Lerp(const Vector4 &start, const Vector4 &end, float t);
 
 // 平行移動行列
 Matrix4x4 MakeTranslateMatrix(const Vector3 &translate);

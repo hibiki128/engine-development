@@ -1,46 +1,51 @@
 #include "Material.h"
 
 #include "fstream"
-#include <Graphics/Srv/SrvManager.h>
-#include <Graphics/Texture/TextureManager.h>
+#include <graphics/srv/SrvManager.h>
+#include <graphics/texture/TextureManager.h>
 
 namespace Hagine {
-void Material::Initialize() {
-    dxCommon_ = DirectXCommon::GetInstance();
+void Material::Initialize()
+{
+    pDxCommon_ = DirectXCommon::GetInstance();
     CreateMaterial();
 }
 
-void Material::LoadTexture() {
+void Material::LoadTexture()
+{
     // テクスチャの読み込み
     TextureManager::GetInstance()->LoadTexture(materialData_.textureFilePath);
     materialData_.textureIndex = TextureManager::GetInstance()->GetTextureIndexByFilePath(materialData_.textureFilePath);
 }
 
-void Material::PrimitiveInitialize(const PrimitiveType &type) {
+void Material::PrimitiveInitialize(const PrimitiveType &type)
+{
     materialData_.color = PrimitiveModel::GetInstance()->GetPrimitiveData(type).color;
     materialData_.uvTransform = PrimitiveModel::GetInstance()->GetPrimitiveData(type).uvMatrix;
     materialData_.textureFilePath = "debug/uvChecker.png";
 }
 
-void Material::Draw(const Vector4 color, bool lighting) {
-    materialDataGPU_->color = color;
-    materialDataGPU_->enableLighting = lighting ? 1 : 0;
+void Material::Draw(const Vector4 color, bool lighting)
+{
+    pMaterialDataGPU_->color = color;
+    pMaterialDataGPU_->enableLighting = lighting ? 1 : 0;
 
     materialData_.uvTransform = MakeAffineMatrix({materialData_.uvSize.x, materialData_.uvSize.y, 1.0f}, {0.0f, 0.0f, materialData_.uvRotate}, {materialData_.uvPosition.x, materialData_.uvPosition.y, 0.0f});
 
     // 法線マッピング関連（ImGui等での変更を毎フレーム反映）
-    materialDataGPU_->enableNormalMap = materialData_.enableNormalMap ? 1 : 0;
-    materialDataGPU_->enableProceduralNormal = materialData_.enableProceduralNormal ? 1 : 0;
-    materialDataGPU_->normalStrength = materialData_.normalStrength;
-    materialDataGPU_->proceduralScale = materialData_.proceduralScale;
+    pMaterialDataGPU_->enableNormalMap = materialData_.enableNormalMap ? 1 : 0;
+    pMaterialDataGPU_->enableProceduralNormal = materialData_.enableProceduralNormal ? 1 : 0;
+    pMaterialDataGPU_->normalStrength = materialData_.normalStrength;
+    pMaterialDataGPU_->proceduralScale = materialData_.proceduralScale;
 
-    ID3D12GraphicsCommandList *commandList = dxCommon_->GetCommandList().Get();
+    ID3D12GraphicsCommandList *commandList = pDxCommon_->GetCommandList().Get();
     commandList->SetGraphicsRootConstantBufferView(0, materialResource_->GetGPUVirtualAddress());
 
     SrvManager::GetInstance()->SetGraphicsRootDescriptorTable(2, materialData_.textureIndex);
 }
 
-void Material::SetTexture(const std::string &texturePath) {
+void Material::SetTexture(const std::string &texturePath)
+{
     if (materialData_.textureFilePath == texturePath)
         return;
 
@@ -55,23 +60,27 @@ void Material::SetTexture(const std::string &texturePath) {
     UpdateGPUData();
 }
 
-void Material::SetEnvironmentCoefficients(float environmentCoefficients) {
+void Material::SetEnvironmentCoefficients(float environmentCoefficients)
+{
     materialData_.environmentCoefficient = environmentCoefficients;
     UpdateGPUData();
 }
 
-MaterialData Material::LoadMaterialTemplateFile(const std::string &directoryPath, const std::string &filename) {
+MaterialData Material::LoadMaterialTemplateFile(const std::string &directoryPath, const std::string &filename)
+{
     MaterialData materialData;                          // 構築するMaterialData
     std::string line;                                   // ファイルから読んだ1行を格納するもの
     std::ifstream file(directoryPath + "/" + filename); // ファイルを開く
     assert(file.is_open());                             // 開けなかったら止める
-    while (std::getline(file, line)) {
+    while (std::getline(file, line))
+    {
         std::string identifier;
         std::istringstream s(line);
         s >> identifier;
 
         // identifierに応じた処理
-        if (identifier == "map_Kd") {
+        if (identifier == "map_Kd")
+        {
             std::string textureFilename;
             s >> textureFilename;
             // 連結してファイルパスにする
@@ -80,44 +89,50 @@ MaterialData Material::LoadMaterialTemplateFile(const std::string &directoryPath
     }
 
     // テクスチャが張られていない場合の処理
-    if (materialData.textureFilePath.empty()) {
+    if (materialData.textureFilePath.empty())
+    {
         materialData.textureFilePath = directoryPath + "/" + "white1x1.png";
     }
 
     return materialData;
 }
 
-void Material::CreateMaterial() {
+void Material::CreateMaterial()
+{
     // GPUバッファの作成
-    materialResource_ = dxCommon_->CreateBufferResource(sizeof(MaterialDataGPU));
-    materialResource_->Map(0, nullptr, reinterpret_cast<void **>(&materialDataGPU_));
+    materialResource_ = pDxCommon_->CreateBufferResource(sizeof(MaterialDataGPU));
+    materialResource_->Map(0, nullptr, reinterpret_cast<void **>(&pMaterialDataGPU_));
 
     // 初期値設定
     UpdateGPUData();
 }
 
-void Material::UpdateGPUData() {
-    if (materialDataGPU_) {
-        materialDataGPU_->color = materialData_.color;
-        materialDataGPU_->enableLighting = materialData_.enableLighting ? 1 : 0;
-        materialDataGPU_->uvTransform = materialData_.uvTransform;
-        materialDataGPU_->shininess = 32.0f;
-        materialDataGPU_->environmentCoefficient = materialData_.environmentCoefficient;
-        materialDataGPU_->enableNormalMap = materialData_.enableNormalMap ? 1 : 0;
-        materialDataGPU_->enableProceduralNormal = materialData_.enableProceduralNormal ? 1 : 0;
-        materialDataGPU_->normalStrength = materialData_.normalStrength;
-        materialDataGPU_->proceduralScale = materialData_.proceduralScale;
+void Material::UpdateGPUData()
+{
+    if (pMaterialDataGPU_)
+    {
+        pMaterialDataGPU_->color = materialData_.color;
+        pMaterialDataGPU_->enableLighting = materialData_.enableLighting ? 1 : 0;
+        pMaterialDataGPU_->uvTransform = materialData_.uvTransform;
+        pMaterialDataGPU_->shininess = 32.0f;
+        pMaterialDataGPU_->environmentCoefficient = materialData_.environmentCoefficient;
+        pMaterialDataGPU_->enableNormalMap = materialData_.enableNormalMap ? 1 : 0;
+        pMaterialDataGPU_->enableProceduralNormal = materialData_.enableProceduralNormal ? 1 : 0;
+        pMaterialDataGPU_->normalStrength = materialData_.normalStrength;
+        pMaterialDataGPU_->proceduralScale = materialData_.proceduralScale;
     }
 }
 
-void Material::SetProceduralNormal(bool enable, float scale, float strength) {
+void Material::SetProceduralNormal(bool enable, float scale, float strength)
+{
     materialData_.enableProceduralNormal = enable;
     materialData_.proceduralScale = scale;
     materialData_.normalStrength = strength;
     UpdateGPUData();
 }
 
-void Material::SetNormalMap(const std::string &normalMapPath) {
+void Material::SetNormalMap(const std::string &normalMapPath)
+{
     if (normalMapPath.empty())
         return;
 

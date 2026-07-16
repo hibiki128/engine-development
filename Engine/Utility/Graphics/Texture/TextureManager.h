@@ -6,7 +6,7 @@
 #include "string"
 #include "unordered_map"
 #include "wrl.h"
-#include <Graphics/Srv/SrvManager.h>
+#include <graphics/srv/SrvManager.h>
 #include <array>
 #include <memory>
 
@@ -121,7 +121,7 @@ class TextureManager
 
     bool GetDDS() { return isDDS_; }
 
-    SrvManager *GetSrvManager() { return srvManager_; }
+    SrvManager *GetSrvManager() { return pSrvManager_; }
 
     // -----------------------------------------------------------------------
     // 非公開型・メンバ
@@ -144,8 +144,8 @@ class TextureManager
     // MakeFontKey() で生成したキーをキーとするフォントデータのマップ
     std::unordered_map<std::string, FontData> fontDatas_;
 
-    DirectXCommon *dxCommon_ = nullptr;
-    SrvManager *srvManager_ = nullptr;
+    DirectXCommon *pDxCommon_ = nullptr;
+    SrvManager *pSrvManager_ = nullptr;
 
     bool isDDS_ = false;
 

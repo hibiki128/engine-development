@@ -4,11 +4,13 @@
 
 namespace Hagine {
 
-void DXCommandList::Initialize(DXDevice *device, D3D12_COMMAND_LIST_TYPE type) {
+void DXCommandList::Initialize(DXDevice *device, D3D12_COMMAND_LIST_TYPE type)
+{
     HRESULT hr;
 
     // コマンドアロケータをフレーム数分生成する
-    for (UINT i = 0; i < kFrameCount; ++i) {
+    for (UINT i = 0; i < kFrameCount; ++i)
+    {
         hr = device->Get()->CreateCommandAllocator(type, IID_PPV_ARGS(&commandAllocators_[i]));
         assert(SUCCEEDED(hr));
     }
@@ -20,13 +22,15 @@ void DXCommandList::Initialize(DXDevice *device, D3D12_COMMAND_LIST_TYPE type) {
     isOpen_ = true;
 }
 
-void DXCommandList::Close() {
+void DXCommandList::Close()
+{
     HRESULT hr = commandList_->Close();
     assert(SUCCEEDED(hr));
     isOpen_ = false;
 }
 
-void DXCommandList::Reset(UINT frameIndex) {
+void DXCommandList::Reset(UINT frameIndex)
+{
     HRESULT hr = commandAllocators_[frameIndex]->Reset();
     assert(SUCCEEDED(hr));
     hr = commandList_->Reset(commandAllocators_[frameIndex].Get(), nullptr);

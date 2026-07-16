@@ -1,18 +1,20 @@
 #define NOMINMAX
 #include "ParticleManager.h"
-#include "Frame/Frame.h"
-#include "Graphics/Texture/TextureManager.h"
+#include "frame/Frame.h"
+#include "graphics/texture/TextureManager.h"
 #include <fstream>
 #include <random>
 
 namespace Hagine {
-void ParticleManager::Initialize(SrvManager *srvManager) {
-    particleCommon_ = ParticleCommon::GetInstance();
-    srvManager_ = srvManager;
+void ParticleManager::Initialize(SrvManager *srvManager)
+{
+    pParticleCommon_ = ParticleCommon::GetInstance();
+    pSrvManager_ = srvManager;
     randomEngine_.seed(seedGenerator_());
 }
 
-void ParticleManager::Update(const ViewProjection &viewProjection) {
+void ParticleManager::Update(const ViewProjection &viewProjection)
+{
     Matrix4x4 viewProjectionMatrix = viewProjection.matView_ * viewProjection.matProjection_;
     Matrix4x4 billboardMatrix = viewProjection.matView_;
     billboardMatrix.m[3][0] = 0.0f;
@@ -21,14 +23,17 @@ void ParticleManager::Update(const ViewProjection &viewProjection) {
     billboardMatrix.m[3][3] = 1.0f;
     billboardMatrix = Inverse(billboardMatrix);
 
-    for (auto &[groupName, particleGroup] : particleGroups_) {
+    for (auto &[groupName, particleGroup] : particleGroups_)
+    {
         uint32_t numInstance = 0;
         ParticleSetting &particleSetting = particleSettings_[groupName];
 
         auto &particles = particleGroup->GetParticleGroupData().particles;
         std::list<Particle> aliveParticles;
-        for (auto &particle : particles) {
-            if (particle.lifeTime <= particle.currentTime) {
+        for (auto &particle : particles)
+        {
+            if (particle.lifeTime <= particle.currentTime)
+            {
                 continue;
             }
 
@@ -36,9 +41,11 @@ void ParticleManager::Update(const ViewProjection &viewProjection) {
             particleGroup->GetParticleGroupData().blendMode = particle.blendMode;
 
             // 軌跡パーティクル生成処理
-            if (particleSetting.enableTrail && !particle.isChild) {
+            if (particleSetting.enableTrail && !particle.isChild)
+            {
                 particle.trailSpawnTimer += Frame::DeltaTime();
-                if (particle.trailSpawnTimer >= particleSetting.trailSpawnInterval) {
+                if (particle.trailSpawnTimer >= particleSetting.trailSpawnInterval)
+                {
                     CreateTrailParticle(particle, particleSetting);
                     particle.trailSpawnTimer = 0.0f;
                 }
@@ -48,7 +55,8 @@ void ParticleManager::Update(const ViewProjection &viewProjection) {
             t = std::clamp(t, 0.0f, 1.0f);
 
             // --- 色補間処理 ---
-            if (!particle.isChild && !particleSetting.isRandomColor) {
+            if (!particle.isChild && !particleSetting.isRandomColor)
+            {
                 // 通常パーティクルのみ補間
                 const Vector4 &startColor = particleSetting.startColor;
                 const Vector4 &endColor = particleSetting.endColor;
@@ -58,15 +66,19 @@ void ParticleManager::Update(const ViewProjection &viewProjection) {
                 // アルファは既存ロジック
             }
 
-            if (particleSetting.isSinMove) {
+            if (particleSetting.isSinMove)
+            {
                 float waveScale = 0.5f * (sin(t * DirectX::XM_PI * 18.0f) + 1.0f);
                 float maxScale = (1.0f - t);
                 particle.transform.scale_ =
                     particle.startScale * waveScale * maxScale;
-            } else {
+            }
+            else
+            {
                 particle.transform.scale_ =
                     (1.0f - t) * particle.startScale + t * particle.endScale;
-                if (!(particleSetting.isGatherMode && t >= particleSetting.gatherStartRatio)) {
+                if (!(particleSetting.isGatherMode && t >= particleSetting.gatherStartRatio))
+                {
                     particle.color.w = particle.initialAlpha - (particle.currentTime / particle.lifeTime);
                 }
             }
@@ -74,11 +86,13 @@ void ParticleManager::Update(const ViewProjection &viewProjection) {
             bool isGathering = false;
             // トレイルパーティクルで速度継承がオフの場合はギャザリングしない
             bool shouldGather = particleSetting.isGatherMode && t >= particleSetting.gatherStartRatio;
-            if (particle.isChild && !particleSetting.trailInheritVelocity) {
+            if (particle.isChild && !particleSetting.trailInheritVelocity)
+            {
                 shouldGather = false;
             }
 
-            if (shouldGather) {
+            if (shouldGather)
+            {
                 particle.emitterPosition = emitterCenter_;
                 isGathering = true;
                 float gatherFactor = (t - particleSetting.gatherStartRatio) / (1.0f - particleSetting.gatherStartRatio);
@@ -87,7 +101,8 @@ void ParticleManager::Update(const ViewProjection &viewProjection) {
                 float distance = toEmitter.Length();
                 float distanceBasedAlpha = distance / (distance + 0.5f);
                 particle.color.w = particle.initialAlpha * (1.0f - gatherFactor) * distanceBasedAlpha;
-                if (distance < 0.05f) {
+                if (distance < 0.05f)
+                {
                     particle.currentTime = particle.lifeTime;
                     continue;
                 }
@@ -99,10 +114,12 @@ void ParticleManager::Update(const ViewProjection &viewProjection) {
                 particle.transform.translation_ += particle.velocity;
             }
 
-            if (!isGathering) {
+            if (!isGathering)
+            {
                 particle.Acce = (1.0f - t) * particle.startAcce + t * particle.endAcce;
 
-                if (particleSetting.isFaceDirection) {
+                if (particleSetting.isFaceDirection)
+                {
                     Vector3 forward = particle.fixedDirection;
                     Vector3 initialUp = {0.0f, 1.0f, 0.0f};
                     Vector3 rotationAxis = initialUp.Cross(forward).Normalize();
@@ -111,16 +128,23 @@ void ParticleManager::Update(const ViewProjection &viewProjection) {
                     particle.transform.eulerRotation_.x = rotationAxis.x * angle;
                     particle.transform.eulerRotation_.y = rotationAxis.y * angle;
                     particle.transform.eulerRotation_.z = rotationAxis.z * angle;
-                } else if (particleSetting.isRandomRotate) {
+                }
+                else if (particleSetting.isRandomRotate)
+                {
                     particle.transform.eulerRotation_ += particle.rotateVelocity;
-                } else {
+                }
+                else
+                {
                     particle.transform.eulerRotation_ =
                         (1.0f - t) * particle.startRote + t * particle.endRote;
                 }
 
-                if (particleSetting.isAcceMultiply) {
+                if (particleSetting.isAcceMultiply)
+                {
                     particle.velocity *= particle.Acce;
-                } else {
+                }
+                else
+                {
                     particle.velocity += particle.Acce;
                 }
                 particle.transform.translation_ +=
@@ -134,7 +158,8 @@ void ParticleManager::Update(const ViewProjection &viewProjection) {
 
             // === 各軸ビルボード処理 ===
             if (particleSetting.isBillboard || particleSetting.isBillboardX ||
-                particleSetting.isBillboardY || particleSetting.isBillboardZ) {
+                particleSetting.isBillboardY || particleSetting.isBillboardZ)
+            {
 
                 Matrix4x4 customBillboardMatrix = MakeIdentity4x4();
                 Matrix4x4 viewMatrix = viewProjection.matView_;
@@ -144,30 +169,36 @@ void ParticleManager::Update(const ViewProjection &viewProjection) {
                 Vector3 up = {viewMatrix.m[0][1], viewMatrix.m[1][1], viewMatrix.m[2][1]};
                 Vector3 forward = {viewMatrix.m[0][2], viewMatrix.m[1][2], viewMatrix.m[2][2]};
 
-                if (particleSetting.isBillboard) {
+                if (particleSetting.isBillboard)
+                {
                     // 従来の完全ビルボード
                     customBillboardMatrix = billboardMatrix;
-                } else {
+                }
+                else
+                {
                     // 各軸のビルボード処理
                     Vector3 finalRight = right;
                     Vector3 finalUp = up;
                     Vector3 finalForward = forward;
 
-                    if (!particleSetting.isBillboardX) {
+                    if (!particleSetting.isBillboardX)
+                    {
                         // X軸を固定（World空間のX軸を使用）
                         finalRight = {1.0f, 0.0f, 0.0f};
                         finalForward = finalUp.Cross(finalRight).Normalize();
                         finalUp = finalRight.Cross(finalForward).Normalize();
                     }
 
-                    if (!particleSetting.isBillboardY) {
+                    if (!particleSetting.isBillboardY)
+                    {
                         // Y軸を固定（World空間のY軸を使用）
                         finalUp = {0.0f, 1.0f, 0.0f};
                         finalRight = finalUp.Cross(finalForward).Normalize();
                         finalForward = finalRight.Cross(finalUp).Normalize();
                     }
 
-                    if (!particleSetting.isBillboardZ) {
+                    if (!particleSetting.isBillboardZ)
+                    {
                         // Z軸を固定（World空間のZ軸を使用）
                         finalForward = {0.0f, 0.0f, 1.0f};
                         finalRight = finalUp.Cross(finalForward).Normalize();
@@ -190,7 +221,8 @@ void ParticleManager::Update(const ViewProjection &viewProjection) {
                 // ビルボード後にZ軸回転を適用
                 Matrix4x4 zRotationMatrix = MakeIdentity4x4();
                 if (particleSetting.isRandomRotate ||
-                    (!particleSetting.isFaceDirection && (particle.transform.eulerRotation_.z != 0.0f || particle.rotateVelocity.z != 0.0f))) {
+                    (!particleSetting.isFaceDirection && (particle.transform.eulerRotation_.z != 0.0f || particle.rotateVelocity.z != 0.0f)))
+                {
                     // Z軸回転マトリックスを作成
                     float cosZ = cosf(particle.transform.eulerRotation_.z);
                     float sinZ = sinf(particle.transform.eulerRotation_.z);
@@ -202,14 +234,17 @@ void ParticleManager::Update(const ViewProjection &viewProjection) {
 
                 worldMatrix = MakeScaleMatrix(particle.transform.scale_) * zRotationMatrix * customBillboardMatrix *
                               MakeTranslateMatrix(particle.transform.translation_);
-            } else {
+            }
+            else
+            {
                 worldMatrix = MakeAffineMatrix(particle.transform.scale_,
                                                particle.transform.eulerRotation_,
                                                particle.transform.translation_);
             }
 
             Matrix4x4 worldViewProjectionMatrix = worldMatrix * viewProjectionMatrix;
-            if (numInstance < particleGroup->GetMaxInstance()) {
+            if (numInstance < particleGroup->GetMaxInstance())
+            {
                 particleGroup->GetParticleGroupData().instancingData[numInstance].WVP = worldViewProjectionMatrix;
                 particleGroup->GetParticleGroupData().instancingData[numInstance].World = worldMatrix;
                 particleGroup->GetParticleGroupData().instancingData[numInstance].color = particle.color;
@@ -224,7 +259,8 @@ void ParticleManager::Update(const ViewProjection &viewProjection) {
 }
 
 // 軌跡パーティクル生成メソッド
-void ParticleManager::CreateTrailParticle(const Particle &parent, const ParticleSetting &setting) {
+void ParticleManager::CreateTrailParticle(const Particle &parent, const ParticleSetting &setting)
+{
     // 軌跡パーティクルを作成
     Particle trailParticle;
     trailParticle.isChild = true;
@@ -236,9 +272,12 @@ void ParticleManager::CreateTrailParticle(const Particle &parent, const Particle
     trailParticle.transform.scale_ = parent.transform.scale_ * setting.trailScaleMultiplier;
 
     // 速度の設定
-    if (setting.trailInheritVelocity) {
+    if (setting.trailInheritVelocity)
+    {
         trailParticle.velocity = parent.velocity * setting.trailVelocityScale;
-    } else {
+    }
+    else
+    {
         trailParticle.velocity = {0.0f, 0.0f, 0.0f};
     }
 
@@ -258,41 +297,51 @@ void ParticleManager::CreateTrailParticle(const Particle &parent, const Particle
     trailParticle.blendMode = parent.blendMode;
 
     // パーティクルグループに追加
-    for (auto &[groupName, particleGroup] : particleGroups_) {
-        if (particleSettings_[groupName].enableTrail) {
+    for (auto &[groupName, particleGroup] : particleGroups_)
+    {
+        if (particleSettings_[groupName].enableTrail)
+        {
             particleGroup->GetParticleGroupData().particles.push_back(trailParticle);
             break;
         }
     }
 }
 
-void ParticleManager::SetTrailEnabled(const std::string &groupName, bool enabled) {
-    if (particleSettings_.find(groupName) != particleSettings_.end()) {
+void ParticleManager::SetTrailEnabled(const std::string &groupName, bool enabled)
+{
+    if (particleSettings_.find(groupName) != particleSettings_.end())
+    {
         particleSettings_[groupName].enableTrail = enabled;
     }
 }
 
-void ParticleManager::SetTrailSettings(const std::string &groupName, float interval, int maxTrails) {
-    if (particleSettings_.find(groupName) != particleSettings_.end()) {
+void ParticleManager::SetTrailSettings(const std::string &groupName, float interval, int maxTrails)
+{
+    if (particleSettings_.find(groupName) != particleSettings_.end())
+    {
         particleSettings_[groupName].trailSpawnInterval = interval;
         particleSettings_[groupName].maxTrailParticles = maxTrails;
     }
 }
 
-void ParticleManager::Draw() {
-    for (auto &[groupName, particleGroup] : particleGroups_) {
-        particleCommon_->DrawCommonSetting(particleGroup->GetParticleGroupData().blendMode);
+void ParticleManager::Draw()
+{
+    for (auto &[groupName, particleGroup] : particleGroups_)
+    {
+        pParticleCommon_->DrawCommonSetting(particleGroup->GetParticleGroupData().blendMode);
         const auto &meshes = particleGroup->GetModelData().meshes;
-        for (size_t meshIndex = 0; meshIndex < meshes.size(); ++meshIndex) {
+        for (size_t meshIndex = 0; meshIndex < meshes.size(); ++meshIndex)
+        {
             D3D12_INDEX_BUFFER_VIEW indexBufferView = particleGroup->GetIndexBufferView();
             D3D12_VERTEX_BUFFER_VIEW vertexBufferView = particleGroup->GetVertexBufferView();
-            particleCommon_->GetDxCommon()->GetCommandList()->IASetIndexBuffer(&indexBufferView);
-            particleCommon_->GetDxCommon()->GetCommandList()->IASetVertexBuffers(0, 1, &vertexBufferView);
-            if (particleGroup->GetParticleGroupData().instanceCount > 0) {
-                particleCommon_->GetDxCommon()->GetCommandList()->SetGraphicsRootConstantBufferView(0, particleGroup->GetmaterialResource()->GetGPUVirtualAddress());
-                srvManager_->SetGraphicsRootDescriptorTable(1, particleGroup->GetParticleGroupData().instancingSRVIndex);
-                srvManager_->SetGraphicsRootDescriptorTable(2, particleGroup->GetParticleGroupData().materials[meshIndex].textureIndex);
-                particleCommon_->GetDxCommon()->GetCommandList()->DrawIndexedInstanced(
+            pParticleCommon_->GetDxCommon()->GetCommandList()->IASetIndexBuffer(&indexBufferView);
+            pParticleCommon_->GetDxCommon()->GetCommandList()->IASetVertexBuffers(0, 1, &vertexBufferView);
+            if (particleGroup->GetParticleGroupData().instanceCount > 0)
+            {
+                pParticleCommon_->GetDxCommon()->GetCommandList()->SetGraphicsRootConstantBufferView(0, particleGroup->GetmaterialResource()->GetGPUVirtualAddress());
+                pSrvManager_->SetGraphicsRootDescriptorTable(1, particleGroup->GetParticleGroupData().instancingSRVIndex);
+                pSrvManager_->SetGraphicsRootDescriptorTable(2, particleGroup->GetParticleGroupData().materials[meshIndex].textureIndex);
+                pParticleCommon_->GetDxCommon()->GetCommandList()->DrawIndexedInstanced(
                     UINT(meshes[meshIndex].indices.size()),
                     particleGroup->GetParticleGroupData().instanceCount,
                     0, 0, 0);
@@ -301,40 +350,48 @@ void ParticleManager::Draw() {
     }
 }
 
-void ParticleManager::AddParticleGroup(ParticleGroup *particleGroup) {
+void ParticleManager::AddParticleGroup(ParticleGroup *particleGroup)
+{
     assert(particleGroup);
     std::string groupName = particleGroup->GetGroupName();
     particleGroups_.insert(std::pair(groupName, particleGroup));
     particleGroupNames_.push_back(groupName);
     // デフォルト設定を追加
-    if (particleSettings_.find(groupName) == particleSettings_.end()) {
+    if (particleSettings_.find(groupName) == particleSettings_.end())
+    {
         particleSettings_[groupName] = ParticleSetting{};
     }
 }
 
-void ParticleManager::RemoveParticleGroup(const std::string &name) {
+void ParticleManager::RemoveParticleGroup(const std::string &name)
+{
     // マップから削除
     particleGroups_.erase(name);
     particleSettings_.erase(name);
 
     // vector からも削除
     auto it = std::find(particleGroupNames_.begin(), particleGroupNames_.end(), name);
-    if (it != particleGroupNames_.end()) {
+    if (it != particleGroupNames_.end())
+    {
         particleGroupNames_.erase(it);
     }
 }
 
-void ParticleManager::SetParticleSetting(const std::string &groupName, const ParticleSetting &setting) {
+void ParticleManager::SetParticleSetting(const std::string &groupName, const ParticleSetting &setting)
+{
     particleSettings_[groupName] = setting;
 }
-ParticleSetting &ParticleManager::GetParticleSetting(const std::string &groupName) {
+ParticleSetting &ParticleManager::GetParticleSetting(const std::string &groupName)
+{
     return particleSettings_[groupName];
 }
-std::vector<std::string> ParticleManager::GetParticleGroupsName() {
+std::vector<std::string> ParticleManager::GetParticleGroupsName()
+{
     return particleGroupNames_;
 }
 
-Particle ParticleManager::MakeNewParticle(std::mt19937 &randomEngine_, const ParticleSetting &setting) {
+Particle ParticleManager::MakeNewParticle(std::mt19937 &randomEngine_, const ParticleSetting &setting)
+{
     std::uniform_real_distribution<float> distribution(-1.0f, 1.0f);
     std::uniform_real_distribution<float> distVelocityX(setting.velocityMin.x, setting.velocityMax.x);
     std::uniform_real_distribution<float> distVelocityY(setting.velocityMin.y, setting.velocityMax.y);
@@ -346,7 +403,8 @@ Particle ParticleManager::MakeNewParticle(std::mt19937 &randomEngine_, const Par
     particle.transform.isUseQuaternion_ = false;
     Vector3 randomTranslate;
     particle.emitterPosition = setting.translate;
-    if (setting.isEmitOnEdge) {
+    if (setting.isEmitOnEdge)
+    {
         std::uniform_int_distribution<int> edgeSelector(0, 11);
         std::uniform_real_distribution<float> edgePosition(0.0f, 1.0f);
         int selectedEdge = edgeSelector(randomEngine_);
@@ -370,7 +428,9 @@ Particle ParticleManager::MakeNewParticle(std::mt19937 &randomEngine_, const Par
         randomTranslate.x *= setting.scale.x;
         randomTranslate.y *= setting.scale.y;
         randomTranslate.z *= setting.scale.z;
-    } else {
+    }
+    else
+    {
         randomTranslate = {
             distribution(randomEngine_) * setting.scale.x,
             distribution(randomEngine_) * setting.scale.y,
@@ -383,23 +443,30 @@ Particle ParticleManager::MakeNewParticle(std::mt19937 &randomEngine_, const Par
         randomTranslate.x * rotationMatrix.m[0][2] + randomTranslate.y * rotationMatrix.m[1][2] + randomTranslate.z * rotationMatrix.m[2][2]};
     particle.transform.translation_ = setting.translate + rotatedPosition;
 
-    if (setting.isRandomAllSize) {
+    if (setting.isRandomAllSize)
+    {
         std::uniform_real_distribution<float> distScaleX(setting.allScaleMin.x, setting.allScaleMax.x);
         std::uniform_real_distribution<float> distScaleY(setting.allScaleMin.y, setting.allScaleMax.y);
         std::uniform_real_distribution<float> distScaleZ(setting.allScaleMin.z, setting.allScaleMax.z);
         particle.startScale = {distScaleX(randomEngine_), distScaleY(randomEngine_), distScaleZ(randomEngine_)};
-        if (setting.isEndScale) {
+        if (setting.isEndScale)
+        {
             particle.endScale = particle.startScale;
         }
-    } else if (setting.isRandomSize) {
+    }
+    else if (setting.isRandomSize)
+    {
         std::uniform_real_distribution<float> distScale(setting.scaleMin, setting.scaleMax);
         particle.startScale.x = distScale(randomEngine_);
         particle.startScale.y = particle.startScale.x;
         particle.startScale.z = particle.startScale.x;
-    } else {
+    }
+    else
+    {
         particle.startScale = setting.particleStartScale;
     }
-    if (!setting.isEndScale) {
+    if (!setting.isEndScale)
+    {
         particle.endScale = setting.particleEndScale;
     }
     particle.startAcce = setting.startAcce;
@@ -412,14 +479,16 @@ Particle ParticleManager::MakeNewParticle(std::mt19937 &randomEngine_, const Par
         randomVelocity.x * rotationMatrix.m[0][0] + randomVelocity.y * rotationMatrix.m[1][0] + randomVelocity.z * rotationMatrix.m[2][0],
         randomVelocity.x * rotationMatrix.m[0][1] + randomVelocity.y * rotationMatrix.m[1][1] + randomVelocity.z * rotationMatrix.m[2][1],
         randomVelocity.x * rotationMatrix.m[0][2] + randomVelocity.y * rotationMatrix.m[1][2] + randomVelocity.z * rotationMatrix.m[2][2]};
-    if (setting.isRandomRotate) {
+    if (setting.isRandomRotate)
+    {
         std::uniform_real_distribution<float> distRotateX(setting.rotateStartMin.x, setting.rotateStartMax.x);
         std::uniform_real_distribution<float> distRotateY(setting.rotateStartMin.y, setting.rotateStartMax.y);
         std::uniform_real_distribution<float> distRotateZ(setting.rotateStartMin.z, setting.rotateStartMax.z);
         particle.transform.eulerRotation_.x = distRotateX(randomEngine_);
         particle.transform.eulerRotation_.y = distRotateY(randomEngine_);
         particle.transform.eulerRotation_.z = distRotateZ(randomEngine_);
-        if (setting.isRotateVelocity) {
+        if (setting.isRotateVelocity)
+        {
             std::uniform_real_distribution<float> distRotateXVelocity(setting.rotateVelocityMin.x, setting.rotateVelocityMax.x);
             std::uniform_real_distribution<float> distRotateYVelocity(setting.rotateVelocityMin.y, setting.rotateVelocityMax.y);
             std::uniform_real_distribution<float> distRotateZVelocity(setting.rotateVelocityMin.z, setting.rotateVelocityMax.z);
@@ -427,19 +496,25 @@ Particle ParticleManager::MakeNewParticle(std::mt19937 &randomEngine_, const Par
             particle.rotateVelocity.y = distRotateYVelocity(randomEngine_);
             particle.rotateVelocity.z = distRotateZVelocity(randomEngine_);
         }
-    } else {
+    }
+    else
+    {
         particle.startRote = setting.startRote;
         particle.endRote = setting.endRote;
     }
 
-    if (setting.isRandomColor) {
+    if (setting.isRandomColor)
+    {
         std::uniform_real_distribution<float> distColor(0.0f, 1.0f);
         particle.color = {distColor(randomEngine_), distColor(randomEngine_), distColor(randomEngine_), distAlpha(randomEngine_)};
-    } else {
+    }
+    else
+    {
         particle.color = setting.startColor;
         particle.color.w = distAlpha(randomEngine_);
     }
-    if (setting.isFaceDirection) {
+    if (setting.isFaceDirection)
+    {
         Vector3 initialUp = {0.0f, 1.0f, 0.0f};
         Vector3 forward = particle.velocity.Normalize();
         particle.fixedDirection = forward;
@@ -459,12 +534,15 @@ Particle ParticleManager::MakeNewParticle(std::mt19937 &randomEngine_, const Par
     return particle;
 }
 
-std::list<Particle> ParticleManager::Emit() {
+std::list<Particle> ParticleManager::Emit()
+{
     std::list<Particle> allNewParticles;
-    for (auto &[groupName, particleGroup] : particleGroups_) {
+    for (auto &[groupName, particleGroup] : particleGroups_)
+    {
         std::list<Particle> newParticles;
         ParticleSetting &setting = particleSettings_[groupName];
-        for (uint32_t nowCount = 0; nowCount < setting.count; ++nowCount) {
+        for (uint32_t nowCount = 0; nowCount < setting.count; ++nowCount)
+        {
             Particle particle = MakeNewParticle(randomEngine_, setting);
             newParticles.push_back(particle);
         }
@@ -476,19 +554,24 @@ std::list<Particle> ParticleManager::Emit() {
     return allNewParticles;
 }
 
-bool ParticleManager::IsAllParticlesComplete() const {
-    for (const auto &[groupName, particleGroup] : particleGroups_) {
+bool ParticleManager::IsAllParticlesComplete() const
+{
+    for (const auto &[groupName, particleGroup] : particleGroups_)
+    {
         const auto &particles = particleGroup->GetParticleGroupData().particles;
-        if (!particles.empty()) {
+        if (!particles.empty())
+        {
             return false;
         }
     }
     return true;
 }
 
-bool ParticleManager::IsParticleGroupComplete(const std::string &groupName) const {
+bool ParticleManager::IsParticleGroupComplete(const std::string &groupName) const
+{
     auto it = particleGroups_.find(groupName);
-    if (it == particleGroups_.end()) {
+    if (it == particleGroups_.end())
+    {
         return true; // グループが存在しない場合はtrueを返す
     }
 
@@ -496,18 +579,22 @@ bool ParticleManager::IsParticleGroupComplete(const std::string &groupName) cons
     return particles.empty();
 }
 
-size_t ParticleManager::GetActiveParticleCount() const {
+size_t ParticleManager::GetActiveParticleCount() const
+{
     size_t totalCount = 0;
-    for (const auto &[groupName, particleGroup] : particleGroups_) {
+    for (const auto &[groupName, particleGroup] : particleGroups_)
+    {
         const auto &particles = particleGroup->GetParticleGroupData().particles;
         totalCount += particles.size();
     }
     return totalCount;
 }
 
-size_t ParticleManager::GetActiveParticleCount(const std::string &groupName) const {
+size_t ParticleManager::GetActiveParticleCount(const std::string &groupName) const
+{
     auto it = particleGroups_.find(groupName);
-    if (it == particleGroups_.end()) {
+    if (it == particleGroups_.end())
+    {
         return 0; // グループが存在しない場合は0を返す
     }
     const auto &particles = it->second->GetParticleGroupData().particles;

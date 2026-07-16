@@ -1,6 +1,6 @@
 #pragma once
 #include "DirectXCommon.h"
-#include <Graphics/Srv/SrvManager.h>
+#include <graphics/srv/SrvManager.h>
 
 namespace Hagine {
 
@@ -8,7 +8,8 @@ namespace Hagine {
 /// ポストエフェクト描画で使うバッファ群を管理するクラス
 /// エフェクトを繰り返し適用するためのピンポンバッファと、最終結果テクスチャを保持する
 /// </summary>
-class RenderBuffer {
+class RenderBuffer
+{
   public:
     /// ===================================================
     /// public method
@@ -78,7 +79,8 @@ class RenderBuffer {
     /// ピンポンバッファの数を取得
     /// </summary>
     /// <returns>const int: バッファ数</returns>
-    const int GetPingPongBufferCount() const {
+    const int GetPingPongBufferCount() const
+    {
         return kPingPongBufferCount;
     }
 
@@ -98,13 +100,13 @@ class RenderBuffer {
     void CreateFinalResultTexture();
 
     /// ===================================================
-    /// private variants
+    /// private variables
     /// ===================================================
 
     int currentPingPongBuffer_ = 0; // 現在の書き込み対象ピンポンバッファ
 
-    DirectXCommon *dxCommon_ = nullptr; // DirectX共通処理
-    SrvManager *srvManager_ = nullptr;  // SRVマネージャー
+    DirectXCommon *pDxCommon_ = nullptr; // DirectX共通処理
+    SrvManager *pSrvManager_ = nullptr;  // SRVマネージャー
 
     static const int kPingPongBufferCount = 2; // ピンポンバッファの数
     Microsoft::WRL::ComPtr<ID3D12Resource> pingPongResources_[kPingPongBufferCount];
