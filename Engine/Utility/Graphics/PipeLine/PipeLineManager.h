@@ -1,8 +1,6 @@
 #pragma once
 #include "d3d12.h"
-#include "string/stringUtility.h"
 #include "wrl.h"
-#include <Asset/AssetPath.h>
 #include <DirectXCommon.h>
 #include <string>
 #include <unordered_map>
@@ -11,68 +9,69 @@ namespace Hagine {
 enum class BlendMode
 {
     // ブレンドなし
-    kNone,
+    None,
     // 通常ブレンド
-    kNormal,
+    Normal,
     // 加算
-    kAdd,
+    Add,
     // 減算
-    kSubtract,
+    Subtract,
     // 乗算
-    kMultiply,
+    Multiply,
     // スクリーン
-    kScreen,
+    Screen,
 };
 
 enum class ShaderMode
 {
-    kNone,
-    kGray,
-    kVigneet,
-    kSmooth,
-    kGauss,
-    kOutLine,
-    kDepth,
-    kBlur,
-    kCinematic,
-    kDissolve,
-    kRandom,
-    kFocusLine,
-    kPixelate,
-    kBloom,
-    kRetro,
-    kShockwave,
-    kCount,
+    None,
+    Gray,
+    Vignette,
+    Smooth,
+    Gauss,
+    Outline,
+    Depth,
+    Blur,
+    Cinematic,
+    Dissolve,
+    Random,
+    FocusLine,
+    Pixelate,
+    Bloom,
+    Retro,
+    Shockwave,
+    Count,
 };
 
 enum class PipelineType
 {
-    kStandard,
-    kParticle,
-    kSprite,
-    kRender,
-    kSkinning,
-    kLine3d,
-    kSkybox,
-    kGPUParticle,
-    kShadowMap,
+    Standard,
+    Particle,
+    Sprite,
+    Render,
+    Skinning,
+    Line3d,
+    Skybox,
+    GPUParticle,
+    ShadowMap,
 };
 
-class PipeLineManager
+class PipelineManager
 {
   private:
     /// ====================================
     /// public method
     /// ====================================
 
-    PipeLineManager() = default;
-    ~PipeLineManager() = default;
-    PipeLineManager(PipeLineManager &) = delete;
-    PipeLineManager &operator=(PipeLineManager &) = delete;
+    PipelineManager() = default;
+    ~PipelineManager() = default;
+    PipelineManager(PipelineManager &) = delete;
+    PipelineManager &operator=(PipelineManager &) = delete;
 
   public:
-    static PipeLineManager *GetInstance() {
-        static PipeLineManager instance;
+    static PipelineManager *GetInstance()
+    {
+        static PipelineManager instance;
         return &instance;
     }
 
@@ -86,17 +85,17 @@ class PipeLineManager
     /// <summary>
     /// パイプラインの取得
     /// </summary>
-    Microsoft::WRL::ComPtr<ID3D12PipelineState> GetPipeline(PipelineType type, BlendMode blendMode = BlendMode::kNormal, ShaderMode shaderMode = ShaderMode::kNone);
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> GetPipeline(PipelineType type, BlendMode blendMode = BlendMode::Normal, ShaderMode shaderMode = ShaderMode::None);
 
     /// <summary>
     /// ルートシグネチャの取得
     /// </summary>
-    Microsoft::WRL::ComPtr<ID3D12RootSignature> GetRootSignature(PipelineType type, ShaderMode shaderMode = ShaderMode::kNone);
+    Microsoft::WRL::ComPtr<ID3D12RootSignature> GetRootSignature(PipelineType type, ShaderMode shaderMode = ShaderMode::None);
 
     /// <summary>
     /// 描画に必要な共通設定を行う
     /// </summary>
-    void DrawCommonSetting(PipelineType type, BlendMode blendMode = BlendMode::kNormal, ShaderMode shaderMode = ShaderMode::kNone);
+    void DrawCommonSetting(PipelineType type, BlendMode blendMode = BlendMode::Normal, ShaderMode shaderMode = ShaderMode::None);
 
   private:
     // 内部パイプライン作成メソッド
@@ -105,47 +104,47 @@ class PipeLineManager
     // 標準パイプライン関連
     void CreateStandardPipelines();
     Microsoft::WRL::ComPtr<ID3D12RootSignature> CreateRootSignature();
-    Microsoft::WRL::ComPtr<ID3D12PipelineState> CreateGraphicsPipeLine(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature, BlendMode blendMode);
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> CreateGraphicsPipeline(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature, BlendMode blendMode);
 
     // パーティクル関連
     void CreateParticlePipelines();
     Microsoft::WRL::ComPtr<ID3D12RootSignature> CreateParticleRootSignature();
-    Microsoft::WRL::ComPtr<ID3D12PipelineState> CreateParticleGraphicsPipeLine(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature, BlendMode blendMode);
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> CreateParticleGraphicsPipeline(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature, BlendMode blendMode);
 
     // GPUパーティクル関連
     void CreateGPUParticlePipelines();
     Microsoft::WRL::ComPtr<ID3D12RootSignature> CreateGPUParticleRootSignature();
-    Microsoft::WRL::ComPtr<ID3D12PipelineState> CreateGPUParticleGraphicsPipeLine(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature, BlendMode blendMode);
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> CreateGPUParticleGraphicsPipeline(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature, BlendMode blendMode);
 
     // スプライト関連
     void CreateSpritePipelines();
     Microsoft::WRL::ComPtr<ID3D12RootSignature> CreateSpriteRootSignature();
-    Microsoft::WRL::ComPtr<ID3D12PipelineState> CreateSpriteGraphicsPipeLine(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature, BlendMode blendMode);
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> CreateSpriteGraphicsPipeline(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature, BlendMode blendMode);
 
     // レンダー関連
     void CreateRenderPipelines();
     Microsoft::WRL::ComPtr<ID3D12RootSignature> CreateRenderRootSignature(ShaderMode shaderMode);
-    Microsoft::WRL::ComPtr<ID3D12PipelineState> CreateRenderGraphicsPipeLine(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature, ShaderMode shaderMode);
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> CreateRenderGraphicsPipeline(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature, ShaderMode shaderMode);
 
     // スキニング関連
     void CreateSkinningPipelines();
     Microsoft::WRL::ComPtr<ID3D12RootSignature> CreateSkinningRootSignature();
-    Microsoft::WRL::ComPtr<ID3D12PipelineState> CreateSkinningGraphicsPipeLine(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature);
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> CreateSkinningGraphicsPipeline(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature);
 
     // 3Dライン関連
     void CreateLine3dPipelines();
     Microsoft::WRL::ComPtr<ID3D12RootSignature> CreateLine3dRootSignature();
-    Microsoft::WRL::ComPtr<ID3D12PipelineState> CreateLine3dGraphicsPipeLine(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature);
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> CreateLine3dGraphicsPipeline(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature);
 
     // スカイボックス関連
     void CreateSkyboxPipelines();
     Microsoft::WRL::ComPtr<ID3D12RootSignature> CreateSkyboxRootSignature();
-    Microsoft::WRL::ComPtr<ID3D12PipelineState> CreateSkyboxGraphicsPipeLine(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature);
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> CreateSkyboxGraphicsPipeline(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature);
 
     // シャドウマップ関連
     void CreateShadowMapPipelines();
     Microsoft::WRL::ComPtr<ID3D12RootSignature> CreateShadowMapRootSignature();
-    Microsoft::WRL::ComPtr<ID3D12PipelineState> CreateShadowMapGraphicsPipeLine(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature);
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> CreateShadowMapGraphicsPipeline(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature);
 
     // シェーダーモード別のルートシグネチャ作成
     Microsoft::WRL::ComPtr<ID3D12RootSignature> CreateBaseRootSignature();
@@ -153,7 +152,7 @@ class PipeLineManager
     Microsoft::WRL::ComPtr<ID3D12RootSignature> CreateVignetteRootSignature();
     Microsoft::WRL::ComPtr<ID3D12RootSignature> CreateSmoothRootSignature();
     Microsoft::WRL::ComPtr<ID3D12RootSignature> CreateGaussRootSignature();
-    Microsoft::WRL::ComPtr<ID3D12RootSignature> CreateOutLineRootSignature();
+    Microsoft::WRL::ComPtr<ID3D12RootSignature> CreateOutlineRootSignature();
     Microsoft::WRL::ComPtr<ID3D12RootSignature> CreateDepthRootSignature();
     Microsoft::WRL::ComPtr<ID3D12RootSignature> CreateBlurRootSignature();
     Microsoft::WRL::ComPtr<ID3D12RootSignature> CreateCinematicRootSignature();
@@ -166,31 +165,28 @@ class PipeLineManager
     Microsoft::WRL::ComPtr<ID3D12RootSignature> CreateShockwaveRootSignature();
 
     // シェーダーモード別のパイプライン作成
-    Microsoft::WRL::ComPtr<ID3D12PipelineState> CreateNoneGraphicsPipeLine(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature);
-    Microsoft::WRL::ComPtr<ID3D12PipelineState> CreateGrayGraphicsPipeLine(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature);
-    Microsoft::WRL::ComPtr<ID3D12PipelineState> CreateVigneetGraphicsPipeLine(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature);
-    Microsoft::WRL::ComPtr<ID3D12PipelineState> CreateSmoothGraphicsPipeLine(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature);
-    Microsoft::WRL::ComPtr<ID3D12PipelineState> CreateGaussGraphicsPipeLine(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature);
-    Microsoft::WRL::ComPtr<ID3D12PipelineState> CreateOutLineGraphicsPipeLine(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature);
-    Microsoft::WRL::ComPtr<ID3D12PipelineState> CreateDepthGraphicsPipeLine(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature);
-    Microsoft::WRL::ComPtr<ID3D12PipelineState> CreateBlurGraphicsPipeLine(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature);
-    Microsoft::WRL::ComPtr<ID3D12PipelineState> CreateCinematicGraphicsPipeLine(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature);
-    Microsoft::WRL::ComPtr<ID3D12PipelineState> CreateDissolveGraphicsPipeLine(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature);
-    Microsoft::WRL::ComPtr<ID3D12PipelineState> CreateRandomGraphicsPipeLine(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature);
-    Microsoft::WRL::ComPtr<ID3D12PipelineState> CreateFocusLineGraphicsPipeLine(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature);
-    Microsoft::WRL::ComPtr<ID3D12PipelineState> CreatePixelateGraphicsPipeLine(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature);
-    Microsoft::WRL::ComPtr<ID3D12PipelineState> CreateBloomGraphicsPipeLine(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature);
-    Microsoft::WRL::ComPtr<ID3D12PipelineState> CreateRetroGraphicsPipeLine(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature);
-    Microsoft::WRL::ComPtr<ID3D12PipelineState> CreateShockwaveGraphicsPipeLine(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature);
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> CreateNoneGraphicsPipeline(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature);
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> CreateGrayGraphicsPipeline(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature);
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> CreateVignetteGraphicsPipeline(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature);
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> CreateSmoothGraphicsPipeline(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature);
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> CreateGaussGraphicsPipeline(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature);
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> CreateOutlineGraphicsPipeline(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature);
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> CreateDepthGraphicsPipeline(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature);
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> CreateBlurGraphicsPipeline(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature);
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> CreateCinematicGraphicsPipeline(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature);
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> CreateDissolveGraphicsPipeline(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature);
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> CreateRandomGraphicsPipeline(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature);
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> CreateFocusLineGraphicsPipeline(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature);
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> CreatePixelateGraphicsPipeline(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature);
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> CreateBloomGraphicsPipeline(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature);
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> CreateRetroGraphicsPipeline(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature);
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> CreateShockwaveGraphicsPipeline(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature);
 
   private:
-    DirectXCommon *dxCommon_;
-
-    std::wstring shaderPath = Hagine::StringUtility::ConvertString(AssetPath::EngineRoot());
+    DirectXCommon *pDxCommon_;
 
     // パイプラインとルートシグネチャの格納用マップ
-    std::unordered_map<std::string, Microsoft::WRL::ComPtr<ID3D12PipelineState>>
-        pipelines_;
+    std::unordered_map<std::string, Microsoft::WRL::ComPtr<ID3D12PipelineState>> pipelines_;
     std::unordered_map<std::string, Microsoft::WRL::ComPtr<ID3D12RootSignature>> rootSignatures_;
 
     // キー文字列を生成するヘルパー関数

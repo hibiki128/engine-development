@@ -11,7 +11,8 @@ class DXDevice;
 /// DSV用デスクリプタヒープの生成と、各スロットへのDSV作成・ハンドル取得を担当する
 /// スロット割り当て: 0: メイン深度 / 1: プレビュー窓用深度
 /// </summary>
-class DsvManager {
+class DsvManager
+{
   public:
     // DSVの最大数
     static constexpr uint32_t kMaxDSVCount = 2;
@@ -57,7 +58,7 @@ class DsvManager {
 
   private:
     // デバイス（DirectXCommon が所有）
-    DXDevice *device_ = nullptr;
+    DXDevice *pDevice_ = nullptr;
     // DSV用デスクリプタヒープ
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> heap_;
     // デスクリプタ1つ分のサイズ

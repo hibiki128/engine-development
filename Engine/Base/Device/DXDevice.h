@@ -9,7 +9,8 @@ namespace Hagine {
 /// D3D12デバイスクラス
 /// DXGIファクトリの生成・アダプタ選択・デバイス生成・デバッグレイヤー設定を担当する
 /// </summary>
-class DXDevice {
+class DXDevice
+{
   public:
     DXDevice() = default;
     ~DXDevice() = default;

@@ -2,14 +2,14 @@
 #include "SceneRegistry.h"
 #include "SceneTransition.h"
 #include <OffScreen.h>
-#include <Render/DrawSystem.h>
+#include <render/DrawSystem.h>
 #include <memory>
 #include <string>
 
 namespace Hagine {
 class BaseScene;
-class WinApp;
-class SceneManager {
+class SceneManager
+{
   private:
     SceneManager() = default;
     ~SceneManager();
@@ -20,7 +20,8 @@ class SceneManager {
     /// <summary>
     /// シングルトンインスタンスの取得
     /// </summary>
-    static SceneManager *GetInstance() {
+    static SceneManager *GetInstance()
+    {
         static SceneManager instance;
         return &instance;
     }
@@ -78,34 +79,31 @@ class SceneManager {
 
     float GetClearTime() const { return clearTime_; }
     float GetHP() const { return hp_; }
+    bool GetIsGameOver() const { return isGameOver_; }
 
     BaseScene *GetBaseScene() const { return scene_.get(); }
     std::string GetCurrentSceneName() const { return currentSceneName_; }
 
     void SetClearTime(float time) { clearTime_ = time; }
     void SetHP(float hp) { hp_ = hp; }
+    void SetIsGameOver(bool flag) { isGameOver_ = flag; }
 
-    void SetOffScreen(OffScreen *offscreen) { offscreen_ = offscreen; }
-    void SetDrawSystem(DrawSystem *drawSystem) { drawSystem_ = drawSystem; }
-    /// <summary>
-    /// ウィンドウ（Framework が所有）を注入。生成される各シーンへ配布する
-    /// </summary>
-    void SetWinApp(WinApp *winApp) { winApp_ = winApp; }
+    void SetOffScreen(OffScreen *offscreen) { pOffscreen_ = offscreen; }
+    void SetDrawSystem(DrawSystem *drawSystem) { pDrawSystem_ = drawSystem; }
 
     /// <summary>
     /// シーン遷移演出を取得（App 側からのフェード制御用）
     /// </summary>
-    SceneTransition *GetSceneTransition() const { return transition_; }
+    SceneTransition *GetSceneTransition() const { return pTransition_; }
 
   private:
-    OffScreen *offscreen_ = nullptr;
-    DrawSystem *drawSystem_ = nullptr;
-    WinApp *winApp_ = nullptr;
+    OffScreen *pOffscreen_ = nullptr;
+    DrawSystem *pDrawSystem_ = nullptr;
     // 今のシーン（実行中のシーン）
     std::unique_ptr<BaseScene> scene_;
     // 次のシーン
     std::unique_ptr<BaseScene> nextScene_;
-    SceneTransition *transition_ = nullptr;
+    SceneTransition *pTransition_ = nullptr;
 
     std::string currentSceneName_;
 
@@ -114,5 +112,6 @@ class SceneManager {
 
     float clearTime_ = 0.0f;
     float hp_ = 0.0f;
+    bool isGameOver_ = false; // 直前のゲームがゲームオーバーだったか（リザルト表示用）
 };
 } // namespace Hagine

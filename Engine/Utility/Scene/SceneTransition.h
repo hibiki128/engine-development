@@ -3,7 +3,8 @@
 #include "memory"
 #include "vector"
 namespace Hagine {
-class SceneTransition {
+class SceneTransition
+{
   public:
     SceneTransition() = default;
     ~SceneTransition() = default;

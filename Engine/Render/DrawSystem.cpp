@@ -1,34 +1,35 @@
 #include "DrawSystem.h"
 #include "DirectXCommon.h"
-#include "Collider/CollisionManager.h"
-#include "Debug/CpuProfiler/CpuProfiler.h"
-#include "Debug/GpuProfiler/GpuProfiler.h"
-#include "Data/DataHandler.h"
-#include "Utility/Debug/ImGui/ImGuiNotification.h"
-#include "Graphics/Srv/SrvManager.h"
-#include "Particle/ParticleEditor.h"
-#include "Scene/SceneManager.h"
-#include <Shadow/ShadowMap.h>
+#include "collider/CollisionManager.h"
+#include "debug/profiler/CpuProfiler.h"
+#include "debug/profiler/GpuProfiler.h"
+#include "data/DataHandler.h"
+#include "utility/debug/imgui/ImGuiNotification.h"
+#include "graphics/srv/SrvManager.h"
+#include "particle/ParticleEditor.h"
+#include "scene/SceneManager.h"
+#include <shadow/ShadowMap.h>
 #include <algorithm>
 #ifdef _DEBUG
-#include "Particle/CSParticle/ParticleCSEditor.h"
+#include "particle/gpu/ParticleCSEditor.h"
 #endif
 #ifdef _DEBUG
 #include "imgui.h"
 #include "line/DrawLine3D.h"
-#include "Utility/Debug/ImGui/Debugui_improved.h"
+#include "utility/debug/imgui/DebugUIHelper.h"
 #include <set>
 #include <vector>
 #endif
 
 namespace Hagine {
 void DrawSystem::Initialize(DirectXCommon *dxCommon, SrvManager *srvManager,
-                             OffScreen *offscreen, SceneManager *sceneManager,
-                             CollisionManager *collision) {
-    dxCommon_    = dxCommon;
-    srvManager_  = srvManager;
-    sceneManager_ = sceneManager;
-    collision_   = collision;
+                            OffScreen *offscreen, SceneManager *sceneManager,
+                            CollisionManager *collision)
+{
+    pDxCommon_ = dxCommon;
+    pSrvManager_ = srvManager;
+    pSceneManager_ = sceneManager;
+    pCollision_ = collision;
 
     stageOffScreens_[0] = offscreen;
     nextStageIndex_ = 1;
@@ -39,9 +40,12 @@ void DrawSystem::Initialize(DirectXCommon *dxCommon, SrvManager *srvManager,
 // -------------------------------------------------------
 
 void DrawSystem::RegisterImpl(std::string name, int stageIndex,
-                               std::function<void(const ViewProjection &)> drawFunc) {
-    for (auto &e : entries_) {
-        if (e.name == name) {
+                              std::function<void(const ViewProjection &)> drawFunc)
+{
+    for (auto &e : entries_)
+    {
+        if (e.name == name)
+        {
             e.stageIndex = stageIndex;
             e.draw = std::move(drawFunc);
             return;
@@ -51,24 +55,28 @@ void DrawSystem::RegisterImpl(std::string name, int stageIndex,
 }
 
 void DrawSystem::Register(std::string name, DrawLayer layer,
-                           std::function<void(const ViewProjection &)> drawFunc) {
-    int stage = (layer == DrawLayer::kPostEffect) ? kUILayer : static_cast<int>(layer);
+                          std::function<void(const ViewProjection &)> drawFunc)
+{
+    int stage = (layer == DrawLayer::PostEffect) ? kUILayer : static_cast<int>(layer);
     RegisterImpl(std::move(name), stage, std::move(drawFunc));
 }
 
 void DrawSystem::Register(std::string name, int stageIndex,
-                           std::function<void(const ViewProjection &)> drawFunc) {
+                          std::function<void(const ViewProjection &)> drawFunc)
+{
     RegisterImpl(std::move(name), stageIndex, std::move(drawFunc));
 }
 
-void DrawSystem::Unregister(const std::string &name) {
+void DrawSystem::Unregister(const std::string &name)
+{
     entries_.erase(
         std::remove_if(entries_.begin(), entries_.end(),
                        [&name](const DrawEntry &e) { return e.name == name; }),
         entries_.end());
 }
 
-void DrawSystem::Clear() {
+void DrawSystem::Clear()
+{
     entries_.clear();
 }
 
@@ -76,7 +84,8 @@ void DrawSystem::Clear() {
 // マルチステージ管理
 // -------------------------------------------------------
 
-int DrawSystem::CreateStage() {
+int DrawSystem::CreateStage()
+{
     int idx = nextStageIndex_++;
     auto owned = std::make_unique<OffScreen>();
     owned->Initialize();
@@ -85,7 +94,8 @@ int DrawSystem::CreateStage() {
     return idx;
 }
 
-OffScreen *DrawSystem::GetStageOffScreen(int stageIndex) {
+OffScreen *DrawSystem::GetStageOffScreen(int stageIndex)
+{
     auto it = stageOffScreens_.find(stageIndex);
     return (it != stageOffScreens_.end()) ? it->second : nullptr;
 }
@@ -94,15 +104,18 @@ OffScreen *DrawSystem::GetStageOffScreen(int stageIndex) {
 // メイン描画パイプライン
 // -------------------------------------------------------
 
-void DrawSystem::Draw(const ViewProjection &vp) {
+void DrawSystem::Draw(const ViewProjection &vp)
+{
     // GPU プロファイラ: フレーム先頭で ring を進め、過去フレームの結果を取り込む
     GpuProfiler::GetInstance()->BeginFrame();
 
     // ─── GPU パーティクル Compute フェーズ（全エミッターを一括実行して Direct Queue に Wait 挿入）───
     {
         HAGINE_CPU_PROFILE("DS/ParticleCompute+Wait");
-        for (auto &entry : entries_) {
-            if (entry.enabled && entry.stageIndex == kGPUParticleCompute) {
+        for (auto &entry : entries_)
+        {
+            if (entry.enabled && entry.stageIndex == kGPUParticleCompute)
+            {
                 entry.draw(vp);
             }
         }
@@ -114,11 +127,11 @@ void DrawSystem::Draw(const ViewProjection &vp) {
 #endif
 
         // Compute スパンを Execute 前に resolve（リストが閉じる前に記録する必要がある）
-        GpuProfiler::GetInstance()->ResolveCompute(dxCommon_->GetComputeCommandList().Get());
+        GpuProfiler::GetInstance()->ResolveCompute(pDxCommon_->GetComputeCommandList().Get());
 
         // 記録が無ければ ExecuteComputeCommands は自己ガードで no-op、Wait も signaled 済み値への待ちで無害。
-        dxCommon_->ExecuteComputeCommands();
-        dxCommon_->WaitForComputeOnDirectQueue();
+        pDxCommon_->ExecuteComputeCommands();
+        pDxCommon_->WaitForComputeOnDirectQueue();
     }
 
 #ifdef _DEBUG
@@ -133,17 +146,20 @@ void DrawSystem::Draw(const ViewProjection &vp) {
         HAGINE_CPU_PROFILE("DS/ShadowRec");
         ShadowMap *shadowMap = ShadowMap::GetInstance();
         shadowMap->Update(); // 有効フラグをGPUバッファに反映（無効時もenabledを0にするため毎フレーム呼ぶ）
-        if (shadowMap->IsEnabled()) {
+        if (shadowMap->IsEnabled())
+        {
             shadowMap->BeginShadowPass();
-            srvManager_->SetDescriptorHeap();
+            pSrvManager_->SetDescriptorHeap();
             shadowMap->SetShadowPassActive(true);
-            int gpuShadow = GpuProfiler::GetInstance()->OpenGraphics(dxCommon_->GetCommandList().Get(), "Shadow");
-            for (auto &entry : entries_) {
-                if (entry.enabled && entry.stageIndex == 0) {
+            int gpuShadow = GpuProfiler::GetInstance()->OpenGraphics(pDxCommon_->GetCommandList().Get(), "Shadow");
+            for (auto &entry : entries_)
+            {
+                if (entry.enabled && entry.stageIndex == 0)
+                {
                     entry.draw(vp);
                 }
             }
-            GpuProfiler::GetInstance()->Close(dxCommon_->GetCommandList().Get(), gpuShadow);
+            GpuProfiler::GetInstance()->Close(pDxCommon_->GetCommandList().Get(), gpuShadow);
             shadowMap->SetShadowPassActive(false);
             shadowMap->EndShadowPass();
         }
@@ -151,7 +167,8 @@ void DrawSystem::Draw(const ViewProjection &vp) {
 
     // 登録済みステージ（kUILayer を除く）を昇順で処理
     std::vector<int> sortedStages;
-    for (auto &[idx, _] : stageOffScreens_) {
+    for (auto &[idx, _] : stageOffScreens_)
+    {
         sortedStages.push_back(idx);
     }
     std::sort(sortedStages.begin(), sortedStages.end());
@@ -161,84 +178,95 @@ void DrawSystem::Draw(const ViewProjection &vp) {
     // ステージループ（本描画の記録＋ポストエフェクト）を計測。
     // lastOffScreen は後段で使うのでブロック外で宣言している。
     {
-    HAGINE_CPU_PROFILE("DS/StageLoop(scene+postfx)");
-    for (size_t si = 0; si < sortedStages.size(); ++si) {
-        int stageIdx = sortedStages[si];
-        OffScreen *stageOS = stageOffScreens_.at(stageIdx);
+        HAGINE_CPU_PROFILE("DS/StageLoop(scene+postfx)");
+        for (size_t si = 0; si < sortedStages.size(); ++si)
+        {
+            int stageIdx = sortedStages[si];
+            OffScreen *stageOS = stageOffScreens_.at(stageIdx);
 
-        // ─── オフスクリーンテクスチャへ描画 ───
-        dxCommon_->PreRenderTexture();
-        srvManager_->SetDescriptorHeap();
+            // ─── オフスクリーンテクスチャへ描画 ───
+            pDxCommon_->PreRenderTexture();
+            pSrvManager_->SetDescriptorHeap();
 
-        // 前ステージの結果を背景として合成
-        if (lastOffScreen) {
-            stageOS->BlitToOffScreen(lastOffScreen->GetFinalResultSrvIndex());
-        }
-
-        int gpuScene = GpuProfiler::GetInstance()->OpenGraphics(dxCommon_->GetCommandList().Get(), "Scene(不透明+UI等)");
-        for (auto &entry : entries_) {
-            if (entry.enabled && entry.stageIndex == stageIdx) {
-                entry.draw(vp);
+            // 前ステージの結果を背景として合成
+            if (lastOffScreen)
+            {
+                stageOS->BlitToOffScreen(lastOffScreen->GetFinalResultSrvIndex());
             }
-        }
-        GpuProfiler::GetInstance()->Close(dxCommon_->GetCommandList().Get(), gpuScene);
 
-        // 注: GPUパーティクルエディタのエミッターは「プレビュー窓のみ」で確認する。
-        // 以前はここで DrawAllGraphics(vp) を呼び現在のシーン offscreen にも描画していたが、
-        // 編集中のパーティクルがゲームシーンに漏れて見えてしまうため撤去。
-        // シミュレーション（DrawAllCompute）は上のフェーズで実行済みで、
-        // 描画は RenderPreview()（プレビュー専用VP）だけが行う。
+            int gpuScene = GpuProfiler::GetInstance()->OpenGraphics(pDxCommon_->GetCommandList().Get(), "Scene(不透明+UI等)");
+            for (auto &entry : entries_)
+            {
+                if (entry.enabled && entry.stageIndex == stageIdx)
+                {
+                    entry.draw(vp);
+                }
+            }
+            GpuProfiler::GetInstance()->Close(pDxCommon_->GetCommandList().Get(), gpuScene);
+
+            // 注: GPUパーティクルエディタのエミッターは「プレビュー窓のみ」で確認する。
+            // 以前はここで DrawAllGraphics(vp) を呼び現在のシーン offscreen にも描画していたが、
+            // 編集中のパーティクルがゲームシーンに漏れて見えてしまうため撤去。
+            // シミュレーション（DrawAllCompute）は上のフェーズで実行済みで、
+            // 描画は RenderPreview()（プレビュー専用VP）だけが行う。
 
 #ifdef _DEBUG
-        if (stageIdx == 0) {
-            DrawLine3D::GetInstance()->Draw(vp);
-            collision_->DebugDraw(vp);
-        }
+            if (stageIdx == 0)
+            {
+                DrawLine3D::GetInstance()->Draw(vp);
+                pCollision_->DebugDraw(vp);
+            }
 #endif
 
-        // ─── ポストエフェクト適用 → finalResult（コピーなし）───
-        if (si == 0) {
-            dxCommon_->PreDraw(); // 初回: バックバッファも遷移
-        } else {
-            dxCommon_->PreDrawForEffects(); // 2回目以降: バックバッファ遷移なし
-        }
-        stageOS->SetProjection(vp.matProjection_);
-        stageOS->DrawWithoutCopy();
-        dxCommon_->TransitionDepthBarrier();
+            // ─── ポストエフェクト適用 → finalResult（コピーなし）───
+            if (si == 0)
+            {
+                pDxCommon_->PreDraw(); // 初回: バックバッファも遷移
+            }
+            else
+            {
+                pDxCommon_->PreDrawForEffects(); // 2回目以降: バックバッファ遷移なし
+            }
+            stageOS->SetProjection(vp.matProjection_);
+            stageOS->DrawWithoutCopy();
+            pDxCommon_->TransitionDepthBarrier();
 
-        lastOffScreen = stageOS;
-    }
+            lastOffScreen = stageOS;
+        }
     } // DS/StageLoop
 
-    if (!lastOffScreen) {
-        GpuProfiler::GetInstance()->ResolveGraphics(dxCommon_->GetCommandList().Get());
+    if (!lastOffScreen)
+    {
+        GpuProfiler::GetInstance()->ResolveGraphics(pDxCommon_->GetCommandList().Get());
         ParticleEditor::GetInstance()->UpdateFrameStats();
         return;
     }
 
     // ─── UI・シーン遷移を finalResult に合成 ───
     {
-    HAGINE_CPU_PROFILE("DS/Composite+Copy");
-    lastOffScreen->BeginCompositePass();
-    srvManager_->SetDescriptorHeap();
+        HAGINE_CPU_PROFILE("DS/Composite+Copy");
+        lastOffScreen->BeginCompositePass();
+        pSrvManager_->SetDescriptorHeap();
 
-    for (auto &entry : entries_) {
-        if (entry.enabled && entry.stageIndex == kUILayer) {
-            entry.draw(vp);
+        for (auto &entry : entries_)
+        {
+            if (entry.enabled && entry.stageIndex == kUILayer)
+            {
+                entry.draw(vp);
+            }
         }
-    }
 
-    // シーン遷移は最前面（UIの上）
-    sceneManager_->DrawTransition();
+        // シーン遷移は最前面（UIの上）
+        pSceneManager_->DrawTransition();
 
-    lastOffScreen->EndCompositePass();
+        lastOffScreen->EndCompositePass();
 
-    // ─── finalResult（フルフレーム）をバックバッファへコピー ───
-    lastOffScreen->CopyFinalResultToBackBuffer();
+        // ─── finalResult（フルフレーム）をバックバッファへコピー ───
+        lastOffScreen->CopyFinalResultToBackBuffer();
     } // DS/Composite+Copy
 
     // Graphics スパンを resolve（描画コマンド記録が全て済んだ後・リスト Close 前）
-    GpuProfiler::GetInstance()->ResolveGraphics(dxCommon_->GetCommandList().Get());
+    GpuProfiler::GetInstance()->ResolveGraphics(pDxCommon_->GetCommandList().Get());
 
     ParticleEditor::GetInstance()->UpdateFrameStats();
 }
@@ -247,10 +275,12 @@ void DrawSystem::Draw(const ViewProjection &vp) {
 // ImGui
 // -------------------------------------------------------
 
-void DrawSystem::UpdateImGui(bool *open) {
+void DrawSystem::UpdateImGui(bool *open)
+{
 #ifdef _DEBUG
     // 表示名は日本語、ウィンドウIDは "DrawSystem" のまま（保存済みレイアウトとの互換維持）
-    if (ImGui::Begin("描画システム###DrawSystem", open, ImGuiWindowFlags_NoFocusOnAppearing)) {
+    if (ImGui::Begin("描画システム###DrawSystem", open, ImGuiWindowFlags_NoFocusOnAppearing))
+    {
         SectionHeader("[ 描画エントリ ]", DebugTheme::kAccentBlue);
         ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kTextDim);
         ImGui::Text("登録: %zu 件", entries_.size());
@@ -258,12 +288,14 @@ void DrawSystem::UpdateImGui(bool *open) {
 
         if (ImGui::BeginTable("##DrawEntries", 3,
                               ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH |
-                                  ImGuiTableFlags_SizingStretchProp)) {
+                                  ImGuiTableFlags_SizingStretchProp))
+        {
             ImGui::TableSetupColumn("表示", ImGuiTableColumnFlags_WidthFixed, 40.0f);
             ImGui::TableSetupColumn("ステージ", ImGuiTableColumnFlags_WidthFixed, 96.0f);
             ImGui::TableSetupColumn("名前", ImGuiTableColumnFlags_WidthStretch);
 
-            for (auto &entry : entries_) {
+            for (auto &entry : entries_)
+            {
                 ImGui::PushID(entry.name.c_str());
                 ImGui::TableNextRow();
 
@@ -274,13 +306,16 @@ void DrawSystem::UpdateImGui(bool *open) {
                 ImGui::SetItemTooltip("描画の ON / OFF");
 
                 ImGui::TableNextColumn();
-                if (entry.stageIndex == kUILayer) {
+                if (entry.stageIndex == kUILayer)
+                {
                     ImGui::PushStyleColor(ImGuiCol_Button, DebugTheme::kBgPurple);
                     ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.62f, 0.50f, 0.74f, 0.40f));
                     if (ImGui::SmallButton("UI Layer"))
                         entry.stageIndex = 0;
                     ImGui::PopStyleColor(2);
-                } else {
+                }
+                else
+                {
                     ImGui::PushStyleColor(ImGuiCol_Button, DebugTheme::kBgBlue);
                     ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.45f, 0.60f, 0.78f, 0.40f));
                     char label[32];
@@ -314,34 +349,43 @@ void DrawSystem::UpdateImGui(bool *open) {
         stages.push_back(kGPUParticleCompute);
         {
             std::vector<int> render;
-            for (auto &[idx, _] : stageOffScreens_) {
+            for (auto &[idx, _] : stageOffScreens_)
+            {
                 render.push_back(idx);
             }
             std::sort(render.begin(), render.end());
-            for (int idx : render) {
+            for (int idx : render)
+            {
                 stages.push_back(idx);
             }
         }
         stages.push_back(kUILayer);
 
         auto layerLabel = [&](int idx) -> std::string {
-            if (idx == kGPUParticleCompute) return "GPU Compute";
-            if (idx == kUILayer) return "UI Layer";
+            if (idx == kGPUParticleCompute)
+                return "GPU Compute";
+            if (idx == kUILayer)
+                return "UI Layer";
             return "Stage " + std::to_string(idx);
         };
         auto layerColor = [&](int idx) -> ImVec4 {
-            if (idx == kGPUParticleCompute) return DebugTheme::kAccentOrange;
-            if (idx == kUILayer) return DebugTheme::kAccentPurple;
+            if (idx == kGPUParticleCompute)
+                return DebugTheme::kAccentOrange;
+            if (idx == kUILayer)
+                return DebugTheme::kAccentPurple;
             return DebugTheme::kAccentBlue;
         };
 
         // --- 描画順の表示（各ステージに属するエントリ） ---
         ImGui::BeginChild("##drawOrder", ImVec2(0, 150), true);
-        for (size_t i = 0; i < stages.size(); ++i) {
+        for (size_t i = 0; i < stages.size(); ++i)
+        {
             int idx = stages[i];
             int count = 0;
-            for (auto &e : entries_) {
-                if (e.stageIndex == idx) count++;
+            for (auto &e : entries_)
+            {
+                if (e.stageIndex == idx)
+                    count++;
             }
             ImGui::PushStyleColor(ImGuiCol_Text, layerColor(idx));
             ImGui::Text("%zu. %s", i + 1, layerLabel(idx).c_str());
@@ -350,8 +394,10 @@ void DrawSystem::UpdateImGui(bool *open) {
             ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kTextDim);
             ImGui::Text("(%d)", count);
             ImGui::PopStyleColor();
-            for (auto &e : entries_) {
-                if (e.stageIndex != idx) continue;
+            for (auto &e : entries_)
+            {
+                if (e.stageIndex != idx)
+                    continue;
                 ImGui::PushStyleColor(ImGuiCol_Text, e.enabled ? DebugTheme::kTextReadOnly : DebugTheme::kTextDim);
                 ImGui::Text("        %s%s", e.name.c_str(), e.enabled ? "" : "  (非表示)");
                 ImGui::PopStyleColor();
@@ -379,8 +425,10 @@ void DrawSystem::UpdateImGui(bool *open) {
 
         // 移動先候補は GPU Compute を除いた Stage群 + UI Layer
         std::vector<int> moveStages;
-        for (int s : stages) {
-            if (s != kGPUParticleCompute) {
+        for (int s : stages)
+        {
+            if (s != kGPUParticleCompute)
+            {
                 moveStages.push_back(s);
             }
         }
@@ -388,7 +436,8 @@ void DrawSystem::UpdateImGui(bool *open) {
         static int leftStage = 0;         // 既定: Stage 0
         static int rightStage = kUILayer; // 既定: UI Layer
         auto clampStage = [&](int &s) {
-            if (!moveStages.empty() && std::find(moveStages.begin(), moveStages.end(), s) == moveStages.end()) {
+            if (!moveStages.empty() && std::find(moveStages.begin(), moveStages.end(), s) == moveStages.end())
+            {
                 s = moveStages.front();
             }
         };
@@ -408,14 +457,18 @@ void DrawSystem::UpdateImGui(bool *open) {
         auto stageCombo = [&](const char *id, int &sel, std::set<std::string> &selItems) {
             ImGui::PushID(id);
             ImGui::SetNextItemWidth(listWidth);
-            if (ImGui::BeginCombo("##stage", layerLabel(sel).c_str())) {
-                for (int s : moveStages) {
+            if (ImGui::BeginCombo("##stage", layerLabel(sel).c_str()))
+            {
+                for (int s : moveStages)
+                {
                     bool selected = (s == sel);
-                    if (ImGui::Selectable(layerLabel(s).c_str(), selected) && s != sel) {
+                    if (ImGui::Selectable(layerLabel(s).c_str(), selected) && s != sel)
+                    {
                         sel = s;
                         selItems.clear();
                     }
-                    if (selected) {
+                    if (selected)
+                    {
                         ImGui::SetItemDefaultFocus();
                     }
                 }
@@ -431,8 +484,10 @@ void DrawSystem::UpdateImGui(bool *open) {
         auto entryList = [&](const char *id, int stage, std::set<std::string> &sel, int moveTo) {
             ImGui::BeginChild(id, ImVec2(listWidth, 200), true);
             bool any = false;
-            for (auto &e : entries_) {
-                if (e.stageIndex != stage) {
+            for (auto &e : entries_)
+            {
+                if (e.stageIndex != stage)
+                {
                     continue;
                 }
                 any = true;
@@ -440,22 +495,29 @@ void DrawSystem::UpdateImGui(bool *open) {
                 ImGui::PushStyleColor(ImGuiCol_Text, e.enabled ? DebugTheme::kTextReadOnly : DebugTheme::kTextDim);
                 bool clicked = ImGui::Selectable(e.name.c_str(), selected, ImGuiSelectableFlags_AllowDoubleClick);
                 ImGui::PopStyleColor();
-                if (clicked) {
-                    if (!ImGui::GetIO().KeyCtrl) {
+                if (clicked)
+                {
+                    if (!ImGui::GetIO().KeyCtrl)
+                    {
                         sel.clear();
                     }
-                    if (selected) {
+                    if (selected)
+                    {
                         sel.erase(e.name);
-                    } else {
+                    }
+                    else
+                    {
                         sel.insert(e.name);
                     }
-                    if (ImGui::IsMouseDoubleClicked(0) && stage != moveTo) {
+                    if (ImGui::IsMouseDoubleClicked(0) && stage != moveTo)
+                    {
                         e.stageIndex = moveTo;
                         sel.clear();
                     }
                 }
             }
-            if (!any) {
+            if (!any)
+            {
                 ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kTextDim);
                 ImGui::TextUnformatted("（エントリなし）");
                 ImGui::PopStyleColor();
@@ -465,21 +527,25 @@ void DrawSystem::UpdateImGui(bool *open) {
 
         // 選択中エントリをまとめて反対側ステージへ移す
         auto moveEntries = [&](int fromStage, int toStage, std::set<std::string> &sel) {
-            for (auto &e : entries_) {
-                if (e.stageIndex == fromStage && sel.count(e.name) > 0) {
+            for (auto &e : entries_)
+            {
+                if (e.stageIndex == fromStage && sel.count(e.name) > 0)
+                {
                     e.stageIndex = toStage;
                 }
             }
             sel.clear();
         };
         auto moveButton = [&](const char *label, bool enabled) -> bool {
-            if (!enabled) {
+            if (!enabled)
+            {
                 ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.30f, 0.30f, 0.30f, 0.40f));
                 ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.30f, 0.30f, 0.30f, 0.40f));
                 ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.30f, 0.30f, 0.30f, 0.40f));
             }
             bool pressed = ImGui::Button(label, ImVec2(btnWidth, 30)) && enabled;
-            if (!enabled) {
+            if (!enabled)
+            {
                 ImGui::PopStyleColor(3);
             }
             return pressed;
@@ -490,11 +556,13 @@ void DrawSystem::UpdateImGui(bool *open) {
         ImGui::SameLine();
         ImGui::BeginGroup();
         ImGui::Dummy(ImVec2(0, 60));
-        if (moveButton("→##mvR", !leftSel.empty() && !sameStage)) {
+        if (moveButton("→##mvR", !leftSel.empty() && !sameStage))
+        {
             moveEntries(leftStage, rightStage, leftSel);
         }
         ImGui::SetItemTooltip("選択を右のステージへ移動");
-        if (moveButton("←##mvL", !rightSel.empty() && !sameStage)) {
+        if (moveButton("←##mvL", !rightSel.empty() && !sameStage))
+        {
             moveEntries(rightStage, leftStage, rightSel);
         }
         ImGui::SetItemTooltip("選択を左のステージへ移動");
@@ -511,12 +579,18 @@ void DrawSystem::UpdateImGui(bool *open) {
         float bw = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
         ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.20f, 0.42f, 0.58f, 0.85f));
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.26f, 0.52f, 0.70f, 0.95f));
-        if (ImGui::Button("保存", ImVec2(bw, 0))) { SaveConfig(); }
+        if (ImGui::Button("保存", ImVec2(bw, 0)))
+        {
+            SaveConfig();
+        }
         ImGui::PopStyleColor(2);
         ImGui::SameLine();
         ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.20f, 0.48f, 0.40f, 0.85f));
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.26f, 0.60f, 0.50f, 0.95f));
-        if (ImGui::Button("読み込み", ImVec2(bw, 0))) { LoadConfig(); }
+        if (ImGui::Button("読み込み", ImVec2(bw, 0)))
+        {
+            LoadConfig();
+        }
         ImGui::PopStyleColor(2);
     }
     ImGui::End();
@@ -527,11 +601,13 @@ void DrawSystem::UpdateImGui(bool *open) {
 // JSON 保存 / 読み込み
 // -------------------------------------------------------
 
-void DrawSystem::SaveConfig(const std::string &fileName) {
+void DrawSystem::SaveConfig(const std::string &fileName)
+{
     auto data = std::make_unique<DataHandler>("DrawSystem", fileName);
     int count = static_cast<int>(entries_.size());
     data->Save("count", count);
-    for (int i = 0; i < count; ++i) {
+    for (int i = 0; i < count; ++i)
+    {
         const auto &e = entries_[i];
         std::string prefix = "entry_" + std::to_string(i) + "_";
         data->Save(prefix + "name", e.name);
@@ -541,19 +617,23 @@ void DrawSystem::SaveConfig(const std::string &fileName) {
     ImGuiNotification::Post("描画設定を保存しました: " + fileName, {0.2f, 0.8f, 0.2f, 1.0f});
 }
 
-void DrawSystem::LoadConfig(const std::string &fileName) {
+void DrawSystem::LoadConfig(const std::string &fileName)
+{
     auto data = std::make_unique<DataHandler>("DrawSystem", fileName);
     int count = data->Load<int>("count", 0);
-    for (int i = 0; i < count; ++i) {
+    for (int i = 0; i < count; ++i)
+    {
         std::string prefix = "entry_" + std::to_string(i) + "_";
-        std::string name    = data->Load<std::string>(prefix + "name", "");
-        int stage   = data->Load<int>(prefix + "stage", 0);
+        std::string name = data->Load<std::string>(prefix + "name", "");
+        int stage = data->Load<int>(prefix + "stage", 0);
         int enabled = data->Load<int>(prefix + "enabled", 1);
 
-        for (auto &e : entries_) {
-            if (e.name == name) {
+        for (auto &e : entries_)
+        {
+            if (e.name == name)
+            {
                 e.stageIndex = stage;
-                e.enabled    = static_cast<bool>(enabled);
+                e.enabled = static_cast<bool>(enabled);
                 break;
             }
         }

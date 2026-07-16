@@ -6,7 +6,7 @@
 #include "type/MeshCollider.h"
 #include "type/OBBCollider.h"
 #include "type/SphereCollider.h"
-#include <Camera/ViewProjection/ViewProjection.h>
+#include <camera/projection/ViewProjection.h>
 #include <unordered_map>
 #include <vector>
 
@@ -16,7 +16,8 @@ namespace Hagine {
 /// 全コライダーの登録・更新・衝突判定を統括するシングルトン
 /// タグごとにグループ化し、衝突マスクに基づいてペアの判定を行う
 /// </summary>
-class CollisionManager {
+class CollisionManager
+{
   public:
     /// ===================================================
     /// public method
@@ -26,7 +27,8 @@ class CollisionManager {
     /// インスタンスを取得
     /// </summary>
     /// <returns>CollisionManager*: シングルトンインスタンス</returns>
-    static CollisionManager *GetInstance() {
+    static CollisionManager *GetInstance()
+    {
         static CollisionManager instance;
         return &instance;
     }
@@ -123,7 +125,8 @@ class CollisionManager {
     /// <summary>
     /// タグの追加・削除UI（タグ管理タブ）
     /// </summary>
-    void ImGuiTagManager() {
+    void ImGuiTagManager()
+    {
         ColliderTagManager::GetInstance()->ImGuiTagManager();
     }
 
@@ -191,7 +194,7 @@ class CollisionManager {
     bool TestAxis(const Vector3 &axis, const AABB &aabb, const OBB &obb);
 
     /// ===================================================
-    /// private variants
+    /// private variables
     /// ===================================================
 
     // タグごとにコライダーをグループ化（文字列キー対応）
@@ -200,11 +203,13 @@ class CollisionManager {
     /// <summary>
     /// 衝突状態を管理するためのコライダーペア
     /// </summary>
-    struct CollisionPair {
+    struct CollisionPair
+    {
         ColliderBase *a;
         ColliderBase *b;
 
-        bool operator==(const CollisionPair &other) const {
+        bool operator==(const CollisionPair &other) const
+        {
             return (a == other.a && b == other.b) || (a == other.b && b == other.a);
         }
     };
@@ -212,8 +217,10 @@ class CollisionManager {
     /// <summary>
     /// コライダーペアのハッシュ関数（順序非依存）
     /// </summary>
-    struct CollisionPairHash {
-        std::size_t operator()(const CollisionPair &pair) const {
+    struct CollisionPairHash
+    {
+        std::size_t operator()(const CollisionPair &pair) const
+        {
             auto ptrA = reinterpret_cast<std::uintptr_t>(pair.a);
             auto ptrB = reinterpret_cast<std::uintptr_t>(pair.b);
             return std::hash<std::uintptr_t>{}((std::min)(ptrA, ptrB)) ^
@@ -226,7 +233,7 @@ class CollisionManager {
     bool isVisible_ = false; // コライダーのデバッグ表示フラグ（全体）
 
 #ifdef _DEBUG
-    ColliderBase *inspectorSelected_ = nullptr; // インスペクタで選択中のコライダー
+    ColliderBase *pInspectorSelected_ = nullptr; // インスペクタで選択中のコライダー
 #endif
 };
 } // namespace Hagine

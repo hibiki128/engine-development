@@ -9,7 +9,7 @@ namespace Hagine {
 void ResourceFactory::Initialize(DXDevice *device)
 {
     assert(device);
-    device_ = device;
+    pDevice_ = device;
 }
 
 void ResourceFactory::Finalize()
@@ -38,7 +38,7 @@ Microsoft::WRL::ComPtr<ID3D12Resource> ResourceFactory::CreateBufferResource(siz
         resourceDesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
         // 実際にリソースを作る
         Microsoft::WRL::ComPtr<ID3D12Resource> resource = nullptr;
-        HRESULT hr = device_->Get()->CreateCommittedResource(&uploadHeapProperties, D3D12_HEAP_FLAG_NONE,
+        HRESULT hr = pDevice_->Get()->CreateCommittedResource(&uploadHeapProperties, D3D12_HEAP_FLAG_NONE,
                                                              &resourceDesc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
                                                              IID_PPV_ARGS(&resource));
         assert(SUCCEEDED(hr));
@@ -63,7 +63,7 @@ Microsoft::WRL::ComPtr<ID3D12Resource> ResourceFactory::CreateBufferResource(siz
         // UAVを使うためのフラグ
         resourceDesc.Flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
         Microsoft::WRL::ComPtr<ID3D12Resource> resource = nullptr;
-        HRESULT hr = device_->Get()->CreateCommittedResource(&defaultHeapProperties, D3D12_HEAP_FLAG_NONE,
+        HRESULT hr = pDevice_->Get()->CreateCommittedResource(&defaultHeapProperties, D3D12_HEAP_FLAG_NONE,
                                                              &resourceDesc, D3D12_RESOURCE_STATE_COMMON, nullptr, IID_PPV_ARGS(&resource));
         assert(SUCCEEDED(hr));
         return resource;
@@ -90,7 +90,7 @@ Microsoft::WRL::ComPtr<ID3D12Resource> ResourceFactory::CreateTextureResource(co
 
     // Resourcesの生成
     Microsoft::WRL::ComPtr<ID3D12Resource> resource = nullptr;
-    HRESULT hr = device_->Get()->CreateCommittedResource(
+    HRESULT hr = pDevice_->Get()->CreateCommittedResource(
         &heapProperties,                // Heapの設定
         D3D12_HEAP_FLAG_NONE,           // Heapの特殊な設定。
         &resourceDesc,                  // Resourceの設定
@@ -119,7 +119,7 @@ Microsoft::WRL::ComPtr<ID3D12Resource> ResourceFactory::CreateRenderTextureResou
     heapProperties.Type = D3D12_HEAP_TYPE_DEFAULT;
 
     Microsoft::WRL::ComPtr<ID3D12Resource> resource = nullptr;
-    HRESULT hr = device_->Get()->CreateCommittedResource(&heapProperties,
+    HRESULT hr = pDevice_->Get()->CreateCommittedResource(&heapProperties,
                                                          D3D12_HEAP_FLAG_NONE, &resourceDesc,
                                                          D3D12_RESOURCE_STATE_GENERIC_READ, &color,
                                                          IID_PPV_ARGS(&resource));
@@ -153,7 +153,7 @@ Microsoft::WRL::ComPtr<ID3D12Resource> ResourceFactory::CreateDepthStencilTextur
 
     // Resourceの生成
     Microsoft::WRL::ComPtr<ID3D12Resource> resource = nullptr;
-    HRESULT hr = device_->Get()->CreateCommittedResource(
+    HRESULT hr = pDevice_->Get()->CreateCommittedResource(
         &heapProperties,                  // Heapの設定
         D3D12_HEAP_FLAG_NONE,             // Heapの特殊な設定。特になし。
         &resourceDesc,                    // Resourceの設定
@@ -168,7 +168,7 @@ Microsoft::WRL::ComPtr<ID3D12Resource> ResourceFactory::CreateDepthStencilTextur
 Microsoft::WRL::ComPtr<ID3D12Resource> ResourceFactory::UploadTextureData(Microsoft::WRL::ComPtr<ID3D12Resource> texture, const DirectX::ScratchImage &mipImages, ID3D12GraphicsCommandList *commandList)
 {
     std::vector<D3D12_SUBRESOURCE_DATA> subresources;
-    DirectX::PrepareUpload(device_->Get(), mipImages.GetImages(), mipImages.GetImageCount(), mipImages.GetMetadata(), subresources);
+    DirectX::PrepareUpload(pDevice_->Get(), mipImages.GetImages(), mipImages.GetImageCount(), mipImages.GetMetadata(), subresources);
     uint64_t intermediateSize = GetRequiredIntermediateSize(texture.Get(), 0, UINT(subresources.size()));
     Microsoft::WRL::ComPtr<ID3D12Resource> intermediateResource = CreateBufferResource(intermediateSize);
     UpdateSubresources(commandList, texture.Get(), intermediateResource.Get(), 0, 0, UINT(subresources.size()), subresources.data());
@@ -197,7 +197,7 @@ ID3D12CommandSignature *ResourceFactory::GetDispatchIndirectCommandSignature()
         desc.NumArgumentDescs = 1;
         desc.pArgumentDescs = &arg;
         // DISPATCH のみでルート引数を差し替えないため pRootSignature は nullptr で良い。
-        HRESULT hr = device_->Get()->CreateCommandSignature(&desc, nullptr, IID_PPV_ARGS(&dispatchIndirectCommandSignature_));
+        HRESULT hr = pDevice_->Get()->CreateCommandSignature(&desc, nullptr, IID_PPV_ARGS(&dispatchIndirectCommandSignature_));
         assert(SUCCEEDED(hr));
     }
     return dispatchIndirectCommandSignature_.Get();

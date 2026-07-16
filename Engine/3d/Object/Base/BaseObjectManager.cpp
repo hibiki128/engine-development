@@ -1,22 +1,27 @@
 #include "BaseObjectManager.h"
-#include <Utility/Debug/ImGui/ImGuiNotification.h>
+#include <utility/debug/imgui/ImGuiNotification.h>
 #ifdef _DEBUG
-#include "Debug/ImGui/ImGuizmoManager.h"
+#include "debug/imgui/ImGuizmoManager.h"
+#include "ImGuizmo.h"
 #endif // _DEBUG
-#include "Edit/MotionEditor/MotionEditor.h"
-#include <Debug/Log/Logger.h>
-#include <ShowFolder/ShowFolder.h>
-#include "Render/DrawGroupManager.h"
+#include "edit/motion/MotionEditor.h"
+#include <debug/log/Logger.h>
+#include <browser/ShowFolder.h>
+#include "render/DrawGroupManager.h"
 
 namespace Hagine {
-void BaseObjectManager::Finalize() {
+void BaseObjectManager::Finalize()
+{
     RemoveAllObjects();
 }
 
-void BaseObjectManager::RemoveAllObjects() {
+void BaseObjectManager::RemoveAllObjects()
+{
     // 親子関係をすべてクリア
-    for (auto &[name, obj] : objects_) {
-        if (obj) {
+    for (auto &[name, obj] : objects_)
+    {
+        if (obj)
+        {
             obj->SetParent(nullptr);
         }
     }
@@ -29,16 +34,19 @@ void BaseObjectManager::RemoveAllObjects() {
 #endif
 }
 
-void BaseObjectManager::RemoveObjectByName(const std::string &name) {
+void BaseObjectManager::RemoveObjectByName(const std::string &name)
+{
     auto it = objects_.find(name);
-    if (it != objects_.end()) {
+    if (it != objects_.end())
+    {
         ImGuiNotification::Post("オブジェクトを削除しました: " + name, {0.9f, 0.7f, 0.2f, 1.0f});
         objects_.erase(it);
         ownedObjects_.erase(name);
     }
 }
 
-void BaseObjectManager::RegisterExternal(BaseObject* obj) {
+void BaseObjectManager::RegisterExternal(BaseObject *obj)
+{
     const std::string &name = obj->GetName();
 #ifdef _DEBUG
     ImGuizmoManager::GetInstance()->AddTarget(name, obj);
@@ -48,42 +56,61 @@ void BaseObjectManager::RegisterExternal(BaseObject* obj) {
     ImGuiNotification::Post("オブジェクトを追加しました: " + name, {0.4f, 0.8f, 1.0f, 1.0f});
 }
 
-void BaseObjectManager::UnregisterExternal(BaseObject* obj) {
+void BaseObjectManager::UnregisterExternal(BaseObject *obj)
+{
     objects_.erase(obj->GetName());
 }
 
-void BaseObjectManager::AddObject(std::unique_ptr<BaseObject> baseObject) {
-    auto* ptr = baseObject.get();
+void BaseObjectManager::AddObject(std::unique_ptr<BaseObject> baseObject)
+{
+    auto *ptr = baseObject.get();
     const std::string &name = baseObject->GetName();
     ownedObjects_.emplace(name, std::move(baseObject));
     RegisterExternal(ptr);
 }
 
-void BaseObjectManager::Update() {
-    for (auto &[name, obj] : objects_) {
+void BaseObjectManager::Update()
+{
+    for (auto &[name, obj] : objects_)
+    {
         obj->UpdateHierarchy();
         obj->UpdateWorldTransformHierarchy();
     }
 }
 
-void BaseObjectManager::Draw(const ViewProjection &viewProjection) {
-    for (auto &[name, obj] : objects_) {
+void BaseObjectManager::Draw(const ViewProjection &viewProjection)
+{
+    for (auto &[name, obj] : objects_)
+    {
         obj->Draw(viewProjection);
     }
 }
 
-void BaseObjectManager::UpdateImGui() {
+void BaseObjectManager::UpdateImGui()
+{
 #ifdef _DEBUG
+    // オブジェクトへの編集ジェスチャ（ImGuiウィジェット・ギズモドラッグ）をUndo履歴として追跡する
+    undoTracker_.Begin([this] { return CaptureUndoState(); });
+
     DrawSceneSaveModel();
     DrawSceneLoadModel();
     DrawObjectCreationModel();
     DrawObjectLoadModel();
+
+    undoTracker_.End(
+        "オブジェクト編集",
+        [this] { return CaptureUndoState(); },
+        [](const nlohmann::json &s) { BaseObjectManager::GetInstance()->RestoreUndoState(s); },
+        ImGuizmo::IsUsing());
 #endif // _DEBUG
 }
 
-void BaseObjectManager::SaveAll() {
-    for (auto &[name, obj] : objects_) {
-        if (obj->GetShouldSave()) { // セーブ対象フラグをチェック
+void BaseObjectManager::SaveAll()
+{
+    for (auto &[name, obj] : objects_)
+    {
+        if (obj->GetShouldSave())
+        { // セーブ対象フラグをチェック
             obj->SetFolderPath("SceneData/" + sceneName_ + "/ObjectDatas");
             obj->SceneSaveToJson();
             obj->SaveParentChildRelationship();
@@ -92,20 +119,24 @@ void BaseObjectManager::SaveAll() {
     ImGuiNotification::Post("全オブジェクトを保存しました", {0.2f, 0.8f, 0.2f, 1.0f});
 }
 
-void BaseObjectManager::LoadAll(std::string sceneName) {
+void BaseObjectManager::LoadAll(std::string sceneName)
+{
     // シーンデータのフォルダパスを構築
     std::string sceneDataPath = "Application/Assets/jsons/SceneData/" + sceneName + "/ObjectDatas";
 
     // フォルダが存在するかチェック
-    if (!std::filesystem::exists(sceneDataPath)) {
+    if (!std::filesystem::exists(sceneDataPath))
+    {
         // フォルダが存在しない場合は何もしない
         return;
     }
 
     // JSONファイルを検索
     std::vector<std::string> jsonFiles;
-    for (const auto &entry : std::filesystem::directory_iterator(sceneDataPath)) {
-        if (entry.is_regular_file() && entry.path().extension() == ".json") {
+    for (const auto &entry : std::filesystem::directory_iterator(sceneDataPath))
+    {
+        if (entry.is_regular_file() && entry.path().extension() == ".json")
+        {
             jsonFiles.push_back(entry.path().filename().string());
         }
     }
@@ -114,16 +145,17 @@ void BaseObjectManager::LoadAll(std::string sceneName) {
     RemoveAllObjects();
 
     // 各JSONファイルを読み込んでオブジェクトを生成
-    for (const std::string &jsonFile : jsonFiles) {
+    for (const std::string &jsonFile : jsonFiles)
+    {
         // JSONファイル名から拡張子を除去してオブジェクト名とする
         std::string objectName = jsonFile.substr(0, jsonFile.find_last_of('.'));
 
         // 新しいオブジェクトを作成
         std::unique_ptr<BaseObject> newObject = std::make_unique<BaseObject>();
-        std::string foldarPath = "SceneData/" + sceneName + "/ObjectDatas";
+        std::string folderPath = "SceneData/" + sceneName + "/ObjectDatas";
         // フォルダパスを設定
         newObject->SetFolderPath("SceneData/" + sceneName + "/ObjectDatas");
-        std::unique_ptr<DataHandler> ObjectDatas = std::make_unique<DataHandler>(foldarPath, objectName);
+        std::unique_ptr<DataHandler> ObjectDatas = std::make_unique<DataHandler>(folderPath, objectName);
         // オブジェクト名でInit
         newObject->Init(objectName);
         newObject->SetIsScene(true);
@@ -132,9 +164,12 @@ void BaseObjectManager::LoadAll(std::string sceneName) {
         std::string modelPath = ObjectDatas->Load<std::string>("modelName", "");
 
         // モデルとテクスチャを設定
-        if (!modelPath.empty()) {
+        if (!modelPath.empty())
+        {
             newObject->CreateModel(modelPath);
-        } else {
+        }
+        else
+        {
             newObject->CreatePrimitiveModel(newObject->GetPrimitiveType());
         }
 
@@ -147,39 +182,47 @@ void BaseObjectManager::LoadAll(std::string sceneName) {
     ImGuiNotification::Post("シーンを読み込みました: " + sceneName, {0.2f, 0.8f, 0.8f, 1.0f});
 }
 
-void BaseObjectManager::CreateObject(std::string objectName, std::string modelPath, std::string texturePath) {
+void BaseObjectManager::CreateObject(std::string objectName, std::string modelPath, std::string texturePath)
+{
     std::unique_ptr<BaseObject> newObject = std::make_unique<BaseObject>();
     newObject->Init(objectName);
     newObject->CreateModel(modelPath);
-    for (int i = 0; i < newObject->GetObject3d()->GetMaterialCount(); i++) {
+    for (int i = 0; i < newObject->GetObject3d()->GetMaterialCount(); i++)
+    {
         newObject->SetTexture(texturePath, i);
     }
     this->AddObject(std::move(newObject));
     ImGuiNotification::Post("オブジェクトを作成しました: " + objectName, {0.2f, 0.8f, 0.2f, 1.0f});
 }
 
-BaseObject *BaseObjectManager::GetObjectByName(const std::string &name) {
+BaseObject *BaseObjectManager::GetObjectByName(const std::string &name)
+{
     auto it = objects_.find(name);
-    if (it != objects_.end()) {
+    if (it != objects_.end())
+    {
         return it->second;
     }
     return nullptr;
 }
 
 // メニューからモーダルを開くメソッド
-void BaseObjectManager::OpenSceneSaveModal() {
+void BaseObjectManager::OpenSceneSaveModal()
+{
     showSceneSaveModal_ = true;
 }
 
-void BaseObjectManager::OpenSceneLoadModal() {
+void BaseObjectManager::OpenSceneLoadModal()
+{
     showSceneLoadModal_ = true;
 }
 
-void BaseObjectManager::OpenObjectCreationModal() {
+void BaseObjectManager::OpenObjectCreationModal()
+{
     showObjectCreationModal_ = true;
 }
 
-void BaseObjectManager::OpenObjectLoadModal() {
+void BaseObjectManager::OpenObjectLoadModal()
+{
     showObjectLoadModal_ = true;
 }
 
@@ -191,10 +234,12 @@ std::string g_dndReparentParent; // ドロップ先の親（空文字 = ルー�
 bool g_dndReparentRequested = false;
 } // namespace
 
-void BaseObjectManager::ShowParentChildHierarchy() {
+void BaseObjectManager::ShowParentChildHierarchy()
+{
 #ifdef _DEBUG
 
-    if (ImGui::CollapsingHeader("階層エディター", ImGuiTreeNodeFlags_DefaultOpen)) {
+    if (ImGui::CollapsingHeader("階層エディター", ImGuiTreeNodeFlags_DefaultOpen))
+    {
 
         // 親子付けセクション
         ImGui::Separator();
@@ -205,9 +250,11 @@ void BaseObjectManager::ShowParentChildHierarchy() {
 
         std::vector<std::string> objectNames = GetObjectNames();
 
-        if (!objectNames.empty()) {
+        if (!objectNames.empty())
+        {
             std::vector<const char *> objectNamesCStr;
-            for (const auto &name : objectNames) {
+            for (const auto &name : objectNames)
+            {
                 objectNamesCStr.push_back(name.c_str());
             }
 
@@ -226,14 +273,17 @@ void BaseObjectManager::ShowParentChildHierarchy() {
             selectedChild = std::clamp(selectedChild, 0, static_cast<int>(objectNames.size()) - 1);
             selectedParent = std::clamp(selectedParent, 0, static_cast<int>(objectNames.size()) - 1);
 
-            if (ImGui::Button("親子付け")) {
-                if (selectedChild != selectedParent) {
+            if (ImGui::Button("親子付け"))
+            {
+                if (selectedChild != selectedParent)
+                {
                     SetParentChild(objectNames[selectedChild], objectNames[selectedParent]);
                 }
             }
 
             ImGui::SameLine();
-            if (ImGui::Button("親子解除")) {
+            if (ImGui::Button("親子解除"))
+            {
                 RemoveParentChild(objectNames[selectedChild]);
             }
         }
@@ -247,8 +297,10 @@ void BaseObjectManager::ShowParentChildHierarchy() {
         // 階層構造を表示
         ImGui::BeginChild("HierarchyView", ImVec2(0, 300), ImGuiChildFlags_Borders);
 
-        for (auto &[name, obj] : objects_) {
-            if (!obj->GetParent()) { // ルートオブジェクトのみ表示
+        for (auto &[name, obj] : objects_)
+        {
+            if (!obj->GetParent())
+            { // ルートオブジェクトのみ表示
                 ShowObjectHierarchy(obj, 0);
             }
         }
@@ -256,8 +308,10 @@ void BaseObjectManager::ShowParentChildHierarchy() {
         // 余白へのドロップでルート（親なし）へ解除できるようにする
         ImVec2 dropAvail = ImGui::GetContentRegionAvail();
         ImGui::Dummy(ImVec2(dropAvail.x, dropAvail.y > 8.0f ? dropAvail.y : 8.0f));
-        if (ImGui::BeginDragDropTarget()) {
-            if (const ImGuiPayload *p = ImGui::AcceptDragDropPayload("OBJ_NODE")) {
+        if (ImGui::BeginDragDropTarget())
+        {
+            if (const ImGuiPayload *p = ImGui::AcceptDragDropPayload("OBJ_NODE"))
+            {
                 g_dndReparentChild = static_cast<const char *>(p->Data);
                 g_dndReparentParent.clear();
                 g_dndReparentRequested = true;
@@ -268,17 +322,24 @@ void BaseObjectManager::ShowParentChildHierarchy() {
         ImGui::EndChild();
 
         // ドラッグ＆ドロップの結果をツリー描画後にまとめて適用する
-        if (g_dndReparentRequested) {
-            if (g_dndReparentParent.empty()) {
+        if (g_dndReparentRequested)
+        {
+            if (g_dndReparentParent.empty())
+            {
                 RemoveParentChild(g_dndReparentChild);
                 ImGuiNotification::Post("親子付けを解除しました: " + g_dndReparentChild, {0.82f, 0.58f, 0.36f, 1.0f});
-            } else if (g_dndReparentChild != g_dndReparentParent) {
+            }
+            else if (g_dndReparentChild != g_dndReparentParent)
+            {
                 SetParentChild(g_dndReparentChild, g_dndReparentParent);
                 BaseObject *c = GetObjectByName(g_dndReparentChild);
                 BaseObject *p = GetObjectByName(g_dndReparentParent);
-                if (c && c->GetParent() == p) {
+                if (c && c->GetParent() == p)
+                {
                     ImGuiNotification::Post(g_dndReparentChild + " を " + g_dndReparentParent + " の子にしました", {0.45f, 0.68f, 0.52f, 1.0f});
-                } else {
+                }
+                else
+                {
                     ImGuiNotification::Post("親子付けできません（循環参照など）", {0.82f, 0.58f, 0.36f, 1.0f});
                 }
             }
@@ -290,7 +351,8 @@ void BaseObjectManager::ShowParentChildHierarchy() {
 #endif // _DEBUG
 }
 
-void BaseObjectManager::ShowObjectHierarchy(BaseObject *obj, int depth) {
+void BaseObjectManager::ShowObjectHierarchy(BaseObject *obj, int depth)
+{
 #ifdef _DEBUG
 
     if (!obj)
@@ -303,22 +365,26 @@ void BaseObjectManager::ShowObjectHierarchy(BaseObject *obj, int depth) {
     ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_OpenOnDoubleClick;
 
     // 子がない場合は葉ノードフラグを追加
-    if (obj->GetChildren()->empty()) {
+    if (obj->GetChildren()->empty())
+    {
         flags |= ImGuiTreeNodeFlags_Leaf;
     }
 
     bool nodeOpen = ImGui::TreeNodeEx(displayName.c_str(), flags);
 
     // ドラッグ元: このノード
-    if (ImGui::BeginDragDropSource(ImGuiDragDropFlags_None)) {
+    if (ImGui::BeginDragDropSource(ImGuiDragDropFlags_None))
+    {
         const std::string &dragName = obj->GetName();
         ImGui::SetDragDropPayload("OBJ_NODE", dragName.c_str(), dragName.size() + 1);
         ImGui::Text("移動: %s", dragName.c_str());
         ImGui::EndDragDropSource();
     }
     // ドロップ先: このノードを親にする
-    if (ImGui::BeginDragDropTarget()) {
-        if (const ImGuiPayload *p = ImGui::AcceptDragDropPayload("OBJ_NODE")) {
+    if (ImGui::BeginDragDropTarget())
+    {
+        if (const ImGuiPayload *p = ImGui::AcceptDragDropPayload("OBJ_NODE"))
+        {
             g_dndReparentChild = static_cast<const char *>(p->Data);
             g_dndReparentParent = obj->GetName();
             g_dndReparentRequested = true;
@@ -326,9 +392,11 @@ void BaseObjectManager::ShowObjectHierarchy(BaseObject *obj, int depth) {
         ImGui::EndDragDropTarget();
     }
 
-    if (nodeOpen) {
+    if (nodeOpen)
+    {
         // 子オブジェクトを表示
-        for (BaseObject *child : *obj->GetChildren()) {
+        for (BaseObject *child : *obj->GetChildren())
+        {
             ShowObjectHierarchy(child, depth + 1);
         }
         ImGui::TreePop();
@@ -336,15 +404,19 @@ void BaseObjectManager::ShowObjectHierarchy(BaseObject *obj, int depth) {
 #endif // _DEBUG
 }
 
-void BaseObjectManager::SetParentChild(const std::string &childName, const std::string &parentName) {
+void BaseObjectManager::SetParentChild(const std::string &childName, const std::string &parentName)
+{
     BaseObject *child = GetObjectByName(childName);
     BaseObject *parent = GetObjectByName(parentName);
 
-    if (child && parent && child != parent) {
+    if (child && parent && child != parent)
+    {
         // 循環参照チェック
         BaseObject *currentParent = parent;
-        while (currentParent) {
-            if (currentParent == child) {
+        while (currentParent)
+        {
+            if (currentParent == child)
+            {
                 // 循環参照が発生するため、親子付けを拒否
                 return;
             }
@@ -355,68 +427,85 @@ void BaseObjectManager::SetParentChild(const std::string &childName, const std::
     }
 }
 
-void BaseObjectManager::RemoveParentChild(const std::string &childName) {
+void BaseObjectManager::RemoveParentChild(const std::string &childName)
+{
     BaseObject *child = GetObjectByName(childName);
-    if (child) {
+    if (child)
+    {
         child->DetachParent();
     }
 }
 
-std::vector<std::string> BaseObjectManager::GetObjectNames() const {
+std::vector<std::string> BaseObjectManager::GetObjectNames() const
+{
     std::vector<std::string> names;
-    for (const auto &[name, obj] : objects_) {
+    for (const auto &[name, obj] : objects_)
+    {
         names.push_back(name);
     }
     return names;
 }
 
-void BaseObjectManager::SaveAllParentChildRelationships() {
-    for (auto &[name, obj] : objects_) {
+void BaseObjectManager::SaveAllParentChildRelationships()
+{
+    for (auto &[name, obj] : objects_)
+    {
         obj->SaveParentChildRelationship();
     }
 }
 
-void BaseObjectManager::LoadAllParentChildRelationships() {
+void BaseObjectManager::LoadAllParentChildRelationships()
+{
     // まず全オブジェクトから親子関係情報を読み込む
     std::unordered_map<std::string, std::string> parentRelations;
     std::unordered_map<std::string, std::vector<std::string>> childRelations;
 
-    for (auto &[name, obj] : objects_) {
+    for (auto &[name, obj] : objects_)
+    {
         if (!obj->ObjectDatas_)
             continue;
 
         std::string parentName = obj->ObjectDatas_->Load<std::string>("parentName", "");
-        if (!parentName.empty()) {
+        if (!parentName.empty())
+        {
             parentRelations[name] = parentName;
         }
 
         std::vector<std::string> childrenNames = obj->ObjectDatas_->Load<std::vector<std::string>>("childrenNames", std::vector<std::string>());
-        if (!childrenNames.empty()) {
+        if (!childrenNames.empty())
+        {
             childRelations[name] = childrenNames;
         }
     }
 
     // 親子関係を復元
-    for (const auto &[childName, parentName] : parentRelations) {
+    for (const auto &[childName, parentName] : parentRelations)
+    {
         BaseObject *child = GetObjectByName(childName);
         BaseObject *parent = GetObjectByName(parentName);
 
-        if (child && parent) {
+        if (child && parent)
+        {
             child->SetParent(parent);
         }
     }
 }
 
-void BaseObjectManager::RemoveObject(const std::string &name) {
+void BaseObjectManager::RemoveObject(const std::string &name)
+{
     auto it = objects_.find(name);
-    if (it != objects_.end()) {
+    if (it != objects_.end())
+    {
         BaseObject *targetObject = it->second;
 
-        if (targetObject) {
+        if (targetObject)
+        {
             // 子供の親解除
-            for (auto &pair : objects_) {
+            for (auto &pair : objects_)
+            {
                 BaseObject *obj = pair.second;
-                if (obj && obj->GetParent() == targetObject) {
+                if (obj && obj->GetParent() == targetObject)
+                {
                     obj->DetachParent();
                 }
             }
@@ -430,19 +519,25 @@ void BaseObjectManager::RemoveObject(const std::string &name) {
     }
 }
 
-void BaseObjectManager::ShowSaveTargetManager() {
+void BaseObjectManager::ShowSaveTargetManager()
+{
 #ifdef _DEBUG
-    if (ImGui::CollapsingHeader("セーブ対象管理##SaveTargetManagement", ImGuiTreeNodeFlags_DefaultOpen)) {
+    if (ImGui::CollapsingHeader("セーブ対象管理##SaveTargetManagement", ImGuiTreeNodeFlags_DefaultOpen))
+    {
         ImGui::Spacing();
 
         std::vector<std::string> saveTargets;
         std::vector<std::string> nonSaveTargets;
 
         // オブジェクトを分類
-        for (const auto &[name, obj] : objects_) {
-            if (obj->GetShouldSave()) {
+        for (const auto &[name, obj] : objects_)
+        {
+            if (obj->GetShouldSave())
+            {
                 saveTargets.push_back(name);
-            } else {
+            }
+            else
+            {
                 nonSaveTargets.push_back(name);
             }
         }
@@ -452,10 +547,10 @@ void BaseObjectManager::ShowSaveTargetManager() {
 
         // 選択インデックスの範囲チェック
         leftSelected.erase(std::remove_if(leftSelected.begin(), leftSelected.end(),
-                                          [&](int i) { return i >= (int)nonSaveTargets.size(); }),
+                                          [&](int i) { return i >= static_cast<int>(nonSaveTargets.size()); }),
                            leftSelected.end());
         rightSelected.erase(std::remove_if(rightSelected.begin(), rightSelected.end(),
-                                           [&](int i) { return i >= (int)saveTargets.size(); }),
+                                           [&](int i) { return i >= static_cast<int>(saveTargets.size()); }),
                             rightSelected.end());
 
         float availableWidth = ImGui::GetContentRegionAvail().x;
@@ -480,15 +575,20 @@ void BaseObjectManager::ShowSaveTargetManager() {
         ImGui::PushStyleColor(ImGuiCol_HeaderHovered, ImVec4(0.48f, 0.34f, 0.34f, 0.70f));
         ImGui::PushStyleColor(ImGuiCol_HeaderActive, ImVec4(0.54f, 0.40f, 0.40f, 0.85f));
 
-        if (nonSaveTargets.empty()) {
+        if (nonSaveTargets.empty())
+        {
             ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.6f, 0.6f, 0.6f, 1.0f));
             ImGui::TextWrapped("セーブ対象外のオブジェクトがありません");
             ImGui::PopStyleColor();
-        } else {
-            for (int i = 0; i < nonSaveTargets.size(); ++i) {
+        }
+        else
+        {
+            for (int i = 0; i < nonSaveTargets.size(); ++i)
+            {
                 bool selected = std::find(leftSelected.begin(), leftSelected.end(), i) != leftSelected.end();
                 std::string selectableId = nonSaveTargets[i] + "##NonSave" + std::to_string(i);
-                if (ImGui::Selectable(selectableId.c_str(), selected, ImGuiSelectableFlags_AllowDoubleClick)) {
+                if (ImGui::Selectable(selectableId.c_str(), selected, ImGuiSelectableFlags_AllowDoubleClick))
+                {
                     if (!ImGui::GetIO().KeyCtrl)
                         leftSelected.clear();
 
@@ -498,7 +598,8 @@ void BaseObjectManager::ShowSaveTargetManager() {
                     else
                         leftSelected.push_back(i);
 
-                    if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0)) {
+                    if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0))
+                    {
                         AddToSaveTargets(nonSaveTargets[i]);
                         leftSelected.clear();
                     }
@@ -518,18 +619,23 @@ void BaseObjectManager::ShowSaveTargetManager() {
         ImGui::Dummy(ImVec2(0, 60));
 
         bool canMoveRight = !leftSelected.empty();
-        if (!canMoveRight) {
+        if (!canMoveRight)
+        {
             ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.3f, 0.3f, 0.3f, 0.5f));
             ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.3f, 0.3f, 0.3f, 0.5f));
             ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.3f, 0.3f, 0.3f, 0.5f));
-        } else {
+        }
+        else
+        {
             ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.22f, 0.40f, 0.30f, 0.85f));
             ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.28f, 0.50f, 0.38f, 0.95f));
             ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.32f, 0.58f, 0.44f, 1.0f));
         }
 
-        if (ImGui::Button("追加 >>##SaveAddButton", ImVec2(buttonWidth, 30)) && canMoveRight) {
-            for (int idx : leftSelected) {
+        if (ImGui::Button("追加 >>##SaveAddButton", ImVec2(buttonWidth, 30)) && canMoveRight)
+        {
+            for (int idx : leftSelected)
+            {
                 AddToSaveTargets(nonSaveTargets[idx]);
             }
             leftSelected.clear();
@@ -538,18 +644,23 @@ void BaseObjectManager::ShowSaveTargetManager() {
         ImGui::PopStyleColor(3);
 
         bool canMoveLeft = !rightSelected.empty();
-        if (!canMoveLeft) {
+        if (!canMoveLeft)
+        {
             ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.3f, 0.3f, 0.3f, 0.5f));
             ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.3f, 0.3f, 0.3f, 0.5f));
             ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.3f, 0.3f, 0.3f, 0.5f));
-        } else {
+        }
+        else
+        {
             ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.46f, 0.24f, 0.24f, 0.85f));
             ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.58f, 0.30f, 0.30f, 0.95f));
             ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.66f, 0.36f, 0.36f, 1.0f));
         }
 
-        if (ImGui::Button("<< 削除##SaveRemoveButton", ImVec2(buttonWidth, 30)) && canMoveLeft) {
-            for (int idx : rightSelected) {
+        if (ImGui::Button("<< 削除##SaveRemoveButton", ImVec2(buttonWidth, 30)) && canMoveLeft)
+        {
+            for (int idx : rightSelected)
+            {
                 RemoveFromSaveTargets(saveTargets[idx]);
             }
             rightSelected.clear();
@@ -567,15 +678,20 @@ void BaseObjectManager::ShowSaveTargetManager() {
         ImGui::PushStyleColor(ImGuiCol_HeaderHovered, ImVec4(0.34f, 0.48f, 0.36f, 0.70f));
         ImGui::PushStyleColor(ImGuiCol_HeaderActive, ImVec4(0.40f, 0.54f, 0.42f, 0.85f));
 
-        if (saveTargets.empty()) {
+        if (saveTargets.empty())
+        {
             ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.6f, 0.6f, 0.6f, 1.0f));
             ImGui::TextWrapped("セーブ対象のオブジェクトがありません");
             ImGui::PopStyleColor();
-        } else {
-            for (int i = 0; i < saveTargets.size(); ++i) {
+        }
+        else
+        {
+            for (int i = 0; i < saveTargets.size(); ++i)
+            {
                 bool selected = std::find(rightSelected.begin(), rightSelected.end(), i) != rightSelected.end();
                 std::string selectableId = saveTargets[i] + "##Save" + std::to_string(i);
-                if (ImGui::Selectable(selectableId.c_str(), selected, ImGuiSelectableFlags_AllowDoubleClick)) {
+                if (ImGui::Selectable(selectableId.c_str(), selected, ImGuiSelectableFlags_AllowDoubleClick))
+                {
                     if (!ImGui::GetIO().KeyCtrl)
                         rightSelected.clear();
 
@@ -585,7 +701,8 @@ void BaseObjectManager::ShowSaveTargetManager() {
                     else
                         rightSelected.push_back(i);
 
-                    if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0)) {
+                    if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0))
+                    {
                         RemoveFromSaveTargets(saveTargets[i]);
                         rightSelected.clear();
                     }
@@ -607,31 +724,38 @@ void BaseObjectManager::ShowSaveTargetManager() {
     }
 #endif // _DEBUG
 }
-void BaseObjectManager::AddToSaveTargets(const std::string &objectName) {
+void BaseObjectManager::AddToSaveTargets(const std::string &objectName)
+{
     BaseObject *obj = GetObjectByName(objectName);
-    if (obj) {
+    if (obj)
+    {
         obj->SetShouldSave(true);
     }
 }
 
-void BaseObjectManager::RemoveFromSaveTargets(const std::string &objectName) {
+void BaseObjectManager::RemoveFromSaveTargets(const std::string &objectName)
+{
     BaseObject *obj = GetObjectByName(objectName);
-    if (obj) {
+    if (obj)
+    {
         obj->SetShouldSave(false);
     }
 }
 
 // シーン保存モーダルの描画
-void BaseObjectManager::DrawSceneSaveModel() {
+void BaseObjectManager::DrawSceneSaveModel()
+{
 #ifdef _DEBUG
     // メニューから呼び出された場合のモーダル表示
-    if (showSceneSaveModal_) {
+    if (showSceneSaveModal_)
+    {
         ImGui::OpenPopup("シーン保存");
         showSceneSaveModal_ = false;
     }
 
     // モーダルウィンドウ（中央に表示、背景は自動で薄暗くなる）
-    if (ImGui::BeginPopupModal("シーン保存", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+    if (ImGui::BeginPopupModal("シーン保存", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+    {
         ImGui::Text("シーンの名前を入力してください");
 
         static char sceneNameBuffer[128] = "";
@@ -640,7 +764,8 @@ void BaseObjectManager::DrawSceneSaveModel() {
         ImGui::InputText("シーン名", sceneNameBuffer, IM_ARRAYSIZE(sceneNameBuffer));
 
         // 横並びに「保存」ボタンと「キャンセル」ボタン
-        if (ImGui::Button("保存", ImVec2(120, 0))) {
+        if (ImGui::Button("保存", ImVec2(120, 0)))
+        {
             sceneName_ = sceneNameBuffer; // 入力内容を保存
             std::unique_ptr<DataHandler> datas_ = std::make_unique<DataHandler>("SceneData/" + sceneName_ + "/ObjectDatas", "");
             datas_->DeleteAllJsonsInFolder();
@@ -652,7 +777,8 @@ void BaseObjectManager::DrawSceneSaveModel() {
 
         ImGui::SameLine();
 
-        if (ImGui::Button("キャンセル", ImVec2(120, 0))) {
+        if (ImGui::Button("キャンセル", ImVec2(120, 0)))
+        {
             ImGui::CloseCurrentPopup(); // キャンセル時も閉じる
         }
 
@@ -662,15 +788,18 @@ void BaseObjectManager::DrawSceneSaveModel() {
 }
 
 // シーン読み込みモーダルの描画
-void BaseObjectManager::DrawSceneLoadModel() {
+void BaseObjectManager::DrawSceneLoadModel()
+{
 #ifdef _DEBUG
     // メニューから呼び出された場合のモーダル表示
-    if (showSceneLoadModal_) {
+    if (showSceneLoadModal_)
+    {
         ImGui::OpenPopup("シーン読み込み");
         showSceneLoadModal_ = false;
     }
 
-    if (ImGui::BeginPopupModal("シーン読み込み", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+    if (ImGui::BeginPopupModal("シーン読み込み", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+    {
         ImGui::Text("シーンの名前を入力してください");
 
         static char sceneNameBuffer[128] = "";
@@ -679,7 +808,8 @@ void BaseObjectManager::DrawSceneLoadModel() {
         ImGui::InputText("シーン名", sceneNameBuffer, IM_ARRAYSIZE(sceneNameBuffer));
 
         // 横並びに「読み込み」ボタンと「キャンセル」ボタン
-        if (ImGui::Button("読み込み", ImVec2(120, 0))) {
+        if (ImGui::Button("読み込み", ImVec2(120, 0)))
+        {
             sceneName_ = sceneNameBuffer;      // 入力内容を保存
             LoadAll(sceneName_);               // 実際の読み込み処理
             LoadAllParentChildRelationships(); // 親子関係も読み込み
@@ -689,7 +819,8 @@ void BaseObjectManager::DrawSceneLoadModel() {
 
         ImGui::SameLine();
 
-        if (ImGui::Button("キャンセル", ImVec2(120, 0))) {
+        if (ImGui::Button("キャンセル", ImVec2(120, 0)))
+        {
             ImGui::CloseCurrentPopup(); // キャンセル時も閉じる
         }
 
@@ -699,16 +830,19 @@ void BaseObjectManager::DrawSceneLoadModel() {
 }
 
 // オブジェクト生成モーダルの描画
-void BaseObjectManager::DrawObjectCreationModel() {
+void BaseObjectManager::DrawObjectCreationModel()
+{
 #ifdef _DEBUG
     // メニューから呼び出された場合のモーダル表示
-    if (showObjectCreationModal_) {
+    if (showObjectCreationModal_)
+    {
         ImGui::OpenPopup("オブジェクト生成");
         showObjectCreationModal_ = false;
     }
 
     // オブジェクト生成モーダルウィンドウ
-    if (ImGui::BeginPopupModal("オブジェクト生成", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+    if (ImGui::BeginPopupModal("オブジェクト生成", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+    {
         ImGui::Text("新しいオブジェクトを作成します");
 
         static char objectNameBuffer[128] = "";
@@ -743,14 +877,17 @@ void BaseObjectManager::DrawObjectCreationModel() {
         // 生成ボタンとキャンセルボタン
         bool canCreate = strlen(objectNameBuffer) > 0 && !modelPath_.empty();
 
-        if (!canCreate) {
+        if (!canCreate)
+        {
             ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.3f, 0.3f, 0.3f, 1.0f));
             ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.3f, 0.3f, 0.3f, 1.0f));
             ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.3f, 0.3f, 0.3f, 1.0f));
         }
 
-        if (ImGui::Button("生成", ImVec2(120, 0))) {
-            if (canCreate) {
+        if (ImGui::Button("生成", ImVec2(120, 0)))
+        {
+            if (canCreate)
+            {
                 objectName_ = objectNameBuffer;
                 CreateObject(objectName_, modelPath_, texturePath_);
 
@@ -763,13 +900,15 @@ void BaseObjectManager::DrawObjectCreationModel() {
             }
         }
 
-        if (!canCreate) {
+        if (!canCreate)
+        {
             ImGui::PopStyleColor(3);
         }
 
         ImGui::SameLine();
 
-        if (ImGui::Button("キャンセル", ImVec2(120, 0))) {
+        if (ImGui::Button("キャンセル", ImVec2(120, 0)))
+        {
             // 入力欄とパスをリセット
             memset(objectNameBuffer, 0, sizeof(objectNameBuffer));
             modelPath_ = "";
@@ -779,13 +918,16 @@ void BaseObjectManager::DrawObjectCreationModel() {
         }
 
         // 生成できない場合の理由を表示
-        if (!canCreate) {
+        if (!canCreate)
+        {
             ImGui::Separator();
             ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "生成するには:");
-            if (strlen(objectNameBuffer) == 0) {
+            if (strlen(objectNameBuffer) == 0)
+            {
                 ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "・オブジェクト名を入力してください");
             }
-            if (modelPath_.empty()) {
+            if (modelPath_.empty())
+            {
                 ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "・モデルファイルを選択してください");
             }
         }
@@ -795,16 +937,19 @@ void BaseObjectManager::DrawObjectCreationModel() {
 #endif // _DEBUG
 }
 
-void BaseObjectManager::DrawObjectLoadModel() {
+void BaseObjectManager::DrawObjectLoadModel()
+{
 #ifdef _DEBUG
     // メニューから呼び出された場合のモーダル表示
-    if (showObjectLoadModal_) {
+    if (showObjectLoadModal_)
+    {
         ImGui::OpenPopup("保存済みオブジェクト呼び出し");
         showObjectLoadModal_ = false;
     }
     std::string startPath = "ObjectDatas";
     // オブジェクト呼び出しモーダルウィンドウ
-    if (ImGui::BeginPopupModal("保存済みオブジェクト呼び出し", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+    if (ImGui::BeginPopupModal("保存済みオブジェクト呼び出し", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+    {
         ImGui::Text("保存済みのオブジェクトを読み込みます");
 
         // JSONファイル選択セクション
@@ -819,7 +964,8 @@ void BaseObjectManager::DrawObjectLoadModel() {
 
         // JSONファイルが選択されている場合、ファイル名からオブジェクト名を取得
         std::string autoObjectName = "";
-        if (!selectedJsonPath_.empty()) {
+        if (!selectedJsonPath_.empty())
+        {
             std::filesystem::path jsonPath(selectedJsonPath_);
             autoObjectName = jsonPath.stem().string(); // 拡張子なしのファイル名を取得
             ImGui::Text("オブジェクト名: %s", autoObjectName.c_str());
@@ -829,33 +975,40 @@ void BaseObjectManager::DrawObjectLoadModel() {
 
         // 読み込みボタンとキャンセルボタン
         bool canLoad = !selectedJsonPath_.empty();
-        if (!canLoad) {
+        if (!canLoad)
+        {
             ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.3f, 0.3f, 0.3f, 1.0f));
             ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.3f, 0.3f, 0.3f, 1.0f));
             ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.3f, 0.3f, 0.3f, 1.0f));
         }
-        if (ImGui::Button("読み込み", ImVec2(120, 0))) {
-            if (canLoad) {
+        if (ImGui::Button("読み込み", ImVec2(120, 0)))
+        {
+            if (canLoad)
+            {
                 LoadObjectFromJson(startPath, autoObjectName);
                 // パスをリセット
                 selectedJsonPath_ = "";
                 ImGui::CloseCurrentPopup();
             }
         }
-        if (!canLoad) {
+        if (!canLoad)
+        {
             ImGui::PopStyleColor(3);
         }
         ImGui::SameLine();
-        if (ImGui::Button("キャンセル", ImVec2(120, 0))) {
+        if (ImGui::Button("キャンセル", ImVec2(120, 0)))
+        {
             // パスをリセット
             selectedJsonPath_ = "";
             ImGui::CloseCurrentPopup();
         }
         // 読み込みできない場合の理由を表示
-        if (!canLoad) {
+        if (!canLoad)
+        {
             ImGui::Separator();
             ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "読み込みするには:");
-            if (selectedJsonPath_.empty()) {
+            if (selectedJsonPath_.empty())
+            {
                 ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "・JSONファイルを選択してください");
             }
         }
@@ -864,7 +1017,8 @@ void BaseObjectManager::DrawObjectLoadModel() {
 #endif // _DEBUG
 }
 
-void BaseObjectManager::LoadObjectFromJson(const std::string &startPath, const std::string &objectName) {
+void BaseObjectManager::LoadObjectFromJson(const std::string &startPath, const std::string &objectName)
+{
     // フルパスを構築 (startPath/objectName.json)
     std::string fullPath = "Application/Assets/jsons/" + startPath + "/" + objectName + ".json";
 
@@ -873,9 +1027,12 @@ void BaseObjectManager::LoadObjectFromJson(const std::string &startPath, const s
     newObject->Init(objectName);
     newObject->GetName() = objectName;
     newObject->LoadFromJson(startPath, objectName);
-    if (!newObject->GetModelPath().empty()) {
+    if (!newObject->GetModelPath().empty())
+    {
         newObject->CreateModel(newObject->GetModelPath());
-    } else {
+    }
+    else
+    {
         newObject->CreatePrimitiveModel(newObject->GetPrimitiveType());
     }
 
@@ -887,30 +1044,36 @@ void BaseObjectManager::LoadObjectFromJson(const std::string &startPath, const s
     Logger::Info("Object loaded: " + objectName + " (" + fullPath + ")");
 }
 
-void BaseObjectManager::RestoreParentChildRelationshipForObject(BaseObject *object) {
+void BaseObjectManager::RestoreParentChildRelationshipForObject(BaseObject *object)
+{
     if (!object)
         return;
 
     // 親の復元
     std::string parentName = object->GetParentName();
-    if (!parentName.empty()) {
+    if (!parentName.empty())
+    {
         auto it = objects_.find(parentName);
-        if (it != objects_.end()) {
+        if (it != objects_.end())
+        {
             object->SetParent(it->second);
         }
     }
 
     // 子の復元
     std::vector<std::string> childrenNames = object->GetChildrenNames();
-    for (const std::string &childName : childrenNames) {
+    for (const std::string &childName : childrenNames)
+    {
         auto it = objects_.find(childName);
-        if (it != objects_.end()) {
+        if (it != objects_.end())
+        {
             object->AddChild(it->second);
         }
     }
 }
 
-void BaseObjectManager::DrawHierarchyEditor() {
+void BaseObjectManager::DrawHierarchyEditor()
+{
 #ifdef _DEBUG
     ImGui::Begin("オブジェクトマネージャ");
 
@@ -920,4 +1083,189 @@ void BaseObjectManager::DrawHierarchyEditor() {
     ImGui::End();
 #endif // _DEBUG
 }
+
+#ifdef _DEBUG
+// -------------------------------------------------------
+// Undo/Redo 用の状態キャプチャ・復元
+// -------------------------------------------------------
+
+nlohmann::json BaseObjectManager::CaptureUndoState()
+{
+    using nlohmann::json;
+    json state = json::object();
+
+    for (auto &[name, owned] : ownedObjects_)
+    {
+        BaseObject *obj = owned.get();
+        if (!obj)
+        {
+            continue;
+        }
+
+        json s;
+        // 再生成に必要な情報
+        s["modelPath"] = obj->GetModelPath();
+        s["isPrimitive"] = obj->IsPrimitive();
+        s["primitiveType"] = static_cast<int>(obj->GetPrimitiveType());
+
+        // トランスフォーム
+        const WorldTransform *transform = obj->GetWorldTransform();
+        s["scale"] = transform->scale_;
+        s["rotation"] = transform->quateRotation_;
+        s["translation"] = transform->translation_;
+
+        // 親子関係・フラグ類
+        s["parent"] = obj->GetParentName();
+        s["shouldSave"] = obj->GetShouldSave();
+        s["isModelDraw"] = obj->GetIsModelDraw();
+        s["isLighting"] = obj->GetLighting();
+
+        // マテリアルごとのテクスチャと色
+        const int materialCount = obj->GetObject3d() ? static_cast<int>(obj->GetObject3d()->GetMaterialCount()) : 0;
+        const int textureCount = obj->IsPrimitive() ? (materialCount > 0 ? 1 : 0) : materialCount;
+        json textures = json::array();
+        json colors = json::array();
+        for (int i = 0; i < textureCount; ++i)
+        {
+            textures.push_back(obj->GetTexturePath(i));
+        }
+        for (int i = 0; i < materialCount; ++i)
+        {
+            colors.push_back(obj->GetColor(i));
+        }
+        s["textures"] = textures;
+        s["colors"] = colors;
+
+        state[name] = s;
+    }
+    return state;
+}
+
+void BaseObjectManager::RestoreUndoState(const nlohmann::json &state)
+{
+    using nlohmann::json;
+    if (!state.is_object())
+    {
+        return;
+    }
+
+    // ---- パス1: 削除・再生成・フィールド適用 ----
+    for (auto it = state.begin(); it != state.end(); ++it)
+    {
+        const std::string &name = it.key();
+
+        // null = このオブジェクトは存在しない状態へ戻す（削除）
+        if (it.value().is_null())
+        {
+            RemoveObject(name);
+            ImGuizmoManager::GetInstance()->RemoveTarget(name);
+            continue;
+        }
+
+        const json &s = it.value();
+        BaseObject *obj = GetObjectByName(name);
+
+        // 存在しなければ所有オブジェクトとして再生成（削除のUndo）
+        if (!obj)
+        {
+            const std::string modelPath = s.value("modelPath", std::string());
+            const bool isPrimitive = s.value("isPrimitive", false);
+            std::unique_ptr<BaseObject> newObject = std::make_unique<BaseObject>();
+            newObject->Init(name);
+            if (!modelPath.empty())
+            {
+                newObject->CreateModel(modelPath);
+            }
+            else if (isPrimitive)
+            {
+                newObject->SetPrimitive(true);
+                newObject->CreatePrimitiveModel(
+                    static_cast<PrimitiveType>(s.value("primitiveType", static_cast<int>(PrimitiveType::Count))));
+            }
+            else
+            {
+                continue; // モデルもプリミティブも無い場合は再生成できない
+            }
+            AddObject(std::move(newObject));
+            obj = GetObjectByName(name);
+            if (!obj)
+            {
+                continue;
+            }
+        }
+
+        // トランスフォーム適用
+        WorldTransform *transform = obj->GetWorldTransform();
+        if (s.contains("scale"))
+        {
+            transform->scale_ = s["scale"].get<Vector3>();
+        }
+        if (s.contains("rotation"))
+        {
+            transform->quateRotation_ = s["rotation"].get<Quaternion>();
+        }
+        if (s.contains("translation"))
+        {
+            transform->translation_ = s["translation"].get<Vector3>();
+        }
+
+        // フラグ類の適用
+        if (s.contains("shouldSave"))
+        {
+            obj->SetShouldSave(s["shouldSave"].get<bool>());
+        }
+        if (s.contains("isModelDraw"))
+        {
+            obj->SetIsModelDraw(s["isModelDraw"].get<bool>());
+        }
+        if (s.contains("isLighting"))
+        {
+            obj->GetLighting() = s["isLighting"].get<bool>();
+        }
+
+        // マテリアルごとのテクスチャと色の適用
+        const int materialCount = obj->GetObject3d() ? static_cast<int>(obj->GetObject3d()->GetMaterialCount()) : 0;
+        if (s.contains("textures") && s["textures"].is_array())
+        {
+            const json &textures = s["textures"];
+            const int textureCount = obj->IsPrimitive() ? (materialCount > 0 ? 1 : 0) : materialCount;
+            for (int i = 0; i < static_cast<int>(textures.size()) && i < textureCount; ++i)
+            {
+                obj->SetTexture(textures[i].get<std::string>(), i);
+            }
+        }
+        if (s.contains("colors") && s["colors"].is_array())
+        {
+            const json &colors = s["colors"];
+            for (int i = 0; i < static_cast<int>(colors.size()) && i < materialCount; ++i)
+            {
+                obj->SetColor(colors[i].get<Vector4>(), i);
+            }
+        }
+    }
+
+    // ---- パス2: 親子関係の復元（全オブジェクトが揃ってから行う）----
+    for (auto it = state.begin(); it != state.end(); ++it)
+    {
+        if (it.value().is_null() || !it.value().is_object() || !it.value().contains("parent"))
+        {
+            continue;
+        }
+        const std::string &name = it.key();
+        if (!GetObjectByName(name))
+        {
+            continue;
+        }
+        const std::string parentName = it.value()["parent"].get<std::string>();
+        if (parentName.empty())
+        {
+            RemoveParentChild(name);
+        }
+        else if (GetObjectByName(parentName))
+        {
+            SetParentChild(name, parentName);
+        }
+    }
+}
+#endif // _DEBUG
 } // namespace Hagine

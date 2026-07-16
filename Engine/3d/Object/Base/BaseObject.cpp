@@ -1,14 +1,14 @@
 #define NOMINMAX
 #include "BaseObject.h"
 #include "BaseObjectManager.h"
-#include "Collider/CollisionManager.h"
-#include "Debug/CpuProfiler/CpuProfiler.h"
-#include "Frame/Frame.h"
-#include "Model/Material/Material.h"
-#include "Utility/Debug/ImGui/Debugui_improved.h"
-#include "Utility/Debug/ImGui/ImGuiNotification.h"
-#include "Scene/SceneManager.h"
-#include "ShowFolder/ShowFolder.h"
+#include "collider/CollisionManager.h"
+#include "debug/profiler/CpuProfiler.h"
+#include "frame/Frame.h"
+#include "model/material/Material.h"
+#include "utility/debug/imgui/DebugUIHelper.h"
+#include "utility/debug/imgui/ImGuiNotification.h"
+#include "scene/SceneManager.h"
+#include "browser/ShowFolder.h"
 #ifdef _DEBUG
 #include <imgui_internal.h>
 #include <implot.h>
@@ -23,10 +23,14 @@ namespace {
 /// <param name="accent">基準となるアクセント色</param>
 /// <param name="defaultOpen">初期状態で開くか</param>
 /// <returns>bool: 開いていれば true</returns>
-bool ThemedHeader(const char *label, ImVec4 accent, bool defaultOpen = false) {
-    ImVec4 base = accent;   base.w = 0.22f;
-    ImVec4 hov = accent;    hov.w = 0.38f;
-    ImVec4 act = accent;    act.w = 0.50f;
+bool ThemedHeader(const char *label, ImVec4 accent, bool defaultOpen = false)
+{
+    ImVec4 base = accent;
+    base.w = 0.22f;
+    ImVec4 hov = accent;
+    hov.w = 0.38f;
+    ImVec4 act = accent;
+    act.w = 0.50f;
     ImGui::PushStyleColor(ImGuiCol_Header, base);
     ImGui::PushStyleColor(ImGuiCol_HeaderHovered, hov);
     ImGui::PushStyleColor(ImGuiCol_HeaderActive, act);
@@ -36,7 +40,8 @@ bool ThemedHeader(const char *label, ImVec4 accent, bool defaultOpen = false) {
 }
 
 /// <summary>チェックマーク色だけアクセント色にしたチェックボックス</summary>
-bool AccentCheckbox(const char *label, bool *v, ImVec4 accent) {
+bool AccentCheckbox(const char *label, bool *v, ImVec4 accent)
+{
     ImGui::PushStyleColor(ImGuiCol_CheckMark, accent);
     bool changed = ImGui::Checkbox(label, v);
     ImGui::PopStyleColor();
@@ -44,7 +49,8 @@ bool AccentCheckbox(const char *label, bool *v, ImVec4 accent) {
 }
 
 /// <summary>地色を指定した横幅可変ボタン（width&lt;0 で全幅）</summary>
-bool ColoredButton(const char *label, ImVec4 base, float width = -1.0f) {
+bool ColoredButton(const char *label, ImVec4 base, float width = -1.0f)
+{
     ImVec4 hov = {(std::min)(base.x + 0.08f, 1.0f), (std::min)(base.y + 0.08f, 1.0f),
                   (std::min)(base.z + 0.08f, 1.0f), (std::min)(base.w + 0.1f, 1.0f)};
     ImGui::PushStyleColor(ImGuiCol_Button, base);
@@ -56,7 +62,8 @@ bool ColoredButton(const char *label, ImVec4 base, float width = -1.0f) {
 } // namespace
 #endif // _DEBUG
 
-BaseObject::~BaseObject() {
+BaseObject::~BaseObject()
+{
     // 非所有(RegisterExternal)でマネージャに登録されている場合、所有者(シーン等)が
     // 先に破棄されると BaseObjectManager::objects_ にダングリングポインタが残り、
     // アプリ終了時の RemoveAllObjects() でアクセス違反になる。破棄時に必ず自身を
@@ -65,7 +72,8 @@ BaseObject::~BaseObject() {
     colliders_.clear();
 }
 
-void BaseObject::Init(const std::string objectName) {
+void BaseObject::Init(const std::string objectName)
+{
     transform_ = std::make_unique<WorldTransform>();
     obj3d_ = std::make_unique<Object3d>();
     obj3d_->Initialize();
@@ -77,8 +85,10 @@ void BaseObject::Init(const std::string objectName) {
     isAlive_ = true;
 }
 
-void BaseObject::Update() {
-    if (obj3d_->GetHaveAnimation()) {
+void BaseObject::Update()
+{
+    if (obj3d_->GetHaveAnimation())
+    {
         // ループフラグはアニメーションごとに Object3d が内部管理する
         HAGINE_CPU_PROFILE("Update/Objects/Anim");
         obj3d_->AnimationUpdate();
@@ -93,7 +103,8 @@ void BaseObject::Update() {
     }
 }
 
-void BaseObject::Draw(const ViewProjection &viewProjection) {
+void BaseObject::Draw(const ViewProjection &viewProjection)
+{
     // 描画専用の位置オフセット・回転オフセットを一時的に適用する。
     // これらは描画時のみ反映し、ゲームプレイで参照する transform_ の値は描画後に元へ戻す
     Vector3 originalPosition = transform_->translation_;
@@ -102,16 +113,19 @@ void BaseObject::Draw(const ViewProjection &viewProjection) {
     bool hasOffset = (offSet_.x != 0.0f || offSet_.y != 0.0f || offSet_.z != 0.0f);
     bool applyRenderTransform = hasOffset || applyRenderRotationOffset_;
 
-    if (applyRenderTransform) {
+    if (applyRenderTransform)
+    {
         transform_->translation_ = originalPosition + offSet_;
 
-        if (applyRenderRotationOffset_) {
+        if (applyRenderRotationOffset_)
+        {
             // ローカル空間の回転として現在の向きへ合成
             transform_->quateRotation_ = originalRotation * renderRotationOffset_;
 
             // モデル中心が原点にない場合、回転で位置がずれる。
             // ピボット（回転中心）が固定されるよう平行移動で補正する
-            if (renderRotationPivot_.x != 0.0f || renderRotationPivot_.y != 0.0f || renderRotationPivot_.z != 0.0f) {
+            if (renderRotationPivot_.x != 0.0f || renderRotationPivot_.y != 0.0f || renderRotationPivot_.z != 0.0f)
+            {
                 Vector3 rotatedPivot = renderRotationOffset_.Rotate(renderRotationPivot_);
                 Vector3 pivotShift = originalRotation.Rotate(renderRotationPivot_ - rotatedPivot);
                 transform_->translation_ += pivotShift;
@@ -122,128 +136,162 @@ void BaseObject::Draw(const ViewProjection &viewProjection) {
     }
 
     // スケルトンの描画が必要な場合
-    if (skeletonDraw_) {
+    if (skeletonDraw_)
+    {
         obj3d_->DrawSkeleton(*transform_, viewProjection);
     }
-    if (!isWireframe_) {
+    if (!isWireframe_)
+    {
         // オブジェクトの描画
         obj3d_->Draw(*transform_, viewProjection, reflect_, isLighting_, isModelDraw_);
-    } else {
+    }
+    else
+    {
         obj3d_->DrawWireframe(*transform_, viewProjection, isRainbow_);
     }
 
     // 描画専用の変更を元へ戻す
-    if (applyRenderTransform) {
+    if (applyRenderTransform)
+    {
         transform_->translation_ = originalPosition;
         transform_->quateRotation_ = originalRotation;
         transform_->UpdateMatrix();
     }
 }
 
-void BaseObject::UpdateWorldTransformHierarchy() {
+void BaseObject::UpdateWorldTransformHierarchy()
+{
     // まず自分のトランスフォームを更新
-    if (transform_) {
+    if (transform_)
+    {
         transform_->UpdateMatrix();
     }
     // 子を再帰的に更新
-    for (auto it = children_.begin(); it != children_.end();) {
+    for (auto it = children_.begin(); it != children_.end();)
+    {
         BaseObject *child = *it;
         child->UpdateWorldTransformHierarchy();
-        if (child->parent_ != this) {
+        if (child->pParent_ != this)
+        {
             it = children_.erase(it);
-        } else {
+        }
+        else
+        {
             ++it;
         }
     }
 }
 
-void BaseObject::UpdateHierarchy() {
+void BaseObject::UpdateHierarchy()
+{
     // 自分自身の処理
     Update();
 
     // 子リストをイテレート
-    for (auto it = children_.begin(); it != children_.end();) {
+    for (auto it = children_.begin(); it != children_.end();)
+    {
         auto child = *it;
         // 再帰的に UpdateHierarchy
         child->UpdateHierarchy();
 
-        // 子が「DetachParent()」した場合、parent_ == nullptr になる
-        if (child->GetParent() != this) {
+        // 子が「DetachParent()」した場合、pParent_ == nullptr になる
+        if (child->GetParent() != this)
+        {
             // リストから削除
             it = children_.erase(it);
-        } else {
+        }
+        else
+        {
             ++it;
         }
     }
 }
 
-void BaseObject::SetParent(BaseObject *parent) {
-    if (parent_ == parent || parent == nullptr) {
+void BaseObject::SetParent(BaseObject *parent)
+{
+    if (pParent_ == parent || parent == nullptr)
+    {
         return; // 同じ親を持ってる場合何もしない
     }
-    if (parent_) {
+    if (pParent_)
+    {
         DetachParent(); // もし現在の親がいるなら一旦デタッチ
     }
 
     assert(parent != nullptr && "SetParent to nullptr is not allowed.");
 
-    parent_ = parent;
+    pParent_ = parent;
     // 親の子リストに追加
-    parent_->children_.push_back(this);
+    pParent_->children_.push_back(this);
 
-    if (transform_) {
-        transform_->parent_ = parent->GetWorldTransform();
+    if (transform_)
+    {
+        transform_->pParent_ = parent->GetWorldTransform();
     }
-    parentName_ = parent_->GetName();
+    parentName_ = pParent_->GetName();
 }
 
-void BaseObject::AddChild(BaseObject *child) {
+void BaseObject::AddChild(BaseObject *child)
+{
     assert(child != nullptr && "AddChild is nullptr");
     child->SetParent(this);
 }
 
-void BaseObject::DetachParent() {
-    if (parent_) {
-        parent_->children_.remove(this);
-        parent_ = nullptr;
-        if (transform_) {
-            transform_->parent_ = nullptr;
+void BaseObject::DetachParent()
+{
+    if (pParent_)
+    {
+        pParent_->children_.remove(this);
+        pParent_ = nullptr;
+        if (transform_)
+        {
+            transform_->pParent_ = nullptr;
         }
     }
 }
 
-void BaseObject::DetachChild(BaseObject *child) {
-    if (!child) {
+void BaseObject::DetachChild(BaseObject *child)
+{
+    if (!child)
+    {
         return;
     }
-    if (child->parent_ != this) {
+    if (child->pParent_ != this)
+    {
         return;
     }
-    child->parent_ = nullptr;
-    if (child->transform_) {
-        child->transform_->parent_ = nullptr;
+    child->pParent_ = nullptr;
+    if (child->transform_)
+    {
+        child->transform_->pParent_ = nullptr;
     }
     children_.remove(child);
 }
 
-BaseObject *BaseObject::GetParent() {
-    return parent_;
+BaseObject *BaseObject::GetParent()
+{
+    return pParent_;
 }
 
-std::list<BaseObject *> *BaseObject::GetChildren() {
+std::list<BaseObject *> *BaseObject::GetChildren()
+{
     return &children_;
 }
 
-BaseObject *BaseObject::GetChildByName(const std::string &name) {
-    for (auto &child : children_) {
-        if (child->objectName_ == name) {
+BaseObject *BaseObject::GetChildByName(const std::string &name)
+{
+    for (auto &child : children_)
+    {
+        if (child->objectName_ == name)
+        {
             return child;
         }
     }
     return nullptr;
 }
 
-void BaseObject::CreateModel(const std::string modelname) {
+void BaseObject::CreateModel(const std::string modelname)
+{
     modelPath_ = modelname;
     isPrimitive_ = false;
 
@@ -253,34 +301,45 @@ void BaseObject::CreateModel(const std::string modelname) {
     texturePaths_.resize(obj3d_->GetMaterialCount());
 
     // デフォルトのテクスチャパスを設定
-    auto allTexturePaths = obj3d_->GetAllTextruePath();
-    for (int i = 0; i < texturePaths_.size() && i < allTexturePaths.size(); i++) {
+    auto allTexturePaths = obj3d_->GetAllTexturePath();
+    for (int i = 0; i < texturePaths_.size() && i < allTexturePaths.size(); i++)
+    {
         texturePaths_[i] = allTexturePaths[i];
     }
 
     // JSONファイルが存在する場合は読み込み（modelPath_は上書きされない）
-    if (isScene_) {
+    if (isScene_)
+    {
         LoadFromJson();
-    } else {
+    }
+    else
+    {
         LoadFromJson("ObjectDatas", objectName_);
     }
 
     // JSONから読み込んだカラー設定を適用
-    if (ObjectDatas_) {
-        for (int i = 0; i < int(obj3d_->GetMaterialCount()); i++) {
+    if (ObjectDatas_)
+    {
+        for (int i = 0; i < int(obj3d_->GetMaterialCount()); i++)
+        {
             SetColor(ObjectDatas_->Load<Vector4>("color_" + std::to_string(i), GetColor(i)), i);
         }
     }
 
     // テクスチャを設定
-    for (int i = 0; i < texturePaths_.size(); i++) {
+    for (int i = 0; i < texturePaths_.size(); i++)
+    {
         obj3d_->SetTexture(texturePaths_[i], i);
     }
+
+    // マテリアル（ノーマルマップ関連）情報を適用（マテリアル生成後に行う）
+    LoadMaterials();
 
     AnimaLoadFromJson();
 }
 
-void BaseObject::CreatePrimitiveModel(const PrimitiveType &type) {
+void BaseObject::CreatePrimitiveModel(const PrimitiveType &type)
+{
     modelPath_ = ""; // プリミティブの場合は空文字列
     isPrimitive_ = true;
     type_ = type;
@@ -290,9 +349,12 @@ void BaseObject::CreatePrimitiveModel(const PrimitiveType &type) {
     texturePaths_[0] = "debug/uvChecker.png"; // デフォルト値
 
     // JSONファイルが存在する場合は読み込み
-    if (isScene_) {
+    if (isScene_)
+    {
         LoadFromJson();
-    } else {
+    }
+    else
+    {
         LoadFromJson("ObjectDatas", objectName_);
     }
 
@@ -301,30 +363,39 @@ void BaseObject::CreatePrimitiveModel(const PrimitiveType &type) {
 
     SetColor(ObjectDatas_->Load<Vector4>("color_" + std::to_string(0), {1.0f, 1.0f, 1.0f, 1.0f}), 0);
 
+    // マテリアル（ノーマルマップ関連）情報を適用（マテリアル生成後に行う）
+    LoadMaterials();
+
     AnimaLoadFromJson();
 }
 
-void BaseObject::SaveParentChildRelationship() {
-    if (!ObjectDatas_) {
+void BaseObject::SaveParentChildRelationship()
+{
+    if (!ObjectDatas_)
+    {
         return;
     }
 
     // 親の名前を保存
-    std::string parentName = parent_ ? parent_->GetName() : "";
+    std::string parentName = pParent_ ? pParent_->GetName() : "";
     ObjectDatas_->Save<std::string>("parentName", parentName);
 
     // 子の名前リストを保存
     std::vector<std::string> childrenNames;
-    for (const auto &child : children_) {
-        if (child) {
+    for (const auto &child : children_)
+    {
+        if (child)
+        {
             childrenNames.push_back(child->GetName());
         }
     }
     ObjectDatas_->Save<std::vector<std::string>>("childrenNames", childrenNames);
 }
 
-void BaseObject::LoadParentChildRelationship() {
-    if (!ObjectDatas_) {
+void BaseObject::LoadParentChildRelationship()
+{
+    if (!ObjectDatas_)
+    {
         return;
     }
 
@@ -335,35 +406,66 @@ void BaseObject::LoadParentChildRelationship() {
     std::vector<std::string> childrenNames = ObjectDatas_->Load<std::vector<std::string>>("childrenNames", std::vector<std::string>());
 }
 
-std::string BaseObject::GetParentName() const {
-    return parent_ ? parentName_ : "";
+std::string BaseObject::GetParentName() const
+{
+    return pParent_ ? parentName_ : "";
 }
 
-std::vector<std::string> BaseObject::GetChildrenNames() const {
+std::vector<std::string> BaseObject::GetChildrenNames() const
+{
     std::vector<std::string> names;
-    for (const auto &child : children_) {
-        if (child) {
+    for (const auto &child : children_)
+    {
+        if (child)
+        {
             names.push_back(child->GetName());
         }
     }
     return names;
 }
 
-Vector3 BaseObject::GetWorldPosition() {
+Vector3 BaseObject::GetWorldPosition()
+{
     return transform_->GetWorldPosition();
 }
 
 // ワールド行列からクォータニオンを取得
-Quaternion BaseObject::GetWorldRotation() {
+Quaternion BaseObject::GetWorldRotation()
+{
     return transform_->GetWorldRotation();
 }
 
 // ワールドスケールを取得（回転を考慮）
-Vector3 BaseObject::GetWorldScale() {
+Vector3 BaseObject::GetWorldScale()
+{
     return transform_->GetWorldScale();
 }
 
-void BaseObject::SaveToJson() {
+std::optional<Vector3> BaseObject::GetJointWorldPosition(const std::string &jointName)
+{
+    if (!obj3d_)
+    {
+        return std::nullopt;
+    }
+    ModelAnimation *modelAnimation = obj3d_->GetCurrentModelAnimation();
+    if (!modelAnimation)
+    {
+        return std::nullopt;
+    }
+    Bone *bone = modelAnimation->GetBone();
+    if (!bone)
+    {
+        return std::nullopt;
+    }
+
+    // 描画時と同じ条件（描画オフセット込み）のワールド行列を組み立てて参照する
+    Matrix4x4 worldMatrix = MakeAffineMatrix(
+        transform_->scale_, transform_->quateRotation_, transform_->translation_ + offSet_);
+    return bone->GetJointWorldPosition(jointName, worldMatrix);
+}
+
+void BaseObject::SaveToJson()
+{
     // JSONデータを扱うハンドラを作成
     modelPath_ = obj3d_->GetModelFilePath();
     ObjectDatas_ = std::make_unique<DataHandler>("ObjectDatas", objectName_);
@@ -376,10 +478,12 @@ void BaseObject::SaveToJson() {
     ObjectDatas_->Save<PrimitiveType>("PrimitiveType", type_);
     ObjectDatas_->Save<bool>("skeletonDraw", skeletonDraw_);
     ObjectDatas_->Save<bool>("isModelDraw", isModelDraw_);
-    if (parent_) {
-        ObjectDatas_->Save<std::string>("parentName", parent_->GetName());
+    if (pParent_)
+    {
+        ObjectDatas_->Save<std::string>("parentName", pParent_->GetName());
     }
-    for (int i = 0; i < int(obj3d_->GetMaterialCount()); i++) {
+    for (int i = 0; i < int(obj3d_->GetMaterialCount()); i++)
+    {
         texturePaths_.push_back(obj3d_->GetTextureFilePath(i));
         ObjectDatas_->Save<std::string>("textureName_" + std::to_string(i), texturePaths_[i]);
         ObjectDatas_->Save("color_" + std::to_string(i), GetColor(i));
@@ -393,14 +497,18 @@ void BaseObject::SaveToJson() {
     // 物理（リジッドボディ）情報を保存
     SavePhysics();
 
+    // マテリアル（ノーマルマップ関連）情報を保存
+    SaveMaterials();
+
     // コライダー情報を保存
     SaveColliders();
     ObjectDatas_->Flush();
 }
 
-void BaseObject::SceneSaveToJson() {
+void BaseObject::SceneSaveToJson()
+{
     // JSONデータを扱うハンドラを作成
-    ObjectDatas_ = std::make_unique<DataHandler>(foldarPath_, objectName_);
+    ObjectDatas_ = std::make_unique<DataHandler>(folderPath_, objectName_);
     modelPath_ = obj3d_->GetModelFilePath();
     ObjectDatas_->Save<std::string>("modelName", modelPath_);
     ObjectDatas_->Save<std::string>("objectName", objectName_);
@@ -411,11 +519,13 @@ void BaseObject::SceneSaveToJson() {
     ObjectDatas_->Save<PrimitiveType>("PrimitiveType", type_);
     ObjectDatas_->Save<bool>("skeletonDraw", skeletonDraw_);
     ObjectDatas_->Save<bool>("isModelDraw", isModelDraw_);
-    if (parent_) {
-        ObjectDatas_->Save<std::string>("parentName", parent_->GetName());
+    if (pParent_)
+    {
+        ObjectDatas_->Save<std::string>("parentName", pParent_->GetName());
     }
 
-    for (int i = 0; i < int(obj3d_->GetMaterialCount()); i++) {
+    for (int i = 0; i < int(obj3d_->GetMaterialCount()); i++)
+    {
         texturePaths_.push_back(obj3d_->GetTextureFilePath(i));
         ObjectDatas_->Save<std::string>("textureName_" + std::to_string(i), texturePaths_[i]);
         ObjectDatas_->Save("color_" + std::to_string(i), GetColor(i));
@@ -429,55 +539,68 @@ void BaseObject::SceneSaveToJson() {
     // 物理（リジッドボディ）情報を保存
     SavePhysics();
 
+    // マテリアル（ノーマルマップ関連）情報を保存
+    SaveMaterials();
+
     // コライダー情報を保存
     SaveColliders();
     ObjectDatas_->Flush();
 }
 
-void BaseObject::LoadFromJson() {
+void BaseObject::LoadFromJson()
+{
     // JSONデータを扱うハンドラを作成
-    ObjectDatas_ = std::make_unique<DataHandler>(foldarPath_, objectName_);
+    ObjectDatas_ = std::make_unique<DataHandler>(folderPath_, objectName_);
 
     // 基本トランスフォームを読み込み
     transform_->translation_ = ObjectDatas_->Load<Vector3>("translation", {0.0f, 0.0f, 0.0f});
     transform_->quateRotation_ = ObjectDatas_->Load<Quaternion>("rotation", Quaternion::IdentityQuaternion());
     transform_->scale_ = ObjectDatas_->Load<Vector3>("scale", {1.0f, 1.0f, 1.0f});
     isLighting_ = ObjectDatas_->Load<bool>("Lighting", true);
-    type_ = ObjectDatas_->Load<PrimitiveType>("PrimitiveType", PrimitiveType::kCount);
+    type_ = ObjectDatas_->Load<PrimitiveType>("PrimitiveType", PrimitiveType::Count);
     skeletonDraw_ = ObjectDatas_->Load<bool>("skeletonDraw", false);
     isModelDraw_ = ObjectDatas_->Load<bool>("isModelDraw", true);
     parentName_ = ObjectDatas_->Load<std::string>("parentName", "");
 
     // モデルパスをJSONから読み込み（既に設定されている場合は上書きしない）
     std::string loadedModelPath = ObjectDatas_->Load<std::string>("modelName", "");
-    if (!loadedModelPath.empty()) {
+    if (!loadedModelPath.empty())
+    {
         modelPath_ = loadedModelPath;
     }
 
     // 現在のmodelPath_の状態でプリミティブかどうかを判断
-    if (modelPath_.empty()) {
+    if (modelPath_.empty())
+    {
         // プリミティブの場合
         isPrimitive_ = true;
-        if (texturePaths_.empty()) {
+        if (texturePaths_.empty())
+        {
             texturePaths_.resize(1);
             texturePaths_[0] = ObjectDatas_->Load<std::string>("textureName_0", "debug/uvChecker.png");
-        } else {
+        }
+        else
+        {
             texturePaths_[0] = ObjectDatas_->Load<std::string>("textureName_0", texturePaths_[0]);
         }
-    } else {
+    }
+    else
+    {
         // 3Dモデルの場合
         isPrimitive_ = false;
         // obj3d_が既に作成されている場合のみテクスチャパスを読み込み
-        if (obj3d_ && obj3d_->GetMaterialCount() > 0) {
+        if (obj3d_ && obj3d_->GetMaterialCount() > 0)
+        {
             texturePaths_.resize(obj3d_->GetMaterialCount());
-            for (int i = 0; i < texturePaths_.size(); i++) {
+            for (int i = 0; i < texturePaths_.size(); i++)
+            {
                 texturePaths_[i] = ObjectDatas_->Load<std::string>("textureName_" + std::to_string(i), "debug/uvChecker.png");
             }
         }
     }
 
     isLighting_ = ObjectDatas_->Load<bool>("isLighting", true);
-    blendMode_ = static_cast<BlendMode>(ObjectDatas_->Load<int>("blendMode", int(BlendMode::kNormal)));
+    blendMode_ = static_cast<BlendMode>(ObjectDatas_->Load<int>("blendMode", int(BlendMode::Normal)));
 
     LoadParentChildRelationship();
 
@@ -488,12 +611,14 @@ void BaseObject::LoadFromJson() {
     LoadColliders();
 
     // 押し出しが有効ならコライダーにコールバックを仕込む（コライダー生成後に行う）
-    if (resolveCollision_) {
+    if (resolveCollision_)
+    {
         InstallResolveCallbacks();
     }
 }
 
-void BaseObject::LoadFromJson(std::string folderPath, std::string jsonName) {
+void BaseObject::LoadFromJson(std::string folderPath, std::string jsonName)
+{
     // JSONデータを扱うハンドラを作成
     ObjectDatas_ = std::make_unique<DataHandler>(folderPath, jsonName);
 
@@ -509,34 +634,43 @@ void BaseObject::LoadFromJson(std::string folderPath, std::string jsonName) {
 
     // モデルパスをJSONから読み込み（既に設定されている場合は上書きしない）
     std::string loadedModelPath = ObjectDatas_->Load<std::string>("modelName", "");
-    if (!loadedModelPath.empty()) {
+    if (!loadedModelPath.empty())
+    {
         modelPath_ = loadedModelPath;
     }
 
     // 現在のmodelPath_の状態でプリミティブかどうかを判断
-    if (modelPath_.empty()) {
+    if (modelPath_.empty())
+    {
         // プリミティブの場合
         isPrimitive_ = true;
-        if (texturePaths_.empty()) {
+        if (texturePaths_.empty())
+        {
             texturePaths_.resize(1);
             texturePaths_[0] = ObjectDatas_->Load<std::string>("textureName_0", "debug/uvChecker.png");
-        } else {
+        }
+        else
+        {
             texturePaths_[0] = ObjectDatas_->Load<std::string>("textureName_0", texturePaths_[0]);
         }
-    } else {
+    }
+    else
+    {
         // 3Dモデルの場合
         isPrimitive_ = false;
         // obj3d_が既に作成されている場合のみテクスチャパスを読み込み
-        if (obj3d_ && obj3d_->GetMaterialCount() > 0) {
+        if (obj3d_ && obj3d_->GetMaterialCount() > 0)
+        {
             texturePaths_.resize(obj3d_->GetMaterialCount());
-            for (int i = 0; i < texturePaths_.size(); i++) {
+            for (int i = 0; i < texturePaths_.size(); i++)
+            {
                 texturePaths_[i] = ObjectDatas_->Load<std::string>("textureName_" + std::to_string(i), texturePaths_[i]);
             }
         }
     }
 
     isLighting_ = ObjectDatas_->Load<bool>("isLighting", true);
-    blendMode_ = static_cast<BlendMode>(ObjectDatas_->Load<int>("blendMode", int(BlendMode::kNormal)));
+    blendMode_ = static_cast<BlendMode>(ObjectDatas_->Load<int>("blendMode", int(BlendMode::Normal)));
 
     LoadParentChildRelationship();
 
@@ -547,13 +681,74 @@ void BaseObject::LoadFromJson(std::string folderPath, std::string jsonName) {
     LoadColliders();
 
     // 押し出しが有効ならコライダーにコールバックを仕込む（コライダー生成後に行う）
-    if (resolveCollision_) {
+    if (resolveCollision_)
+    {
         InstallResolveCallbacks();
     }
 }
 
-void BaseObject::SaveColliders() {
-    if (!ObjectDatas_) {
+void BaseObject::SaveMaterials()
+{
+    if (!ObjectDatas_ || !obj3d_)
+    {
+        return;
+    }
+
+    // マテリアルごとのノーマルマップ関連設定を保存する
+    for (int i = 0; i < static_cast<int>(obj3d_->GetMaterialCount()); ++i)
+    {
+        Material *mat = obj3d_->GetMaterial(i);
+        if (!mat)
+            continue;
+
+        const MaterialData &md = mat->GetMaterialData();
+        std::string prefix = "material_" + std::to_string(i) + "_";
+
+        ObjectDatas_->Save<bool>(prefix + "enableNormalMap", md.enableNormalMap);
+        ObjectDatas_->Save<std::string>(prefix + "normalMapPath", md.hasNormalMapTexture ? md.normalMapFilePath : "");
+        ObjectDatas_->Save<bool>(prefix + "enableProceduralNormal", md.enableProceduralNormal);
+        ObjectDatas_->Save<float>(prefix + "proceduralScale", md.proceduralScale);
+        ObjectDatas_->Save<float>(prefix + "normalStrength", md.normalStrength);
+    }
+}
+
+void BaseObject::LoadMaterials()
+{
+    if (!ObjectDatas_ || !obj3d_)
+    {
+        return;
+    }
+
+    // マテリアルごとのノーマルマップ関連設定を読み込む
+    // （キーが存在しない場合は現在値を既定にして何も変えない）
+    for (int i = 0; i < static_cast<int>(obj3d_->GetMaterialCount()); ++i)
+    {
+        Material *mat = obj3d_->GetMaterial(i);
+        if (!mat)
+            continue;
+
+        MaterialData &md = mat->GetMaterialData();
+        std::string prefix = "material_" + std::to_string(i) + "_";
+
+        // 法線マップ画像が保存されていればテクスチャを読み込んで有効化する
+        std::string nmPath = ObjectDatas_->Load<std::string>(prefix + "normalMapPath", "");
+        if (!nmPath.empty())
+        {
+            mat->SetNormalMap(nmPath);
+        }
+
+        // フラグ類は SetNormalMap の副作用より保存値を優先する
+        md.enableNormalMap = ObjectDatas_->Load<bool>(prefix + "enableNormalMap", md.enableNormalMap);
+        md.enableProceduralNormal = ObjectDatas_->Load<bool>(prefix + "enableProceduralNormal", md.enableProceduralNormal);
+        md.proceduralScale = ObjectDatas_->Load<float>(prefix + "proceduralScale", md.proceduralScale);
+        mat->SetNormalStrength(ObjectDatas_->Load<float>(prefix + "normalStrength", md.normalStrength));
+    }
+}
+
+void BaseObject::SaveColliders()
+{
+    if (!ObjectDatas_)
+    {
         return;
     }
 
@@ -561,7 +756,8 @@ void BaseObject::SaveColliders() {
     ObjectDatas_->Save<int>("colliderCount", static_cast<int>(colliders_.size()));
 
     // 各コライダーの情報を保存
-    for (size_t i = 0; i < colliders_.size(); ++i) {
+    for (size_t i = 0; i < colliders_.size(); ++i)
+    {
         auto *collider = colliders_[i].get();
         if (!collider)
             continue;
@@ -581,21 +777,30 @@ void BaseObject::SaveColliders() {
         ObjectDatas_->Save<std::vector<std::string>>(prefix + "collisionMask", maskList);
 
         // 型別の詳細情報を保存
-        if (auto *sphere = dynamic_cast<SphereCollider *>(collider)) {
+        if (auto *sphere = dynamic_cast<SphereCollider *>(collider))
+        {
             ObjectDatas_->Save<float>(prefix + "radius", sphere->GetRadius());
             ObjectDatas_->Save<Vector3>(prefix + "offset", sphere->GetOffset());
-        } else if (auto *aabb = dynamic_cast<AABBCollider *>(collider)) {
+        }
+        else if (auto *aabb = dynamic_cast<AABBCollider *>(collider))
+        {
             ObjectDatas_->Save<Vector3>(prefix + "size", aabb->GetSize());
             ObjectDatas_->Save<Vector3>(prefix + "offset", aabb->GetOffset());
-        } else if (auto *obb = dynamic_cast<OBBCollider *>(collider)) {
+        }
+        else if (auto *obb = dynamic_cast<OBBCollider *>(collider))
+        {
             ObjectDatas_->Save<Vector3>(prefix + "size", obb->GetSize());
             ObjectDatas_->Save<Vector3>(prefix + "rotationOffset", obb->GetRotationOffset());
             ObjectDatas_->Save<Vector3>(prefix + "scaleOffset", obb->GetPositionOffset());
-        } else if (auto *cyl = dynamic_cast<CylinderCollider *>(collider)) {
+        }
+        else if (auto *cyl = dynamic_cast<CylinderCollider *>(collider))
+        {
             ObjectDatas_->Save<float>(prefix + "radius", cyl->GetRadius());
             ObjectDatas_->Save<float>(prefix + "height", cyl->GetHeight());
             ObjectDatas_->Save<bool>(prefix + "inward", cyl->IsInward());
-        } else if (auto *mesh = dynamic_cast<MeshCollider *>(collider)) {
+        }
+        else if (auto *mesh = dynamic_cast<MeshCollider *>(collider))
+        {
             // メッシュ形状（三角形データ）は保存せず、オブジェクトのモデルから再構築する。
             // ここでは復元に必要な最低限の情報のみ保存する。
             ObjectDatas_->Save<std::string>(prefix + "sourceModelPath", mesh->GetSourceModelPath());
@@ -604,14 +809,18 @@ void BaseObject::SaveColliders() {
     }
 }
 
-void BaseObject::LoadColliders() {
-    if (!ObjectDatas_) {
+void BaseObject::LoadColliders()
+{
+    if (!ObjectDatas_)
+    {
         return;
     }
 
     // 既存のコライダーをクリア（登録解除後、unique_ptr が自動解放）
-    for (auto &collider : colliders_) {
-        if (collider) {
+    for (auto &collider : colliders_)
+    {
+        if (collider)
+        {
             CollisionManager::GetInstance()->Unregister(collider.get());
         }
     }
@@ -621,7 +830,8 @@ void BaseObject::LoadColliders() {
     int colliderCount = ObjectDatas_->Load<int>("colliderCount", 0);
 
     // 各コライダーを読み込んで作成
-    for (int i = 0; i < colliderCount; ++i) {
+    for (int i = 0; i < colliderCount; ++i)
+    {
         std::string prefix = "collider_" + std::to_string(i) + "_";
 
         // 型を読み込み
@@ -632,7 +842,8 @@ void BaseObject::LoadColliders() {
         std::unique_ptr<ColliderBase> colliderOwner;
 
         // 型に応じてコライダーを作成
-        switch (type) {
+        switch (type)
+        {
         case ColliderType::Sphere: {
             auto sphere = std::make_unique<SphereCollider>();
             sphere->SetRadius(ObjectDatas_->Load<float>(prefix + "radius", 1.0f));
@@ -672,7 +883,8 @@ void BaseObject::LoadColliders() {
             mesh->SetSourceModelPath(ObjectDatas_->Load<std::string>(prefix + "sourceModelPath", modelPath_));
             mesh->SetWireframeVisible(ObjectDatas_->Load<bool>(prefix + "wireframeVisible", true));
             // 三角形データは保存していないため、オブジェクトのモデルから再構築する
-            if (obj3d_) {
+            if (obj3d_)
+            {
                 mesh->SetMatrixGetter([this]() { return this->GetWorldMatrix(); });
                 mesh->BuildFromModel(obj3d_->GetModel());
             }
@@ -698,7 +910,8 @@ void BaseObject::LoadColliders() {
         auto maskList = ObjectDatas_->Load<std::vector<std::string>>(
             prefix + "collisionMask",
             std::vector<std::string>());
-        for (const auto &maskTag : maskList) {
+        for (const auto &maskTag : maskList)
+        {
             collider->AddCollisionMask(maskTag);
         }
 
@@ -712,21 +925,25 @@ void BaseObject::LoadColliders() {
     }
 }
 
-void BaseObject::AnimaSaveToJson() {
-   /* if (!AnimaDatas_) {
-        return;
-    }
-    AnimaDatas_->Save<bool>("Loop");*/
+void BaseObject::AnimaSaveToJson()
+{
+    /* if (!AnimaDatas_) {
+         return;
+     }
+     AnimaDatas_->Save<bool>("Loop");*/
 }
 
-void BaseObject::AnimaLoadFromJson() {
-   /* AnimaDatas_ = std::make_unique<DataHandler>("Animation", objectName_);
-    isLoop_ = AnimaDatas_->Load<bool>("Loop", false);*/
+void BaseObject::AnimaLoadFromJson()
+{
+    /* AnimaDatas_ = std::make_unique<DataHandler>("Animation", objectName_);
+     isLoop_ = AnimaDatas_->Load<bool>("Loop", false);*/
 }
 
-void BaseObject::DebugCollider() {
+void BaseObject::DebugCollider()
+{
 #ifdef _DEBUG
-    if (colliders_.empty()) {
+    if (colliders_.empty())
+    {
         ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kTextDim);
         ImGui::TextUnformatted("  コライダーなし");
         ImGui::PopStyleColor();
@@ -736,12 +953,13 @@ void BaseObject::DebugCollider() {
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(6, 3));
     ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 4.0f);
 
-    for (size_t i = 0; i < colliders_.size(); ++i) {
+    for (size_t i = 0; i < colliders_.size(); ++i)
+    {
         auto *col = colliders_[i].get();
         if (!col)
             continue;
 
-        ImGui::PushID((int)i);
+        ImGui::PushID(static_cast<int>(i));
 
         // ヘッダー色：衝突中は赤寄り、非衝突は通常
         bool colliding = col->IsCollidingInCurrentFrame();
@@ -759,7 +977,8 @@ void BaseObject::DebugCollider() {
         bool open = ImGui::CollapsingHeader(col->GetName().c_str());
         ImGui::PopStyleColor(3);
 
-        if (!open) {
+        if (!open)
+        {
             ImGui::PopID();
             continue;
         }
@@ -792,7 +1011,8 @@ void BaseObject::DebugCollider() {
         // ---- タグ設定 ----
         ImGui::PushStyleColor(ImGuiCol_Header, DebugTheme::kBgBlue);
         ImGui::PushStyleColor(ImGuiCol_HeaderHovered, ImVec4(0.20f, 0.55f, 1.0f, 0.20f));
-        if (ImGui::TreeNodeEx("タグ設定##ctag", ImGuiTreeNodeFlags_SpanAvailWidth)) {
+        if (ImGui::TreeNodeEx("タグ設定##ctag", ImGuiTreeNodeFlags_SpanAvailWidth))
+        {
             col->ImGuiTagSettings();
             ImGui::TreePop();
         }
@@ -803,7 +1023,8 @@ void BaseObject::DebugCollider() {
         // ---- コライダー形状パラメータ ----
         SectionHeader("[ 形状パラメータ ]", DebugTheme::kAccentCyan);
 
-        if (auto *sphere = dynamic_cast<SphereCollider *>(col)) {
+        if (auto *sphere = dynamic_cast<SphereCollider *>(col))
+        {
             ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kAccentCyan);
             ImGui::TextUnformatted("種別: 球体");
             ImGui::PopStyleColor();
@@ -827,7 +1048,9 @@ void BaseObject::DebugCollider() {
             if (ImGui::DragFloat3("##soff", &off.x, 0.1f, -1000.f, 1000.f, "%.2f"))
                 sphere->SetOffset(off);
             ImGui::PopStyleColor();
-        } else if (auto *aabb = dynamic_cast<AABBCollider *>(col)) {
+        }
+        else if (auto *aabb = dynamic_cast<AABBCollider *>(col))
+        {
             ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kAccentGreen);
             ImGui::TextUnformatted("種別: AABB");
             ImGui::PopStyleColor();
@@ -851,7 +1074,9 @@ void BaseObject::DebugCollider() {
             if (ImGui::DragFloat3("##aoff", &off.x, 0.1f, -1000.f, 1000.f, "%.2f"))
                 aabb->SetOffset(off);
             ImGui::PopStyleColor();
-        } else if (auto *obb = dynamic_cast<OBBCollider *>(col)) {
+        }
+        else if (auto *obb = dynamic_cast<OBBCollider *>(col))
+        {
             ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kAccentPurple);
             ImGui::TextUnformatted("種別: OBB");
             ImGui::PopStyleColor();
@@ -885,7 +1110,9 @@ void BaseObject::DebugCollider() {
             if (ImGui::DragFloat3("##opoff", &posOff.x, 0.1f, -1000.f, 1000.f, "%.2f"))
                 obb->SetPositionOffSet(posOff);
             ImGui::PopStyleColor();
-        } else if (auto *cyl = dynamic_cast<CylinderCollider *>(col)) {
+        }
+        else if (auto *cyl = dynamic_cast<CylinderCollider *>(col))
+        {
             ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kAccentYellow);
             ImGui::TextUnformatted("種別: 円柱");
             ImGui::PopStyleColor();
@@ -915,7 +1142,9 @@ void BaseObject::DebugCollider() {
             if (ImGui::Checkbox("内側に閉じ込める##cyin", &inward))
                 cyl->SetInward(inward);
             ImGui::PopStyleColor();
-        } else if (auto *mesh = dynamic_cast<MeshCollider *>(col)) {
+        }
+        else if (auto *mesh = dynamic_cast<MeshCollider *>(col))
+        {
             ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kAccentOrange);
             ImGui::TextUnformatted("種別: メッシュ");
             ImGui::PopStyleColor();
@@ -938,14 +1167,16 @@ void BaseObject::DebugCollider() {
         // ---- 保存 / 削除ボタン ----
         float bw = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
 
-        if (ColoredButton("保存##colsv", {0.20f, 0.45f, 0.20f, 0.80f}, bw)) {
+        if (ColoredButton("保存##colsv", {0.20f, 0.45f, 0.20f, 0.80f}, bw))
+        {
             col->SaveToJson();
             ImGuiNotification::Post("コライダーを保存しました: " + col->GetName(), {0.45f, 0.68f, 0.52f, 1.0f});
         }
 
         ImGui::SameLine();
 
-        if (ColoredButton("削除##coldel", {0.55f, 0.15f, 0.15f, 0.80f}, bw)) {
+        if (ColoredButton("削除##coldel", {0.55f, 0.15f, 0.15f, 0.80f}, bw))
+        {
             // colliders_ は unique_ptr 所有。erase で ~ColliderBase が走り
             // CollisionManager から自動的に Unregister される（delete は呼ばない）。
             std::string removedName = col->GetName();
@@ -968,12 +1199,14 @@ void BaseObject::DebugCollider() {
 // ============================================================
 //  BaseObject::ImGui  (メインタブ)
 // ============================================================
-void BaseObject::ImGui() {
+void BaseObject::ImGui()
+{
 #ifdef _DEBUG
     if (!ImGui::BeginTabBar(objectName_.c_str()))
         return;
 
-    if (ImGui::BeginTabItem(objectName_.c_str())) {
+    if (ImGui::BeginTabItem(objectName_.c_str()))
+    {
         // ---- 状態サマリー（一目で現在の挙動が分かる行）----
         ImGui::AlignTextToFramePadding();
         ImGui::TextColored(DebugTheme::kTextDim, "状態:");
@@ -1000,7 +1233,8 @@ void BaseObject::ImGui() {
         ImGui::EndChild();
 
         // ---- 保存バー（常に最下部に固定）----
-        if (ColoredButton("この設定を全て保存##objsave", {0.20f, 0.45f, 0.20f, 0.80f})) {
+        if (ColoredButton("この設定を全て保存##objsave", {0.20f, 0.45f, 0.20f, 0.80f}))
+        {
             SaveToJson();
             AnimaSaveToJson();
             for (auto &c : colliders_)
@@ -1024,17 +1258,20 @@ namespace {
 /// 無ければ何もしない（コードの既定値のまま）。
 /// CollisionManager への登録より前に呼ぶことで、保存されたタグで正しく登録される。
 /// </summary>
-void LoadColliderIfSaved(ColliderBase *collider) {
+void LoadColliderIfSaved(ColliderBase *collider)
+{
     if (!collider)
         return;
     DataHandler probe("Collider", collider->GetName());
-    if (probe.Exists()) {
+    if (probe.Exists())
+    {
         collider->LoadFromJson();
     }
 }
 } // namespace
 
-SphereCollider *BaseObject::AddSphereCollider(const std::string &name) {
+SphereCollider *BaseObject::AddSphereCollider(const std::string &name)
+{
     auto collider = std::make_unique<SphereCollider>();
 
     std::string colliderName = name.empty() ? objectName_ + "_SphereCollider" : name;
@@ -1048,13 +1285,15 @@ SphereCollider *BaseObject::AddSphereCollider(const std::string &name) {
     LoadColliderIfSaved(raw); // 保存済み設定があれば反映（登録より前）
     CollisionManager::GetInstance()->Register(raw);
 
-    if (resolveCollision_) {
+    if (resolveCollision_)
+    {
         raw->SetOnCollision([this, raw](ColliderBase *other) { this->ResolveCollisionWith(raw, other); });
     }
     return raw;
 }
 
-AABBCollider *BaseObject::AddAABBCollider(const std::string &name) {
+AABBCollider *BaseObject::AddAABBCollider(const std::string &name)
+{
     auto collider = std::make_unique<AABBCollider>();
 
     std::string colliderName = name.empty() ? objectName_ + "_AABBCollider" : name;
@@ -1068,13 +1307,15 @@ AABBCollider *BaseObject::AddAABBCollider(const std::string &name) {
     LoadColliderIfSaved(raw); // 保存済み設定があれば反映（登録より前）
     CollisionManager::GetInstance()->Register(raw);
 
-    if (resolveCollision_) {
+    if (resolveCollision_)
+    {
         raw->SetOnCollision([this, raw](ColliderBase *other) { this->ResolveCollisionWith(raw, other); });
     }
     return raw;
 }
 
-OBBCollider *BaseObject::AddOBBCollider(const std::string &name) {
+OBBCollider *BaseObject::AddOBBCollider(const std::string &name)
+{
     auto collider = std::make_unique<OBBCollider>();
 
     std::string colliderName = name.empty() ? objectName_ + "_OBBCollider" : name;
@@ -1088,13 +1329,15 @@ OBBCollider *BaseObject::AddOBBCollider(const std::string &name) {
     LoadColliderIfSaved(raw); // 保存済み設定があれば反映（登録より前）
     CollisionManager::GetInstance()->Register(raw);
 
-    if (resolveCollision_) {
+    if (resolveCollision_)
+    {
         raw->SetOnCollision([this, raw](ColliderBase *other) { this->ResolveCollisionWith(raw, other); });
     }
     return raw;
 }
 
-CylinderCollider *BaseObject::AddCylinderCollider(const std::string &name) {
+CylinderCollider *BaseObject::AddCylinderCollider(const std::string &name)
+{
     auto collider = std::make_unique<CylinderCollider>();
 
     std::string colliderName = name.empty() ? objectName_ + "_CylinderCollider" : name;
@@ -1108,13 +1351,15 @@ CylinderCollider *BaseObject::AddCylinderCollider(const std::string &name) {
     LoadColliderIfSaved(raw); // 保存済み設定があれば反映（登録より前）
     CollisionManager::GetInstance()->Register(raw);
 
-    if (resolveCollision_) {
+    if (resolveCollision_)
+    {
         raw->SetOnCollision([this, raw](ColliderBase *other) { this->ResolveCollisionWith(raw, other); });
     }
     return raw;
 }
 
-MeshCollider *BaseObject::AddMeshCollider(const std::string &name) {
+MeshCollider *BaseObject::AddMeshCollider(const std::string &name)
+{
     auto collider = std::make_unique<MeshCollider>();
 
     std::string colliderName = name.empty() ? objectName_ + "_MeshCollider" : name;
@@ -1126,7 +1371,8 @@ MeshCollider *BaseObject::AddMeshCollider(const std::string &name) {
     collider->SetMatrixGetter([this]() { return this->GetWorldMatrix(); });
 
     // 自身のモデル形状（ローカル空間の頂点）から三角形群とBVHを構築する
-    if (obj3d_) {
+    if (obj3d_)
+    {
         collider->SetSourceModelPath(modelPath_);
         collider->BuildFromModel(obj3d_->GetModel());
     }
@@ -1137,7 +1383,8 @@ MeshCollider *BaseObject::AddMeshCollider(const std::string &name) {
     CollisionManager::GetInstance()->Register(raw);
 
     // 押し出しが有効なら、追加したコライダーにも押し出しコールバックを仕込む
-    if (resolveCollision_) {
+    if (resolveCollision_)
+    {
         raw->SetOnCollision([this, raw](ColliderBase *other) {
             this->ResolveCollisionWith(raw, other);
         });
@@ -1145,25 +1392,30 @@ MeshCollider *BaseObject::AddMeshCollider(const std::string &name) {
     return raw;
 }
 
-void BaseObject::UpdatePhysics(float deltaTime) {
-    if (!rigidBody_.enabled || deltaTime <= 0.0f || !transform_) {
+void BaseObject::UpdatePhysics(float deltaTime)
+{
+    if (!rigidBody_.enabled || deltaTime <= 0.0f || !transform_)
+    {
         return;
     }
 
     // 重力（加速度）を速度へ積分
-    if (rigidBody_.useGravity) {
+    if (rigidBody_.useGravity)
+    {
         rigidBody_.velocity += rigidBody_.gravity * deltaTime;
     }
 
     // 外力を加速度（a = F / m）として速度へ積分
-    if (rigidBody_.mass > 1e-4f) {
+    if (rigidBody_.mass > 1e-4f)
+    {
         rigidBody_.velocity += (accumulatedForce_ / rigidBody_.mass) * deltaTime;
     }
     accumulatedForce_ = {0.0f, 0.0f, 0.0f};
 
     // 速度の減衰（空気抵抗）
     float damp = 1.0f - rigidBody_.linearDamping * deltaTime;
-    if (damp < 0.0f) {
+    if (damp < 0.0f)
+    {
         damp = 0.0f;
     }
     rigidBody_.velocity *= damp;
@@ -1172,17 +1424,21 @@ void BaseObject::UpdatePhysics(float deltaTime) {
     transform_->translation_ += rigidBody_.velocity * deltaTime;
 }
 
-void BaseObject::ResolveCollisionWith(ColliderBase *self, ColliderBase *other) {
-    if (!resolveCollision_ || !transform_) {
+void BaseObject::ResolveCollisionWith(ColliderBase *self, ColliderBase *other)
+{
+    if (!resolveCollision_ || !transform_)
+    {
         return;
     }
 
     // self を other から押し出す MTV を統一APIで取得する
     Vector3 mtv;
-    if (!CollisionManager::GetInstance()->ComputeDepenetration(self, other, mtv)) {
+    if (!CollisionManager::GetInstance()->ComputeDepenetration(self, other, mtv))
+    {
         return;
     }
-    if (mtv.LengthSq() < 1e-10f) {
+    if (mtv.LengthSq() < 1e-10f)
+    {
         return;
     }
 
@@ -1190,10 +1446,12 @@ void BaseObject::ResolveCollisionWith(ColliderBase *self, ColliderBase *other) {
     transform_->translation_ += mtv;
 
     // リジッドボディなら、接触面に沿うよう速度を補正する
-    if (rigidBody_.enabled) {
+    if (rigidBody_.enabled)
+    {
         Vector3 n = mtv.Normalize();
         float vn = rigidBody_.velocity.Dot(n);
-        if (vn < 0.0f) {
+        if (vn < 0.0f)
+        {
             // 法線方向の侵入成分を除去（反発係数で跳ね返り）
             rigidBody_.velocity -= n * (vn * (1.0f + rigidBody_.restitution));
         }
@@ -1203,9 +1461,12 @@ void BaseObject::ResolveCollisionWith(ColliderBase *self, ColliderBase *other) {
     }
 }
 
-void BaseObject::InstallResolveCallbacks() {
-    for (auto &c : colliders_) {
-        if (!c) {
+void BaseObject::InstallResolveCallbacks()
+{
+    for (auto &c : colliders_)
+    {
+        if (!c)
+        {
             continue;
         }
         ColliderBase *self = c.get();
@@ -1215,25 +1476,34 @@ void BaseObject::InstallResolveCallbacks() {
     }
 }
 
-void BaseObject::ClearResolveCallbacks() {
-    for (auto &c : colliders_) {
-        if (c) {
+void BaseObject::ClearResolveCallbacks()
+{
+    for (auto &c : colliders_)
+    {
+        if (c)
+        {
             c->SetOnCollision(nullptr);
         }
     }
 }
 
-void BaseObject::SetResolveCollision(bool enable) {
+void BaseObject::SetResolveCollision(bool enable)
+{
     resolveCollision_ = enable;
-    if (enable) {
+    if (enable)
+    {
         InstallResolveCallbacks();
-    } else {
+    }
+    else
+    {
         ClearResolveCallbacks();
     }
 }
 
-void BaseObject::SavePhysics() {
-    if (!ObjectDatas_) {
+void BaseObject::SavePhysics()
+{
+    if (!ObjectDatas_)
+    {
         return;
     }
     ObjectDatas_->Save<bool>("rb_enabled", rigidBody_.enabled);
@@ -1246,8 +1516,10 @@ void BaseObject::SavePhysics() {
     ObjectDatas_->Save<bool>("resolveCollision", resolveCollision_);
 }
 
-void BaseObject::LoadPhysics() {
-    if (!ObjectDatas_) {
+void BaseObject::LoadPhysics()
+{
+    if (!ObjectDatas_)
+    {
         return;
     }
     rigidBody_.enabled = ObjectDatas_->Load<bool>("rb_enabled", false);
@@ -1261,7 +1533,8 @@ void BaseObject::LoadPhysics() {
     rigidBody_.velocity = {0.0f, 0.0f, 0.0f}; // 速度はランタイム状態なのでリセット
 }
 
-void BaseObject::DebugObject() {
+void BaseObject::DebugObject()
+{
 #ifdef _DEBUG
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(6, 3));
     ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(5, 3));
@@ -1271,7 +1544,8 @@ void BaseObject::DebugObject() {
     // ====================================================
     // トランスフォーム
     // ====================================================
-    if (ThemedHeader("トランスフォーム##hdr", DebugTheme::kAccentBlue, true)) {
+    if (ThemedHeader("トランスフォーム##hdr", DebugTheme::kAccentBlue, true))
+    {
         ImGui::Indent(6.0f);
 
         // ---- Local ----
@@ -1279,7 +1553,8 @@ void BaseObject::DebugObject() {
 
         // Table: Label | DragFloat3 | ResetBtn
         if (ImGui::BeginTable("LocalTF", 3,
-                              ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_NoPadOuterX)) {
+                              ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_NoPadOuterX))
+        {
             ImGui::TableSetupColumn("Lbl", ImGuiTableColumnFlags_WidthFixed, 62.0f);
             ImGui::TableSetupColumn("Drg", ImGuiTableColumnFlags_WidthStretch);
             ImGui::TableSetupColumn("Btn", ImGuiTableColumnFlags_WidthFixed, 30.0f);
@@ -1312,7 +1587,8 @@ void BaseObject::DebugObject() {
             static Vector3 deltaRot{};
             ImGui::SetNextItemWidth(-1);
             ImGui::PushStyleColor(ImGuiCol_FrameBg, {0.42f, 0.66f, 0.68f, 0.12f});
-            if (ImGui::DragFloat3("##lrot", &deltaRot.x, 0.1f, -10.f, 10.f, "%.1fdeg")) {
+            if (ImGui::DragFloat3("##lrot", &deltaRot.x, 0.1f, -10.f, 10.f, "%.1fdeg"))
+            {
                 float r = std::numbers::pi_v<float> / 180.f;
                 Quaternion cur = transform_->GetRotationQuaternion();
                 Quaternion dx = Quaternion::FromAxisAngle({1, 0, 0}, deltaRot.x * r);
@@ -1324,7 +1600,8 @@ void BaseObject::DebugObject() {
             }
             ImGui::PopStyleColor();
             ImGui::TableNextColumn();
-            if (SmallResetButton("[R]##rrot")) {
+            if (SmallResetButton("[R]##rrot"))
+            {
                 transform_->SetRotationQuaternion(Quaternion::IdentityQuaternion());
                 transform_->UpdateMatrix();
                 deltaRot = {};
@@ -1401,7 +1678,8 @@ void BaseObject::DebugObject() {
         bool plotOpen = ImGui::CollapsingHeader("スケール履歴 (グラフ)##scgr");
         ImGui::PopStyleColor(2);
 
-        if (plotOpen) {
+        if (plotOpen)
+        {
             constexpr int kN = 120;
             static float hx[kN]{}, hy[kN]{}, hz[kN]{};
             static int head = 0, cnt = 0;
@@ -1414,7 +1692,8 @@ void BaseObject::DebugObject() {
 
             static float dx[kN], dy[kN], dz[kN];
             int s = (head - cnt + kN) % kN;
-            for (int i = 0; i < cnt; ++i) {
+            for (int i = 0; i < cnt; ++i)
+            {
                 int id = (s + i) % kN;
                 dx[i] = hx[id];
                 dy[i] = hy[id];
@@ -1424,7 +1703,8 @@ void BaseObject::DebugObject() {
             ImPlot::PushStyleColor(ImPlotCol_PlotBg, {0.08f, 0.08f, 0.10f, 1.0f});
             if (ImPlot::BeginPlot("##scplot", ImVec2(-1, 75),
                                   ImPlotFlags_NoTitle | ImPlotFlags_NoLegend |
-                                      ImPlotFlags_NoInputs | ImPlotFlags_NoFrame)) {
+                                      ImPlotFlags_NoInputs | ImPlotFlags_NoFrame))
+            {
                 ImPlot::SetupAxes(nullptr, nullptr,
                                   ImPlotAxisFlags_NoDecorations, ImPlotAxisFlags_AutoFit);
                 ImPlot::SetupAxisLimits(ImAxis_X1, 0, kN, ImGuiCond_Always);
@@ -1461,7 +1741,8 @@ void BaseObject::DebugObject() {
     // ====================================================
     // 表示（描画モード・ライティング・ギズモ）
     // ====================================================
-    if (ThemedHeader("表示##hdr", DebugTheme::kAccentCyan)) {
+    if (ThemedHeader("表示##hdr", DebugTheme::kAccentCyan))
+    {
         ImGui::Indent(6.0f);
 
         // ---- 描画モード（モデル / ワイヤーフレームは排他）----
@@ -1471,10 +1752,13 @@ void BaseObject::DebugObject() {
         ImGui::SameLine(170.0f);
         if (AccentCheckbox("ワイヤーフレーム##wf", &isWireframe_, DebugTheme::kAccentBlue) && isWireframe_)
             isModelDraw_ = false;
-        if (isWireframe_) {
+        if (isWireframe_)
+        {
             ImGui::SameLine(330.0f);
             AccentCheckbox("レインボー##rb", &isRainbow_, DebugTheme::kAccentYellow);
-        } else {
+        }
+        else
+        {
             isRainbow_ = false;
         }
 
@@ -1506,7 +1790,8 @@ void BaseObject::DebugObject() {
     // ====================================================
     // マテリアル（スロット・カラー・テクスチャ・ブレンド）
     // ====================================================
-    if (ThemedHeader("マテリアル##hdr", DebugTheme::kAccentPurple)) {
+    if (ThemedHeader("マテリアル##hdr", DebugTheme::kAccentPurple))
+    {
         ImGui::Indent(6.0f);
         static int selMat = 0;
         size_t matCount = obj3d_->GetMaterialCount();
@@ -1515,17 +1800,20 @@ void BaseObject::DebugObject() {
 
         SectionHeader("[ マテリアルスロット ]", DebugTheme::kAccentPurple);
 
-        if (matCount > 1) {
+        if (matCount > 1)
+        {
             std::vector<std::string> items;
             std::vector<const char *> cstrs;
-            for (int i = 0; i < (int)matCount; ++i)
+            for (int i = 0; i < static_cast<int>(matCount); ++i)
                 items.push_back("Slot " + std::to_string(i + 1));
             for (auto &s : items)
                 cstrs.push_back(s.c_str());
             ImGui::SetNextItemWidth(-1);
-            ImGui::Combo("##matslot", &selMat, cstrs.data(), (int)cstrs.size());
-            selMat = std::clamp(selMat, 0, (int)matCount - 1);
-        } else {
+            ImGui::Combo("##matslot", &selMat, cstrs.data(), static_cast<int>(cstrs.size()));
+            selMat = std::clamp(selMat, 0, static_cast<int>(matCount) - 1);
+        }
+        else
+        {
             selMat = 0;
             ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kTextDim);
             ImGui::TextUnformatted("  シングルマテリアル");
@@ -1537,7 +1825,8 @@ void BaseObject::DebugObject() {
         // Color
         ImGui::PushStyleColor(ImGuiCol_Header, DebugTheme::kBgPurple);
         ImGui::PushStyleColor(ImGuiCol_HeaderHovered, {0.62f, 0.50f, 0.74f, 0.20f});
-        if (ImGui::TreeNodeEx("カラー##mc", ImGuiTreeNodeFlags_SpanAvailWidth)) {
+        if (ImGui::TreeNodeEx("カラー##mc", ImGuiTreeNodeFlags_SpanAvailWidth))
+        {
             Vector4 cur = GetColor(selMat);
             float c[4] = {cur.x, cur.y, cur.z, cur.w};
             ImGui::SetNextItemWidth(-1);
@@ -1549,10 +1838,12 @@ void BaseObject::DebugObject() {
         }
 
         // Texture
-        if (ImGui::TreeNodeEx("テクスチャ##tx", ImGuiTreeNodeFlags_SpanAvailWidth)) {
+        if (ImGui::TreeNodeEx("テクスチャ##tx", ImGuiTreeNodeFlags_SpanAvailWidth))
+        {
             ShowTextureFile(texturePath_);
             ImGui::Spacing();
-            if (ImGui::SmallButton("適用##ta")) {
+            if (ImGui::SmallButton("適用##ta"))
+            {
                 SetTexture(texturePath_, selMat);
                 texturePaths_[selMat] = texturePath_;
             }
@@ -1563,21 +1854,25 @@ void BaseObject::DebugObject() {
         }
 
         // Blend mode
-        if (ImGui::TreeNodeEx("ブレンドモード##bm", ImGuiTreeNodeFlags_SpanAvailWidth)) {
+        if (ImGui::TreeNodeEx("ブレンドモード##bm", ImGuiTreeNodeFlags_SpanAvailWidth))
+        {
             ShowBlendModeCombo(blendMode_);
             ImGui::TreePop();
         }
 
         // ノーマルマップ / 手続き的法線
-        if (ImGui::TreeNodeEx("ノーマルマップ##nm", ImGuiTreeNodeFlags_SpanAvailWidth)) {
-            if (Material *mat = GetMaterial((uint32_t)selMat)) {
+        if (ImGui::TreeNodeEx("ノーマルマップ##nm", ImGuiTreeNodeFlags_SpanAvailWidth))
+        {
+            if (Material *mat = GetMaterial(static_cast<uint32_t>(selMat)))
+            {
                 MaterialData &md = mat->GetMaterialData();
 
                 // テクスチャ法線マップ
                 ImGui::PushStyleColor(ImGuiCol_CheckMark, DebugTheme::kAccentGreen);
                 ImGui::Checkbox("テクスチャ法線マップ##nmtex", &md.enableNormalMap);
                 ImGui::PopStyleColor();
-                if (md.enableNormalMap) {
+                if (md.enableNormalMap)
+                {
                     ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kTextDim);
                     ImGui::Text("map: %s", md.hasNormalMapTexture ? md.normalMapFilePath.c_str() : "(未設定=albedo流用)");
                     ImGui::PopStyleColor();
@@ -1588,7 +1883,8 @@ void BaseObject::DebugObject() {
                 ImGui::Checkbox("手続き的法線##pn", &md.enableProceduralNormal);
                 ImGui::PopStyleColor();
                 ImGui::SetItemTooltip("テクスチャ不要。worldXZの高さ場から法線を摂動。両方ONなら手続き的が優先");
-                if (md.enableProceduralNormal) {
+                if (md.enableProceduralNormal)
+                {
                     ImGui::SetNextItemWidth(-1);
                     ImGui::DragFloat("スケール##pns", &md.proceduralScale, 0.05f, 0.01f, 50.0f, "スケール %.2f");
                 }
@@ -1596,7 +1892,9 @@ void BaseObject::DebugObject() {
                 // 法線の強さ（テクスチャ・手続き共通）
                 ImGui::SetNextItemWidth(-1);
                 ImGui::DragFloat("強さ##pnst", &md.normalStrength, 0.01f, 0.0f, 8.0f, "強さ %.2f");
-            } else {
+            }
+            else
+            {
                 ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kTextDim);
                 ImGui::TextUnformatted("マテリアルがありません");
                 ImGui::PopStyleColor();
@@ -1612,8 +1910,10 @@ void BaseObject::DebugObject() {
     // ====================================================
     // アニメーション
     // ====================================================
-    if (obj3d_->GetHaveAnimation()) {
-        if (ThemedHeader("アニメーション##hdr", DebugTheme::kAccentYellow)) {
+    if (obj3d_->GetHaveAnimation())
+    {
+        if (ThemedHeader("アニメーション##hdr", DebugTheme::kAccentYellow))
+        {
             ImGui::Indent(6.0f);
             SectionHeader("[ 制御 ]", DebugTheme::kAccentYellow);
 
@@ -1621,7 +1921,8 @@ void BaseObject::DebugObject() {
             // 現在のアニメーションのループ設定を取得・変更
             std::string currentModelPath = obj3d_->GetModelFilePath();
             bool loop = obj3d_->GetAnimationLoop(currentModelPath);
-            if (ImGui::Checkbox("ループ##lp", &loop)) {
+            if (ImGui::Checkbox("ループ##lp", &loop))
+            {
                 obj3d_->SetAnimationLoop(currentModelPath, loop);
             }
 
@@ -1637,7 +1938,8 @@ void BaseObject::DebugObject() {
             ImGui::PopStyleColor();
             ImGui::SetNextItemWidth(-1);
             ImGui::PushStyleColor(ImGuiCol_FrameBg, DebugTheme::kBgYellow);
-            if (ImGui::DragFloat("##aspeed", &speed, 0.01f, 0.0f, 10.0f, "%.2f")) {
+            if (ImGui::DragFloat("##aspeed", &speed, 0.01f, 0.0f, 10.0f, "%.2f"))
+            {
                 obj3d_->SetAnimationSpeed(speed);
             }
             ImGui::PopStyleColor();
@@ -1649,7 +1951,8 @@ void BaseObject::DebugObject() {
             ImGui::PopStyleColor();
             ImGui::SetNextItemWidth(-1);
             ImGui::PushStyleColor(ImGuiCol_FrameBg, {0.42f, 0.66f, 0.68f, 0.12f});
-            if (ImGui::DragFloat("##ablend", &blendDuration, 0.01f, 0.0f, 5.0f, "%.2f")) {
+            if (ImGui::DragFloat("##ablend", &blendDuration, 0.01f, 0.0f, 5.0f, "%.2f"))
+            {
                 obj3d_->SetAnimationBlendDuration(blendDuration);
             }
             ImGui::PopStyleColor();
@@ -1665,7 +1968,8 @@ void BaseObject::DebugObject() {
             ImGui::Spacing();
             ImGui::PushStyleColor(ImGuiCol_Header, DebugTheme::kBgYellow);
             ImGui::PushStyleColor(ImGuiCol_HeaderHovered, {0.80f, 0.72f, 0.42f, 0.20f});
-            if (ImGui::TreeNodeEx("アニメーション設定##as", ImGuiTreeNodeFlags_SpanAvailWidth)) {
+            if (ImGui::TreeNodeEx("アニメーション設定##as", ImGuiTreeNodeFlags_SpanAvailWidth))
+            {
                 ShowFileSelector();
                 ImGui::TreePop();
             }
@@ -1677,7 +1981,8 @@ void BaseObject::DebugObject() {
     // ====================================================
     // コライダー
     // ====================================================
-    if (ThemedHeader("コライダー##hdr", DebugTheme::kAccentCyan)) {
+    if (ThemedHeader("コライダー##hdr", DebugTheme::kAccentCyan))
+    {
         ImGui::Indent(6.0f);
 
         // コライダー追加ボタン
@@ -1685,34 +1990,40 @@ void BaseObject::DebugObject() {
             ImGui::OpenPopup("AddColliderPopup##acp");
         ImGui::SetItemTooltip("形状を選んで追加。当たって押し返す挙動は『物理』セクションで設定する");
 
-        if (ImGui::BeginPopup("AddColliderPopup##acp")) {
+        if (ImGui::BeginPopup("AddColliderPopup##acp"))
+        {
             auto makeDefault = [](auto *c) {
                 c->SetTag("Environment");
                 c->AddCollisionMask("Player");
             };
-            if (ImGui::MenuItem("Sphere")) {
+            if (ImGui::MenuItem("Sphere"))
+            {
                 auto *c = AddSphereCollider();
                 makeDefault(c);
                 c->SetRadius(1.0f);
             }
-            if (ImGui::MenuItem("AABB")) {
+            if (ImGui::MenuItem("AABB"))
+            {
                 auto *c = AddAABBCollider();
                 makeDefault(c);
                 c->SetSize({2.0f, 2.0f, 2.0f});
             }
-            if (ImGui::MenuItem("OBB")) {
+            if (ImGui::MenuItem("OBB"))
+            {
                 auto *c = AddOBBCollider();
                 makeDefault(c);
                 c->SetSize({2.0f, 2.0f, 2.0f});
             }
-            if (ImGui::MenuItem("Cylinder")) {
+            if (ImGui::MenuItem("Cylinder"))
+            {
                 auto *c = AddCylinderCollider();
                 makeDefault(c);
                 c->SetRadius(2.0f);
                 c->SetHeight(4.0f);
                 c->SetInward(false); // 障害物として外側に押し出す
             }
-            if (ImGui::MenuItem("Mesh")) {
+            if (ImGui::MenuItem("Mesh"))
+            {
                 // 自身のモデル形状から三角形メッシュコライダーを生成する
                 auto *c = AddMeshCollider();
                 makeDefault(c);
@@ -1733,13 +2044,15 @@ void BaseObject::DebugObject() {
     // ====================================================
     // 物理（押し出し・リジッドボディ）
     // ====================================================
-    if (ThemedHeader("物理 (押し出し / リジッドボディ)##hdr", DebugTheme::kAccentOrange)) {
+    if (ThemedHeader("物理 (押し出し / リジッドボディ)##hdr", DebugTheme::kAccentOrange))
+    {
         ImGui::Indent(6.0f);
 
         // ---- クイック設定（用途別プリセット）----
         SectionHeader("[ クイック設定 ]", DebugTheme::kAccentGreen);
         ImGui::TextColored(DebugTheme::kTextDim, "用途を選ぶとまとめて設定されます");
-        if (ColoredButton("跳ねる物##presetDyn", DebugTheme::kBgGreen, 0.0f)) {
+        if (ColoredButton("跳ねる物##presetDyn", DebugTheme::kBgGreen, 0.0f))
+        {
             SetResolveCollision(true);
             rigidBody_.enabled = true;
             rigidBody_.useGravity = true;
@@ -1749,7 +2062,8 @@ void BaseObject::DebugObject() {
         }
         ImGui::SetItemTooltip("重力で落下し、地面に当たって跳ね返る動的オブジェクト");
         ImGui::SameLine();
-        if (ColoredButton("静的な地面##presetStatic", DebugTheme::kBgBlue, 0.0f)) {
+        if (ColoredButton("静的な地面##presetStatic", DebugTheme::kBgBlue, 0.0f))
+        {
             SetResolveCollision(false);
             rigidBody_.enabled = false;
             rigidBody_.useGravity = false;
@@ -1805,7 +2119,8 @@ void BaseObject::DebugObject() {
     // ====================================================
     // ツール（スケールイージング検証）
     // ====================================================
-    if (ThemedHeader("ツール##hdr", DebugTheme::kAccentGreen)) {
+    if (ThemedHeader("ツール##hdr", DebugTheme::kAccentGreen))
+    {
         ImGui::Indent(6.0f);
         SectionHeader("[ スケールイージング検証 ]", DebugTheme::kAccentGreen);
         DrawScaleEaseImGui();
@@ -1817,7 +2132,8 @@ void BaseObject::DebugObject() {
 #endif // _DEBUG
 }
 
-void BaseObject::DrawScaleEaseImGui() {
+void BaseObject::DrawScaleEaseImGui()
+{
 #ifdef _DEBUG
     // EasingType enum（0〜30）＋ Vector3 Amplitude 拡張（31〜33）の表示名
     // 31 = InElasticAmplitude, 32 = OutElasticAmplitude, 33 = InOutElasticAmplitude
@@ -1876,7 +2192,8 @@ void BaseObject::DrawScaleEaseImGui() {
 
     ImGui::Spacing();
 
-    if (IsAmplitudeMode(scaleEase_.selectedMode)) {
+    if (IsAmplitudeMode(scaleEase_.selectedMode))
+    {
         // ----- Elastic Amplitude モード：軸ごとに独立した振幅でスケールを加算する -----
         SectionHeader("[ Elastic Amplitude ]", DebugTheme::kAccentGreen);
 
@@ -1895,7 +2212,9 @@ void BaseObject::DrawScaleEaseImGui() {
         ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kTextDim);
         ImGui::TextUnformatted(" スタート時の現在スケールを基準に振幅を加算");
         ImGui::PopStyleColor();
-    } else {
+    }
+    else
+    {
         // ----- 通常イージングモード（start -> end 補間） -----
         SectionHeader("[ スタート / エンド スケール ]", DebugTheme::kAccentBlue);
 
@@ -1906,7 +2225,8 @@ void BaseObject::DrawScaleEaseImGui() {
                           0.01f, 0.01f, 20.0f, "%.2f");
         ImGui::SameLine();
         // 現在のスケール値をスタート値としてキャプチャする
-        if (ImGui::SmallButton("現在##cpSS")) {
+        if (ImGui::SmallButton("現在##cpSS"))
+        {
             scaleEase_.startScale = transform_->scale_;
         }
 
@@ -1916,7 +2236,8 @@ void BaseObject::DrawScaleEaseImGui() {
                           0.01f, 0.01f, 20.0f, "%.2f");
         ImGui::SameLine();
         // 現在のスケール値をエンド値としてキャプチャする
-        if (ImGui::SmallButton("現在##cpES")) {
+        if (ImGui::SmallButton("現在##cpES"))
+        {
             scaleEase_.endScale = transform_->scale_;
         }
     }
@@ -1926,7 +2247,8 @@ void BaseObject::DrawScaleEaseImGui() {
     ImGui::Spacing();
 
     // ----- 再生中：プログレスバーとスケール更新 -----
-    if (scaleEase_.isActive) {
+    if (scaleEase_.isActive)
+    {
         float progress = scaleEase_.currentTime / scaleEase_.totalTime;
         ImGui::ProgressBar(progress, ImVec2(-1.0f, 0.0f));
         ImGui::Spacing();
@@ -1935,35 +2257,49 @@ void BaseObject::DrawScaleEaseImGui() {
         float dt = ImGui::GetIO().DeltaTime;
         scaleEase_.currentTime += dt;
 
-        if (scaleEase_.currentTime >= scaleEase_.totalTime) {
+        if (scaleEase_.currentTime >= scaleEase_.totalTime)
+        {
             // 再生完了：停止してスケールを終端値に確定する
             scaleEase_.currentTime = scaleEase_.totalTime;
             scaleEase_.isActive = false;
-            if (IsAmplitudeMode(scaleEase_.selectedMode)) {
+            if (IsAmplitudeMode(scaleEase_.selectedMode))
+            {
                 transform_->scale_ = scaleEase_.baseScale;
-            } else {
+            }
+            else
+            {
                 transform_->scale_ = scaleEase_.endScale;
             }
-        } else {
+        }
+        else
+        {
             // 再生中のスケール更新
-            if (IsAmplitudeMode(scaleEase_.selectedMode)) {
+            if (IsAmplitudeMode(scaleEase_.selectedMode))
+            {
                 // Vector3 振幅をオフセットとしてベーススケールに加算する
                 Vector3 offset;
-                if (scaleEase_.selectedMode == 31) {
+                if (scaleEase_.selectedMode == 31)
+                {
                     offset = EaseInElasticAmplitude(
                         scaleEase_.currentTime, scaleEase_.totalTime,
                         scaleEase_.amplitude, scaleEase_.period);
-                } else if (scaleEase_.selectedMode == 32) {
+                }
+                else if (scaleEase_.selectedMode == 32)
+                {
                     offset = EaseOutElasticAmplitude(
                         scaleEase_.currentTime, scaleEase_.totalTime,
                         scaleEase_.amplitude, scaleEase_.period);
-                } else {
+                }
+                else
+                {
                     offset = EaseInOutElasticAmplitude(
                         scaleEase_.currentTime, scaleEase_.totalTime,
                         scaleEase_.amplitude, scaleEase_.period);
                 }
                 transform_->scale_ = scaleEase_.baseScale + offset;
-            } else {
+            }
+            else
+            {
                 // EasingType 範囲（0〜30）は start -> end 補間
                 transform_->scale_ = ApplyEasing(
                     static_cast<EasingType>(scaleEase_.selectedMode),
@@ -1974,20 +2310,25 @@ void BaseObject::DrawScaleEaseImGui() {
     }
 
     // ----- スタート / ストップボタン -----
-    if (!scaleEase_.isActive) {
+    if (!scaleEase_.isActive)
+    {
         ImGui::PushStyleColor(ImGuiCol_Button, {0.15f, 0.55f, 0.25f, 0.9f});
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, {0.20f, 0.70f, 0.30f, 1.0f});
-        if (ImGui::Button("スタート##sePlay", ImVec2(-1.0f, 0.0f))) {
+        if (ImGui::Button("スタート##sePlay", ImVec2(-1.0f, 0.0f)))
+        {
             scaleEase_.currentTime = 0.0f;
             scaleEase_.isActive = true;
             // スタート時点のスケールをベースとして記録する
             scaleEase_.baseScale = transform_->scale_;
         }
         ImGui::PopStyleColor(2);
-    } else {
+    }
+    else
+    {
         ImGui::PushStyleColor(ImGuiCol_Button, {0.55f, 0.15f, 0.15f, 0.9f});
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, {0.70f, 0.20f, 0.20f, 1.0f});
-        if (ImGui::Button("ストップ##seStop", ImVec2(-1.0f, 0.0f))) {
+        if (ImGui::Button("ストップ##seStop", ImVec2(-1.0f, 0.0f)))
+        {
             scaleEase_.isActive = false;
             // ストップ時はスケールをスタート時点の値に戻す
             transform_->scale_ = scaleEase_.baseScale;
@@ -1997,7 +2338,8 @@ void BaseObject::DrawScaleEaseImGui() {
 #endif
 }
 
-void BaseObject::ShowFileSelector() {
+void BaseObject::ShowFileSelector()
+{
 #ifdef _DEBUG
     // ShowFolder の GLTF ブラウザで選択パスを保持する
     // 選択確定後に「適用」ボタンで SetAnimation を呼び出す
@@ -2007,10 +2349,12 @@ void BaseObject::ShowFileSelector() {
 
     ImGui::Spacing();
 
-    if (!selectedGltfPath.empty()) {
+    if (!selectedGltfPath.empty())
+    {
         ImGui::PushStyleColor(ImGuiCol_Button, {0.25f, 0.45f, 0.70f, 0.80f});
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, {0.35f, 0.55f, 0.85f, 0.90f});
-        if (ImGui::Button("アニメーション適用##applyAnima", ImVec2(-1.0f, 0.0f))) {
+        if (ImGui::Button("アニメーション適用##applyAnima", ImVec2(-1.0f, 0.0f)))
+        {
             obj3d_->SetAnimation(selectedGltfPath);
         }
         ImGui::PopStyleColor(2);
@@ -2018,7 +2362,8 @@ void BaseObject::ShowFileSelector() {
 #endif // _DEBUG
 }
 
-void BaseObject::ShowBlendModeCombo(BlendMode &currentMode) {
+void BaseObject::ShowBlendModeCombo(BlendMode &currentMode)
+{
 #ifdef _DEBUG
 
     // コンボボックスに表示する項目（日本語）
@@ -2035,7 +2380,8 @@ void BaseObject::ShowBlendModeCombo(BlendMode &currentMode) {
     int currentIndex = static_cast<int>(currentMode);
 
     // コンボボックス表示
-    if (ImGui::Combo("ブレンドモード", &currentIndex, blendModeItems, IM_ARRAYSIZE(blendModeItems))) {
+    if (ImGui::Combo("ブレンドモード", &currentIndex, blendModeItems, IM_ARRAYSIZE(blendModeItems)))
+    {
         // ユーザーが選択を変更したときに反映
         currentMode = static_cast<BlendMode>(currentIndex);
     }

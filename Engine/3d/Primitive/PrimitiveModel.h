@@ -1,5 +1,5 @@
 #pragma once
-#include "Model/ModelStructs.h"
+#include "model/ModelStructs.h"
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -21,7 +21,7 @@ enum class PrimitiveType
     Cone,
     Pyramid,
     ClosedCylinder,
-    kCount,
+    Count,
 };
 
 /// <summary>

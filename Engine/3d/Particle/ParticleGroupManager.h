@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Data/DataHandler.h"
+#include "data/DataHandler.h"
 #include "ParticleGroup.h"
 #include "memory"
 
@@ -10,7 +10,8 @@ namespace Hagine {
 /// パーティクルグループを一元管理するシングルトン
 /// グループの生成・複製・取得を行い、エミッター用の独立コピーも提供する
 /// </summary>
-class ParticleGroupManager {
+class ParticleGroupManager
+{
   private:
     /// ===================================================
     /// private method
@@ -37,9 +38,10 @@ class ParticleGroupManager {
     /// インスタンスを取得
     /// </summary>
     /// <returns>ParticleGroupManager*: シングルトンインスタンス</returns>
-    static ParticleGroupManager* GetInstance() {
-          static ParticleGroupManager instance;
-          return &instance;
+    static ParticleGroupManager *GetInstance()
+    {
+        static ParticleGroupManager instance;
+        return &instance;
     }
 
     /// <summary>
@@ -79,9 +81,12 @@ class ParticleGroupManager {
     /// </summary>
     /// <param name="name">グループ名</param>
     /// <returns>ParticleGroup*: 該当グループ（なければ nullptr）</returns>
-    ParticleGroup *GetParticleGroup(const std::string &name) {
-        for (const auto &group : particleGroups_) {
-            if (group->GetGroupName() == name) {
+    ParticleGroup *GetParticleGroup(const std::string &name)
+    {
+        for (const auto &group : particleGroups_)
+        {
+            if (group->GetGroupName() == name)
+            {
                 return group.get();
             }
         }
@@ -93,20 +98,25 @@ class ParticleGroupManager {
     /// </summary>
     /// <param name="name">複製元のグループ名</param>
     /// <returns>std::unique_ptr&lt;ParticleGroup&gt;: 複製されたグループ（元がなければ nullptr）</returns>
-    std::unique_ptr<ParticleGroup> CreateParticleGroupCopy(const std::string &name) {
+    std::unique_ptr<ParticleGroup> CreateParticleGroupCopy(const std::string &name)
+    {
         ParticleGroup *originalGroup = GetParticleGroup(name);
-        if (!originalGroup) {
+        if (!originalGroup)
+        {
             return nullptr;
         }
 
         auto copiedGroup = std::make_unique<ParticleGroup>();
 
         // プリミティブタイプか通常のモデルかを判定してコピー
-        if (originalGroup->GetPrimitiveType() != PrimitiveType::None) {
+        if (originalGroup->GetPrimitiveType() != PrimitiveType::None)
+        {
             // プリミティブパーティクルグループの場合
             std::string texturePath = originalGroup->GetParticleGroupData().materials.empty() ? "" : originalGroup->GetParticleGroupData().materials[0].textureFilePath;
             copiedGroup->CreatePrimitiveParticleGroup(name, originalGroup->GetPrimitiveType(), texturePath);
-        } else {
+        }
+        else
+        {
             // 通常のモデルパーティクルグループの場合
             std::string texturePath = originalGroup->GetParticleGroupData().materials.empty() ? "" : originalGroup->GetParticleGroupData().materials[0].textureFilePath;
             copiedGroup->CreateParticleGroup(name, originalGroup->GetModelPath(), texturePath);
@@ -120,9 +130,11 @@ class ParticleGroupManager {
     /// </summary>
     /// <param name="name">複製元のグループ名</param>
     /// <returns>ParticleGroup*: 独立した複製グループ（元がなければ nullptr）</returns>
-    ParticleGroup *GetIndependentParticleGroup(const std::string &name) {
+    ParticleGroup *GetIndependentParticleGroup(const std::string &name)
+    {
         auto copiedGroup = CreateParticleGroupCopy(name);
-        if (!copiedGroup) {
+        if (!copiedGroup)
+        {
             return nullptr;
         }
 
@@ -135,9 +147,11 @@ class ParticleGroupManager {
     /// 管理中の全パーティクルグループを取得
     /// </summary>
     /// <returns>std::vector&lt;ParticleGroup*&gt;: 全グループの生ポインタ一覧</returns>
-    std::vector<ParticleGroup *> GetParticleGroups() {
+    std::vector<ParticleGroup *> GetParticleGroups()
+    {
         std::vector<ParticleGroup *> result;
-        for (const auto &group : particleGroups_) {
+        for (const auto &group : particleGroups_)
+        {
             result.push_back(group.get()); // unique_ptr から生ポインタを取得
         }
         return result;
@@ -145,10 +159,10 @@ class ParticleGroupManager {
 
   private:
     /// ============================================
-    /// private variants
+    /// private variables
     /// ============================================
 
-    std::vector<std::unique_ptr<ParticleGroup>> particleGroups_;   // 管理する全パーティクルグループ
+    std::vector<std::unique_ptr<ParticleGroup>> particleGroups_;    // 管理する全パーティクルグループ
     std::vector<std::unique_ptr<ParticleGroup>> independentGroups_; // エミッター用の独立したパーティクルグループ
 };
 } // namespace Hagine

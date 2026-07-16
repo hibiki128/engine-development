@@ -1,17 +1,17 @@
 #pragma once
-#include "Camera/ViewProjection/ViewProjection.h"
-#include "Graphics/Srv/SrvManager.h"
+#include "camera/projection/ViewProjection.h"
+#include "graphics/srv/SrvManager.h"
 #include "ParticleCommon.h"
 #include "ParticleGroup.h"
 #include "type/Vector2.h"
 #include "type/Vector3.h"
 #include "type/Vector4.h"
-#include <Model/ModelStructs.h>
-#include <Transform/WorldTransform.h>
+#include <model/ModelStructs.h>
+#include <transform/WorldTransform.h>
 #include <random>
 #include <type/Matrix4x4.h>
 #include <unordered_map>
-#include"ParticleStruct.h"
+#include "ParticleStruct.h"
 
 namespace Hagine {
 
@@ -19,7 +19,8 @@ namespace Hagine {
 /// CPUパーティクルの更新・描画・発生を管理するクラス
 /// グループごとの設定を保持し、パーティクルの生成と寿命管理を行う
 /// </summary>
-class ParticleManager {
+class ParticleManager
+{
   public:
     /// ===================================================
     /// public method
@@ -34,8 +35,8 @@ class ParticleManager {
     /// <summary>
     /// 更新処理
     /// </summary>
-    /// <param name="viewProjeciton">ビュープロジェクション</param>
-    void Update(const ViewProjection &viewProjeciton);
+    /// <param name="viewProjection">ビュープロジェクション</param>
+    void Update(const ViewProjection &viewProjection);
 
     /// <summary>
     /// 描画処理
@@ -123,11 +124,11 @@ class ParticleManager {
 
   private:
     /// ===================================================
-    /// private variants
+    /// private variables
     /// ===================================================
 
-    ParticleCommon *particleCommon_ = nullptr;                          // パーティクル共通描画処理
-    SrvManager *srvManager_;                                            // SRVマネージャー
+    ParticleCommon *pParticleCommon_ = nullptr;                          // パーティクル共通描画処理
+    SrvManager *pSrvManager_;                                            // SRVマネージャー
     std::unordered_map<std::string, ParticleGroup *> particleGroups_;   // 名前ごとのパーティクルグループ
     std::unordered_map<std::string, ParticleSetting> particleSettings_; // 名前ごとのパーティクル設定
 

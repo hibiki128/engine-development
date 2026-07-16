@@ -3,38 +3,39 @@
 #ifdef _DEBUG
 #endif // _DEBUG
 #include "Audio.h"
-#include "Collider/CollisionManager.h"
-#include "Debug/ImGui/ImGuiManager.h"
-#include "Debug/ImGui/ImGuizmoManager.h"
-#include "Debug/ResourceLeakChecker/D3DResourceLeakChecker.h"
-#include "Edit/ShortcutManager/ShortcutManager.h"
+#include "collider/CollisionManager.h"
+#include "debug/imgui/ImGuiManager.h"
+#include "debug/imgui/ImGuizmoManager.h"
+#include "debug/leak/D3DResourceLeakChecker.h"
+#include "edit/shortcut/ShortcutManager.h"
 #include "offscreen/OffScreen.h"
-#include "Graphics/Model/ModelManager.h"
-#include "Graphics/PipeLine/ComputePipeLineManager.h"
-#include "Graphics/PipeLine/PipeLineManager.h"
-#include "Graphics/Srv/SrvManager.h"
-#include "Graphics/Texture/TextureManager.h"
+#include "graphics/model/ModelManager.h"
+#include "graphics/pipeline/ComputePipelineManager.h"
+#include "graphics/pipeline/PipelineManager.h"
+#include "graphics/srv/SrvManager.h"
+#include "graphics/texture/TextureManager.h"
 #include "Input.h"
-#include "Model/ModelCommon.h"
-#include "Object/Base/BaseObjectManager.h"
-#include "Particle/CSParticle/ParticleCSEditor.h"
-#include "Particle/CSParticle/ParticleCSFieldManager.h"
-#include "Particle/CSParticle/ParticleCSGroupManager.h"
-#include "Particle/ParticleCommon.h"
-#include "Particle/ParticleEditor.h"
-#include "Particle/ParticleGroupManager.h"
-#include "Scene/SceneManager.h"
-#include "Scene/SceneTransition.h"
-#include "SkyBox/SkyBox.h"
+#include "model/ModelCommon.h"
+#include "object/base/BaseObjectManager.h"
+#include "particle/gpu/ParticleCSEditor.h"
+#include "particle/gpu/ParticleCSFieldManager.h"
+#include "particle/gpu/ParticleCSGroupManager.h"
+#include "particle/ParticleCommon.h"
+#include "particle/ParticleEditor.h"
+#include "particle/ParticleGroupManager.h"
+#include "scene/SceneManager.h"
+#include "scene/SceneTransition.h"
+#include "skybox/SkyBox.h"
 #include "SpriteCommon.h"
 #include "SpriteManager.h"
 #include "line/DrawLine3D.h"
-#include "Edit/MotionEditor/MotionEditor.h"
-#include"Utility/LoadFile/Csv/CsvLoad.h"
-#include "Render/DrawSystem.h"
+#include "edit/motion/MotionEditor.h"
+#include "utility/loader/csv/CsvLoad.h"
+#include "render/DrawSystem.h"
 #include <memory>
 namespace Hagine {
-class Framework {
+class Framework
+{
   public: // メンバ関数
     virtual ~Framework() = default;
 
@@ -92,40 +93,40 @@ class Framework {
     std::unique_ptr<ModelCommon> modelCommon_;
     std::unique_ptr<CsvLoad> csvLoad_;
     std::unique_ptr<OffScreen> offscreen_;
-    std::unique_ptr<DrawSystem> drawSystem_;
+    std::unique_ptr<DrawSystem> pDrawSystem_;
 
     // ---- 広域サービス（App 全域から参照されるため、現状は意図的にシングルトンのまま）----
-    Input *input_ = nullptr;
-    Audio *audio_ = nullptr;
-    DirectXCommon *dxCommon_ = nullptr;
-    DrawLine3D *line3d_ = nullptr;
-    SkyBox *skyBox_ = nullptr;
+    Input *pInput_ = nullptr;
+    Audio *pAudio_ = nullptr;
+    DirectXCommon *pDxCommon_ = nullptr;
+    DrawLine3D *pLine3d_ = nullptr;
+    SkyBox *pSkyBox_ = nullptr;
 
-    SceneManager *sceneManager_ = nullptr;
-    SrvManager *srvManager_ = nullptr;
-    TextureManager *textureManager_ = nullptr;
-    ModelManager *modelManager_ = nullptr;
-    ImGuizmoManager *imGuizmoManager_ = nullptr;
-    BaseObjectManager *baseObjectManager_ = nullptr;
-    ParticleGroupManager *particleGroupManager_ = nullptr;
-    ParticleCSGroupManager *particleCSGroupManager_ = nullptr;
-    PipeLineManager *pipeLineManager_ = nullptr;
-    MotionEditor *motionEditor_ = nullptr;
-    ComputePipeLineManager *computePipeLineManager_ = nullptr;
-    SpriteManager *spriteManager_ = nullptr;
+    SceneManager *pSceneManager_ = nullptr;
+    SrvManager *pSrvManager_ = nullptr;
+    TextureManager *pTextureManager_ = nullptr;
+    ModelManager *pModelManager_ = nullptr;
+    ImGuizmoManager *pImGuizmoManager_ = nullptr;
+    BaseObjectManager *pBaseObjectManager_ = nullptr;
+    ParticleGroupManager *pParticleGroupManager_ = nullptr;
+    ParticleCSGroupManager *pParticleCSGroupManager_ = nullptr;
+    PipelineManager *pPipeLineManager_ = nullptr;
+    MotionEditor *pMotionEditor_ = nullptr;
+    ComputePipelineManager *pComputePipelineManager_ = nullptr;
+    SpriteManager *pSpriteManager_ = nullptr;
 
-    SpriteCommon *spriteCommon_ = nullptr;
-    ParticleCommon *particleCommon_ = nullptr;
+    SpriteCommon *pSpriteCommon_ = nullptr;
+    ParticleCommon *pParticleCommon_ = nullptr;
 
-    LightGroup *lightGroup_ = nullptr;
+    LightGroup *pLightGroup_ = nullptr;
 
-    ParticleEditor *particleEditor_ = nullptr;
-    ParticleCSEditor *particleCSEditor_ = nullptr;
-    ParticleCSFieldManager *particleCSFieldManager_ = nullptr;
+    ParticleEditor *pParticleEditor_ = nullptr;
+    ParticleCSEditor *pParticleCSEditor_ = nullptr;
+    ParticleCSFieldManager *pParticleCSFieldManager_ = nullptr;
 
-    PrimitiveModel *primitiveModel_ = nullptr;
+    PrimitiveModel *pPrimitiveModel_ = nullptr;
 
-    CollisionManager *collisionManager_ = nullptr;
+    CollisionManager *pCollisionManager_ = nullptr;
 
     bool endRequest_;
 };

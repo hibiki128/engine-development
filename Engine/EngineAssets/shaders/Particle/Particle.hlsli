@@ -353,6 +353,8 @@ struct ParticleField
     uint enableEmitSpawn;
     float emitSpawnLifeTimeMin;
     float emitSpawnLifeTimeMax;
+    // 今フレームこのフィールドが発生させる粒子数（CPUが間隔タイマーから毎フレーム算出。
+    // バースト無しフレームは0）。Emit CS はこの値の累積和でスレッド→担当フィールドを決める。
     uint emitSpawnCount;
 
     // グループID (-1=全エミッター対象, 0以上=同IDのエミッターのみ)
@@ -362,126 +364,39 @@ struct ParticleField
     float groupIdPadding2;
 };
 
-static const uint OB_LifeTimeMin = 0u;
-static const uint OB_LifeTimeMax = 1u;
-static const uint OB_ScaleMin = 2u;
-static const uint OB_ScaleMax = 3u;
-static const uint OB_VelocityMin = 4u;
-static const uint OB_VelocityMax = 5u;
-static const uint OB_StartColor = 6u;
-static const uint OB_EndColor = 7u;
-static const uint OB_EnableLifetimeScale = 8u;
-static const uint OB_EnableRandomColor = 9u;
-static const uint OB_EnableSinScale = 10u;
-static const uint OB_SinScaleFrequency = 11u;
-static const uint OB_SinScaleAmplitude = 12u;
-static const uint OB_EnableGravity = 13u;
-static const uint OB_Gravity = 14u;
-static const uint OB_EnableTrail = 15u;
-static const uint OB_TrailSpawnDistance = 16u;
-static const uint OB_MaxTrailPerParticle = 17u;
-static const uint OB_TrailLifeTimeScale = 18u;
-static const uint OB_TrailScaleMultiplier = 19u;
-static const uint OB_TrailColorMultiplier = 20u;
-static const uint OB_TrailVelocityScale = 21u;
-static const uint OB_TrailInheritVelocity = 22u;
-static const uint OB_TrailMinLifeTime = 23u;
-static const uint OB_EnableGather = 24u;
-static const uint OB_GatherStartRatio = 25u;
-static const uint OB_GatherStrength = 26u;
-static const uint OB_GatherTarget = 27u;
-static const uint OB_EnableVortex = 28u;
-static const uint OB_VortexStrength = 29u;
-static const uint OB_VortexAxis = 30u;
-static const uint OB_EnableAcceleration = 31u;
-static const uint OB_Acceleration = 32u;
-static const uint OB_EnableVelocityDamping = 33u;
-static const uint OB_VelocityDampingFactor = 34u;
-static const uint OB_EnableLifetimeVelDamping = 35u;
-static const uint OB_LifetimeVelDampingStart = 36u;
-static const uint OB_EnableCurlNoise = 37u;
-static const uint OB_CurlNoiseScale = 38u;
-static const uint OB_CurlNoiseStrength = 39u;
-static const uint OB_CurlNoiseTimeScale = 40u;
-static const uint OB_CurlNoiseOctaves = 41u;
-static const uint OB_CurlNoiseAttractStrength = 42u;
-static const uint OB_CurlNoiseBlendMode = 43u;
-static const uint OB_CurlNoisePosRandom = 44u;
+// 一度きり設定上書きのビット定数。
+// C++ 側 FieldOverrideBits（ParticleCSFieldSettingOverride.h）と一致させること。
+// パーティクル側の settingsOverrideFlags.x に同じビットを記録して一度きり保証する。
+static const uint OB_LifeTime = 0u;       // 寿命を Min/Max 乱数で上書き
+static const uint OB_Scale = 1u;          // スケールを Min/Max 乱数で上書き
+static const uint OB_Velocity = 2u;       // 速度を Min/Max 乱数で置換
+static const uint OB_VelocityMul = 3u;    // 速度に倍率を一度だけ乗算
+static const uint OB_AccelImpulse = 4u;   // 速度に加速度を一度だけ加算
+static const uint OB_Color = 5u;          // 色(RGB)を上書き（以後この色で固定）
+static const uint OB_TrailDistance = 6u;  // トレイル生成間隔を上書き
+static const uint OB_GatherRedirect = 7u; // 速度をターゲット方向へ向け替え
 
+// 【重要】このレイアウトは C++ 側 GPU_FieldSettingsOverride
+//   （ParticleCSFieldManager.cpp）と**バイト単位で一致**させること（合計112バイト）。
 struct ParticleFieldSettingsOverrideData
 {
-   
-    uint2 overrideMask;
-    float2 maskPadding;
-
+    uint overrideMask;        // FieldOverrideBits の組み合わせ
     float lifeTimeMin;
     float lifeTimeMax;
     float scaleMin;
     float scaleMax;
-
-    float3 velocityMin;
-    float padding1;
-    float3 velocityMax;
-    float padding2;
-
-    float4 startColor;
-    float4 endColor;
-
-    uint enableLifetimeScale;
-    uint enableRandomColor;
-    uint enableSinScale;
-    float sinScaleFrequency;
-    float sinScaleAmplitude;
-
-    uint enableGravity;
-    float2 padding3;
-    float3 gravity;
-    float padding4;
-
-    uint enableTrail;
+    float velocityMultiplier;
     float trailSpawnDistance;
-    uint maxTrailPerParticle;
-    float trailLifeTimeScale;
-
-    float3 trailScaleMultiplier;
-    float padding5;
-    float4 trailColorMultiplier;
-    float trailVelocityScale;
-    uint trailInheritVelocity;
-    float trailMinLifeTime;
-    float padding6;
-
-    uint enableGather;
-    float gatherStartRatio;
-    float gatherStrength;
-    float padding7;
+    float pad0;
+    float3 velocityMin;
+    float pad1;
+    float3 velocityMax;
+    float pad2;
+    float3 accelImpulse;
+    float pad3;
+    float4 color;
     float3 gatherTarget;
-    float padding8;
-
-    uint enableVortex;
-    float vortexStrength;
-    float2 padding9;
-    float3 vortexAxis;
-    float padding10;
-
-    uint enableAcceleration;
-    float3 padding11;
-    float3 acceleration;
-    float padding12;
-
-    uint enableVelocityDamping;
-    float velocityDampingFactor;
-    uint enableLifetimeVelDamping;
-    float lifetimeVelDampingStart;
-
-    uint enableCurlNoise;
-    float curlNoiseScale;
-    float curlNoiseStrength;
-    float curlNoiseTimeScale;
-    uint curlNoiseOctaves;
-    float curlNoiseAttractStrength;
-    uint curlNoiseBlendMode;
-    float curlNoisePosRandom;
+    float pad4;
 };
 
 struct FieldCountCB

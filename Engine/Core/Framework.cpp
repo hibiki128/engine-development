@@ -1,15 +1,19 @@
 #include "Framework.h"
-#include "Utility/Debug/ImGui/ImGuiNotification.h"
-#include "Utility/Scene/SceneRegistry.h"
-#include <Debug/CpuProfiler/CpuProfiler.h>
-#include <Debug/GpuProfiler/GpuProfiler.h>
-#include <Debug/Log/Logger.h>
+#include "utility/debug/imgui/ImGuiNotification.h"
+#include "utility/scene/SceneRegistry.h"
+#include <debug/profiler/CpuProfiler.h>
+#include <debug/log/Logger.h>
 #include <Frame.h>
-#include <Shadow/ShadowMap.h>
+#include <shadow/ShadowMap.h>
 #include <iterator>
+#ifdef _DEBUG
+#include <edit/undo/UndoRedoManager.h>
+#include <imgui.h>
+#endif // _DEBUG
 
 namespace Hagine {
-void Framework::Run() {
+void Framework::Run()
+{
     // ゲームの初期化
     Initialize();
 
@@ -18,7 +22,8 @@ void Framework::Run() {
         // 更新
         Update();
         // 終了リクエストが来たら抜ける
-        if (IsEndRequest()) {
+        if (IsEndRequest())
+        {
             break;
         }
         // 描画
@@ -28,7 +33,8 @@ void Framework::Run() {
     Finalize();
 }
 
-void Framework::Initialize() {
+void Framework::Initialize()
+{
     Logger::Info("Application initialization started.");
 
     ///---------WinApp--------
@@ -39,66 +45,66 @@ void Framework::Initialize() {
 
     ///---------DirectXCommon----------
     // DirectXCommonの初期化
-    dxCommon_ = DirectXCommon::GetInstance();
-    dxCommon_->Initialize(winApp_.get());
+    pDxCommon_ = DirectXCommon::GetInstance();
+    pDxCommon_->Initialize(winApp_.get());
     ///--------------------------------
 
     ///--------SRVManager--------
     // SRVマネージャの初期化
-    srvManager_ = SrvManager::GetInstance();
-    srvManager_->Initialize();
+    pSrvManager_ = SrvManager::GetInstance();
+    pSrvManager_->Initialize();
     ///--------------------------
 
     ///-------CollisionManager--------
-    collisionManager_ = CollisionManager::GetInstance();
+    pCollisionManager_ = CollisionManager::GetInstance();
     ///----------------------------------
 
     ///--------BaseObjectManager--------
-    baseObjectManager_ = BaseObjectManager::GetInstance();
+    pBaseObjectManager_ = BaseObjectManager::GetInstance();
     ///---------------------------------
 
     ///--------SpriteManager--------
-    spriteManager_ = SpriteManager::GetInstance();
+    pSpriteManager_ = SpriteManager::GetInstance();
     ///---------------------------------
 
     /// ---------ImGuizmo---------
 #ifdef _DEBUG
-    imGuizmoManager_ = ImGuizmoManager::GetInstance();
+    pImGuizmoManager_ = ImGuizmoManager::GetInstance();
 #endif // _DEBUG
        /// -----------------------
 
     /// ---------ImGui---------
 #ifdef _DEBUG
     imGuiManager_ = std::make_unique<ImGuiManager>();
-    imGuiManager_->Initialize(winApp_.get(), imGuizmoManager_);
+    imGuiManager_->Initialize(winApp_.get(), pImGuizmoManager_);
     imGuiManager_->GetIsShowMainUI() = true;
 #endif // _DEBUG
        /// -----------------------
 
     // offscreenのSRV作成
-    dxCommon_->CreateOffscreenSRV();
+    pDxCommon_->CreateOffscreenSRV();
     // depthのSRV作成
-    dxCommon_->CreateDepthSRV();
+    pDxCommon_->CreateDepthSRV();
 
     ///----------Input-----------
     // 入力の初期化
-    input_ = Input::GetInstance();
-    input_->Init(winApp_->GetHInstance(), winApp_->GetHwnd());
+    pInput_ = Input::GetInstance();
+    pInput_->Init(winApp_->GetHInstance(), winApp_->GetHwnd());
     ///--------------------------
 
-    ///-----------PipeLineManager-----------
-    pipeLineManager_ = PipeLineManager::GetInstance();
-    pipeLineManager_->Initialize(dxCommon_);
+    ///-----------PipelineManager-----------
+    pPipeLineManager_ = PipelineManager::GetInstance();
+    pPipeLineManager_->Initialize(pDxCommon_);
     ///-------------------------------------
 
-    ///-----------PipeLineManager-----------
-    computePipeLineManager_ = ComputePipeLineManager::GetInstance();
-    computePipeLineManager_->Initialize(dxCommon_);
+    ///-----------PipelineManager-----------
+    pComputePipelineManager_ = ComputePipelineManager::GetInstance();
+    pComputePipelineManager_->Initialize(pDxCommon_);
     ///-------------------------------------
 
     ///-----------TextureManager----------
-    textureManager_ = TextureManager::GetInstance();
-    textureManager_->Initialize(srvManager_);
+    pTextureManager_ = TextureManager::GetInstance();
+    pTextureManager_->Initialize(pSrvManager_);
     ///-----------------------------------
 
     ///-----------ModelCommon-------------
@@ -107,29 +113,29 @@ void Framework::Initialize() {
     ///-----------------------------------
 
     ///-----------ModelManager------------
-    modelManager_ = ModelManager::GetInstance();
-    modelManager_->Initialize(srvManager_, modelCommon_.get());
+    pModelManager_ = ModelManager::GetInstance();
+    pModelManager_->Initialize(pSrvManager_, modelCommon_.get());
     ///----------------------------------
 
     ///----------PrimitiveModel-----------
-    primitiveModel_ = PrimitiveModel::GetInstance();
-    primitiveModel_->Initialize();
+    pPrimitiveModel_ = PrimitiveModel::GetInstance();
+    pPrimitiveModel_->Initialize();
     ///-----------------------------------
 
     ///----------SpriteCommon------------
     // スプライト共通部の初期化
-    spriteCommon_ = SpriteCommon::GetInstance();
-    spriteCommon_->Initialize();
+    pSpriteCommon_ = SpriteCommon::GetInstance();
+    pSpriteCommon_->Initialize();
     ///----------------------------------
 
     ///----------ParticleCommon------------
-    particleCommon_ = ParticleCommon::GetInstance();
-    particleCommon_->Initialize(dxCommon_);
+    pParticleCommon_ = ParticleCommon::GetInstance();
+    pParticleCommon_->Initialize(pDxCommon_);
     ///------------------------------------
 
     ///---------Audio-------------
-    audio_ = Audio::GetInstance();
-    audio_->Initialize();
+    pAudio_ = Audio::GetInstance();
+    pAudio_->Initialize();
     ///---------------------------
 
     ///-------SceneTransition-------
@@ -137,72 +143,71 @@ void Framework::Initialize() {
     ///-----------------------------
 
     ///-------SceneManager--------
-    sceneManager_ = SceneManager::GetInstance();
-    sceneManager_->Initialize(sceneTransition_.get());
-    sceneManager_->SetWinApp(winApp_.get());
+    pSceneManager_ = SceneManager::GetInstance();
+    pSceneManager_->Initialize(sceneTransition_.get());
     ///---------------------------
 
     ///-------OffScreen--------
     offscreen_ = std::make_unique<OffScreen>();
     offscreen_->Initialize();
-    sceneManager_->SetOffScreen(offscreen_.get());
+    pSceneManager_->SetOffScreen(offscreen_.get());
     ///------------------------
 
     ///-------DrawSystem-------
-    drawSystem_ = std::make_unique<DrawSystem>();
-    drawSystem_->Initialize(dxCommon_, srvManager_, offscreen_.get(), sceneManager_, collisionManager_);
-    sceneManager_->SetDrawSystem(drawSystem_.get());
+    pDrawSystem_ = std::make_unique<DrawSystem>();
+    pDrawSystem_->Initialize(pDxCommon_, pSrvManager_, offscreen_.get(), pSceneManager_, pCollisionManager_);
+    pSceneManager_->SetDrawSystem(pDrawSystem_.get());
 #ifdef _DEBUG
-    imGuiManager_->SetDrawSystem(drawSystem_.get());
+    imGuiManager_->SetDrawSystem(pDrawSystem_.get());
 #endif // _DEBUG
     ///------------------------
 
     ///-------DrawLine3D-------
-    line3d_ = DrawLine3D::GetInstance();
-    line3d_->Initialize();
+    pLine3d_ = DrawLine3D::GetInstance();
+    pLine3d_->Initialize();
     ///------------------------
 
     ///-------SkyBox-------
-    skyBox_ = SkyBox::GetInstance();
+    pSkyBox_ = SkyBox::GetInstance();
     ///--------------------
 
     ///--------LightGroup------------
-    lightGroup_ = LightGroup::GetInstance();
-    lightGroup_->Initialize();
+    pLightGroup_ = LightGroup::GetInstance();
+    pLightGroup_->Initialize();
     ///------------------------------
 
     ///-------ParticleEditor-------
-    particleEditor_ = ParticleEditor::GetInstance();
-    particleEditor_->Initialize();
+    pParticleEditor_ = ParticleEditor::GetInstance();
+    pParticleEditor_->Initialize();
     ///----------------------------
 
     ///-------ParticleGroupManager-------
-    particleGroupManager_ = ParticleGroupManager::GetInstance();
-    particleGroupManager_->Initialize();
+    pParticleGroupManager_ = ParticleGroupManager::GetInstance();
+    pParticleGroupManager_->Initialize();
     ///---------------------------------
 
     ///-------ParticleCSEditor-------
-    particleCSEditor_ = ParticleCSEditor::GetInstance();
-    particleCSEditor_->Initialize();
+    pParticleCSEditor_ = ParticleCSEditor::GetInstance();
+    pParticleCSEditor_->Initialize();
     ///----------------------------
 
     ///-------ParticleCSGroupManager-------
-    particleCSGroupManager_ = ParticleCSGroupManager::GetInstance();
-    particleCSGroupManager_->Initialize();
+    pParticleCSGroupManager_ = ParticleCSGroupManager::GetInstance();
+    pParticleCSGroupManager_->Initialize();
     ///---------------------------------
 
     ///------ParticleCSFieldManager------
-    particleCSFieldManager_ = ParticleCSFieldManager::GetInstance();
-    particleCSFieldManager_->Initialize();
+    pParticleCSFieldManager_ = ParticleCSFieldManager::GetInstance();
+    pParticleCSFieldManager_->Initialize();
     ///---------------------------------
 
     ///--------ShortcutManager------------
     shortcutManager_ = std::make_unique<ShortcutManager>();
-    shortcutManager_->Initialize(input_);
+    shortcutManager_->Initialize(pInput_);
     ///-----------------------------------
 
     ///-------MotionEditor-------
-    motionEditor_ = MotionEditor::GetInstance();
+    pMotionEditor_ = MotionEditor::GetInstance();
     ///--------------------------
 
     ///-------csvLoad-------
@@ -220,52 +225,49 @@ void Framework::Initialize() {
     Logger::Info("Application initialization finished.");
 }
 
-void Framework::Finalize() {
+void Framework::Finalize()
+{
     Logger::Info("Application shutting down.");
 
-    collisionManager_->Clear();
-    sceneManager_->Finalize();
+    pCollisionManager_->Clear();
+    pSceneManager_->Finalize();
     sceneTransition_->Finalize();
     winApp_->Finalize();
-    pipeLineManager_->Finalize();
-    computePipeLineManager_->Finalize();
-    textureManager_->Finalize();
-    modelManager_->Finalize();
-    primitiveModel_->Finalize();
-    particleGroupManager_->Finalize();
-    particleCSGroupManager_->Finalize();
+    pPipeLineManager_->Finalize();
+    pComputePipelineManager_->Finalize();
+    pTextureManager_->Finalize();
+    pModelManager_->Finalize();
+    pPrimitiveModel_->Finalize();
+    pParticleGroupManager_->Finalize();
+    pParticleCSGroupManager_->Finalize();
     csvLoad_->Finalize();
 
 #ifdef _DEBUG
     imGuiManager_->Finalize();
-    imGuizmoManager_->Finalize();
+    pImGuizmoManager_->Finalize();
 #endif
     shortcutManager_->Finalize();
-    spriteManager_->Finalize();
-    line3d_->Finalize();
-    skyBox_->Finalize();
+    pSpriteManager_->Finalize();
+    pLine3d_->Finalize();
+    pSkyBox_->Finalize();
     ShadowMap::GetInstance()->Finalize();
-    srvManager_->Finalize();
-    audio_->Finalize();
-    lightGroup_->Finalize();
-    motionEditor_->Finalize();
-    particleEditor_->Finalize();
-    particleCSFieldManager_->Finalize();
-    particleCSEditor_->Finalize();
-    spriteCommon_->Finalize();
-    particleCommon_->Finalize();
+    pSrvManager_->Finalize();
+    pAudio_->Finalize();
+    pLightGroup_->Finalize();
+    pMotionEditor_->Finalize();
+    pParticleEditor_->Finalize();
+    pParticleCSFieldManager_->Finalize();
+    pParticleCSEditor_->Finalize();
+    pSpriteCommon_->Finalize();
+    pParticleCommon_->Finalize();
     modelCommon_->Finalize();
 
-    baseObjectManager_->Finalize();
-
-    // GpuProfiler は QueryHeap / Readback を保持するシングルトン。静的破棄は
-    // ReportLiveObjects より後に走るため、device 解放前にここで明示解放する。
-    GpuProfiler::GetInstance()->Finalize();
-
-    dxCommon_->Finalize();
+    pBaseObjectManager_->Finalize();
+    pDxCommon_->Finalize();
 }
 
-void Framework::RegisterShortcutKey() {
+void Framework::RegisterShortcutKey()
+{
     // フルスクリーン
     shortcutManager_->RegisterShortcut("FullScreen", DIK_F11, [this]() {
         winApp_->ToggleFullScreen();
@@ -276,7 +278,7 @@ void Framework::RegisterShortcutKey() {
     });
     // オブジェクトロード
     shortcutManager_->RegisterShortcut("ObjectLoad", {DIK_LSHIFT, DIK_LCONTROL, DIK_M}, [this]() {
-        baseObjectManager_->OpenObjectLoadModal();
+        pBaseObjectManager_->OpenObjectLoadModal();
     });
     // 終了
     shortcutManager_->RegisterShortcut("End", {DIK_LALT, DIK_F4}, [this]() {
@@ -284,95 +286,136 @@ void Framework::RegisterShortcutKey() {
     });
     // シーンセーブ
     shortcutManager_->RegisterShortcut("SceneSave", {DIK_LCONTROL, DIK_LSHIFT, DIK_S}, [this]() {
-        baseObjectManager_->OpenSceneSaveModal();
+        pBaseObjectManager_->OpenSceneSaveModal();
     });
     // シーン読み込み
     shortcutManager_->RegisterShortcut("SceneLoad", {DIK_LCONTROL, DIK_LSHIFT, DIK_L}, [this]() {
-        baseObjectManager_->OpenSceneLoadModal();
+        pBaseObjectManager_->OpenSceneLoadModal();
     });
     // モデル作成
     shortcutManager_->RegisterShortcut("CreateModel", {DIK_LCONTROL, DIK_LSHIFT, DIK_N}, [this]() {
-        baseObjectManager_->OpenObjectCreationModal();
+        pBaseObjectManager_->OpenObjectCreationModal();
     });
     // シーン切替（SceneRegistry に自己登録された全シーンへ Ctrl+数字 を割り当てる）
     const std::vector<std::string> sceneNames = SceneRegistry::GetInstance()->GetSceneNames();
     constexpr BYTE kNumberKeys[] = {DIK_1, DIK_2, DIK_3, DIK_4, DIK_5, DIK_6, DIK_7, DIK_8, DIK_9};
-    for (size_t i = 0; i < sceneNames.size() && i < std::size(kNumberKeys); ++i) {
+    for (size_t i = 0; i < sceneNames.size() && i < std::size(kNumberKeys); ++i)
+    {
         const std::string sceneName = sceneNames[i];
         shortcutManager_->RegisterShortcut(sceneName + "Scene", {DIK_LCONTROL, kNumberKeys[i]}, [this, sceneName]() {
-            sceneManager_->SceneSelection(sceneName);
+            pSceneManager_->SceneSelection(sceneName);
         });
     }
     // ゲームデバッグ画面切り替え
-    shortcutManager_->RegisterShortcut("SwichMode", DIK_F5, [this]() {
+    shortcutManager_->RegisterShortcut("SwitchMode", DIK_F5, [this]() {
         imGuiManager_->GetIsShowMainUI() = !imGuiManager_->GetIsShowMainUI();
+    });
+    // 元に戻す（ImGuiのテキスト入力中は入力欄自身のUndoを優先してスキップ）
+    shortcutManager_->RegisterShortcut("Undo", {DIK_LCONTROL, DIK_Z}, []() {
+        if (ImGui::GetCurrentContext() && ImGui::GetIO().WantTextInput)
+        {
+            return;
+        }
+        UndoRedoManager *undoMgr = UndoRedoManager::GetInstance();
+        const std::string label = undoMgr->GetUndoLabel();
+        if (undoMgr->Undo())
+        {
+            ImGuiNotification::Post("元に戻す: " + label, {0.42f, 0.66f, 0.68f, 1.0f});
+        }
+    });
+    // やり直し
+    shortcutManager_->RegisterShortcut("Redo", {DIK_LCONTROL, DIK_Y}, []() {
+        if (ImGui::GetCurrentContext() && ImGui::GetIO().WantTextInput)
+        {
+            return;
+        }
+        UndoRedoManager *undoMgr = UndoRedoManager::GetInstance();
+        const std::string label = undoMgr->GetRedoLabel();
+        if (undoMgr->Redo())
+        {
+            ImGuiNotification::Post("やり直し: " + label, {0.42f, 0.66f, 0.68f, 1.0f});
+        }
     });
     // コピー
     shortcutManager_->RegisterShortcut("Copy", {DIK_LCONTROL, DIK_C}, [this]() {
-        imGuizmoManager_->CopySelectedObjects();
+        pImGuizmoManager_->CopySelectedObjects();
     });
     // ペースト
     shortcutManager_->RegisterShortcut("Paste", {DIK_LCONTROL, DIK_V}, [this]() {
-        imGuizmoManager_->PasteObjects();
+        pImGuizmoManager_->PasteObjects();
     });
     // デリート
     shortcutManager_->RegisterShortcut("Delete", DIK_DELETE, [this]() {
-        imGuizmoManager_->DeleteSelectedObjects();
+        pImGuizmoManager_->DeleteSelectedObjects();
     });
 
 #endif // _DEBUG
 }
 
-void Framework::Update() {
+void Framework::Update()
+{
 
     /// deltaTimeの更新
     Frame::Update();
 
     {
         HAGINE_CPU_PROFILE("Update/ParticleField");
-        particleCSFieldManager_->Update();
+        pParticleCSFieldManager_->Update();
     }
     {
         HAGINE_CPU_PROFILE("Update/Scene(logic+ImGui)");
-        sceneManager_->Update();
+        pSceneManager_->Update();
     }
     {
         HAGINE_CPU_PROFILE("Update/Objects(anim+phys)");
-        baseObjectManager_->Update();
+        pBaseObjectManager_->Update();
     }
     {
         HAGINE_CPU_PROFILE("Update/Sprites");
-        spriteManager_->UpdateAll(Frame::DeltaTime());
+        pSpriteManager_->UpdateAll(Frame::DeltaTime());
     }
     {
         HAGINE_CPU_PROFILE("Update/Collision");
-        collisionManager_->Update();
+        pCollisionManager_->Update();
     }
     {
         HAGINE_CPU_PROFILE("Update/Light");
-        LightGroup::GetInstance()->Update(*sceneManager_->GetBaseScene()->GetViewProjection());
+        LightGroup::GetInstance()->Update(*pSceneManager_->GetBaseScene()->GetViewProjection());
     }
     {
         HAGINE_CPU_PROFILE("Update/Input");
-        input_->Update();
+        pInput_->Update();
         shortcutManager_->Update();
         endRequest_ = winApp_->ProcessMessage();
     }
+
+    // ウィンドウサイズが変わっていたらスワップチェーンを追従させる
+    // （内部レンダリング解像度は固定のまま、最終合成時に拡縮される）
+    {
+        uint32_t newWidth = 0, newHeight = 0;
+        if (winApp_->ConsumeResize(newWidth, newHeight))
+        {
+            pDxCommon_->ResizeSwapChain(newWidth, newHeight);
+        }
+    }
 }
 
-void Framework::LoadResource() {
+void Framework::LoadResource()
+{
 
-    textureManager_->LoadAllTextures();
+    pTextureManager_->LoadAllTextures();
 
-    textureManager_->LoadFontTexture("NotoSansJP-Medium.ttf", 100);
+    pTextureManager_->LoadFontTexture("NotoSansJP-Medium.ttf", 100);
 
     ImGuiNotification::Post("全ての基本リソースを読み込みました", {0.2f, 0.8f, 0.2f, 1.0f});
     Logger::Info("All base resources loaded.");
 }
 
-void Framework::PlaySounds() {
+void Framework::PlaySounds()
+{
 }
 
-void Framework::Draw() {
+void Framework::Draw()
+{
 }
 } // namespace Hagine

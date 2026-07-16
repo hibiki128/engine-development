@@ -1,49 +1,55 @@
 #include "ShaderCompiler.h"
 #include "cassert"
 #include "format"
-#include <Debug/Log/Logger.h>
-#include <String/StringUtility.h>
+#include <debug/log/Logger.h>
+#include <string/StringUtility.h>
 
 namespace Hagine {
 using namespace Logger;
 using namespace StringUtility;
 
-void ShaderCompiler::Initialize() {
+void ShaderCompiler::Initialize()
+{
     HRESULT hr;
 
     // dxcCompilerを初期化
-    hr = DxcCreateInstance(CLSID_DxcUtils, IID_PPV_ARGS(&dxcUtils_));
+    hr = DxcCreateInstance(CLSID_DxcUtils, IID_PPV_ARGS(&pDxcUtils_));
     assert(SUCCEEDED(hr));
-    hr = DxcCreateInstance(CLSID_DxcCompiler, IID_PPV_ARGS(&dxcCompiler_));
+    hr = DxcCreateInstance(CLSID_DxcCompiler, IID_PPV_ARGS(&pDxcCompiler_));
     assert(SUCCEEDED(hr));
 
     // 現時点でincludeはしないが、includeに対応するための設定を行っておく
-    hr = dxcUtils_->CreateDefaultIncludeHandler(&includeHandler_);
+    hr = pDxcUtils_->CreateDefaultIncludeHandler(&pIncludeHandler_);
     assert(SUCCEEDED(hr));
 }
 
-void ShaderCompiler::Finalize() {
+void ShaderCompiler::Finalize()
+{
     // ComPtrではなく生ポインタで保持しているため手動でReleaseが必要
-    if (includeHandler_) {
-        includeHandler_->Release();
-        includeHandler_ = nullptr;
+    if (pIncludeHandler_)
+    {
+        pIncludeHandler_->Release();
+        pIncludeHandler_ = nullptr;
     }
-    if (dxcCompiler_) {
-        dxcCompiler_->Release();
-        dxcCompiler_ = nullptr;
+    if (pDxcCompiler_)
+    {
+        pDxcCompiler_->Release();
+        pDxcCompiler_ = nullptr;
     }
-    if (dxcUtils_) {
-        dxcUtils_->Release();
-        dxcUtils_ = nullptr;
+    if (pDxcUtils_)
+    {
+        pDxcUtils_->Release();
+        pDxcUtils_ = nullptr;
     }
 }
 
-IDxcBlob *ShaderCompiler::Compile(const std::wstring &filePath, const wchar_t *profile) {
+IDxcBlob *ShaderCompiler::Compile(const std::wstring &filePath, const wchar_t *profile)
+{
     // これからシェーダーをコンパイルする旨をログに出す
-    Log(ConvertString(std::format(L"Begin CompileSharder, path:{}, profile:{}\n", filePath, profile)));
+    Log(ConvertString(std::format(L"Begin CompileShader, path:{}, profile:{}\n", filePath, profile)));
     // hlslファイルを読む
     IDxcBlobEncoding *shaderSource = nullptr;
-    HRESULT hr = dxcUtils_->LoadFile(filePath.c_str(), nullptr, &shaderSource);
+    HRESULT hr = pDxcUtils_->LoadFile(filePath.c_str(), nullptr, &shaderSource);
     // 読めなかったら止める
     assert(SUCCEEDED(hr));
     // 読み込んだファイルの内容を設定する
@@ -62,11 +68,11 @@ IDxcBlob *ShaderCompiler::Compile(const std::wstring &filePath, const wchar_t *p
     };
     // 実際にShaderをコンパイルする
     IDxcResult *shaderResult = nullptr;
-    hr = dxcCompiler_->Compile(
+    hr = pDxcCompiler_->Compile(
         &shaderSourceBuffer,        // 読み込んだファイル
         arguments,                  // コンパイルオプション
         _countof(arguments),        // コンパイルオプションの数
-        includeHandler_,            // includeが含まれた諸々
+        pIncludeHandler_,            // includeが含まれた諸々
         IID_PPV_ARGS(&shaderResult) // コンパイル結果
     );
     // コンパイルエラーではなくdxcが起動できないなど致命的な状況
@@ -75,7 +81,8 @@ IDxcBlob *ShaderCompiler::Compile(const std::wstring &filePath, const wchar_t *p
     // 警告・エラーが出てたらログに出して止める
     IDxcBlobUtf8 *shaderError = nullptr;
     shaderResult->GetOutput(DXC_OUT_ERRORS, IID_PPV_ARGS(&shaderError), nullptr);
-    if (shaderError != nullptr && shaderError->GetStringLength() != 0) {
+    if (shaderError != nullptr && shaderError->GetStringLength() != 0)
+    {
         Log(shaderError->GetStringPointer());
         // 警告・エラーダメゼッタイ
         assert(false);

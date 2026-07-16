@@ -1,7 +1,7 @@
 #pragma once
 #include "wrl.h"
-#include <Model/ModelStructs.h>
-#include <Primitive/PrimitiveModel.h>
+#include <model/ModelStructs.h>
+#include <primitive/PrimitiveModel.h>
 #include <d3d12.h>
 
 namespace Hagine {
@@ -11,7 +11,8 @@ class DirectXCommon;
 /// メッシュクラス
 /// 頂点データとインデックスデータを管理する
 /// </summary>
-class Mesh {
+class Mesh
+{
   public:
     /// ===================================================
     /// public method
@@ -48,7 +49,7 @@ class Mesh {
     /// <summary>
     /// 頂点データ作成
     /// </summary>
-    void CreateVartexData();
+    void CreateVertexData();
 
     /// <summary>
     /// インデックスリソース作成
@@ -60,17 +61,17 @@ class Mesh {
     /// private varians
     /// ===================================================
 
-    DirectXCommon *dxCommon_; // DirectX共通クラス
+    DirectXCommon *pDxCommon_; // DirectX共通クラス
     MeshData meshData_;       // メッシュデータ
 
     // 頂点バッファ
     Microsoft::WRL::ComPtr<ID3D12Resource> vertexResource_ = nullptr; // バッファリソース
-    VertexData *vertexData_ = nullptr;                                // データポインタ
+    VertexData *pVertexData_ = nullptr;                                // データポインタ
     D3D12_VERTEX_BUFFER_VIEW vertexBufferView_;                       // バッファビュー
 
     // インデックスバッファ
     Microsoft::WRL::ComPtr<ID3D12Resource> indexResource_ = nullptr; // バッファリソース
-    uint32_t *indexData_;                                            // データポインタ
+    uint32_t *pIndexData_;                                            // データポインタ
     D3D12_INDEX_BUFFER_VIEW indexBufferView_;                        // バッファビュー
 };
 } // namespace Hagine

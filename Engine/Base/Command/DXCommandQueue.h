@@ -12,7 +12,8 @@ class DXDevice;
 /// ID3D12CommandQueue と完了確認用フェンスを一体で管理する
 /// Direct / Compute それぞれのキューを別インスタンスとして生成して使う
 /// </summary>
-class DXCommandQueue {
+class DXCommandQueue
+{
   public:
     DXCommandQueue() = default;
     ~DXCommandQueue();

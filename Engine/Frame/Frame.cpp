@@ -16,7 +16,8 @@ int Frame::frameCount_ = 0;
 /// <summary>
 /// フレームの初期化処理
 /// </summary>
-void Frame::Init() {
+void Frame::Init()
+{
     auto currentTime = std::chrono::high_resolution_clock::now();
     lastTime_ = currentTime;
     fpsCalcTime_ = currentTime;
@@ -28,7 +29,8 @@ void Frame::Init() {
 /// <summary>
 /// フレームの更新処理
 /// </summary>
-void Frame::Update() {
+void Frame::Update()
+{
     // 現在の時刻を取得
     auto currentTime = std::chrono::high_resolution_clock::now();
 
@@ -41,7 +43,8 @@ void Frame::Update() {
 
     // FPSを毎フレーム更新（1秒ごとに平均を計算）
     std::chrono::duration<float> fpsElapsed = currentTime - fpsCalcTime_;
-    if (fpsElapsed.count() >= 0.5f) { // 0.5秒ごとに更新（より安定した値を得るため）
+    if (fpsElapsed.count() >= 0.5f)
+    { // 0.5秒ごとに更新（より安定した値を得るため）
         // 平均FPSを計算
         fps_ = static_cast<float>(frameCount_) / fpsElapsed.count();
 
@@ -54,12 +57,12 @@ void Frame::Update() {
     lastTime_ = currentTime;
 }
 
-
 /// <summary>
 /// 前回の更新からの経過時間を取得
 /// </summary>
 /// <returns>前回の更新からの経過時間</returns>
-float Frame::DeltaTime() {
+float Frame::DeltaTime()
+{
     return deltaTime_;
 }
 
@@ -67,11 +70,13 @@ float Frame::DeltaTime() {
 /// 現在のFPSを取得
 /// </summary>
 /// <returns>現在のFPS</returns>
-float Frame::GetFPS() {
+float Frame::GetFPS()
+{
     return fps_; // 現在のFPSを返す
 }
 
-float Frame::Time() {
+float Frame::Time()
+{
     auto now = std::chrono::high_resolution_clock::now();
     std::chrono::duration<float> elapsed = now - startTime_;
     return elapsed.count();

@@ -80,11 +80,20 @@ uint SampleTriangleByCDF(float r)
 }
 
 // -------------------------------------------------------
-// 点がいずれかの enableEmitSpawn フィールド球の内側にあるか判定
-// 戻り値: ヒットしたフィールドのインデックス（-1=範囲外）
+// [フィールド接触Emitモード] スレッド→担当フィールドの割り当て
+//
+// CPU（ParticleCSFieldManager::Update）が各フィールドの emitSpawnCount に
+// 「今フレームのバースト数」を書き込んでいる（バースト無しフレームは0）。
+// エミッター側は対象フィールドのバースト合計をディスパッチしているため、
+// スレッドIDを累積和で区切ることで、各フィールドが自分の発生数ぶんの
+// スレッドを独占する。これによりフィールドごとに発生数・間隔・寿命を
+// 独立制御できる。
+//
+// 戻り値: 担当フィールドのインデックス（-1=担当なし → Emitしない）
 // -------------------------------------------------------
-int CheckFieldContact(float3 worldPos)
+int FindEmitTargetField(uint tid)
 {
+    uint cum = 0;
     for (uint i = 0; i < gFieldCB.fieldCount; i++)
     {
         if (gFields[i].enableEmitSpawn == 0)
@@ -96,62 +105,47 @@ int CheckFieldContact(float3 worldPos)
         if (!groupMatch)
             continue;
 
-        float3 diff = worldPos - gFields[i].position;
-        if (dot(diff, diff) < gFields[i].radius * gFields[i].radius)
+        uint count = gFields[i].emitSpawnCount;
+        if (tid < cum + count)
             return (int) i;
+        cum += count;
     }
     return -1;
 }
 
 // -------------------------------------------------------
-// enableEmitSpawn フィールドが存在するか確認
+// 点が指定フィールド球の内側にあるか判定
 // -------------------------------------------------------
-bool HasEmitSpawnField()
+bool IsInsideField(float3 worldPos, uint fieldIdx)
 {
-    for (uint i = 0; i < gFieldCB.fieldCount; i++)
-    {
-        if (gFields[i].enableEmitSpawn == 0)
-            continue;
-        bool groupMatch = (gFields[i].groupId == -1) ||
-                          (gPerFrame.emitterFieldGroupId == -1) ||
-                          (gFields[i].groupId == gPerFrame.emitterFieldGroupId);
-        if (groupMatch)
-            return true;
-    }
-    return false;
+    float3 diff = worldPos - gFields[fieldIdx].position;
+    return dot(diff, diff) < gFields[fieldIdx].radius * gFields[fieldIdx].radius;
 }
 
 // -------------------------------------------------------
-// [フィールド接触Emitモード] メインロジック
+// [フィールド接触Emitモード] 担当フィールド内のEmit位置を探す
 //
 // 戦略:
 //   CDF面積加重で三角形をランダム選択し、その三角形上のランダム点が
-//   フィールド球内かどうかを判定する。
+//   担当フィールド球内かどうかを判定する。
 //   フィールド外なら別の三角形を再試行する（最大 kMaxRetry 回）。
 //
 //   こうすることで:
 //   ・エミッターの線や頂点への集中が起きない（面積加重で均一分布）
 //   ・全てのEmit結果がフィールド接触領域に収まる
-//   ・フィールドが小さくてもリトライ回数を増やすことで対応できる
 //
 //   フィールドがエミッター表面の X% を占める場合、
-//   1回のリトライで失敗する確率 = (1-X%)
 //   32回全て失敗する確率 = (1-X%)^32
 //   例: X=5%  → 失敗率 0.95^32 ≈ 19%（81%のスレッドは成功）
 //       X=10% → 失敗率 0.90^32 ≈  4%（96%のスレッドは成功）
-//       X=1%  → 失敗率 0.99^32 ≈ 73%（27%のスレッドは成功）
 //   ※ 失敗したスレッドはスロットを返却してEmitしないだけなので問題なし
 //
-// 戻り値: true=Emit位置決定, false=フィールドなし or リトライ上限超過
+// 戻り値: true=Emit位置決定, false=リトライ上限超過（接触なし）
 // -------------------------------------------------------
-bool TryFieldContactEmit(inout RandomGenerator rng, float3x3 rotMatrix,
-                          out float3 outPos, out int outFieldIndex)
+bool TryEmitInField(inout RandomGenerator rng, float3x3 rotMatrix, uint fieldIdx,
+                    out float3 outPos)
 {
     outPos = gEmitterMesh.translate;
-    outFieldIndex = -1;
-
-    if (!HasEmitSpawnField())
-        return false;
 
     static const int kMaxRetry = 32;
 
@@ -176,11 +170,9 @@ bool TryFieldContactEmit(inout RandomGenerator rng, float3x3 rotMatrix,
             float v = rng.Generate1d();
             float3 candidate = RandomPointOnTriangle(v0, v1, v2, u, v);
 
-            int fieldIdx = CheckFieldContact(candidate);
-            if (fieldIdx >= 0)
+            if (IsInsideField(candidate, fieldIdx))
             {
                 outPos = candidate;
-                outFieldIndex = fieldIdx;
                 return true;
             }
         }
@@ -197,11 +189,9 @@ bool TryFieldContactEmit(inout RandomGenerator rng, float3x3 rotMatrix,
             float3 v1 = LocalToWorld(gEdges[edgeIndex].v1, rotMatrix);
             float3 candidate = lerp(v0, v1, t);
 
-            int fieldIdx = CheckFieldContact(candidate);
-            if (fieldIdx >= 0)
+            if (IsInsideField(candidate, fieldIdx))
             {
                 outPos = candidate;
-                outFieldIndex = fieldIdx;
                 return true;
             }
         }
@@ -209,11 +199,9 @@ bool TryFieldContactEmit(inout RandomGenerator rng, float3x3 rotMatrix,
     else
     {
         // ---- 点エミッター: 中心がフィールド内かチェック ----
-        int fieldIdx = CheckFieldContact(gEmitterMesh.translate);
-        if (fieldIdx >= 0)
+        if (IsInsideField(gEmitterMesh.translate, fieldIdx))
         {
             outPos = gEmitterMesh.translate;
-            outFieldIndex = fieldIdx;
             return true;
         }
     }
@@ -264,7 +252,8 @@ void main(uint3 DTid : SV_DispatchThreadID)
     // Emit位置の決定
     //
     // gFieldCB.fieldCount > 0  → フィールド接触Emitモード
-    //   TryFieldContactEmit でフィールド球内の三角形上の点を探す。
+    //   FindEmitTargetField でスレッドの担当フィールドを決め、
+    //   TryEmitInField でそのフィールド球内の表面上の点を探す。
     //   失敗した場合はスロットを返却してEmitしない。
     //
     // gFieldCB.fieldCount == 0 → 通常モード
@@ -275,13 +264,18 @@ void main(uint3 DTid : SV_DispatchThreadID)
 
     if (gFieldCB.fieldCount > 0)
     {
-        float3 fieldPos;
-        int fieldIdx;
-        bool success = TryFieldContactEmit(generator, rotMatrix, fieldPos, fieldIdx);
+        int fieldIdx = FindEmitTargetField(DTid.x);
+
+        float3 fieldPos = gEmitterMesh.translate;
+        bool success = false;
+        if (fieldIdx >= 0)
+        {
+            success = TryEmitInField(generator, rotMatrix, (uint) fieldIdx, fieldPos);
+        }
 
         if (!success)
         {
-            // フィールド接触点を見つけられなかった → スロット返却
+            // 担当フィールドなし or 接触点を見つけられなかった → スロット返却
             int oldTail;
             InterlockedAdd(gFreeListTailIndex[0], 1, oldTail);
             int slot = oldTail % (int) gSettings.maxParticleCount;

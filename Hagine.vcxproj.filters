@@ -316,9 +316,6 @@
     <ClCompile Include="Engine\Base\SwapChain\DXSwapChain.cpp">
       <Filter>Engine\Base\SwapChain</Filter>
     </ClCompile>
-    <ClCompile Include="Engine\Base\WinApp\WinApp.cpp">
-      <Filter>Engine\Base\WinApp</Filter>
-    </ClCompile>
     <ClCompile Include="Engine\Utility\Debug\CpuProfiler\CpuProfiler.cpp">
       <Filter>Engine\Utility\Debug\CpuProfiler</Filter>
     </ClCompile>
@@ -334,6 +331,31 @@
     <ClCompile Include="Engine\Utility\Graphics\Rtv\RtvManager.cpp">
       <Filter>Engine\Utility\Graphics\Rtv</Filter>
     </ClCompile>
+    <ClCompile Include="Engine\base\window\WinApp.cpp">
+      <Filter>Engine\Base\WinApp</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\3d\camera\debug\DebugCamera.cpp" />
+    <ClCompile Include="Engine\3d\camera\follow\BaseFollowCamera.cpp" />
+    <ClCompile Include="Engine\3d\camera\projection\ViewProjection.cpp" />
+    <ClCompile Include="Engine\3d\particle\gpu\ParticleCSEditor.cpp" />
+    <ClCompile Include="Engine\3d\particle\gpu\ParticleCSEmitter.cpp" />
+    <ClCompile Include="Engine\3d\particle\gpu\ParticleCSFieldManager.cpp" />
+    <ClCompile Include="Engine\3d\particle\gpu\ParticleCSGroup.cpp" />
+    <ClCompile Include="Engine\3d\particle\gpu\ParticleCSGroupManager.cpp" />
+    <ClCompile Include="Engine\offscreen\effect\PostEffectChain.cpp" />
+    <ClCompile Include="Engine\offscreen\effect\PostEffectDataManager.cpp" />
+    <ClCompile Include="Engine\offscreen\effect\PostEffectParameters.cpp" />
+    <ClCompile Include="Engine\offscreen\effect\PostEffectParamsImpl.cpp" />
+    <ClCompile Include="Engine\offscreen\effect\PostEffectRenderer.cpp" />
+    <ClCompile Include="Engine\utility\browser\ShowFolder.cpp" />
+    <ClCompile Include="Engine\utility\debug\leak\D3DResourceLeakChecker.cpp" />
+    <ClCompile Include="Engine\utility\debug\param\GameParamHub.cpp" />
+    <ClCompile Include="Engine\utility\debug\profiler\CpuProfiler.cpp" />
+    <ClCompile Include="Engine\utility\debug\profiler\GpuProfiler.cpp" />
+    <ClCompile Include="Engine\utility\edit\motion\MotionEditor.cpp" />
+    <ClCompile Include="Engine\utility\edit\shortcut\ShortcutManager.cpp" />
+    <ClCompile Include="Engine\utility\edit\undo\UndoRedoManager.cpp" />
+    <ClCompile Include="Engine\utility\loader\csv\CsvLoad.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="externals\imgui\imconfig.h" />
@@ -689,9 +711,6 @@
     <ClInclude Include="Engine\Base\SwapChain\DXSwapChain.h">
       <Filter>Engine\Base\SwapChain</Filter>
     </ClInclude>
-    <ClInclude Include="Engine\Base\WinApp\WinApp.h">
-      <Filter>Engine\Base\WinApp</Filter>
-    </ClInclude>
     <ClInclude Include="Engine\Utility\Debug\CpuProfiler\CpuProfiler.h">
       <Filter>Engine\Utility\Debug\CpuProfiler</Filter>
     </ClInclude>
@@ -716,6 +735,36 @@
     <ClInclude Include="Engine\Utility\Asset\AssetPath.h">
       <Filter>Engine\Utility\Asset</Filter>
     </ClInclude>
+    <ClInclude Include="Engine\base\window\WinApp.h">
+      <Filter>Engine\Base\WinApp</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\utility\debug\imgui\DebugUIHelper.h" />
+    <ClInclude Include="Engine\3d\camera\debug\DebugCamera.h" />
+    <ClInclude Include="Engine\3d\camera\follow\BaseFollowCamera.h" />
+    <ClInclude Include="Engine\3d\camera\projection\ViewProjection.h" />
+    <ClInclude Include="Engine\3d\particle\gpu\ParticleCSEditor.h" />
+    <ClInclude Include="Engine\3d\particle\gpu\ParticleCSEmitter.h" />
+    <ClInclude Include="Engine\3d\particle\gpu\ParticleCSFieldManager.h" />
+    <ClInclude Include="Engine\3d\particle\gpu\ParticleCSFieldSettingOverride.h" />
+    <ClInclude Include="Engine\3d\particle\gpu\ParticleCSGroup.h" />
+    <ClInclude Include="Engine\3d\particle\gpu\ParticleCSGroupManager.h" />
+    <ClInclude Include="Engine\offscreen\effect\IPostEffectParams.h" />
+    <ClInclude Include="Engine\offscreen\effect\PostEffectChain.h" />
+    <ClInclude Include="Engine\offscreen\effect\PostEffectDataManager.h" />
+    <ClInclude Include="Engine\offscreen\effect\PostEffectParameters.h" />
+    <ClInclude Include="Engine\offscreen\effect\PostEffectParamsFactory.h" />
+    <ClInclude Include="Engine\offscreen\effect\PostEffectParamsImpl.h" />
+    <ClInclude Include="Engine\offscreen\effect\PostEffectRenderer.h" />
+    <ClInclude Include="Engine\utility\browser\ShowFolder.h" />
+    <ClInclude Include="Engine\utility\debug\leak\D3DResourceLeakChecker.h" />
+    <ClInclude Include="Engine\utility\debug\param\GameParamHub.h" />
+    <ClInclude Include="Engine\utility\debug\profiler\CpuProfiler.h" />
+    <ClInclude Include="Engine\utility\debug\profiler\GpuProfiler.h" />
+    <ClInclude Include="Engine\utility\edit\motion\MotionEditor.h" />
+    <ClInclude Include="Engine\utility\edit\shortcut\ShortcutManager.h" />
+    <ClInclude Include="Engine\utility\edit\undo\ImGuiUndoTracker.h" />
+    <ClInclude Include="Engine\utility\edit\undo\UndoRedoManager.h" />
+    <ClInclude Include="Engine\utility\loader\csv\CsvLoad.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include=".editorconfig" />

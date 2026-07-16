@@ -4,13 +4,14 @@
 #include "ImGuiNotification.h"
 #include "Input.h"
 #include "Sprite.h"
-#include <Line/DrawLine3D.h>
-#include <Object/Base/BaseObjectManager.h>
-#include <Transform/WorldTransform.h>
+#include <line/DrawLine3D.h>
+#include <object/base/BaseObjectManager.h>
+#include <transform/WorldTransform.h>
+#include <edit/undo/UndoRedoManager.h>
 #include "WinApp.h"
 #include <imgui.h>
-// Debugui_improved.h は ImVec4 / ImGui:: を使うので imgui.h の後に include する
-#include "Debugui_improved.h"
+// DebugUIHelper.h は ImVec4 / ImGui:: を使うので imgui.h の後に include する
+#include "DebugUIHelper.h"
 
 // =======================================================================
 // GizmoTarget メンバ関数実装
@@ -19,22 +20,27 @@
 // 各型に対応したワールド行列を返す
 // FreeTransform の場合は translate/rotate/scale ポインタから行列を構築する
 namespace Hagine {
-Matrix4x4 GizmoTarget::GetWorldMatrix() const {
-    switch (type) {
+Matrix4x4 GizmoTarget::GetWorldMatrix() const
+{
+    switch (type)
+    {
     case Type::BaseObject:
-        if (baseObject && baseObject->GetWorldTransform()) {
+        if (baseObject && baseObject->GetWorldTransform())
+        {
             return baseObject->GetWorldTransform()->matWorld_;
         }
         break;
 
     case Type::WorldTransform:
-        if (worldTransform) {
+        if (worldTransform)
+        {
             return worldTransform->matWorld_;
         }
         break;
 
     case Type::FreeTransform:
-        if (translate) {
+        if (translate)
+        {
             Vector3 s = scale ? *scale : Vector3{1.0f, 1.0f, 1.0f};
             Vector3 r = rotate ? *rotate : Vector3{0.0f, 0.0f, 0.0f};
             return MakeAffineMatrix(s, r, *translate);
@@ -42,7 +48,8 @@ Matrix4x4 GizmoTarget::GetWorldMatrix() const {
         break;
 
     case Type::Sprite2D:
-        if (position2D) {
+        if (position2D)
+        {
             Matrix4x4 m = MakeIdentity4x4();
             m.m[3][0] = position2D->x;
             m.m[3][1] = position2D->y;
@@ -55,8 +62,10 @@ Matrix4x4 GizmoTarget::GetWorldMatrix() const {
 }
 
 // ワールド座標（位置成分）を返す
-Vector3 GizmoTarget::GetWorldPosition() const {
-    switch (type) {
+Vector3 GizmoTarget::GetWorldPosition() const
+{
+    switch (type)
+    {
     case Type::BaseObject:
         if (baseObject)
             return baseObject->GetWorldPosition();
@@ -78,13 +87,17 @@ Vector3 GizmoTarget::GetWorldPosition() const {
 }
 
 // ギズモ操作によって生じた平行移動デルタを各型に適用する
-void GizmoTarget::ApplyTranslationDelta(const Vector3 &delta) {
-    switch (type) {
+void GizmoTarget::ApplyTranslationDelta(const Vector3 &delta)
+{
+    switch (type)
+    {
     case Type::BaseObject:
-        if (baseObject) {
+        if (baseObject)
+        {
             baseObject->GetLocalPosition() = baseObject->GetLocalPosition() + delta;
             WorldTransform *wt = baseObject->GetWorldTransform();
-            if (wt) {
+            if (wt)
+            {
                 wt->translation_ = baseObject->GetLocalPosition();
                 wt->UpdateMatrix();
                 baseObject->UpdateWorldTransformHierarchy();
@@ -93,24 +106,28 @@ void GizmoTarget::ApplyTranslationDelta(const Vector3 &delta) {
         break;
 
     case Type::WorldTransform:
-        if (worldTransform) {
+        if (worldTransform)
+        {
             worldTransform->translation_ = worldTransform->translation_ + delta;
             worldTransform->UpdateMatrix();
         }
         break;
 
     case Type::FreeTransform:
-        if (translate) {
+        if (translate)
+        {
             translate->x += delta.x;
             translate->y += delta.y;
-            if (!isScreenSpace) {
+            if (!isScreenSpace)
+            {
                 translate->z += delta.z;
             }
         }
         break;
 
     case Type::Sprite2D:
-        if (position2D) {
+        if (position2D)
+        {
             position2D->x += delta.x;
             position2D->y += delta.y;
             // Z は無視（スクリーン空間 XY のみ）
@@ -121,26 +138,35 @@ void GizmoTarget::ApplyTranslationDelta(const Vector3 &delta) {
 
 // ImGui で変換詳細を表示する
 // imguiCallback が設定されている場合はそちらを優先する
-void GizmoTarget::ShowImGui() {
-    switch (type) {
+void GizmoTarget::ShowImGui()
+{
+    switch (type)
+    {
     case Type::BaseObject:
-        if (baseObject) {
+        if (baseObject)
+        {
             baseObject->ImGui();
         }
         break;
 
     case Type::WorldTransform:
-        if (worldTransform) {
-            if (imguiCallback) {
+        if (worldTransform)
+        {
+            if (imguiCallback)
+            {
                 imguiCallback();
-            } else {
+            }
+            else
+            {
                 ImGui::DragFloat3("Translation", &worldTransform->translation_.x, 0.1f);
                 ImGui::DragFloat3("Scale", &worldTransform->scale_.x, 0.01f);
                 Vector3 euler = worldTransform->GetRotationEuler();
-                if (ImGui::DragFloat3("Rotation (rad)", &euler.x, 0.01f)) {
+                if (ImGui::DragFloat3("Rotation (rad)", &euler.x, 0.01f))
+                {
                     worldTransform->SetRotationEuler(euler);
                 }
-                if (ImGui::Button("UpdateMatrix")) {
+                if (ImGui::Button("UpdateMatrix"))
+                {
                     worldTransform->UpdateMatrix();
                 }
             }
@@ -148,13 +174,20 @@ void GizmoTarget::ShowImGui() {
         break;
 
     case Type::FreeTransform:
-        if (imguiCallback) {
+        if (imguiCallback)
+        {
             imguiCallback();
-        } else {
-            if (translate) {
-                if (isScreenSpace) {
+        }
+        else
+        {
+            if (translate)
+            {
+                if (isScreenSpace)
+                {
                     ImGui::DragFloat2("Position (px)", &translate->x, 1.0f);
-                } else {
+                }
+                else
+                {
                     ImGui::DragFloat3("Translation", &translate->x, 0.1f);
                 }
             }
@@ -166,9 +199,12 @@ void GizmoTarget::ShowImGui() {
         break;
 
     case Type::Sprite2D:
-        if (imguiCallback) {
+        if (imguiCallback)
+        {
             imguiCallback();
-        } else if (position2D) {
+        }
+        else if (position2D)
+        {
             ImGui::DragFloat2("Position (px)", &position2D->x, 1.0f);
         }
         break;
@@ -179,24 +215,28 @@ void GizmoTarget::ShowImGui() {
 // ImGuizmoManager メンバ関数実装
 // =======================================================================
 
-void ImGuizmoManager::Finalize() {
+void ImGuizmoManager::Finalize()
+{
     transformMap_.clear();
     selectedNames_.clear();
     copiedObjects_.clear();
 }
 
-void ImGuizmoManager::BeginFrame() {
+void ImGuizmoManager::BeginFrame()
+{
     ImGuizmo::BeginFrame();
 }
 
-void ImGuizmoManager::SetViewProjection(ViewProjection *vp) {
-    viewProjection_ = vp;
+void ImGuizmoManager::SetViewProjection(ViewProjection *vp)
+{
+    pViewProjection_ = vp;
 }
 
 // ---- AddTarget オーバーロード群 ----------------------------------------
 
 // BaseObject を登録する
-void ImGuizmoManager::AddTarget(const std::string &name, BaseObject *object, bool selectable) {
+void ImGuizmoManager::AddTarget(const std::string &name, BaseObject *object, bool selectable)
+{
     GizmoTarget target;
     target.type = GizmoTarget::Type::BaseObject;
     target.name = name;
@@ -206,7 +246,8 @@ void ImGuizmoManager::AddTarget(const std::string &name, BaseObject *object, boo
 
     UpdateFilteredNames();
 
-    if (selectedNames_.empty()) {
+    if (selectedNames_.empty())
+    {
         selectedNames_.insert(name);
     }
 }
@@ -214,7 +255,8 @@ void ImGuizmoManager::AddTarget(const std::string &name, BaseObject *object, boo
 // WorldTransform のみを持つオブジェクトを登録する
 void ImGuizmoManager::AddTarget(const std::string &name, WorldTransform *worldTransform,
                                 bool selectable,
-                                std::function<void()> imguiCallback) {
+                                std::function<void()> imguiCallback)
+{
     GizmoTarget target;
     target.type = GizmoTarget::Type::WorldTransform;
     target.name = name;
@@ -225,7 +267,8 @@ void ImGuizmoManager::AddTarget(const std::string &name, WorldTransform *worldTr
 
     UpdateFilteredNames();
 
-    if (selectedNames_.empty()) {
+    if (selectedNames_.empty())
+    {
         selectedNames_.insert(name);
     }
 }
@@ -236,7 +279,8 @@ void ImGuizmoManager::AddTarget(const std::string &name,
                                 Vector3 *rotate,
                                 Vector3 *scale,
                                 bool selectable,
-                                std::function<void()> imguiCallback) {
+                                std::function<void()> imguiCallback)
+{
     GizmoTarget target;
     target.type = GizmoTarget::Type::FreeTransform;
     target.name = name;
@@ -249,13 +293,15 @@ void ImGuizmoManager::AddTarget(const std::string &name,
 
     UpdateFilteredNames();
 
-    if (selectedNames_.empty()) {
+    if (selectedNames_.empty())
+    {
         selectedNames_.insert(name);
     }
 }
 
 // Sprite を登録する（スクリーン空間 XY のみ操作）
-void ImGuizmoManager::AddTarget(const std::string &name, Sprite *sprite, bool selectable) {
+void ImGuizmoManager::AddTarget(const std::string &name, Sprite *sprite, bool selectable)
+{
     GizmoTarget target;
     target.type = GizmoTarget::Type::Sprite2D;
     target.name = name;
@@ -267,7 +313,8 @@ void ImGuizmoManager::AddTarget(const std::string &name, Sprite *sprite, bool se
 
     UpdateFilteredNames();
 
-    if (selectedNames_.empty()) {
+    if (selectedNames_.empty())
+    {
         selectedNames_.insert(name);
     }
 }
@@ -275,23 +322,28 @@ void ImGuizmoManager::AddTarget(const std::string &name, Sprite *sprite, bool se
 // ---- 選択オブジェクト取得（BaseObject 互換用）---------------------------
 
 // 選択中の最初のエントリが BaseObject である場合に返す
-BaseObject *ImGuizmoManager::GetSelectedTarget() {
+BaseObject *ImGuizmoManager::GetSelectedTarget()
+{
     if (selectedNames_.empty())
         return nullptr;
 
     auto it = transformMap_.find(*selectedNames_.begin());
-    if (it != transformMap_.end() && it->second.type == GizmoTarget::Type::BaseObject) {
+    if (it != transformMap_.end() && it->second.type == GizmoTarget::Type::BaseObject)
+    {
         return it->second.baseObject;
     }
     return nullptr;
 }
 
 // 選択中のエントリのうち BaseObject のもののみを返す
-std::vector<BaseObject *> ImGuizmoManager::GetSelectedTargets() {
+std::vector<BaseObject *> ImGuizmoManager::GetSelectedTargets()
+{
     std::vector<BaseObject *> selected;
-    for (const std::string &name : selectedNames_) {
+    for (const std::string &name : selectedNames_)
+    {
         auto it = transformMap_.find(name);
-        if (it != transformMap_.end() && it->second.type == GizmoTarget::Type::BaseObject) {
+        if (it != transformMap_.end() && it->second.type == GizmoTarget::Type::BaseObject)
+        {
             selected.push_back(it->second.baseObject);
         }
     }
@@ -300,8 +352,9 @@ std::vector<BaseObject *> ImGuizmoManager::GetSelectedTargets() {
 
 // ---- imgui ------------------------------------------------------------
 
-void ImGuizmoManager::imgui() {
-    if (!viewProjection_)
+void ImGuizmoManager::imgui()
+{
+    if (!pViewProjection_)
         return;
 
     ImGui::PushStyleColor(ImGuiCol_CheckMark, DebugTheme::kAccentGreen);
@@ -344,21 +397,25 @@ void ImGuizmoManager::imgui() {
         UpdateFilteredNames();
 
     std::string currentDisplayName = selectedNames_.empty() ? "なし"
-                                                           : (selectedNames_.size() == 1 ? *selectedNames_.begin()
-                                                                                        : "複数選択 (" + std::to_string(selectedNames_.size()) + "個)");
+                                                            : (selectedNames_.size() == 1 ? *selectedNames_.begin()
+                                                                                          : "複数選択 (" + std::to_string(selectedNames_.size()) + "個)");
 
-    if (ImGui::BeginCombo("選択オブジェクト", currentDisplayName.c_str())) {
+    if (ImGui::BeginCombo("選択オブジェクト", currentDisplayName.c_str()))
+    {
         bool isNoneSelected = selectedNames_.empty();
         if (ImGui::Selectable("なし", isNoneSelected))
             selectedNames_.clear();
         if (isNoneSelected)
             ImGui::SetItemDefaultFocus();
 
-        for (const std::string &name : filteredNames_) {
+        for (const std::string &name : filteredNames_)
+        {
             auto it = transformMap_.find(name);
-            if (it != transformMap_.end()) {
+            if (it != transformMap_.end())
+            {
                 bool isSelected = (selectedNames_.find(name) != selectedNames_.end());
-                if (ImGui::Selectable(name.c_str(), isSelected)) {
+                if (ImGui::Selectable(name.c_str(), isSelected))
+                {
                     selectedNames_.clear();
                     selectedNames_.insert(name);
                 }
@@ -369,22 +426,26 @@ void ImGuizmoManager::imgui() {
         ImGui::EndCombo();
     }
 
-    if (strlen(searchBuffer_) > 0) {
+    if (strlen(searchBuffer_) > 0)
+    {
         ImGui::Text("検索結果: %zu個", filteredNames_.size());
     }
 
     ImGui::Spacing();
     ImGui::Text("選択中のオブジェクト数: %zu", selectedNames_.size());
-    if (!selectedNames_.empty()) {
+    if (!selectedNames_.empty())
+    {
         ImGui::Text("選択中:");
-        for (const std::string &name : selectedNames_) {
+        for (const std::string &name : selectedNames_)
+        {
             ImGui::BulletText("%s", name.c_str());
         }
     }
 
     ImGui::Separator();
 
-    if (ImGui::Button("全選択")) {
+    if (ImGui::Button("全選択"))
+    {
         selectedNames_.clear();
         for (const auto &pair : transformMap_)
             selectedNames_.insert(pair.first);
@@ -395,7 +456,8 @@ void ImGuizmoManager::imgui() {
 
     ImGui::Spacing();
 
-    if (!selectedNames_.empty()) {
+    if (!selectedNames_.empty())
+    {
         ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 0.6f, 1.0f));
         ImGui::Text("オブジェクト詳細 (%s)", selectedNames_.begin()->c_str());
         ImGui::PopStyleColor();
@@ -408,10 +470,12 @@ void ImGuizmoManager::imgui() {
 
         // BaseObject のみコピー・ペーストが可能
         auto it = transformMap_.find(*selectedNames_.begin());
-        if (it != transformMap_.end() && it->second.type == GizmoTarget::Type::BaseObject) {
+        if (it != transformMap_.end() && it->second.type == GizmoTarget::Type::BaseObject)
+        {
             if (ImGui::Button("コピー", ImVec2(-1, 30)))
                 CopySelectedObjects();
-            if (!copiedObjects_.empty()) {
+            if (!copiedObjects_.empty())
+            {
                 if (ImGui::Button("ペースト", ImVec2(-1, 30)))
                     PasteObjects();
             }
@@ -429,12 +493,14 @@ void ImGuizmoManager::imgui() {
     }
 
     // 重複オブジェクト候補（Tab でサイクル）
-    if (overlapCandidates_.size() > 1) {
+    if (overlapCandidates_.size() > 1)
+    {
         ImGui::Separator();
         ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.9f, 0.4f, 1.0f));
         ImGui::Text("重複候補: %zu個 (Tab でサイクル選択)", overlapCandidates_.size());
         ImGui::PopStyleColor();
-        for (int i = 0; i < static_cast<int>(overlapCandidates_.size()); ++i) {
+        for (int i = 0; i < static_cast<int>(overlapCandidates_.size()); ++i)
+        {
             bool isCurrent = (i == overlapCycleIndex_);
             if (isCurrent)
                 ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.4f, 1.0f, 0.4f, 1.0f));
@@ -451,25 +517,29 @@ void ImGuizmoManager::imgui() {
 
 // ---- Update -----------------------------------------------------------
 
-void ImGuizmoManager::Update(const ImVec2 &scenePosition, const ImVec2 &sceneSize, bool sceneHovered) {
-    if (!viewProjection_)
+void ImGuizmoManager::Update(const ImVec2 &scenePosition, const ImVec2 &sceneSize, bool sceneHovered)
+{
+    if (!pViewProjection_)
         return;
 
     ImGuizmo::SetRect(scenePosition.x, scenePosition.y, sceneSize.x, sceneSize.y);
     ImGuizmo::SetDrawlist();
 
-    if (!ImGuizmo::IsUsing()) {
+    if (!ImGuizmo::IsUsing())
+    {
         HandleMouseSelection(scenePosition, sceneSize, sceneHovered);
 
         // Tab キーで重複オブジェクトをサイクル選択
-        if (Input::GetInstance()->TriggerKey(DIK_TAB) && overlapCandidates_.size() > 1) {
+        if (Input::GetInstance()->TriggerKey(DIK_TAB) && overlapCandidates_.size() > 1)
+        {
             CycleOverlapSelection();
         }
     }
 
     DrawSelectedObjectHighlight();
 
-    if (!selectedNames_.empty()) {
+    if (!selectedNames_.empty())
+    {
         // スプライト用正射影 VP を使うためシーン情報を渡す
         DisplayGizmo(scenePosition, sceneSize);
     }
@@ -478,17 +548,20 @@ void ImGuizmoManager::Update(const ImVec2 &scenePosition, const ImVec2 &sceneSiz
 // ---- ShowSelectedObjectImGui ------------------------------------------
 
 // 選択中エントリの ShowImGui を呼び出す
-void ImGuizmoManager::ShowSelectedObjectImGui() {
+void ImGuizmoManager::ShowSelectedObjectImGui()
+{
     if (selectedNames_.empty())
         return;
 
     std::string firstName = *selectedNames_.begin();
     auto it = transformMap_.find(firstName);
-    if (it != transformMap_.end()) {
+    if (it != transformMap_.end())
+    {
         it->second.ShowImGui();
     }
 
-    if (selectedNames_.size() > 1) {
+    if (selectedNames_.size() > 1)
+    {
         ImGui::Separator();
         ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.7f, 0.7f, 1.0f, 1.0f));
         ImGui::Text("※ %zu個のオブジェクトが選択されています", selectedNames_.size());
@@ -502,13 +575,14 @@ void ImGuizmoManager::ShowSelectedObjectImGui() {
 // マウスクリック時のレイキャストによる選択判定
 // BaseObject/WorldTransform/FreeTransform すべての型に対応するため
 // 行列版の RayIntersectAABBByMatrix を使用する
-void ImGuizmoManager::HandleMouseSelection(const ImVec2 &scenePosition, const ImVec2 &sceneSize, bool sceneHovered) {
+void ImGuizmoManager::HandleMouseSelection(const ImVec2 &scenePosition, const ImVec2 &sceneSize, bool sceneHovered)
+{
     ImVec2 mousePos = ImGui::GetMousePos();
     bool isInScene = (mousePos.x >= scenePosition.x && mousePos.x <= scenePosition.x + sceneSize.x &&
                       mousePos.y >= scenePosition.y && mousePos.y <= scenePosition.y + sceneSize.y);
 
     // 他の ImGui ウィンドウがシーンに重なっている上でのクリックは無視（誤選択防止）
-    if (!sceneHovered || ImGuizmo::IsUsing() || !isInScene || !Input::IsTriggerMouse(0) || !viewProjection_)
+    if (!sceneHovered || ImGuizmo::IsUsing() || !isInScene || !Input::IsTriggerMouse(0) || !pViewProjection_)
         return;
 
     bool isCtrlPressed = Input::GetInstance()->PushKey(DIK_LCONTROL);
@@ -520,12 +594,13 @@ void ImGuizmoManager::HandleMouseSelection(const ImVec2 &scenePosition, const Im
     // （Input::GetMousePos() はクライアント座標系なのでマルチビューポート時にずれる）。
     float relX = mousePos.x - scenePosition.x;
     float relY = mousePos.y - scenePosition.y;
-    float spriteSpaceX = (relX / sceneSize.x) * static_cast<float>(WinApp::kClientWidth);
-    float spriteSpaceY = (relY / sceneSize.y) * static_cast<float>(WinApp::kClientHeight);
+    float spriteSpaceX = (relX / sceneSize.x) * static_cast<float>(WinApp::GetVirtualWidth());
+    float spriteSpaceY = (relY / sceneSize.y) * static_cast<float>(WinApp::GetVirtualHeight());
 
     // ---- パス1: スクリーン空間ターゲット優先 2D ヒットテスト ----
     float minDist2D = std::numeric_limits<float>::max();
-    for (const auto &pair : transformMap_) {
+    for (const auto &pair : transformMap_)
+    {
         const GizmoTarget &target = pair.second;
         if (!target.selectable || !target.isScreenSpace)
             continue;
@@ -533,12 +608,17 @@ void ImGuizmoManager::HandleMouseSelection(const ImVec2 &scenePosition, const Im
             continue;
 
         float posX = 0.0f, posY = 0.0f;
-        if (target.type == GizmoTarget::Type::Sprite2D) {
-            if (!target.position2D) continue;
+        if (target.type == GizmoTarget::Type::Sprite2D)
+        {
+            if (!target.position2D)
+                continue;
             posX = target.position2D->x;
             posY = target.position2D->y;
-        } else {
-            if (!target.translate) continue;
+        }
+        else
+        {
+            if (!target.translate)
+                continue;
             posX = target.translate->x;
             posY = target.translate->y;
         }
@@ -547,24 +627,29 @@ void ImGuizmoManager::HandleMouseSelection(const ImVec2 &scenePosition, const Im
         float dy = spriteSpaceY - posY;
         float dist = std::sqrt(dx * dx + dy * dy);
 
-        if (dist <= target.screenHitRadius && dist < minDist2D) {
+        if (dist <= target.screenHitRadius && dist < minDist2D)
+        {
             minDist2D = dist;
             pickedName = pair.first;
             foundHit = true;
         }
     }
 
-    if (foundHit) {
+    if (foundHit)
+    {
         // 2D ヒット時は重複候補をリセット
         overlapCandidates_.clear();
         overlapCycleIndex_ = 0;
-    } else {
+    }
+    else
+    {
         // ---- パス2: 3D レイキャスト（全ヒット候補収集）----
         // スクリーン上でクリック位置に中心が近いオブジェクトを優先するため
         // スクリーン距離でソートし、大きなオブジェクト内の小さいオブジェクトを選択しやすくする
         Ray currentRay = Input::GetInstance()->GetCurrentRay();
 
-        struct HitCandidate {
+        struct HitCandidate
+        {
             std::string name;
             float rayDist;    // レイ上の距離（カメラからの奥行き）
             float screenDist; // マウスクリックから中心のスクリーン距離
@@ -578,11 +663,13 @@ void ImGuizmoManager::HandleMouseSelection(const ImVec2 &scenePosition, const Im
         defaultSphere.center = {0.0f, 0.0f, 0.0f};
         defaultSphere.radius = 1.3f;
 
-        for (const auto &pair : transformMap_) {
+        for (const auto &pair : transformMap_)
+        {
             const GizmoTarget &target = pair.second;
             if (!target.selectable || target.isScreenSpace)
                 continue;
-            if (target.type == GizmoTarget::Type::BaseObject) {
+            if (target.type == GizmoTarget::Type::BaseObject)
+            {
                 if (!target.baseObject || !target.baseObject->IsGizmoSelectable())
                     continue;
             }
@@ -592,15 +679,18 @@ void ImGuizmoManager::HandleMouseSelection(const ImVec2 &scenePosition, const Im
             Matrix4x4 worldMatrix = target.GetWorldMatrix();
             RayHitInfo currentHit;
             bool hit = Input::RayIntersectAABBByMatrix(currentRay, worldMatrix, currentHit, defaultAABB);
-            if (!hit) {
+            if (!hit)
+            {
                 hit = Input::RayIntersectSphereByMatrix(currentRay, worldMatrix, currentHit, defaultSphere);
             }
 
-            if (hit) {
+            if (hit)
+            {
                 // オブジェクト中心のスクリーン投影位置を求め、クリック位置との距離を計算
                 float screenDist = std::numeric_limits<float>::max();
                 Vector3 screenCenter;
-                if (WorldToScreen(target.GetWorldPosition(), screenCenter, scenePosition, sceneSize)) {
+                if (WorldToScreen(target.GetWorldPosition(), screenCenter, scenePosition, sceneSize))
+                {
                     float sdx = mousePos.x - screenCenter.x;
                     float sdy = mousePos.y - screenCenter.y;
                     screenDist = std::sqrt(sdx * sdx + sdy * sdy);
@@ -620,33 +710,45 @@ void ImGuizmoManager::HandleMouseSelection(const ImVec2 &scenePosition, const Im
 
         // 重複候補を保存（Tab キーでサイクル可能）
         overlapCandidates_.clear();
-        for (const auto &c : candidates) {
+        for (const auto &c : candidates)
+        {
             overlapCandidates_.push_back({c.name, c.rayDist});
         }
         overlapCycleIndex_ = 0;
 
-        if (!candidates.empty()) {
+        if (!candidates.empty())
+        {
             pickedName = candidates[0].name;
             foundHit = true;
         }
     }
 
     // 選択状態を更新
-    if (foundHit && !pickedName.empty()) {
-        if (isCtrlPressed) {
-            if (selectedNames_.find(pickedName) != selectedNames_.end()) {
+    if (foundHit && !pickedName.empty())
+    {
+        if (isCtrlPressed)
+        {
+            if (selectedNames_.find(pickedName) != selectedNames_.end())
+            {
                 selectedNames_.erase(pickedName);
-            } else {
+            }
+            else
+            {
                 selectedNames_.insert(pickedName);
             }
             isMultiSelecting_ = true;
-        } else {
+        }
+        else
+        {
             selectedNames_.clear();
             selectedNames_.insert(pickedName);
             isMultiSelecting_ = false;
         }
-    } else {
-        if (!isCtrlPressed) {
+    }
+    else
+    {
+        if (!isCtrlPressed)
+        {
             selectedNames_.clear();
             overlapCandidates_.clear();
             overlapCycleIndex_ = 0;
@@ -654,13 +756,15 @@ void ImGuizmoManager::HandleMouseSelection(const ImVec2 &scenePosition, const Im
         }
     }
 
-    if (!isCtrlPressed && isMultiSelecting_) {
+    if (!isCtrlPressed && isMultiSelecting_)
+    {
         isMultiSelecting_ = false;
     }
 }
 
 // Tab キーで重複候補をサイクルして次のオブジェクトを選択する
-void ImGuizmoManager::CycleOverlapSelection() {
+void ImGuizmoManager::CycleOverlapSelection()
+{
     if (overlapCandidates_.size() <= 1)
         return;
     overlapCycleIndex_ = (overlapCycleIndex_ + 1) % static_cast<int>(overlapCandidates_.size());
@@ -671,14 +775,17 @@ void ImGuizmoManager::CycleOverlapSelection() {
 // ---- DisplayGizmo -----------------------------------------------------
 
 // 選択中の全エントリの重心位置にギズモを表示し、操作量を各エントリに反映する
-void ImGuizmoManager::DisplayGizmo(const ImVec2 &scenePosition, const ImVec2 &sceneSize) {
-    if (!viewProjection_ || selectedNames_.empty())
+void ImGuizmoManager::DisplayGizmo(const ImVec2 &scenePosition, const ImVec2 &sceneSize)
+{
+    if (!pViewProjection_ || selectedNames_.empty())
         return;
 
     std::vector<GizmoTarget *> selectedTargets;
-    for (const std::string &name : selectedNames_) {
+    for (const std::string &name : selectedNames_)
+    {
         auto it = transformMap_.find(name);
-        if (it != transformMap_.end()) {
+        if (it != transformMap_.end())
+        {
             selectedTargets.push_back(&it->second);
         }
     }
@@ -692,7 +799,8 @@ void ImGuizmoManager::DisplayGizmo(const ImVec2 &scenePosition, const ImVec2 &sc
 
     // 選択中ターゲットの重心位置を求め、ギズモ表示用仮想行列を生成
     Vector3 centerPos = {0.0f, 0.0f, 0.0f};
-    for (GizmoTarget *target : selectedTargets) {
+    for (GizmoTarget *target : selectedTargets)
+    {
         centerPos = centerPos + target->GetWorldPosition();
     }
     centerPos = centerPos / static_cast<float>(selectedTargets.size());
@@ -709,39 +817,48 @@ void ImGuizmoManager::DisplayGizmo(const ImVec2 &scenePosition, const ImVec2 &sc
 
     float viewArray[16], projArray[16];
 
-    if (anyScreenSpace) {
+    if (anyScreenSpace)
+    {
         // スプライト用：単位ビュー行列 + スプライトと同じ正射影行列
         // これにより ImGuizmo がピクセル座標系でギズモを正しい位置に描画する
         Matrix4x4 identView = MakeIdentity4x4();
         Matrix4x4 orthoProj = MakeOrthographicMatrix(
             0.0f, 0.0f,
-            static_cast<float>(WinApp::kClientWidth),
-            static_cast<float>(WinApp::kClientHeight),
+            static_cast<float>(WinApp::GetVirtualWidth()),
+            static_cast<float>(WinApp::GetVirtualHeight()),
             0.0f, 100.0f);
 
-        for (int i = 0; i < 4; ++i) {
-            for (int j = 0; j < 4; ++j) {
+        for (int i = 0; i < 4; ++i)
+        {
+            for (int j = 0; j < 4; ++j)
+            {
                 viewArray[i * 4 + j] = identView.m[i][j];
                 projArray[i * 4 + j] = orthoProj.m[i][j];
             }
         }
-    } else {
+    }
+    else
+    {
         // 3Dオブジェクト用：カメラの View/Projection をそのまま使用
-        for (int i = 0; i < 4; ++i) {
-            for (int j = 0; j < 4; ++j) {
-                viewArray[i * 4 + j] = viewProjection_->matView_.m[i][j];
-                projArray[i * 4 + j] = viewProjection_->matProjection_.m[i][j];
+        for (int i = 0; i < 4; ++i)
+        {
+            for (int j = 0; j < 4; ++j)
+            {
+                viewArray[i * 4 + j] = pViewProjection_->matView_.m[i][j];
+                projArray[i * 4 + j] = pViewProjection_->matProjection_.m[i][j];
             }
         }
     }
 
     // スクリーン空間（Sprite 等）は XY 移動のみ許可
     ImGuizmo::OPERATION effectiveOp = currentOperation_;
-    if (anyScreenSpace) {
+    if (anyScreenSpace)
+    {
         effectiveOp = ImGuizmo::TRANSLATE_X | ImGuizmo::TRANSLATE_Y;
     }
 
-    if (ImGuizmo::Manipulate(viewArray, projArray, effectiveOp, currentMode_, matrixArray)) {
+    if (ImGuizmo::Manipulate(viewArray, projArray, effectiveOp, currentMode_, matrixArray))
+    {
         Matrix4x4 newMatrix;
         for (int i = 0; i < 4; ++i)
             for (int j = 0; j < 4; ++j)
@@ -754,7 +871,8 @@ void ImGuizmoManager::DisplayGizmo(const ImVec2 &scenePosition, const ImVec2 &sc
             newMatrix.m[3][1] - centerMatrix.m[3][1],
             newMatrix.m[3][2] - centerMatrix.m[3][2]};
 
-        for (GizmoTarget *target : selectedTargets) {
+        for (GizmoTarget *target : selectedTargets)
+        {
             target->ApplyTranslationDelta(deltaPos);
         }
     }
@@ -763,7 +881,8 @@ void ImGuizmoManager::DisplayGizmo(const ImVec2 &scenePosition, const ImVec2 &sc
 // ---- DecomposeMatrix --------------------------------------------------
 
 // 行列からスケール・回転（クォータニオン）・位置を分解して返す
-void ImGuizmoManager::DecomposeMatrix(const Matrix4x4 &matrix, Vector3 &position, Quaternion &rotation, Vector3 &scale) {
+void ImGuizmoManager::DecomposeMatrix(const Matrix4x4 &matrix, Vector3 &position, Quaternion &rotation, Vector3 &scale)
+{
     position = {matrix.m[3][0], matrix.m[3][1], matrix.m[3][2]};
 
     Vector3 col0 = {matrix.m[0][0], matrix.m[0][1], matrix.m[0][2]};
@@ -775,17 +894,20 @@ void ImGuizmoManager::DecomposeMatrix(const Matrix4x4 &matrix, Vector3 &position
     scale.z = col2.Length();
 
     Matrix4x4 rotMatrix = matrix;
-    if (scale.x != 0.0f) {
+    if (scale.x != 0.0f)
+    {
         rotMatrix.m[0][0] /= scale.x;
         rotMatrix.m[0][1] /= scale.x;
         rotMatrix.m[0][2] /= scale.x;
     }
-    if (scale.y != 0.0f) {
+    if (scale.y != 0.0f)
+    {
         rotMatrix.m[1][0] /= scale.y;
         rotMatrix.m[1][1] /= scale.y;
         rotMatrix.m[1][2] /= scale.y;
     }
-    if (scale.z != 0.0f) {
+    if (scale.z != 0.0f)
+    {
         rotMatrix.m[2][0] /= scale.z;
         rotMatrix.m[2][1] /= scale.z;
         rotMatrix.m[2][2] /= scale.z;
@@ -797,19 +919,20 @@ void ImGuizmoManager::DecomposeMatrix(const Matrix4x4 &matrix, Vector3 &position
 // ---- WorldToScreen ----------------------------------------------------
 
 // ワールド座標をシーンウィンドウのスクリーン座標に変換する
-bool ImGuizmoManager::WorldToScreen(const Vector3 &worldPos, Vector3 &screenPos, const ImVec2 &scenePosition, const ImVec2 &sceneSize) {
+bool ImGuizmoManager::WorldToScreen(const Vector3 &worldPos, Vector3 &screenPos, const ImVec2 &scenePosition, const ImVec2 &sceneSize)
+{
     Vector4 clipPos;
     {
         Vector3 v = worldPos;
-        float x = v.x * viewProjection_->matView_.m[0][0] + v.y * viewProjection_->matView_.m[1][0] + v.z * viewProjection_->matView_.m[2][0] + viewProjection_->matView_.m[3][0];
-        float y = v.x * viewProjection_->matView_.m[0][1] + v.y * viewProjection_->matView_.m[1][1] + v.z * viewProjection_->matView_.m[2][1] + viewProjection_->matView_.m[3][1];
-        float z = v.x * viewProjection_->matView_.m[0][2] + v.y * viewProjection_->matView_.m[1][2] + v.z * viewProjection_->matView_.m[2][2] + viewProjection_->matView_.m[3][2];
-        float w = v.x * viewProjection_->matView_.m[0][3] + v.y * viewProjection_->matView_.m[1][3] + v.z * viewProjection_->matView_.m[2][3] + viewProjection_->matView_.m[3][3];
+        float x = v.x * pViewProjection_->matView_.m[0][0] + v.y * pViewProjection_->matView_.m[1][0] + v.z * pViewProjection_->matView_.m[2][0] + pViewProjection_->matView_.m[3][0];
+        float y = v.x * pViewProjection_->matView_.m[0][1] + v.y * pViewProjection_->matView_.m[1][1] + v.z * pViewProjection_->matView_.m[2][1] + pViewProjection_->matView_.m[3][1];
+        float z = v.x * pViewProjection_->matView_.m[0][2] + v.y * pViewProjection_->matView_.m[1][2] + v.z * pViewProjection_->matView_.m[2][2] + pViewProjection_->matView_.m[3][2];
+        float w = v.x * pViewProjection_->matView_.m[0][3] + v.y * pViewProjection_->matView_.m[1][3] + v.z * pViewProjection_->matView_.m[2][3] + pViewProjection_->matView_.m[3][3];
 
-        clipPos.x = x * viewProjection_->matProjection_.m[0][0] + y * viewProjection_->matProjection_.m[1][0] + z * viewProjection_->matProjection_.m[2][0] + w * viewProjection_->matProjection_.m[3][0];
-        clipPos.y = x * viewProjection_->matProjection_.m[0][1] + y * viewProjection_->matProjection_.m[1][1] + z * viewProjection_->matProjection_.m[2][1] + w * viewProjection_->matProjection_.m[3][1];
-        clipPos.z = x * viewProjection_->matProjection_.m[0][2] + y * viewProjection_->matProjection_.m[1][2] + z * viewProjection_->matProjection_.m[2][2] + w * viewProjection_->matProjection_.m[3][2];
-        clipPos.w = x * viewProjection_->matProjection_.m[0][3] + y * viewProjection_->matProjection_.m[1][3] + z * viewProjection_->matProjection_.m[2][3] + w * viewProjection_->matProjection_.m[3][3];
+        clipPos.x = x * pViewProjection_->matProjection_.m[0][0] + y * pViewProjection_->matProjection_.m[1][0] + z * pViewProjection_->matProjection_.m[2][0] + w * pViewProjection_->matProjection_.m[3][0];
+        clipPos.y = x * pViewProjection_->matProjection_.m[0][1] + y * pViewProjection_->matProjection_.m[1][1] + z * pViewProjection_->matProjection_.m[2][1] + w * pViewProjection_->matProjection_.m[3][1];
+        clipPos.z = x * pViewProjection_->matProjection_.m[0][2] + y * pViewProjection_->matProjection_.m[1][2] + z * pViewProjection_->matProjection_.m[2][2] + w * pViewProjection_->matProjection_.m[3][2];
+        clipPos.w = x * pViewProjection_->matProjection_.m[0][3] + y * pViewProjection_->matProjection_.m[1][3] + z * pViewProjection_->matProjection_.m[2][3] + w * pViewProjection_->matProjection_.m[3][3];
     }
 
     if (clipPos.w <= 0.0f)
@@ -828,17 +951,21 @@ bool ImGuizmoManager::WorldToScreen(const Vector3 &worldPos, Vector3 &screenPos,
 // ---- GenerateUniqueName -----------------------------------------------
 
 // 同名エントリが存在しないユニークな名前を生成する
-std::string ImGuizmoManager::GenerateUniqueName(const std::string &baseName) {
+std::string ImGuizmoManager::GenerateUniqueName(const std::string &baseName)
+{
     std::string newName;
     int counter = 1;
 
     std::string cleanBaseName = baseName;
     size_t underscorePos = baseName.find_last_of('_');
-    if (underscorePos != std::string::npos) {
+    if (underscorePos != std::string::npos)
+    {
         std::string suffix = baseName.substr(underscorePos + 1);
         bool isNumber = true;
-        for (char c : suffix) {
-            if (!std::isdigit(c)) {
+        for (char c : suffix)
+        {
+            if (!std::isdigit(c))
+            {
                 isNumber = false;
                 break;
             }
@@ -847,7 +974,8 @@ std::string ImGuizmoManager::GenerateUniqueName(const std::string &baseName) {
             cleanBaseName = baseName.substr(0, underscorePos);
     }
 
-    do {
+    do
+    {
         newName = cleanBaseName + "_" + std::to_string(counter++);
     } while (transformMap_.find(newName) != transformMap_.end());
 
@@ -857,35 +985,47 @@ std::string ImGuizmoManager::GenerateUniqueName(const std::string &baseName) {
 // ---- CopySelectedObjects / PasteObjects / DeleteSelectedObjects --------
 
 // 選択中の BaseObject をコピーバッファに保存する（非 BaseObject はスキップ）
-void ImGuizmoManager::CopySelectedObjects() {
+void ImGuizmoManager::CopySelectedObjects()
+{
     copiedObjects_.clear();
-    for (const std::string &name : selectedNames_) {
+    for (const std::string &name : selectedNames_)
+    {
         auto it = transformMap_.find(name);
-        if (it != transformMap_.end() && it->second.type == GizmoTarget::Type::BaseObject) {
+        if (it != transformMap_.end() && it->second.type == GizmoTarget::Type::BaseObject)
+        {
             copiedObjects_.push_back(it->second.baseObject);
         }
     }
 }
 
 // コピー済み BaseObject を複製して BaseObjectManager に追加する
-void ImGuizmoManager::PasteObjects() {
+void ImGuizmoManager::PasteObjects()
+{
     if (copiedObjects_.empty())
         return;
 
+    // ショートカット起点の操作はImGuiの編集ジェスチャに乗らないため、明示的にUndo履歴へ積む
+    nlohmann::json undoBefore = BaseObjectManager::GetInstance()->CaptureUndoState();
+
     selectedNames_.clear();
 
-    for (BaseObject *copiedObj : copiedObjects_) {
+    for (BaseObject *copiedObj : copiedObjects_)
+    {
         std::unique_ptr<BaseObject> newObject = std::make_unique<BaseObject>();
         newObject->SetPrimitive(copiedObj->IsPrimitive());
         newObject->Init(copiedObj->GetName());
 
-        if (!copiedObj->GetModelPath().empty()) {
+        if (!copiedObj->GetModelPath().empty())
+        {
             newObject->CreateModel(copiedObj->GetModelPath());
-        } else if (copiedObj->GetPrimitiveType() != PrimitiveType::kCount) {
+        }
+        else if (copiedObj->GetPrimitiveType() != PrimitiveType::Count)
+        {
             newObject->CreatePrimitiveModel(copiedObj->GetPrimitiveType());
         }
 
-        if (!copiedObj->GetTexturePath().empty()) {
+        if (!copiedObj->GetTexturePath().empty())
+        {
             newObject->SetTexture(copiedObj->GetTexturePath());
         }
 
@@ -902,7 +1042,8 @@ void ImGuizmoManager::PasteObjects() {
         BaseObjectManager::GetInstance()->AddObject(std::move(newObject));
 
         BaseObject *addedObject = BaseObjectManager::GetInstance()->GetObjectByName(uniqueName);
-        if (addedObject) {
+        if (addedObject)
+        {
             AddTarget(uniqueName, addedObject);
         }
 
@@ -910,28 +1051,54 @@ void ImGuizmoManager::PasteObjects() {
     }
 
     copiedObjects_.clear();
+
+    // 貼り付け操作をUndo履歴へ積む
+    {
+        nlohmann::json undoAfter = BaseObjectManager::GetInstance()->CaptureUndoState();
+        auto [diffBefore, diffAfter] = MakeTopLevelJsonDiff(undoBefore, undoAfter);
+        UndoRedoManager::GetInstance()->Push(std::make_unique<JsonStateCommand>(
+            "オブジェクト貼り付け", std::move(diffBefore), std::move(diffAfter),
+            [](const nlohmann::json &s) { BaseObjectManager::GetInstance()->RestoreUndoState(s); }));
+    }
+
     ImGuiNotification::Post("オブジェクトを貼り付けました", {0.4f, 0.8f, 1.0f, 1.0f});
 }
 
 // 選択中の全エントリを削除する
 // BaseObject の場合は BaseObjectManager からも削除する
-void ImGuizmoManager::DeleteSelectedObjects() {
+void ImGuizmoManager::DeleteSelectedObjects()
+{
     if (selectedNames_.empty())
         return;
 
+    // ショートカット起点の操作はImGuiの編集ジェスチャに乗らないため、明示的にUndo履歴へ積む
+    nlohmann::json undoBefore = BaseObjectManager::GetInstance()->CaptureUndoState();
+
     size_t count = selectedNames_.size();
-    for (const std::string &name : selectedNames_) {
+    for (const std::string &name : selectedNames_)
+    {
         auto it = transformMap_.find(name);
-        if (it != transformMap_.end() && it->second.type == GizmoTarget::Type::BaseObject) {
+        if (it != transformMap_.end() && it->second.type == GizmoTarget::Type::BaseObject)
+        {
             BaseObjectManager::GetInstance()->RemoveObject(name);
         }
         transformMap_.erase(name);
     }
 
+    // 削除操作をUndo履歴へ積む
+    {
+        nlohmann::json undoAfter = BaseObjectManager::GetInstance()->CaptureUndoState();
+        auto [diffBefore, diffAfter] = MakeTopLevelJsonDiff(undoBefore, undoAfter);
+        UndoRedoManager::GetInstance()->Push(std::make_unique<JsonStateCommand>(
+            "オブジェクト削除", std::move(diffBefore), std::move(diffAfter),
+            [](const nlohmann::json &s) { BaseObjectManager::GetInstance()->RestoreUndoState(s); }));
+    }
+
     UpdateFilteredNames();
     selectedNames_.clear();
 
-    if (!transformMap_.empty()) {
+    if (!transformMap_.empty())
+    {
         selectedNames_.insert(transformMap_.begin()->first);
     }
     ImGuiNotification::Post("選択オブジェクトを削除しました: " + std::to_string(count) + "個", {0.9f, 0.7f, 0.2f, 1.0f});
@@ -940,11 +1107,13 @@ void ImGuizmoManager::DeleteSelectedObjects() {
 // ---- DrawSelectedObjectHighlight / DrawSelectionMarker ----------------
 
 // 選択中の全エントリにハイライトマーカーを描画する
-void ImGuizmoManager::DrawSelectedObjectHighlight() {
-    if (selectedNames_.empty() || !viewProjection_)
+void ImGuizmoManager::DrawSelectedObjectHighlight()
+{
+    if (selectedNames_.empty() || !pViewProjection_)
         return;
 
-    for (const std::string &selectedName : selectedNames_) {
+    for (const std::string &selectedName : selectedNames_)
+    {
         auto it = transformMap_.find(selectedName);
         if (it == transformMap_.end())
             continue;
@@ -958,7 +1127,8 @@ void ImGuizmoManager::DrawSelectedObjectHighlight() {
 }
 
 // オブジェクトの上方に逆ピラミッド型の選択マーカーを描画する
-void ImGuizmoManager::DrawSelectionMarker(const Vector3 &worldPosition) {
+void ImGuizmoManager::DrawSelectionMarker(const Vector3 &worldPosition)
+{
     Vector3 markerPos = worldPosition + Vector3(0.0f, 2.0f, 0.0f);
     Vector4 markerColor = {1.0f, 1.0f, 0.0f, 1.0f};
     float markerSize = 0.5f;
@@ -982,7 +1152,8 @@ void ImGuizmoManager::DrawSelectionMarker(const Vector3 &worldPosition) {
 // ---- UpdateFilteredNames ----------------------------------------------
 
 // 検索バッファに基づいてフィルタ済みの名前リストを更新する
-void ImGuizmoManager::UpdateFilteredNames() {
+void ImGuizmoManager::UpdateFilteredNames()
+{
     filteredNames_.clear();
 
     std::vector<std::string> allNames;
@@ -993,13 +1164,18 @@ void ImGuizmoManager::UpdateFilteredNames() {
     std::string searchStr = searchBuffer_;
     std::transform(searchStr.begin(), searchStr.end(), searchStr.begin(), ::tolower);
 
-    for (const std::string &name : allNames) {
-        if (strlen(searchBuffer_) == 0) {
+    for (const std::string &name : allNames)
+    {
+        if (strlen(searchBuffer_) == 0)
+        {
             filteredNames_.push_back(name);
-        } else {
+        }
+        else
+        {
             std::string lowerName = name;
             std::transform(lowerName.begin(), lowerName.end(), lowerName.begin(), ::tolower);
-            if (lowerName.find(searchStr) != std::string::npos) {
+            if (lowerName.find(searchStr) != std::string::npos)
+            {
                 filteredNames_.push_back(name);
             }
         }
@@ -1009,7 +1185,8 @@ void ImGuizmoManager::UpdateFilteredNames() {
 // ---- DrawDebugRaycast / DrawAABBWireframe / DrawSphereWireframe -------
 
 // 全エントリのAABB・スフィアワイヤーフレームとレイを描画する
-void ImGuizmoManager::DrawDebugRaycast() {
+void ImGuizmoManager::DrawDebugRaycast()
+{
     if (!showDebugRaycast_)
         return;
 
@@ -1017,7 +1194,8 @@ void ImGuizmoManager::DrawDebugRaycast() {
     Vector3 rayEnd = currentRay.origin + (currentRay.direction * currentRay.length);
     DrawLine3D::GetInstance()->SetPoints(currentRay.origin, rayEnd, {1.0f, 0.0f, 0.0f, 1.0f});
 
-    for (const auto &pair : transformMap_) {
+    for (const auto &pair : transformMap_)
+    {
         const GizmoTarget &target = pair.second;
 
         // スクリーン空間ターゲットは3Dデバッグ描画対象外
@@ -1036,7 +1214,8 @@ void ImGuizmoManager::DrawDebugRaycast() {
 }
 
 // ローカル空間のAABBをワールド変換してワイヤーフレームを描画する
-void ImGuizmoManager::DrawAABBWireframe(const Matrix4x4 &worldMatrix, const Vector4 &color) {
+void ImGuizmoManager::DrawAABBWireframe(const Matrix4x4 &worldMatrix, const Vector4 &color)
+{
     AABB aabb;
     aabb.min = {-1.3f, -1.3f, -1.3f};
     aabb.max = {1.3f, 1.3f, 1.3f};
@@ -1052,7 +1231,8 @@ void ImGuizmoManager::DrawAABBWireframe(const Matrix4x4 &worldMatrix, const Vect
         {aabb.min.x, aabb.max.y, aabb.max.z},
     };
 
-    for (int i = 0; i < 8; i++) {
+    for (int i = 0; i < 8; i++)
+    {
         vertices[i] = Transformation(vertices[i], worldMatrix);
     }
 
@@ -1074,7 +1254,8 @@ void ImGuizmoManager::DrawAABBWireframe(const Matrix4x4 &worldMatrix, const Vect
 }
 
 // スフィアワイヤーフレームを描画する
-void ImGuizmoManager::DrawSphereWireframe(const Matrix4x4 &worldMatrix, const Vector4 &color) {
+void ImGuizmoManager::DrawSphereWireframe(const Matrix4x4 &worldMatrix, const Vector4 &color)
+{
     Sphere sphere{};
 
     Vector3 worldCenter = Transformation(sphere.center, worldMatrix);
@@ -1089,7 +1270,8 @@ void ImGuizmoManager::DrawSphereWireframe(const Matrix4x4 &worldMatrix, const Ve
 }
 
 // GizmoTarget のワールド行列を使ってAABB・スフィアのレイヒット点を描画する
-void ImGuizmoManager::TestAndDrawRayHit(const Ray &ray, const GizmoTarget &target) {
+void ImGuizmoManager::TestAndDrawRayHit(const Ray &ray, const GizmoTarget &target)
+{
     Matrix4x4 worldMatrix = target.GetWorldMatrix();
 
     AABB aabb;
@@ -1103,13 +1285,15 @@ void ImGuizmoManager::TestAndDrawRayHit(const Ray &ray, const GizmoTarget &targe
     bool aabbResult = Input::RayIntersectAABBByMatrix(ray, worldMatrix, aabbHit, aabb);
     bool sphereResult = Input::RayIntersectSphereByMatrix(ray, worldMatrix, sphereHit, sphere);
 
-    if (aabbResult) {
+    if (aabbResult)
+    {
         DrawLine3D::GetInstance()->DrawSphere(aabbHit.hitPoint, {0.0f, 1.0f, 0.0f, 1.0f}, 0.05f, 8);
         Vector3 normalEnd = aabbHit.hitPoint + (aabbHit.hitNormal * 0.3f);
         DrawLine3D::GetInstance()->SetPoints(aabbHit.hitPoint, normalEnd, {0.0f, 1.0f, 0.0f, 1.0f});
     }
 
-    if (sphereResult) {
+    if (sphereResult)
+    {
         DrawLine3D::GetInstance()->DrawSphere(sphereHit.hitPoint, {1.0f, 0.0f, 1.0f, 1.0f}, 0.05f, 8);
         Vector3 normalEnd = sphereHit.hitPoint + (sphereHit.hitNormal * 0.3f);
         DrawLine3D::GetInstance()->SetPoints(sphereHit.hitPoint, normalEnd, {1.0f, 0.0f, 1.0f, 1.0f});

@@ -10,7 +10,8 @@ namespace Hagine {
 /// クォータニオン（回転を表す四元数）
 /// 回転の合成・補間・オイラー角や行列との相互変換などを提供する
 /// </summary>
-class Quaternion final {
+class Quaternion final
+{
   public:
     float x, y, z, w; // 四元数の各成分
 

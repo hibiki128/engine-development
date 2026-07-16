@@ -1,9 +1,10 @@
 #pragma once
 #include "DirectXCommon.h"
-#include "Graphics/PipeLine/PipeLineManager.h"
-#include <Graphics/PipeLine/ComputePipeLineManager.h>
+#include "graphics/pipeline/PipelineManager.h"
+#include <graphics/pipeline/ComputePipelineManager.h>
 namespace Hagine {
-class ParticleCommon {
+class ParticleCommon
+{
   private:
     ParticleCommon() = default;
     ~ParticleCommon() = default;
@@ -15,9 +16,10 @@ class ParticleCommon {
     /// シングルトンインスタンスの取得
     /// </summary>
     /// <returns></returns>
-      static ParticleCommon* GetInstance() {
+    static ParticleCommon *GetInstance()
+    {
         static ParticleCommon instance;
-          return &instance;
+        return &instance;
     }
 
     /// <summary>
@@ -49,11 +51,11 @@ class ParticleCommon {
 
     void ComputeCountDrawCommonSetting();
 
-    DirectXCommon *GetDxCommon() const { return dxCommon_; }
+    DirectXCommon *GetDxCommon() const { return pDxCommon_; }
 
   private:
-    DirectXCommon *dxCommon_ = nullptr;
-    PipeLineManager *psoManager_ = nullptr;
-    ComputePipeLineManager *computePsoManager_ = nullptr;
+    DirectXCommon *pDxCommon_ = nullptr;
+    PipelineManager *pPsoManager_ = nullptr;
+    ComputePipelineManager *pComputePsoManager_ = nullptr;
 };
 } // namespace Hagine

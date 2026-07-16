@@ -3,7 +3,8 @@
 
 namespace Hagine {
 
-void DXSwapChain::Initialize(IDXGIFactory7 *factory, ID3D12CommandQueue *commandQueue, HWND hwnd, uint32_t width, uint32_t height) {
+void DXSwapChain::Initialize(IDXGIFactory7 *factory, ID3D12CommandQueue *commandQueue, HWND hwnd, uint32_t width, uint32_t height)
+{
     HRESULT hr;
 
     // スワップチェーンの設定
@@ -21,18 +22,48 @@ void DXSwapChain::Initialize(IDXGIFactory7 *factory, ID3D12CommandQueue *command
 
     // スワップチェーンからバックバッファを引っ張ってくる
     backBuffers_.resize(swapChainDesc_.BufferCount);
-    for (uint32_t i = 0; i < swapChainDesc_.BufferCount; ++i) {
+    for (uint32_t i = 0; i < swapChainDesc_.BufferCount; ++i)
+    {
         hr = swapChain_->GetBuffer(i, IID_PPV_ARGS(&backBuffers_[i]));
         assert(SUCCEEDED(hr));
     }
 }
 
-void DXSwapChain::Finalize() {
+void DXSwapChain::Finalize()
+{
     backBuffers_.clear();
     swapChain_.Reset();
 }
 
-void DXSwapChain::Present() {
+void DXSwapChain::Resize(uint32_t width, uint32_t height)
+{
+    if (!swapChain_ || width == 0 || height == 0)
+    {
+        return;
+    }
+
+    // バックバッファへの参照を全て解放してからリサイズする（ResizeBuffers の必須条件）
+    backBuffers_.clear();
+
+    HRESULT hr = swapChain_->ResizeBuffers(
+        swapChainDesc_.BufferCount, width, height,
+        swapChainDesc_.Format, 0);
+    assert(SUCCEEDED(hr));
+
+    swapChainDesc_.Width = width;
+    swapChainDesc_.Height = height;
+
+    // バックバッファを取得し直す
+    backBuffers_.resize(swapChainDesc_.BufferCount);
+    for (uint32_t i = 0; i < swapChainDesc_.BufferCount; ++i)
+    {
+        hr = swapChain_->GetBuffer(i, IID_PPV_ARGS(&backBuffers_[i]));
+        assert(SUCCEEDED(hr));
+    }
+}
+
+void DXSwapChain::Present()
+{
     swapChain_->Present(1, 0);
 }
 } // namespace Hagine

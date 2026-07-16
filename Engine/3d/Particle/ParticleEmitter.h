@@ -1,7 +1,7 @@
 #pragma once
-#include "Camera/ViewProjection/ViewProjection.h"
+#include "camera/projection/ViewProjection.h"
 #include "ParticleManager.h"
-#include "Transform/WorldTransform.h"
+#include "transform/WorldTransform.h"
 #include <string>
 #ifdef _DEBUG
 #include "imgui.h"
@@ -9,7 +9,7 @@
 
 #include "nlohmann/json.hpp"
 
-#include "Data/DataHandler.h"
+#include "data/DataHandler.h"
 #include <filesystem>
 #include <fstream>
 
@@ -19,7 +19,8 @@ namespace Hagine {
 /// パーティクルの発生源（エミッター）クラス
 /// パーティクルグループの設定を保持し、発生・更新・描画・ImGui編集・Json保存を行う
 /// </summary>
-class ParticleEmitter {
+class ParticleEmitter
+{
   public:
     /// ===================================================
     /// public method
@@ -78,7 +79,8 @@ class ParticleEmitter {
     /// 名前を指定してパーティクルグループを削除
     /// </summary>
     /// <param name="name">削除するグループ名</param>
-    void RemoveParticleGroup(const std::string &name) {
+    void RemoveParticleGroup(const std::string &name)
+    {
         Manager_->RemoveParticleGroup(name);
     }
 
@@ -90,28 +92,32 @@ class ParticleEmitter {
     /// <returns>std::unique_ptr&lt;ParticleEmitter&gt;: 複製されたエミッター</returns>
     std::unique_ptr<ParticleEmitter> Clone() const;
 
-    bool GetIsAuto() { return isAuto_; }                                          // 自動発生フラグを取得
-    Matrix4x4 GetWorldMatrix() { return transform_.matWorld_; }                  // ワールド行列を取得
-    Vector3 GetPosition() { return transform_.translation_; }                    // 位置を取得
+    bool GetIsAuto() { return isAuto_; }                                              // 自動発生フラグを取得
+    Matrix4x4 GetWorldMatrix() { return transform_.matWorld_; }                       // ワールド行列を取得
+    Vector3 GetPosition() { return transform_.translation_; }                         // 位置を取得
     void SetPosition(const Vector3 &position) { transform_.translation_ = position; } // 位置を設定
 
     bool IsGizmoSelectable() const { return isGizmoSelectable_; }                 // ギズモ選択可能か取得
     void SetGizmoSelectable(bool selectable) { isGizmoSelectable_ = selectable; } // ギズモ選択可否を設定
 
   public:
-    void SetPositionY(const std::string &groupName, float positionY) {
+    void SetPositionY(const std::string &groupName, float positionY)
+    {
         particleSettings_[groupName].translate.y = positionY;
         FlushSetting(groupName); // Manager に即時反映
     }
-    void SetRotate(const std::string &groupName, const Vector3 &rotate) {
+    void SetRotate(const std::string &groupName, const Vector3 &rotate)
+    {
         particleSettings_[groupName].rotation = rotate;
         FlushSetting(groupName);
     }
-    void SetRotateY(const std::string &groupName, float rotateY) {
+    void SetRotateY(const std::string &groupName, float rotateY)
+    {
         particleSettings_[groupName].rotation.y = rotateY;
         FlushSetting(groupName);
     }
-    void SetScale(const std::string &groupName, const Vector3 &scale) {
+    void SetScale(const std::string &groupName, const Vector3 &scale)
+    {
         particleSettings_[groupName].scale = scale;
         FlushSetting(groupName);
     }
@@ -119,28 +125,34 @@ class ParticleEmitter {
     // SetStartScale / SetEndScale:
     //   particleSettings_ への書き込みと同時に Manager_ にも即時反映する
     //   （transform の dirty 判定とは独立して動作する）
-    void SetStartScale(const std::string &groupName, const Vector3 &scale) {
+    void SetStartScale(const std::string &groupName, const Vector3 &scale)
+    {
         particleSettings_[groupName].particleStartScale = scale;
         FlushSetting(groupName);
     }
-    void SetEndScale(const std::string &groupName, const Vector3 &scale) {
+    void SetEndScale(const std::string &groupName, const Vector3 &scale)
+    {
         particleSettings_[groupName].particleEndScale = scale;
         FlushSetting(groupName);
     }
 
-    void SetWorldMatrix(const Matrix4x4 &worldMatrix) {
+    void SetWorldMatrix(const Matrix4x4 &worldMatrix)
+    {
         transform_.matWorld_ = worldMatrix;
     }
     void SetIsAuto(bool isAuto) { isAuto_ = isAuto; }
-    void SetCount(const std::string &groupName, int count) {
+    void SetCount(const std::string &groupName, int count)
+    {
         particleSettings_[groupName].count = count;
         FlushSetting(groupName);
     }
-    void SetStartRotate(const std::string &groupName, const Vector3 &startRotate) {
+    void SetStartRotate(const std::string &groupName, const Vector3 &startRotate)
+    {
         particleSettings_[groupName].startRote = startRotate;
         FlushSetting(groupName);
     }
-    void SetEndRotate(const std::string &groupName, const Vector3 &endRotate) {
+    void SetEndRotate(const std::string &groupName, const Vector3 &endRotate)
+    {
         particleSettings_[groupName].endRote = endRotate;
         FlushSetting(groupName);
     }
@@ -157,58 +169,89 @@ class ParticleEmitter {
     void SetTrailScaleMultiplier(const std::string &groupName, const Vector3 &multiplier);
     void SetTrailColorMultiplier(const std::string &groupName, const Vector4 &multiplier);
     void SetTrailVelocityInheritance(const std::string &groupName, bool inherit, float scale = 0.3f);
-    void SetStartColor(const std::string &groupName, const Vector4 &color) {
+    void SetStartColor(const std::string &groupName, const Vector4 &color)
+    {
         particleSettings_[groupName].startColor = color;
         FlushSetting(groupName);
     }
-    void SetEndColor(const std::string &groupName, const Vector4 &color) {
+    void SetEndColor(const std::string &groupName, const Vector4 &color)
+    {
         particleSettings_[groupName].endColor = color;
         FlushSetting(groupName);
     }
 
     // SetScaleAll / SetStartAcce 系:
     //   全グループへの一括書き込みも Manager_ に即時反映する
-    void SetScaleAll(const Vector3 &scale) {
-        for (auto &[groupName, setting] : particleSettings_) {
-            if (setting.isSinMove) {
+    void SetScaleAll(const Vector3 &scale)
+    {
+        for (auto &[groupName, setting] : particleSettings_)
+        {
+            if (setting.isSinMove)
+            {
                 setting.particleStartScale = scale;
-            } else {
+            }
+            else
+            {
                 setting.scale = scale;
             }
             FlushSetting(groupName);
         }
     }
-    void SetStartAcce(const Vector3 &acce) {
-        for (auto &[groupName, setting] : particleSettings_) {
+    void SetStartAcce(const Vector3 &acce)
+    {
+        for (auto &[groupName, setting] : particleSettings_)
+        {
             setting.startAcce = acce;
             FlushSetting(groupName);
         }
     }
-    void SetStartAcceX(const float &acce) {
-        for (auto &[groupName, setting] : particleSettings_) {
+    void SetStartAcceX(const float &acce)
+    {
+        for (auto &[groupName, setting] : particleSettings_)
+        {
             setting.startAcce.x = acce;
             FlushSetting(groupName);
         }
     }
-    void SetStartAcceZ(const float &acce) {
-        for (auto &[groupName, setting] : particleSettings_) {
+    void SetStartAcceZ(const float &acce)
+    {
+        for (auto &[groupName, setting] : particleSettings_)
+        {
             setting.startAcce.z = acce;
             FlushSetting(groupName);
         }
     }
-    void SetEndAcce(const Vector3 &acce) {
-        for (auto &[groupName, setting] : particleSettings_) {
+    void SetEndAcce(const Vector3 &acce)
+    {
+        for (auto &[groupName, setting] : particleSettings_)
+        {
             setting.endAcce = acce;
             FlushSetting(groupName);
         }
     }
 
-    size_t GetActiveParticleCount() const {
+    size_t GetActiveParticleCount() const
+    {
         return Manager_ ? Manager_->GetActiveParticleCount() : 0;
     }
 
+#ifdef _DEBUG
+    /// <summary>
+    /// Undo用: エミッターの編集可能状態（トランスフォーム・フラグ・全グループ設定）をJSON化する
+    /// </summary>
+    /// <returns>nlohmann::json: 状態JSON</returns>
+    nlohmann::json CaptureUndoState() const;
+
+    /// <summary>
+    /// Undo用: CaptureUndoState で得た状態を適用する（既存グループのみ反映）
+    /// </summary>
+    /// <param name="state">適用する状態JSON</param>
+    void RestoreUndoState(const nlohmann::json &state);
+#endif // _DEBUG
+
     // パーティクルマネージャーへのアクセス（デバッグ用）
-    ParticleManager *GetParticleManager() const {
+    ParticleManager *GetParticleManager() const
+    {
         return Manager_.get();
     }
 
@@ -236,7 +279,8 @@ class ParticleEmitter {
     /// 指定グループの設定を Manager_ に即時反映する
     /// </summary>
     /// <param name="groupName">対象グループ名</param>
-    void FlushSetting(const std::string &groupName) {
+    void FlushSetting(const std::string &groupName)
+    {
         if (!Manager_)
             return;
         auto it = particleSettings_.find(groupName);
@@ -271,27 +315,27 @@ class ParticleEmitter {
 
   private:
     /// ===================================================
-    /// private variants
+    /// private variables
     /// ===================================================
 
     using json = nlohmann::json;
     float elapsedTime_ = 0.0f;   // 経過時間
     float emitFrequency_ = 0.1f; // パーティクルの発生頻度
 
-    bool isVisible_ = false;          // 表示フラグ
-    bool isActive_ = false;           // アクティブフラグ
-    bool isAuto_ = false;             // 自動発生フラグ
-    bool isGizmoSelectable_ = true;   // ギズモ選択可能フラグ
+    bool isVisible_ = false;        // 表示フラグ
+    bool isActive_ = false;         // アクティブフラグ
+    bool isAuto_ = false;           // 自動発生フラグ
+    bool isGizmoSelectable_ = true; // ギズモ選択可能フラグ
 
-    std::string name_;                   // パーティクルの名前
-    std::string drawGroup_ = "3D";       // 描画グループ＝描画ステージ（既定は3D）
-    WorldTransform transform_; // 位置や回転などのトランスフォーム
+    std::string name_;             // パーティクルの名前
+    std::string drawGroup_ = "3D"; // 描画グループ＝描画ステージ（既定は3D）
+    WorldTransform transform_;     // 位置や回転などのトランスフォーム
 
     std::unordered_map<std::string, ParticleSetting> particleSettings_; // グループごとの設定
 
-    std::unique_ptr<ParticleManager> Manager_;      // パーティクル管理
-    std::unique_ptr<DataHandler> datas_;            // データ管理
-    std::vector<std::string> particleGroupNames_;   // パーティクルグループ名一覧
+    std::unique_ptr<ParticleManager> Manager_;    // パーティクル管理
+    std::unique_ptr<DataHandler> datas_;          // データ管理
+    std::vector<std::string> particleGroupNames_; // パーティクルグループ名一覧
 
     // dirty判定用：前フレームの transform を保持する
     Vector3 lastTranslation_ = {};

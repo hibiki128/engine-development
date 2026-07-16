@@ -1,6 +1,6 @@
 #pragma once
-#include "Camera/ViewProjection/ViewProjection.h"
-#include "Object/Object3dCommon.h"
+#include "camera/projection/ViewProjection.h"
+#include "object/Object3dCommon.h"
 #include "animation/ModelAnimation.h"
 #include "light/LightGroup.h"
 #include "string"
@@ -9,45 +9,48 @@
 #include "type/Vector3.h"
 #include "type/Vector4.h"
 #include "vector"
-#include <Graphics/PipeLine/PipeLineManager.h>
-#include <Model/Material/Material.h>
-#include <Model/Model.h>
-#include <Transform/ObjColor.h>
+#include <graphics/pipeline/PipelineManager.h>
+#include <model/material/Material.h>
+#include <model/Model.h>
+#include <transform/ObjColor.h>
 
 namespace Hagine {
 class ModelCommon;
-class Object3d {
+class Object3d
+{
   private: // メンバ変数
-    struct Transform {
+    struct Transform
+    {
         Vector3 scale;
         Vector3 rotate;
         Vector3 translate;
     };
 
     // 座標変換行列データ
-    struct TransformationMatrix {
+    struct TransformationMatrix
+    {
         Matrix4x4 WVP;
         Matrix4x4 World;
         Matrix4x4 WorldInverseTranspose;
         Matrix4x4 LightWVP;
     };
 
-    DirectXCommon *dxCommon_ = nullptr;
+    DirectXCommon *pDxCommon_ = nullptr;
 
     // バッファリソース
     Microsoft::WRL::ComPtr<ID3D12Resource> transformationMatrixResource_;
     // バッファリソース内のデータを指すポインタ
-    TransformationMatrix *transformationMatrixData_ = nullptr;
+    TransformationMatrix *pTransformationMatrixData_ = nullptr;
 
     Transform transform_;
 
-    Model *model_ = nullptr;
+    Model *pModel_ = nullptr;
     std::shared_ptr<ModelAnimation> currentModelAnimation_ = nullptr;
     std::map<std::string, std::shared_ptr<ModelAnimation>> modelAnimations_;
     std::vector<std::unique_ptr<Material>> materials_;
     std::vector<ObjColor> color_;
-    ModelCommon *modelCommon_ = nullptr;
-    LightGroup *lightGroup_ = nullptr;
+    ModelCommon *pModelCommon_ = nullptr;
+    LightGroup *pLightGroup_ = nullptr;
 
     // 移動させる用各SRT
     Vector3 position_ = {0.0f, 0.0f, 0.0f};
@@ -64,13 +67,13 @@ class Object3d {
 
     std::string modelFilePath_;
     std::unique_ptr<Object3dCommon> objectCommon_;
-    BlendMode blendMode_ = BlendMode::kNone;
+    BlendMode blendMode_ = BlendMode::None;
 
     float animationSpeed_ = 1.0f;
     float blendDuration_ = 0.5f;
 
     // 1フレーム内でGPUスキニングを二重実行しないためのガード。
-    // 影パスと本描画パスの両方で model_->Update()（スキニングDispatch）が
+    // 影パスと本描画パスの両方で pModel_->Update()（スキニングDispatch）が
     // 呼ばれるが、同一フレームのポーズは不変なので最初の1回だけ実行すればよい。
     // AnimationUpdate()（フレーム先頭）で false に戻す。
     bool skinnedThisFrame_ = false;
@@ -141,25 +144,30 @@ class Object3d {
     const Vector3 &GetSize() const { return size_; }
     size_t GetMaterialCount() const { return materials_.size(); }
     std::string GetModelFilePath() const { return modelFilePath_; }
-    std::string GetTextureFilePath(uint32_t materialIndex) const {
+    std::string GetTextureFilePath(uint32_t materialIndex) const
+    {
         return materials_[materialIndex]->GetMaterialData().textureFilePath;
     }
-    std::vector<std::string> GetAllTextruePath() {
+    std::vector<std::string> GetAllTexturePath()
+    {
         std::vector<std::string> texturePaths = {};
-        for (int i = 0; i < GetMaterialCount(); i++) {
+        for (int i = 0; i < GetMaterialCount(); i++)
+        {
             texturePaths.push_back(materials_[i]->GetMaterialData().textureFilePath);
         }
         return texturePaths;
     }
-    ModelAnimation *GetCurrentModelAnimation() const {
+    ModelAnimation *GetCurrentModelAnimation() const
+    {
         return currentModelAnimation_.get();
     }
 
-    const bool GetHaveAnimation() const { return model_->GetModelData().hasAnimations; }
+    const bool GetHaveAnimation() const { return pModel_->GetModelData().hasAnimations; }
     bool IsFinish() { return currentModelAnimation_->IsFinish(); }
-    Model *GetModel() const { return model_; }
+    Model *GetModel() const { return pModel_; }
 
-    Material *GetMaterial(uint32_t index) {
+    Material *GetMaterial(uint32_t index)
+    {
         return (index < materials_.size()) ? materials_[index].get() : nullptr;
     }
     Vector4 GetColor(int index = 0) { return color_[index].GetColor(); }
@@ -168,7 +176,7 @@ class Object3d {
     /// setter
     /// </summary>
     /// <param name="position"></param>
-    void SetModel(Model *model_) { this->model_ = model_; }
+    void SetModel(Model *pModel_) { this->pModel_ = pModel_; }
     void SetPosition(const Vector3 &position_) { this->position_ = position_; }
     void SetRotation(const Vector3 &rotation_) { this->rotation_ = rotation_; }
     void SetSize(const Vector3 &size_) { this->size_ = size_; }
@@ -218,7 +226,8 @@ class Object3d {
 
     void DrawArmatureShape(const Vector3 &startPos, const Vector3 &endPos, float baseWidth, float tipWidth, const Vector4 &color);
 
-    Vector3 ExtractTranslation(const Matrix4x4 &matrix) {
+    Vector3 ExtractTranslation(const Matrix4x4 &matrix)
+    {
         return Vector3(matrix.m[3][0], matrix.m[3][1], matrix.m[3][2]);
     }
 };

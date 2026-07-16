@@ -1,9 +1,9 @@
 #pragma once
 #include "iostream"
 #include "type/Vector4.h"
-#include <Asset/AssetPath.h>
-#include <Debug/Log/Logger.h>
-#include <Primitive/PrimitiveModel.h>
+#include <asset/AssetPath.h>
+#include <debug/log/Logger.h>
+#include <primitive/PrimitiveModel.h>
 #include <cstdint>
 #include <nlohmann/json.hpp>
 #include <filesystem>

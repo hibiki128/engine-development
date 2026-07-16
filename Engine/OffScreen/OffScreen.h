@@ -1,7 +1,7 @@
 #pragma once
-#include "PostEffect/PostEffectChain.h"
-#include "PostEffect/PostEffectDataManager.h"
-#include "PostEffect/PostEffectRenderer.h"
+#include "effect/PostEffectChain.h"
+#include "effect/PostEffectDataManager.h"
+#include "effect/PostEffectRenderer.h"
 #include <string>
 #include <type/Matrix4x4.h>
 
@@ -11,15 +11,16 @@ namespace Hagine {
 /// ポストエフェクト全体を管理するファサードクラス
 ///
 /// 使用例:
-///   offScreen_.AddEffect(ShaderMode::kVignette, "ビネット");
-///   offScreen_.AddEffect(ShaderMode::kBloom,    "ブルーム", 5); // スロット5に配置
+///   offScreen_.AddEffect(ShaderMode::Vignette, "ビネット");
+///   offScreen_.AddEffect(ShaderMode::Bloom,    "ブルーム", 5); // スロット5に配置
 ///
 ///   // パラメータを直接取得して変更
 ///   if (auto* p = offScreen_.GetEffectParams&lt;VignetteParams&gt;(slotIndex)) {
 ///       p->GetData().strength = 2.0f;
 ///   }
 /// </summary>
-class OffScreen {
+class OffScreen
+{
   public:
     /// ===================================================
     /// public method
@@ -140,7 +141,7 @@ class OffScreen {
     /// 設定データを読み込む
     /// </summary>
     /// <param name="fileName">読み込むファイル名</param>
-    void LoadData(const std::string& fileName);
+    void LoadData(const std::string &fileName);
 
     /// <summary>
     /// 指定スロットのパラメータを型付きで取得する
@@ -149,7 +150,8 @@ class OffScreen {
     /// <param name="slotIndex">対象スロット番号</param>
     /// <returns>T*: パラメータへのポインタ。型不一致またはスロット未使用時は nullptr</returns>
     template <typename T>
-    T *GetEffectParams(int slotIndex) {
+    T *GetEffectParams(int slotIndex)
+    {
         return effectChain_.GetParams<T>(slotIndex);
     }
 
@@ -158,24 +160,25 @@ class OffScreen {
     /// </summary>
     /// <param name="name">エフェクト名</param>
     /// <returns>int: スロット番号。見つからなければ -1</returns>
-    int FindEffectSlotByName(const std::string &name) {
+    int FindEffectSlotByName(const std::string &name)
+    {
         return effectChain_.FindSlotByName(name);
     }
 
   private:
     /// ===================================================
-    /// private variants
+    /// private variables
     /// ===================================================
 
     PostEffectChain effectChain_;       // エフェクトの連結チェーン
     PostEffectRenderer renderer_;       // エフェクト描画
     PostEffectDataManager dataManager_; // エフェクト設定の保存/読み込み
 
-    DirectXCommon *dxCommon_ = nullptr; // DirectX共通処理
+    DirectXCommon *pDxCommon_ = nullptr; // DirectX共通処理
     Matrix4x4 projectionMatrix_;        // 投影行列
 
     // セーブ/ロード結果メッセージとその表示タイマー
-    std::string saveMessage_;     // 保存結果メッセージ
-    int saveMessageTimer_ = 0;    // メッセージ表示タイマー
+    std::string saveMessage_;  // 保存結果メッセージ
+    int saveMessageTimer_ = 0; // メッセージ表示タイマー
 };
 } // namespace Hagine

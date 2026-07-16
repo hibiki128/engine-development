@@ -1,7 +1,8 @@
 #include "ParticleStruct.h"
 
 namespace Hagine {
-ParticleMaterial ForParticleMaterial(MaterialData material) {
+ParticleMaterial ForParticleMaterial(MaterialData material)
+{
     ParticleMaterial result;
     result.color = material.color;
     result.uvTransform = material.uvTransform;
@@ -10,9 +11,11 @@ ParticleMaterial ForParticleMaterial(MaterialData material) {
     return result;
 }
 
-std::vector<ParticleMaterial> ForParticleMaterials(std::vector<MaterialData> materials) {
+std::vector<ParticleMaterial> ForParticleMaterials(std::vector<MaterialData> materials)
+{
     std::vector<ParticleMaterial> result;
-    for (const auto &material : materials) {
+    for (const auto &material : materials)
+    {
         result.push_back(ForParticleMaterial(material));
     }
     return result;

@@ -13,7 +13,8 @@ namespace Logger {
 /// <summary>
 /// ログの重要度
 /// </summary>
-enum class LogLevel {
+enum class LogLevel
+{
     Info,    // 情報
     Warning, // 警告（処理は継続できるが注意が必要）
     Error,   // エラー（読み込み失敗など）

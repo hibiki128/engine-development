@@ -1,6 +1,6 @@
 #pragma once
-#include "Camera/ViewProjection/ViewProjection.h"
-#include "Graphics/PipeLine/PipeLineManager.h"
+#include "camera/projection/ViewProjection.h"
+#include "graphics/pipeline/PipelineManager.h"
 #include <cstdint>
 #include <d3d12.h>
 #include <memory>
@@ -15,15 +15,16 @@ namespace Hagine {
 /// 3D線描画クラス
 /// デバッグ用の線、グリッド、図形を描画する
 /// </summary>
-class DrawLine3D {
+class DrawLine3D
+{
   public:
     /// ===================================================
     /// public constant
     /// ===================================================
 
     static const UINT kMaxLineCount = 655360; // 最大線数
-    static const UINT kVertexCountLine = 2;  // 線の頂点数
-    static const UINT kIndexCountLine = 0;   // 線のインデックス数
+    static const UINT kVertexCountLine = 2;   // 線の頂点数
+    static const UINT kIndexCountLine = 0;    // 線のインデックス数
 
     /// ===================================================
     /// public struct
@@ -32,7 +33,8 @@ class DrawLine3D {
     /// <summary>
     /// 頂点データ（座標と色）
     /// </summary>
-    struct VertexPosColor {
+    struct VertexPosColor
+    {
         Vector3 pos;   // 座標
         Vector4 color; // 色
     };
@@ -40,13 +42,14 @@ class DrawLine3D {
     /// <summary>
     /// 線描画用データ
     /// </summary>
-    struct LineData {
+    struct LineData
+    {
         Microsoft::WRL::ComPtr<ID3D12Resource> vertBuffer;  // 頂点バッファ
         Microsoft::WRL::ComPtr<ID3D12Resource> indexBuffer; // インデックスバッファ
-        D3D12_VERTEX_BUFFER_VIEW vbView{};  // 頂点バッファビュー
-        D3D12_INDEX_BUFFER_VIEW ibView{};   // インデックスバッファビュー
-        VertexPosColor *vertMap = nullptr;  // 頂点マップ
-        uint16_t *indexMap = nullptr;       // インデックスマップ
+        D3D12_VERTEX_BUFFER_VIEW vbView{};                  // 頂点バッファビュー
+        D3D12_INDEX_BUFFER_VIEW ibView{};                   // インデックスバッファビュー
+        VertexPosColor *vertMap = nullptr;                  // 頂点マップ
+        uint16_t *indexMap = nullptr;                       // インデックスマップ
     };
 
     /// ===================================================
@@ -57,7 +60,8 @@ class DrawLine3D {
     /// シングルトンインスタンスの取得
     /// </summary>
     /// <returns>DrawLine3D*: インスタンスのポインタ</returns>
-    static DrawLine3D* GetInstance() {
+    static DrawLine3D *GetInstance()
+    {
         static DrawLine3D instance;
         return &instance;
     }
@@ -164,7 +168,8 @@ class DrawLine3D {
     /// <summary>
     /// 定数バッファ
     /// </summary>
-    struct CBuffer {
+    struct CBuffer
+    {
         Matrix4x4 viewProject; // ビュープロジェクション行列
     };
 
@@ -176,10 +181,10 @@ class DrawLine3D {
     std::unique_ptr<LineData> line_; // 線データ
     uint32_t indexLine_ = 0;         // 線のインデックス
 
-    DirectXCommon *dxCommon_ = nullptr;      // DirectX共通クラス
-    PipeLineManager *psoManager_ = nullptr; // パイプラインマネージャー
+    DirectXCommon *pDxCommon_ = nullptr;     // DirectX共通クラス
+    PipelineManager *pPsoManager_ = nullptr; // パイプラインマネージャー
 
     Microsoft::WRL::ComPtr<ID3D12Resource> cBufferResource_ = nullptr; // 定数バッファリソース
-    CBuffer *cBufferData_ = nullptr;                   // 定数バッファデータ
+    CBuffer *pCBufferData_ = nullptr;                                   // 定数バッファデータ
 };
 } // namespace Hagine

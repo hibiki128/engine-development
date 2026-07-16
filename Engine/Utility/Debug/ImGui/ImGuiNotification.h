@@ -4,14 +4,15 @@
 #ifdef _DEBUG
 #include <imgui.h>
 #endif // _DEBUG
-#include"type/Vector4.h"
-
+#include "type/Vector4.h"
 
 /// @brief ImGuiによる通知システム
 namespace Hagine {
-class ImGuiNotification {
+class ImGuiNotification
+{
   public:
-    struct Notification {
+    struct Notification
+    {
         std::string message;
         Vector4 color;
         int remainingFrames;

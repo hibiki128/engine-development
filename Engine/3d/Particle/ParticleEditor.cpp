@@ -1,27 +1,31 @@
 #define NOMINMAX
 #include "ParticleEditor.h"
-#include "Debug/ImGui/ImGuiManager.h"
-#include <Utility/Debug/ImGui/ImGuiNotification.h>
-#include "Render/DrawGroupManager.h"
+#include "debug/imgui/ImGuiManager.h"
+#include <utility/debug/imgui/ImGuiNotification.h>
+#include "render/DrawGroupManager.h"
 #ifdef _DEBUG
-#include "ShowFolder/ShowFolder.h"
+#include "browser/ShowFolder.h"
+#include "ImGuizmo.h"
 #endif // _DEBUG
 
 namespace Hagine {
-void ParticleEditor::Finalize() {
+void ParticleEditor::Finalize()
+{
     emitters_.clear();
     currentFrameStats_.clear();
     displayStats_.clear();
 }
 
-void ParticleEditor::Initialize() {
-    particleGroupManager_ = ParticleGroupManager::GetInstance();
+void ParticleEditor::Initialize()
+{
+    pParticleGroupManager_ = ParticleGroupManager::GetInstance();
     // カラーテーマの初期設定
     SetupColors();
 }
 
 // カラーテーマを設定する
-void ParticleEditor::SetupColors() {
+void ParticleEditor::SetupColors()
+{
 #ifdef USE_IMGUI
     // 各CollapsingHeaderに使用する色を定義（彩度を抑えたシックなトーンに統一）
     headerColors_[0] = ImVec4(0.30f, 0.38f, 0.50f, 0.55f); // 青系
@@ -30,10 +34,11 @@ void ParticleEditor::SetupColors() {
     headerColors_[3] = ImVec4(0.40f, 0.33f, 0.48f, 0.55f); // 紫系
     headerColors_[4] = ImVec4(0.50f, 0.46f, 0.28f, 0.55f); // 黄色系
     headerColors_[5] = ImVec4(0.32f, 0.33f, 0.36f, 0.55f); // グレー系
-#endif                                                 // USE_IMGUI
+#endif                                                     // USE_IMGUI
 }
 
-void ParticleEditor::AddParticleEmitter(const std::string &name, const std::string &fileName, const std::string &texturePath) {
+void ParticleEditor::AddParticleEmitter(const std::string &name, const std::string &fileName, const std::string &texturePath)
+{
     // 新しい ParticleEmitter を作成
     auto emitter = std::make_unique<ParticleEmitter>();
 
@@ -45,10 +50,12 @@ void ParticleEditor::AddParticleEmitter(const std::string &name, const std::stri
     ImGuiNotification::Post("パーティクルエミッターを追加しました: " + name, {0.4f, 0.8f, 1.0f, 1.0f});
 }
 
-void ParticleEditor::Load() {
+void ParticleEditor::Load()
+{
 }
 
-void ParticleEditor::AddParticleEmitter(const std::string &name) {
+void ParticleEditor::AddParticleEmitter(const std::string &name)
+{
     // 新しい ParticleEmitter を作成
     auto emitter = std::make_unique<ParticleEmitter>();
 
@@ -60,7 +67,8 @@ void ParticleEditor::AddParticleEmitter(const std::string &name) {
     ImGuiNotification::Post("パーティクルエミッターを追加しました: " + name, {0.4f, 0.8f, 1.0f, 1.0f});
 }
 
-void ParticleEditor::AddParticleGroup(const std::string &name, const std::string &fileName, const std::string &texturePath) {
+void ParticleEditor::AddParticleGroup(const std::string &name, const std::string &fileName, const std::string &texturePath)
+{
     // 新しい ParticleGroup を作成
     auto group = std::make_unique<ParticleGroup>();
     // 初期化処理
@@ -69,11 +77,12 @@ void ParticleEditor::AddParticleGroup(const std::string &name, const std::string
     group->CreateParticleGroup(name, fileName, texturePath);
 
     // マップに追加
-    particleGroupManager_->AddParticleGroup(std::move(group));
+    pParticleGroupManager_->AddParticleGroup(std::move(group));
     ImGuiNotification::Post("パーティクルグループを追加しました: " + name, {0.4f, 0.8f, 1.0f, 1.0f});
 }
 
-void ParticleEditor::AddPrimitiveParticleGroup(const std::string &name, const std::string &texturePath, PrimitiveType type) {
+void ParticleEditor::AddPrimitiveParticleGroup(const std::string &name, const std::string &texturePath, PrimitiveType type)
+{
     // 新しい ParticleGroup を作成
     auto group = std::make_unique<ParticleGroup>();
     // 初期化処理
@@ -82,13 +91,15 @@ void ParticleEditor::AddPrimitiveParticleGroup(const std::string &name, const st
     group->CreatePrimitiveParticleGroup(name, type, texturePath);
 
     // マップに追加
-    particleGroupManager_->AddParticleGroup(std::move(group));
+    pParticleGroupManager_->AddParticleGroup(std::move(group));
     ImGuiNotification::Post("プリミティブパーティクルグループを追加しました: " + name, {0.4f, 0.8f, 1.0f, 1.0f});
 }
 
-void ParticleEditor::SetExternalParticleCount(const std::string &baseName, size_t count) {
+void ParticleEditor::SetExternalParticleCount(const std::string &baseName, size_t count)
+{
     // 新しいフレームが始まった場合、現在フレームの統計をクリア
-    if (currentFrameNumber_ != lastUpdateFrame_) {
+    if (currentFrameNumber_ != lastUpdateFrame_)
+    {
         currentFrameStats_.clear();
         lastUpdateFrame_ = currentFrameNumber_;
     }
@@ -98,7 +109,8 @@ void ParticleEditor::SetExternalParticleCount(const std::string &baseName, size_
     currentFrameStats_[baseName].instanceCount++;
 }
 
-void ParticleEditor::UpdateFrameStats() {
+void ParticleEditor::UpdateFrameStats()
+{
     // 現在フレームの統計を表示用にコピー
     displayStats_ = currentFrameStats_;
 
@@ -106,10 +118,14 @@ void ParticleEditor::UpdateFrameStats() {
     currentFrameNumber_++;
 }
 
-void ParticleEditor::DrawAll(const ViewProjection &vp_) {
-    for (auto &[name, emitter] : emitters_) {
-        if (emitter) {
-            if (emitter->GetIsAuto()) {
+void ParticleEditor::DrawAll(const ViewProjection &vp_)
+{
+    for (auto &[name, emitter] : emitters_)
+    {
+        if (emitter)
+        {
+            if (emitter->GetIsAuto())
+            {
                 emitter->Update();
             }
             emitter->Draw(vp_);
@@ -117,81 +133,102 @@ void ParticleEditor::DrawAll(const ViewProjection &vp_) {
     }
 }
 
-std::vector<std::string> ParticleEditor::GetEmitterNames() const {
+std::vector<std::string> ParticleEditor::GetEmitterNames() const
+{
     std::vector<std::string> names;
     names.reserve(emitters_.size());
-    for (const auto &[name, emitter] : emitters_) {
+    for (const auto &[name, emitter] : emitters_)
+    {
         names.push_back(name);
     }
     return names;
 }
 
-ParticleEmitter *ParticleEditor::GetEmitterByName(const std::string &name) {
+ParticleEmitter *ParticleEditor::GetEmitterByName(const std::string &name)
+{
     auto it = emitters_.find(name);
     return (it != emitters_.end()) ? it->second.get() : nullptr;
 }
 
-void ParticleEditor::DrawSelectedForPreview(const ViewProjection &vp) {
-    if (selectedEmitterName_.empty()) {
+void ParticleEditor::DrawSelectedForPreview(const ViewProjection &vp)
+{
+    if (selectedEmitterName_.empty())
+    {
         return;
     }
     auto it = emitters_.find(selectedEmitterName_);
-    if (it == emitters_.end() || !it->second) {
+    if (it == emitters_.end() || !it->second)
+    {
         return;
     }
     ParticleEmitter *emitter = it->second.get();
     // 自動発生中なら時間ベースで Emit を進める（Draw 内ではなくここで駆動）。
-    if (emitter->GetIsAuto()) {
+    if (emitter->GetIsAuto())
+    {
         emitter->Update();
     }
     // ParticleManager を直接駆動して更新＋描画する（DrawEmitter のワイヤーは描かない）。
     ParticleManager *mgr = emitter->GetParticleManager();
-    if (mgr) {
+    if (mgr)
+    {
         mgr->SetEmitterCenter(emitter->GetPosition());
         mgr->Update(vp);
         mgr->Draw();
     }
 }
 
-void ParticleEditor::DebugAll() {
+void ParticleEditor::DebugAll()
+{
 #ifdef USE_IMGUI
-    if (ImGui::BeginTabBar("CPUパーティクル")) {
-        if (ImGui::BeginTabItem("CPUエミッター設定")) {
-            if (emitters_.empty()) {
+    if (ImGui::BeginTabBar("CPUパーティクル"))
+    {
+        if (ImGui::BeginTabItem("CPUエミッター設定"))
+        {
+            if (emitters_.empty())
+            {
                 ImGui::Text("エミッターがありません");
-            } else {
+            }
+            else
+            {
                 // エミッター名のリストを作成
                 std::vector<std::string> emitterNames;
-                for (const auto &[name, emitter] : emitters_) {
+                for (const auto &[name, emitter] : emitters_)
+                {
                     emitterNames.push_back(name);
                 }
 
                 // インデックスの範囲チェック
-                if (selectedEmitterIndex_ >= emitterNames.size()) {
-                    selectedEmitterIndex_ = std::max(0, (int)emitterNames.size() - 1);
+                if (selectedEmitterIndex_ >= emitterNames.size())
+                {
+                    selectedEmitterIndex_ = std::max(0, static_cast<int>(emitterNames.size()) - 1);
                 }
 
                 // エミッター選択用のCombo
                 std::vector<const char *> emitterNameCStrs;
-                for (const auto &name : emitterNames) {
+                for (const auto &name : emitterNames)
+                {
                     emitterNameCStrs.push_back(name.c_str());
                 }
 
                 if (ImGui::Combo("エミッター選択", &selectedEmitterIndex_,
-                                 emitterNameCStrs.data(), (int)emitterNameCStrs.size())) {
+                                 emitterNameCStrs.data(), static_cast<int>(emitterNameCStrs.size())))
+                {
                     // 選択が変更された場合、選択されたエミッター名を更新
                     selectedEmitterName_ = emitterNames[selectedEmitterIndex_];
                 }
 
                 // 初回選択時の処理
-                if (selectedEmitterName_.empty() && !emitterNames.empty()) {
+                if (selectedEmitterName_.empty() && !emitterNames.empty())
+                {
                     selectedEmitterName_ = emitterNames[selectedEmitterIndex_];
                 }
 
                 // 選択されたエミッターのDebugを実行
-                if (!selectedEmitterName_.empty()) {
+                if (!selectedEmitterName_.empty())
+                {
                     auto it = emitters_.find(selectedEmitterName_);
-                    if (it != emitters_.end() && it->second) {
+                    if (it != emitters_.end() && it->second)
+                    {
                         it->second->Debug();
                     }
                 }
@@ -212,14 +249,17 @@ void ParticleEditor::DebugAll() {
 //     return nullptr;
 // }
 
-void ParticleEditor::SceneParticleCount() {
+void ParticleEditor::SceneParticleCount()
+{
 #ifdef USE_IMGUI
-    if (ImGui::CollapsingHeader("パーティクル統計")) {
+    if (ImGui::CollapsingHeader("パーティクル統計"))
+    {
         size_t grandTotal = 0;
         size_t totalInstances = 0;
 
         // 合計を計算
-        for (const auto &[name, stats] : displayStats_) {
+        for (const auto &[name, stats] : displayStats_)
+        {
             grandTotal += stats.count;
             totalInstances += stats.instanceCount;
         }
@@ -229,11 +269,13 @@ void ParticleEditor::SceneParticleCount() {
         ImGui::SameLine();
         ImGui::TextColored(ImVec4(0.55f, 0.55f, 0.60f, 1.0f), "(%zu種類)", displayStats_.size());
 
-        if (!displayStats_.empty()) {
+        if (!displayStats_.empty())
+        {
             ImGui::Separator();
 
             // シンプルなリスト表示
-            for (const auto &[name, stats] : displayStats_) {
+            for (const auto &[name, stats] : displayStats_)
+            {
                 ImGui::Bullet();
                 ImGui::SameLine();
                 ImGui::TextColored(ImVec4(0.45f, 0.60f, 0.78f, 1.0f), "%s", name.c_str());
@@ -241,36 +283,52 @@ void ParticleEditor::SceneParticleCount() {
                 ImGui::Text(": %zu", stats.count);
 
                 // インスタンス数が1より多い場合のみ表示
-                if (stats.instanceCount > 1) {
+                if (stats.instanceCount > 1)
+                {
                     ImGui::SameLine();
                     ImGui::TextColored(ImVec4(0.55f, 0.55f, 0.60f, 1.0f), "×%zu", stats.instanceCount);
                 }
             }
-        } else {
+        }
+        else
+        {
             ImGui::TextColored(ImVec4(0.55f, 0.55f, 0.60f, 1.0f), "エミッターなし");
         }
     }
 #endif // USE_IMGUI
 }
 
-std::unique_ptr<ParticleEmitter> ParticleEditor::CreateEmitterFromTemplate(const std::string &name) {
+std::unique_ptr<ParticleEmitter> ParticleEditor::CreateEmitterFromTemplate(const std::string &name)
+{
     auto it = emitters_.find(name);
-    if (it != emitters_.end() && it->second) {
+    if (it != emitters_.end() && it->second)
+    {
         return it->second->Clone(); // コピーを作って返す
     }
     return nullptr;
 }
 
-void ParticleEditor::EditorWindow() {
+void ParticleEditor::EditorWindow()
+{
 #ifdef USE_IMGUI
+    // エディタでの編集ジェスチャ（ウィジェット操作・ギズモドラッグ）をUndo履歴として追跡する
+    undoTracker_.Begin([this] { return CaptureUndoState(); });
+
     ImGui::Begin("パーティクルエディター");
     ShowImGuiEditor();
     ImGui::End();
+
+    undoTracker_.End(
+        "パーティクル編集",
+        [this] { return CaptureUndoState(); },
+        [](const nlohmann::json &s) { ParticleEditor::GetInstance()->RestoreUndoState(s); },
+        ImGuizmo::IsUsing());
 #endif // USE_IMGUI
 }
 
 // カラー付きCollapsingHeaderを表示するヘルパー関数
-bool ParticleEditor::ColoredCollapsingHeader(const char *label, int colorIndex) {
+bool ParticleEditor::ColoredCollapsingHeader(const char *label, int colorIndex)
+{
 #ifdef USE_IMGUI
     // 現在のImGuiカラーを保存
     ImVec4 originalColor = ImGui::GetStyleColorVec4(ImGuiCol_Header);
@@ -298,25 +356,32 @@ bool ParticleEditor::ColoredCollapsingHeader(const char *label, int colorIndex) 
 #endif // USE_IMGUI
 }
 
-void ParticleEditor::ShowImGuiEditor() {
+void ParticleEditor::ShowImGuiEditor()
+{
 #ifdef USE_IMGUI
-    if (ImGui::BeginTabBar("CPUパーティクル")) {
-        if (ImGui::BeginTabItem("パーティクル作成")) {
+    if (ImGui::BeginTabBar("CPUパーティクル"))
+    {
+        if (ImGui::BeginTabItem("パーティクル作成"))
+        {
 
             // エミッター追加のCollapsingHeader
-            if (ColoredCollapsingHeader("エミッター追加", 0)) {
+            if (ColoredCollapsingHeader("エミッター追加", 0))
+            {
                 // 名前の入力
                 char nameBuffer[256];
                 strcpy_s(nameBuffer, sizeof(nameBuffer), localEmitterName_.c_str());
                 ImGui::Text("エミッターの名前");
-                if (ImGui::InputText(" ", nameBuffer, sizeof(nameBuffer))) {
+                if (ImGui::InputText(" ", nameBuffer, sizeof(nameBuffer)))
+                {
                     localEmitterName_ = std::string(nameBuffer);
                 }
 
                 // エミッター作成ボタン
                 ImGui::Spacing();
-                if (!localEmitterName_.empty()) {
-                    if (ImGui::Button("エミッター生成")) {
+                if (!localEmitterName_.empty())
+                {
+                    if (ImGui::Button("エミッター生成"))
+                    {
                         AddParticleEmitter(localEmitterName_);
                         localEmitterName_.clear();
                     }
@@ -324,12 +389,14 @@ void ParticleEditor::ShowImGuiEditor() {
             }
 
             // パーティクルグループ作成のCollapsingHeader
-            if (ColoredCollapsingHeader("パーティクルグループ作成", 1)) {
+            if (ColoredCollapsingHeader("パーティクルグループ作成", 1))
+            {
                 // 名前の入力
                 char nameBuffer[256];
                 strcpy_s(nameBuffer, sizeof(nameBuffer), localName_.c_str());
                 ImGui::Text("パーティクルグループの名前");
-                if (ImGui::InputText("  ", nameBuffer, sizeof(nameBuffer))) {
+                if (ImGui::InputText("  ", nameBuffer, sizeof(nameBuffer)))
+                {
                     localName_ = std::string(nameBuffer);
                 }
 
@@ -344,9 +411,11 @@ void ParticleEditor::ShowImGuiEditor() {
                 ImGui::Separator();
 
                 // モデルパーティクル選択時
-                if (selectedType == 0) {
+                if (selectedType == 0)
+                {
                     // モデル選択セクション (青色)
-                    if (ColoredCollapsingHeader("モデル選択", 2)) {
+                    if (ColoredCollapsingHeader("モデル選択", 2))
+                    {
                         // モデルファイル選択
                         // models はエンジン(debug)とアプリの 2 ルートに分割。ラジオで切り替える。
                         static const std::filesystem::path kRootsObj[2] = {"Engine/EngineAssets/models", "Application/Assets/models"};
@@ -355,10 +424,12 @@ void ParticleEditor::ShowImGuiEditor() {
                         static std::string selectedFolderObj = "";
                         static std::string selectedFileObj = "";
 
-                        for (int i = 0; i < 2; ++i) {
+                        for (int i = 0; i < 2; ++i)
+                        {
                             if (i > 0)
                                 ImGui::SameLine();
-                            if (ImGui::RadioButton(i == 0 ? "Engine(debug)##objr" : "App##objr", rootSelObj == i)) {
+                            if (ImGui::RadioButton(i == 0 ? "Engine(debug)##objr" : "App##objr", rootSelObj == i))
+                            {
                                 rootSelObj = i;
                                 currentDirObj = kRootsObj[rootSelObj];
                                 selectedFolderObj = selectedFileObj = "";
@@ -367,8 +438,10 @@ void ParticleEditor::ShowImGuiEditor() {
                         const std::filesystem::path baseDirObj = kRootsObj[rootSelObj];
 
                         // 「戻る」ボタン（上の階層に戻る）
-                        if (currentDirObj != baseDirObj) {
-                            if (ImGui::Button("< 戻る(Model)")) {
+                        if (currentDirObj != baseDirObj)
+                        {
+                            if (ImGui::Button("< 戻る(Model)"))
+                            {
                                 currentDirObj = currentDirObj.parent_path();
                                 selectedFolderObj = "";
                                 selectedFileObj = "";
@@ -379,21 +452,28 @@ void ParticleEditor::ShowImGuiEditor() {
                         std::vector<std::string> foldersObj;
                         std::vector<std::string> objFiles;
 
-                        for (const auto &entry : std::filesystem::directory_iterator(currentDirObj)) {
-                            if (entry.is_directory()) {
+                        for (const auto &entry : std::filesystem::directory_iterator(currentDirObj))
+                        {
+                            if (entry.is_directory())
+                            {
                                 foldersObj.push_back(entry.path().filename().string());
-                            } else if (entry.path().extension() == ".obj") {
+                            }
+                            else if (entry.path().extension() == ".obj")
+                            {
                                 objFiles.push_back(entry.path().filename().string());
                             }
                         }
 
                         // フォルダ選択 (クリックで移動)
-                        if (!foldersObj.empty()) {
+                        if (!foldersObj.empty())
+                        {
                             ImGui::Text("フォルダ");
                             ImGui::Separator();
-                            for (const auto &folder : foldersObj) {
+                            for (const auto &folder : foldersObj)
+                            {
                                 std::string folderNameTex = folder + " (Model)"; // フォルダ名に "(Model)" を追加
-                                if (ImGui::Selectable(folderNameTex.c_str(), selectedFolderObj == folder)) {
+                                if (ImGui::Selectable(folderNameTex.c_str(), selectedFolderObj == folder))
+                                {
                                     selectedFolderObj = folderNameTex;
                                     currentDirObj = currentDirObj / folder; // フォルダ移動
                                     selectedFileObj = "";                   // 新しいフォルダを開いたらファイル選択をリセット
@@ -403,12 +483,16 @@ void ParticleEditor::ShowImGuiEditor() {
                         }
 
                         // `.obj` ファイル選択
-                        if (!objFiles.empty()) {
+                        if (!objFiles.empty())
+                        {
                             ImGui::Text("モデルファイル:");
-                            if (ImGui::BeginCombo("ファイル選択", selectedFileObj.empty() ? "なし" : selectedFileObj.c_str())) {
-                                for (const auto &file : objFiles) {
+                            if (ImGui::BeginCombo("ファイル選択", selectedFileObj.empty() ? "なし" : selectedFileObj.c_str()))
+                            {
+                                for (const auto &file : objFiles)
+                                {
                                     bool isSelected = (file == selectedFileObj);
-                                    if (ImGui::Selectable(file.c_str(), isSelected)) {
+                                    if (ImGui::Selectable(file.c_str(), isSelected))
+                                    {
                                         selectedFileObj = file;
 
                                         // `baseDirObj` からの相対パスを取得
@@ -421,7 +505,8 @@ void ParticleEditor::ShowImGuiEditor() {
                                         // `fileNameObj_` に保存
                                         localFileObj_ = pathStr;
                                     }
-                                    if (isSelected) {
+                                    if (isSelected)
+                                    {
                                         ImGui::SetItemDefaultFocus();
                                     }
                                 }
@@ -431,7 +516,8 @@ void ParticleEditor::ShowImGuiEditor() {
                     }
 
                     // テクスチャ選択セクション (緑色)
-                    if (ColoredCollapsingHeader("テクスチャ選択", 3)) {
+                    if (ColoredCollapsingHeader("テクスチャ選択", 3))
+                    {
 #ifdef _DEBUG
                         ShowTextureFile(localTexturePath_);
 #endif // _DEBUG
@@ -439,8 +525,10 @@ void ParticleEditor::ShowImGuiEditor() {
 
                     // パーティクルグループ作成ボタン
                     ImGui::Spacing();
-                    if (!localName_.empty() && !localFileObj_.empty()) {
-                        if (ImGui::Button("モデルパーティクルグループ生成")) {
+                    if (!localName_.empty() && !localFileObj_.empty())
+                    {
+                        if (ImGui::Button("モデルパーティクルグループ生成"))
+                        {
                             AddParticleGroup(localName_, localFileObj_, localTexturePath_);
                             localName_.clear();
                             localFileObj_.clear();
@@ -449,19 +537,23 @@ void ParticleEditor::ShowImGuiEditor() {
                     }
                 }
                 // プリミティブモデル選択時
-                else if (selectedType == 1) {
+                else if (selectedType == 1)
+                {
                     // プリミティブタイプ選択セクション (紫色)
-                    if (ColoredCollapsingHeader("プリミティブタイプ選択", 4)) {
+                    if (ColoredCollapsingHeader("プリミティブタイプ選択", 4))
+                    {
                         const char *primitiveType[] = {"未選択", "プレーン", "球", "キューブ", "シリンダー", "リング", "三角形", "円錐", "四角錐"};
                         int currentPrimitiveType = static_cast<int>(localType_);
                         // 初期値が未選択（None = -1）の場合に対応するため +1 して選択肢に表示
-                        if (ImGui::Combo("タイプ選択", &currentPrimitiveType, primitiveType, IM_ARRAYSIZE(primitiveType))) {
+                        if (ImGui::Combo("タイプ選択", &currentPrimitiveType, primitiveType, IM_ARRAYSIZE(primitiveType)))
+                        {
                             localType_ = static_cast<PrimitiveType>(currentPrimitiveType);
                         }
                     }
 
                     // テクスチャ選択セクション (オレンジ色)
-                    if (ColoredCollapsingHeader("テクスチャ選択", 5)) {
+                    if (ColoredCollapsingHeader("テクスチャ選択", 5))
+                    {
 #ifdef _DEBUG
                         ShowTextureFile(localTexturePath_);
 #endif // _DEBUG
@@ -469,21 +561,25 @@ void ParticleEditor::ShowImGuiEditor() {
 
                     // パーティクルグループ作成ボタン
                     ImGui::Spacing();
-                    if (!localName_.empty()) {
+                    if (!localName_.empty())
+                    {
                         // localType_ が None（未選択）のときはボタンを無効化
                         bool isTypeInvalid = (localType_ == PrimitiveType::None);
-                        if (isTypeInvalid) {
+                        if (isTypeInvalid)
+                        {
                             ImGui::BeginDisabled();
                         }
 
-                        if (ImGui::Button("プリミティブパーティクルグループ生成")) {
+                        if (ImGui::Button("プリミティブパーティクルグループ生成"))
+                        {
                             AddPrimitiveParticleGroup(localName_, localTexturePath_, localType_);
                             localName_.clear();
                             localTexturePath_.clear();        // テクスチャのパスもクリア
                             localType_ = PrimitiveType::None; // 初期化
                         }
 
-                        if (isTypeInvalid) {
+                        if (isTypeInvalid)
+                        {
                             ImGui::EndDisabled();
                         }
                     }
@@ -491,7 +587,8 @@ void ParticleEditor::ShowImGuiEditor() {
             }
 
             // パーティクルデータのロードセクション (黄色系)
-            if (ColoredCollapsingHeader("パーティクルデータのロード", 2)) {
+            if (ColoredCollapsingHeader("パーティクルデータのロード", 2))
+            {
                 ShowFileSelector();
             }
 
@@ -501,8 +598,10 @@ void ParticleEditor::ShowImGuiEditor() {
             ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 8.0f);                        // 角丸
             ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(20.0f, 10.0f));         // パディング
 
-            if (ImGui::Button("全パーティクルを止める", ImVec2(200, 40))) {
-                for (auto &emitter : emitters_) {
+            if (ImGui::Button("全パーティクルを止める", ImVec2(200, 40)))
+            {
+                for (auto &emitter : emitters_)
+                {
                     emitter.second->SetIsAuto(false);
                 }
             }
@@ -517,20 +616,23 @@ void ParticleEditor::ShowImGuiEditor() {
 #endif // USE_IMGUI
 }
 
-void ParticleEditor::ShowFileSelector() {
+void ParticleEditor::ShowFileSelector()
+{
 #ifdef USE_IMGUI
     static int selectedIndex = -1;
     std::vector<std::string> jsonFiles = GetJsonFiles();
 
     // JSONファイルがない場合のチェック
-    if (jsonFiles.empty()) {
+    if (jsonFiles.empty())
+    {
         ImGui::Text("Jsonファイルが見つかりませんでした");
         return;
     }
 
     // ファイルリストをCスタイル文字列の配列に変換
     std::vector<const char *> fileNames;
-    for (const auto &filePath : jsonFiles) {
+    for (const auto &filePath : jsonFiles)
+    {
         fileNames.push_back(filePath.c_str());
     }
 
@@ -538,16 +640,19 @@ void ParticleEditor::ShowFileSelector() {
     ImGui::Separator();
 
     // Comboボックスでファイル選択
-    if (ImGui::Combo("JSON Files", &selectedIndex, fileNames.data(), static_cast<int>(fileNames.size()))) {
+    if (ImGui::Combo("JSON Files", &selectedIndex, fileNames.data(), static_cast<int>(fileNames.size())))
+    {
         // ファイル選択時の動作（選択されたファイル名を表示）
-        if (selectedIndex >= 0) {
+        if (selectedIndex >= 0)
+        {
             ImGui::Text("ファイル選択:");
             ImGui::TextWrapped("%s", jsonFiles[selectedIndex].c_str());
         }
     }
 
     // ボタンでパーティクルデータをセット
-    if (selectedIndex >= 0 && ImGui::Button("パーティクルデータのセット")) {
+    if (selectedIndex >= 0 && ImGui::Button("パーティクルデータのセット"))
+    {
         isLoad_ = true;
         // name_ に ".json" を除いた名前を設定
         std::string selectedFileName = jsonFiles[selectedIndex];
@@ -558,13 +663,15 @@ void ParticleEditor::ShowFileSelector() {
 #endif // USE_IMGUI
 }
 
-std::vector<std::string> ParticleEditor::GetJsonFiles() {
+std::vector<std::string> ParticleEditor::GetJsonFiles()
+{
     static std::vector<std::string> jsonFiles; // キャッシュされたJSONファイルリスト
     static size_t lastFileCount = 0;           // 最後に取得したJSONファイル数
     std::filesystem::path baseDir = "Application/Assets/jsons/Particle";
 
     // ディレクトリが存在しない場合はキャッシュをクリア
-    if (!std::filesystem::exists(baseDir) || !std::filesystem::is_directory(baseDir)) {
+    if (!std::filesystem::exists(baseDir) || !std::filesystem::is_directory(baseDir))
+    {
         jsonFiles.clear();
         lastFileCount = 0;
         return jsonFiles;
@@ -579,10 +686,13 @@ std::vector<std::string> ParticleEditor::GetJsonFiles() {
         });
 
     // ファイル数が変わった場合のみ更新
-    if (currentFileCount != lastFileCount) {
+    if (currentFileCount != lastFileCount)
+    {
         jsonFiles.clear(); // リストをクリア
-        for (const auto &entry : std::filesystem::directory_iterator(baseDir)) {
-            if (entry.path().extension() == ".json") {
+        for (const auto &entry : std::filesystem::directory_iterator(baseDir))
+        {
+            if (entry.path().extension() == ".json")
+            {
                 jsonFiles.push_back(entry.path().filename().string());
             }
         }
@@ -591,4 +701,44 @@ std::vector<std::string> ParticleEditor::GetJsonFiles() {
 
     return jsonFiles;
 }
+
+#ifdef _DEBUG
+// -------------------------------------------------------
+// Undo/Redo 用の状態キャプチャ・復元
+// -------------------------------------------------------
+
+nlohmann::json ParticleEditor::CaptureUndoState()
+{
+    nlohmann::json state = nlohmann::json::object();
+    for (const auto &[name, emitter] : emitters_)
+    {
+        if (emitter)
+        {
+            state[name] = emitter->CaptureUndoState();
+        }
+    }
+    return state;
+}
+
+void ParticleEditor::RestoreUndoState(const nlohmann::json &state)
+{
+    if (!state.is_object())
+    {
+        return;
+    }
+    for (auto it = state.begin(); it != state.end(); ++it)
+    {
+        // エミッターの追加・削除自体は対象外（既存エミッターへの反映のみ）
+        if (it.value().is_null())
+        {
+            continue;
+        }
+        ParticleEmitter *emitter = GetEmitterByName(it.key());
+        if (emitter)
+        {
+            emitter->RestoreUndoState(it.value());
+        }
+    }
+}
+#endif // _DEBUG
 } // namespace Hagine

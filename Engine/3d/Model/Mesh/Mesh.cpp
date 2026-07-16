@@ -1,26 +1,30 @@
 #include "Mesh.h"
 #include "DirectXCommon.h"
 namespace Hagine {
-void Mesh::Initialize() {
-    dxCommon_ = DirectXCommon::GetInstance();
+void Mesh::Initialize()
+{
+    pDxCommon_ = DirectXCommon::GetInstance();
 
-    CreateVartexData();
+    CreateVertexData();
     CreateIndexResource();
 }
 
-void Mesh::PrimitiveInitialize(const PrimitiveType &type) {
+void Mesh::PrimitiveInitialize(const PrimitiveType &type)
+{
     meshData_.vertices = PrimitiveModel::GetInstance()->GetPrimitiveData(type).vertices;
     meshData_.indices = PrimitiveModel::GetInstance()->GetPrimitiveData(type).indices;
 }
 
-void Mesh::PrimitiveInitialize(const PrimitiveType &type, const PrimitiveParams &params) {
+void Mesh::PrimitiveInitialize(const PrimitiveType &type, const PrimitiveParams &params)
+{
     auto data = PrimitiveModel::GetInstance()->BuildParametricData(type, params);
     meshData_.vertices = data.vertices;
     meshData_.indices = data.indices;
 }
 
-void Mesh::CreateVartexData() {
-    vertexResource_ = dxCommon_->CreateBufferResource(sizeof(VertexData) * meshData_.vertices.size());
+void Mesh::CreateVertexData()
+{
+    vertexResource_ = pDxCommon_->CreateBufferResource(sizeof(VertexData) * meshData_.vertices.size());
     // リソースの先頭のアドレスから使う
     vertexBufferView_.BufferLocation = vertexResource_->GetGPUVirtualAddress();
     // 使用するリソースのサイズは頂点6つ分のサイズ
@@ -29,17 +33,18 @@ void Mesh::CreateVartexData() {
     vertexBufferView_.StrideInBytes = sizeof(VertexData);
 
     // 頂点データの設定
-    vertexResource_->Map(0, nullptr, reinterpret_cast<void **>(&vertexData_));
+    vertexResource_->Map(0, nullptr, reinterpret_cast<void **>(&pVertexData_));
 
-    std::memcpy(vertexData_, meshData_.vertices.data(), sizeof(VertexData) * meshData_.vertices.size());
+    std::memcpy(pVertexData_, meshData_.vertices.data(), sizeof(VertexData) * meshData_.vertices.size());
 }
 
-void Mesh::CreateIndexResource() {
-    indexResource_ = dxCommon_->CreateBufferResource(sizeof(uint32_t) * meshData_.indices.size());
+void Mesh::CreateIndexResource()
+{
+    indexResource_ = pDxCommon_->CreateBufferResource(sizeof(uint32_t) * meshData_.indices.size());
     indexBufferView_.BufferLocation = indexResource_->GetGPUVirtualAddress();
     indexBufferView_.SizeInBytes = UINT(sizeof(uint32_t) * meshData_.indices.size());
     indexBufferView_.Format = DXGI_FORMAT_R32_UINT;
-    indexResource_->Map(0, nullptr, reinterpret_cast<void **>(&indexData_));
-    std::memcpy(indexData_, meshData_.indices.data(), sizeof(uint32_t) * meshData_.indices.size());
+    indexResource_->Map(0, nullptr, reinterpret_cast<void **>(&pIndexData_));
+    std::memcpy(pIndexData_, meshData_.indices.data(), sizeof(uint32_t) * meshData_.indices.size());
 }
 } // namespace Hagine

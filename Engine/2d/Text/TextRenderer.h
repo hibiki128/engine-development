@@ -12,7 +12,8 @@
 /// 生成したPNGはApplication/Assets/images/Text/配下に保存される。
 /// </summary>
 namespace Hagine {
-class TextRenderer {
+class TextRenderer
+{
   private:
     TextRenderer() = default;
     ~TextRenderer() = default;
@@ -23,7 +24,8 @@ class TextRenderer {
     /// <summary>
     /// シングルトンインスタンスの取得
     /// </summary>
-    static TextRenderer *GetInstance() {
+    static TextRenderer *GetInstance()
+    {
         static TextRenderer instance;
         return &instance;
     }

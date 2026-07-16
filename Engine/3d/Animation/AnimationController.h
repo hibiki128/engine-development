@@ -11,12 +11,13 @@ class Animator;
 /// アニメーションクリップ定義
 /// 1つのアニメーションファイルに対する再生パラメータをまとめて保持する
 /// </summary>
-struct AnimationClip {
-    std::string name;            // クリップの識別名（ステート名など）
-    std::string filePath;        // アニメーションファイルパス（"animation/Player/Idle_Ground.gltf" 等）
-    bool loop = true;            // ループ再生するか
-    float speed = 1.0f;          // 再生速度倍率
-    float blendDuration = 0.3f;  // このクリップへ切り替える際の補間時間（秒）
+struct AnimationClip
+{
+    std::string name;           // クリップの識別名（ステート名など）
+    std::string filePath;       // アニメーションファイルパス（"animation/Player/Idle_Ground.gltf" 等）
+    bool loop = true;           // ループ再生するか
+    float speed = 1.0f;         // 再生速度倍率
+    float blendDuration = 0.3f; // このクリップへ切り替える際の補間時間（秒）
 };
 
 /// <summary>
@@ -24,7 +25,8 @@ struct AnimationClip {
 /// Object3d が持つアニメーション機能をラップし、名前付きクリップの登録・再生・
 /// 再生制御（一時停止・スクラブ・速度変更）・キーフレーム編集・ImGui調整を一括で扱う
 /// </summary>
-class AnimationController {
+class AnimationController
+{
   public:
     /// ===================================================
     /// public method
@@ -172,17 +174,17 @@ class AnimationController {
 
   private:
     /// ===================================================
-    /// private variants
+    /// private variables
     /// ===================================================
 
-    Object3d *object_ = nullptr;                  // 制御対象
-    std::vector<AnimationClip> clips_;            // 登録クリップ（順序保持）
+    Object3d *pObject_ = nullptr;                 // 制御対象
+    std::vector<AnimationClip> clips_;           // 登録クリップ（順序保持）
     std::unordered_map<std::string, int> index_; // クリップ名 -> clips_ のインデックス
 
-    std::string currentClipName_;                // 現在再生中のクリップ名
-    float currentClipSpeed_ = 1.0f;              // 現在クリップ固有の速度（globalSpeed_ と乗算）
-    float globalSpeed_ = 1.0f;                   // 全体速度倍率
-    bool paused_ = false;                        // 一時停止中フラグ
+    std::string currentClipName_;   // 現在再生中のクリップ名
+    float currentClipSpeed_ = 1.0f; // 現在クリップ固有の速度（globalSpeed_ と乗算）
+    float globalSpeed_ = 1.0f;      // 全体速度倍率
+    bool paused_ = false;           // 一時停止中フラグ
 
     // ImGui編集用の状態
     int selectedNodeIndex_ = 0; // キーフレーム編集で選択中のノード

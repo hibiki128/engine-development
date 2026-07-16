@@ -76,9 +76,11 @@ FieldEffectResult ApplyFields(float3 velocity, float3 particlePos, float deltaTi
             continue;
 
         float dist = sqrt(distSq); // 範囲内確定後のみsqrt
-        // 減衰係数 (端=0, 中心=1)
+        // 減衰係数 (端=0, 中心=1)。falloff は減衰指数として連続的に効く:
+        //   1.0=線形 / 2.0=二乗（端で弱い） / 0.5=平方根（広い範囲で強い）
+        // 旧実装は「1.0のみ線形・それ以外は全て二乗」でImGuiの中間値が無意味だった。
         float t = 1.0f - saturate(dist / f.radius);
-        float influence = (f.falloff == 1.0f) ? t : t * t;
+        float influence = pow(t, max(f.falloff, 0.001f));
 
         // =============================================
         // 速度系エフェクト
@@ -160,112 +162,85 @@ FieldEffectResult ApplyFields(float3 velocity, float3 particlePos, float deltaTi
 // =============================================
 // 一度きり設定上書き処理
 //   フィールド内に入ったパーティクルへ、まだ上書きされていない
-//   ParticleCSSettings 項目を直接書き換える。
-//   書き換えた項目は settingsOverrideFlags に記録し、
-//   以降の同一フィールドへの再入時は何もしない（一度きり保証）。
+//   項目（FieldOverrideBits の8項目）を直接書き換える。
+//   書き換えた項目は settingsOverrideFlags.x に記録し、
+//   以降の再入時は何もしない（一度きり保証）。
+//   ※ 一度きり保証は「項目単位」。複数フィールドが同じ項目を
+//     上書きする設定でも、最初に触れたフィールドだけが効く。
 //
 //   呼び出し元: main() のフィールドループ内
-//   引数 particleIndex : 対象パーティクルの配列インデックス
+//   引数 p             : 対象パーティクル（ローカル。global往復を排除）
 //   引数 fi            : gFieldsOverride の添字（gFields と同一）
+//   引数 particleIndex : 乱数シード用のパーティクル配列インデックス
 // =============================================
-// 対象パーティクルはローカル変数 p で読み書きする（global往復を排除）。
-// 全て自スロットへの操作なので安全かつメモリ往復が無くなる。
-void ApplySettingsOverride(inout Particle p, uint fi)
+void ApplySettingsOverride(inout Particle p, uint fi, uint particleIndex)
 {
     ParticleFieldSettingsOverrideData ov = gFieldsOverride[fi];
     // overrideMask が 0 なら何もしない（高速パス）
-    if (ov.overrideMask.x == 0u && ov.overrideMask.y == 0u)
+    if (ov.overrideMask == 0u)
         return;
 
     // まだ上書きされていないビットだけ処理する
-    // = overrideMask & ~settingsOverrideFlags
-    uint2 pFlags = p.settingsOverrideFlags;
-    uint2 pending;
-    pending.x = ov.overrideMask.x & ~pFlags.x;
-    pending.y = ov.overrideMask.y & ~pFlags.y;
-
-    if (pending.x == 0u && pending.y == 0u)
+    uint pending = ov.overrideMask & ~p.settingsOverrideFlags.x;
+    if (pending == 0u)
         return; // 全項目上書き済み
 
-    // --- 各項目を pending ビットで個別チェック ---
-    // bit0-31 (pending.x)
-    if (pending.x & (1u << OB_LifeTimeMin))
-        p.lifeTime = ov.lifeTimeMin; // lifeTime を直接上書き
+    // Min/Max 乱数用（pending がある時だけ生成するので通常パスにコストなし）
+    RandomGenerator rng;
+    rng.InitSeed(
+        uint3(particleIndex, fi * 131u + 7u, particleIndex * 7919u),
+        gPerFrame.time
+    );
 
-    if (pending.x & (1u << OB_LifeTimeMax))
+    // --- 寿命: Min/Max 乱数で上書き（縮める用途では自然に早死にする） ---
+    if (pending & (1u << OB_LifeTime))
+        p.lifeTime = lerp(ov.lifeTimeMin, ov.lifeTimeMax, rng.Generate1d());
+
+    // --- スケール: Min/Max 乱数で上書き（initialScale ごと差し替え） ---
+    if (pending & (1u << OB_Scale))
     {
-        // lifeTimeMax はパーティクルの寿命上限をリセット
-        // currentTime もリセットして新しい寿命で動かしたい場合は 0 にする
-        // ここでは lifeTime を lifeTimeMax で上書きするだけにして
-        // currentTime はリセットしない（残り寿命が縮まる使い方を自然に実現）
-        p.lifeTime = ov.lifeTimeMax;
+        float s = lerp(ov.scaleMin, ov.scaleMax, rng.Generate1d());
+        p.initialScale = float3(s, s, s);
+        p.scale = float3(s, s, s);
     }
 
-    if (pending.x & (1u << OB_ScaleMin))
+    // --- 速度: Min/Max 乱数で置換 ---
+    if (pending & (1u << OB_Velocity))
     {
-        // 現在のスケールを scaleMin 値で再設定
-        float3 newScale = float3(ov.scaleMin, ov.scaleMin, ov.scaleMin);
-        p.initialScale = newScale;
-        p.scale = newScale;
+        p.velocity = float3(
+            lerp(ov.velocityMin.x, ov.velocityMax.x, rng.Generate1d()),
+            lerp(ov.velocityMin.y, ov.velocityMax.y, rng.Generate1d()),
+            lerp(ov.velocityMin.z, ov.velocityMax.z, rng.Generate1d()));
     }
 
-    if (pending.x & (1u << OB_ScaleMax))
-    {
-        float3 newScale = float3(ov.scaleMax, ov.scaleMax, ov.scaleMax);
-        p.initialScale = newScale;
-        p.scale = newScale;
-    }
+    // --- 速度倍率: 一度だけ乗算（0で停止、負で反転もできる） ---
+    if (pending & (1u << OB_VelocityMul))
+        p.velocity *= ov.velocityMultiplier;
 
-    if (pending.x & (1u << OB_VelocityMin))
-        p.velocity = max(p.velocity, ov.velocityMin);
+    // --- 加速度インパルス: 一度だけ加算 ---
+    if (pending & (1u << OB_AccelImpulse))
+        p.velocity += ov.accelImpulse;
 
-    if (pending.x & (1u << OB_VelocityMax))
-        p.velocity = min(p.velocity, ov.velocityMax);
+    // --- 色: RGB を上書き。フラグが立っている間は main() の色再計算から
+    //     RGB を保護する（アルファのフェードは通常どおり継続） ---
+    if (pending & (1u << OB_Color))
+        p.color.rgb = ov.color.rgb;
 
-    if (pending.x & (1u << OB_StartColor))
-        p.color = ov.startColor;
-
-    if (pending.x & (1u << OB_EndColor))
-        p.color = ov.endColor;
-
-    // Note: enableXxx 系のフラグはパーティクル自体には持たせず
-    //       gSettings (ConstantBuffer) 側の話なので、パーティクル単体での
-    //       enable 制御は「このフレームからトレイル起動」等の
-    //       trailSpawnDistance を直接書き換える形で代替する。
-
-    if (pending.x & (1u << OB_TrailSpawnDistance))
-    {
+    // --- トレイル生成間隔の上書き ---
+    if (pending & (1u << OB_TrailDistance))
         p.trailSpawnDistance = ov.trailSpawnDistance;
-    }
 
-    if (pending.x & (1u << OB_GatherTarget))
+    // --- 向け替え: 速さを保ったままターゲット方向へ ---
+    if (pending & (1u << OB_GatherRedirect))
     {
-        // gatherTarget はグループ設定なので、パーティクル側では
-        // 速度を直接 gatherTarget 方向に向け替えることで擬似実現する
         float3 toTarget = ov.gatherTarget - p.translate;
         float dist = length(toTarget);
         if (dist > 0.01f)
-            p.velocity = normalize(toTarget) * length(p.velocity);
-    }
-
-    // bit32-63 (pending.y) — 加速度・ダンピング・CurlNoise はグループ全体設定なので
-    // パーティクル単体では velocity を直接書き換えることで近似する
-
-    if (pending.y & (1u << (OB_Acceleration - 32u)))
-    {
-        // 加速度を現在 velocity に即時加算（一回だけ）
-        p.velocity += ov.acceleration;
-    }
-
-    if (pending.y & (1u << (OB_VelocityDampingFactor - 32u)))
-    {
-        // 一回だけ速度にダンピングを適用
-        p.velocity *= ov.velocityDampingFactor;
+            p.velocity = (toTarget / dist) * length(p.velocity);
     }
 
     // --- 書き換えたビットを記録 ---
-    p.settingsOverrideFlags.x |= pending.x;
-    p.settingsOverrideFlags.y |= pending.y;
+    p.settingsOverrideFlags.x |= pending;
 }
 
 // 親パーティクルはローカル変数 p で読み書きする（global往復を排除）。
@@ -722,12 +697,19 @@ void main(uint3 DTid : SV_DispatchThreadID)
             if (gFields[fi].enableSettingsOverride == 0u)
                 continue; // 設定上書き機能OFF → 高速スキップ
 
+            // groupId フィルタ（ApplyFields と同じ規則）
+            bool ovGroupMatch = (gFields[fi].groupId == -1) ||
+                                (gPerFrame.emitterFieldGroupId == -1) ||
+                                (gFields[fi].groupId == gPerFrame.emitterFieldGroupId);
+            if (!ovGroupMatch)
+                continue;
+
             float3 toP = p.translate - gFields[fi].position;
             if (dot(toP, toP) >= gFields[fi].radius * gFields[fi].radius)
                 continue; // 範囲外
 
                 // ローカル p で完結（往復書き戻し不要）
-            ApplySettingsOverride(p, fi);
+            ApplySettingsOverride(p, fi, (uint) particleIndex);
         }
     }
         
@@ -739,11 +721,20 @@ void main(uint3 DTid : SV_DispatchThreadID)
         // 10. 各種パラメータ更新
     float lifeRatio = p.currentTime / p.lifeTime;
 
+    // フィールドの色上書き(OB_Color)を受けた粒子は RGB を固定し、アルファのフェードだけ続ける。
+    // （旧実装は色上書き直後にここで毎フレーム再計算されて即座に消えていた）
+    const bool colorLocked = (gFieldCB.fieldCount > 0) &&
+                             ((p.settingsOverrideFlags.x & (1u << OB_Color)) != 0u);
+
     if (gSettings.enableColorGradient)
     {
         // N段カラーグラデーション: CPUがベイクした256段LUTをlifeRatioでサンプル（start/mid/end/random を上書き）
         uint gi = (uint) (saturate(lifeRatio) * 255.0f + 0.5f);
-        p.color = UnpackColorRGBA8(gSettings.colorLUT[gi >> 2][gi & 3]);
+        float4 gradColor = UnpackColorRGBA8(gSettings.colorLUT[gi >> 2][gi & 3]);
+        if (colorLocked)
+            p.color.a = gradColor.a;
+        else
+            p.color = gradColor;
     }
     else if (!gSettings.enableRandomColor)
     {
@@ -768,7 +759,10 @@ void main(uint3 DTid : SV_DispatchThreadID)
         {
             lerpedColor = lerp(gSettings.startColor, gSettings.endColor, lifeRatio);
         }
-        p.color = float4(lerpedColor.rgb, saturate(lerpedColor.a));
+        if (colorLocked)
+            p.color.a = saturate(lerpedColor.a);
+        else
+            p.color = float4(lerpedColor.rgb, saturate(lerpedColor.a));
     }
     else
     {

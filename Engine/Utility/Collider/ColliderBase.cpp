@@ -1,13 +1,16 @@
 #include "ColliderBase.h"
-#include"Collider/CollisionManager.h"
+#include "collider/CollisionManager.h"
 
 namespace Hagine {
-ColliderBase::~ColliderBase() {
+ColliderBase::~ColliderBase()
+{
     CollisionManager::GetInstance()->Unregister(this);
 }
 
-void ColliderBase::SetTag(const std::string &tag) {
-    if (!ColliderTagManager::GetInstance()->HasTag(tag)) {
+void ColliderBase::SetTag(const std::string &tag)
+{
+    if (!ColliderTagManager::GetInstance()->HasTag(tag))
+    {
         return; // タグが存在しない場合は何もしない
     }
 
@@ -15,13 +18,16 @@ void ColliderBase::SetTag(const std::string &tag) {
     tag_ = tag;
 
     // タグが変更され、かつ既に登録されている場合は再登録
-    if (oldTag != tag && isRegistered_) {
+    if (oldTag != tag && isRegistered_)
+    {
         CollisionManager::GetInstance()->UpdateColliderTag(this, oldTag, tag);
     }
 }
 
-void ColliderBase::SaveToJson() {
-    if (!dataHandler_) {
+void ColliderBase::SaveToJson()
+{
+    if (!dataHandler_)
+    {
         dataHandler_ = std::make_unique<DataHandler>("Collider", name_);
     }
 
@@ -35,8 +41,10 @@ void ColliderBase::SaveToJson() {
     dataHandler_->Save("collisionMask", maskList);
 }
 
-void ColliderBase::LoadFromJson() {
-    if (!dataHandler_) {
+void ColliderBase::LoadFromJson()
+{
+    if (!dataHandler_)
+    {
         dataHandler_ = std::make_unique<DataHandler>("Collider", name_);
     }
 
@@ -48,13 +56,15 @@ void ColliderBase::LoadFromJson() {
     // 衝突マスクを配列から読み込み
     auto maskList = dataHandler_->Load<std::vector<std::string>>("collisionMask", std::vector<std::string>());
     collisionMask_.clear();
-    for (const auto &mask : maskList) {
+    for (const auto &mask : maskList)
+    {
         AddCollisionMask(mask);
     }
 }
 
 #ifdef _DEBUG
-void ColliderBase::ImGuiTagSettings() {
+void ColliderBase::ImGuiTagSettings()
+{
     // タグ・マスクを無視して全コライダーと判定する（押し戻し検証用）
     ImGui::Checkbox("全コライダーと判定（タグ無視）", &collideWithAll_);
     ImGui::SetItemTooltip("タグ/マスク設定に関係なく、全てのコライダーと衝突判定する。タグ設定ミスの切り分け用");
@@ -68,13 +78,17 @@ void ColliderBase::ImGuiTagSettings() {
     std::vector<std::string> tagList(allTags.begin(), allTags.end());
     std::sort(tagList.begin(), tagList.end());
 
-    if (ImGui::BeginCombo("##Tag", tag_.c_str())) {
-        for (const auto &tag : tagList) {
+    if (ImGui::BeginCombo("##Tag", tag_.c_str()))
+    {
+        for (const auto &tag : tagList)
+        {
             bool isSelected = (tag_ == tag);
-            if (ImGui::Selectable(tag.c_str(), isSelected)) {
+            if (ImGui::Selectable(tag.c_str(), isSelected))
+            {
                 SetTag(tag);
             }
-            if (isSelected) {
+            if (isSelected)
+            {
                 ImGui::SetItemDefaultFocus();
             }
         }
@@ -87,23 +101,30 @@ void ColliderBase::ImGuiTagSettings() {
     ImGui::Text("衝突判定対象:");
     ImGui::Separator();
 
-    for (const auto &tag : tagList) {
+    for (const auto &tag : tagList)
+    {
         if (tag == "None")
             continue;
 
         bool isInMask = collisionMask_.find(tag) != collisionMask_.end();
-        if (ImGui::Checkbox(tag.c_str(), &isInMask)) {
-            if (isInMask) {
+        if (ImGui::Checkbox(tag.c_str(), &isInMask))
+        {
+            if (isInMask)
+            {
                 AddCollisionMask(tag);
-            } else {
+            }
+            else
+            {
                 RemoveCollisionMask(tag);
             }
         }
     }
 
-    if (!collisionMask_.empty()) {
+    if (!collisionMask_.empty())
+    {
         ImGui::Spacing();
-        if (ImGui::Button("マスクをクリア", ImVec2(150, 0))) {
+        if (ImGui::Button("マスクをクリア", ImVec2(150, 0)))
+        {
             ClearCollisionMask();
         }
     }

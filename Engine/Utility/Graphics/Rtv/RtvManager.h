@@ -11,7 +11,8 @@ class DXDevice;
 /// RTV用デスクリプタヒープの生成と、各スロットへのRTV作成・ハンドル取得を担当する
 /// スロット割り当て: 0,1: バックバッファ / 2: オフスクリーン / 3,4: ピンポン / 5: 最終結果 / 6: プレビュー窓用RT
 /// </summary>
-class RtvManager {
+class RtvManager
+{
   public:
     // RTVの最大数
     static constexpr uint32_t kMaxRTVCount = 8;
@@ -57,7 +58,7 @@ class RtvManager {
 
   private:
     // デバイス（DirectXCommon が所有）
-    DXDevice *device_ = nullptr;
+    DXDevice *pDevice_ = nullptr;
     // RTV用デスクリプタヒープ
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> heap_;
     // デスクリプタ1つ分のサイズ

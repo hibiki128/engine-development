@@ -1,18 +1,20 @@
 #pragma once
 #include "type/Vector2.h"
-#include <Camera/ViewProjection/ViewProjection.h>
+#include <camera/projection/ViewProjection.h>
 #include <dinput.h>
 #include <variant>
 #include <wrl.h>
 
 namespace Hagine {
-struct MouseMove {
+struct MouseMove
+{
     LONG lX;
     LONG lY;
     LONG lZ;
 };
 
-class Mouse {
+class Mouse
+{
   private:
     // マウス
     Microsoft::WRL::ComPtr<IDirectInputDevice8> devMouse_;

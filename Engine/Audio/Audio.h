@@ -11,9 +11,11 @@
 #include <set>
 
 namespace Hagine {
-class Audio {
+class Audio
+{
 
-    class VoiceCallback : public IXAudio2VoiceCallback {
+    class VoiceCallback : public IXAudio2VoiceCallback
+    {
       public:
         void STDMETHODCALLTYPE OnStreamEnd() override {}
         void STDMETHODCALLTYPE OnVoiceProcessingPassEnd() override {}
@@ -22,10 +24,13 @@ class Audio {
         void STDMETHODCALLTYPE OnLoopEnd(void *) override {}
         void STDMETHODCALLTYPE OnVoiceError(void *, HRESULT) override {}
 
-        void STDMETHODCALLTYPE OnBufferEnd(void *pBufferContext) override {
-            if (pBufferContext) {
+        void STDMETHODCALLTYPE OnBufferEnd(void *pBufferContext) override
+        {
+            if (pBufferContext)
+            {
                 Voice *voice = reinterpret_cast<Voice *>(pBufferContext);
-                if (voice && voice->sourceVoice) {
+                if (voice && voice->sourceVoice)
+                {
                     voice->sourceVoice = nullptr;
                 }
             }
@@ -41,28 +46,33 @@ class Audio {
     Audio &operator=(Audio &) = default;
 
   private:
-    struct ChunkHeader {
+    struct ChunkHeader
+    {
         char id[4];
         int32_t size;
     };
 
-    struct RiffHeader {
+    struct RiffHeader
+    {
         ChunkHeader chunk;
         char type[4];
     };
 
-    struct FormatChunk {
+    struct FormatChunk
+    {
         ChunkHeader chunk;
         WAVEFORMATEX fmt;
     };
 
-    struct SoundData {
+    struct SoundData
+    {
         WAVEFORMATEX wfex;
         std::vector<uint8_t> buffer;
         std::string name_;
     };
 
-    struct Voice {
+    struct Voice
+    {
         uint32_t handle = 0u;
         IXAudio2SourceVoice *sourceVoice = nullptr;
         float volume = 1.0f;
@@ -73,7 +83,8 @@ class Audio {
     /// <summary>
     /// シングルトンインスタンスの取得
     /// </summary>
-    static Audio *GetInstance() {
+    static Audio *GetInstance()
+    {
         static Audio instance;
         return &instance;
     }
@@ -159,7 +170,7 @@ class Audio {
     // 通常メンバ
     //------------------------------------------------------------------
     Microsoft::WRL::ComPtr<IXAudio2> xAudio2_;
-    IXAudio2MasteringVoice *masterVoice_ = nullptr;
+    IXAudio2MasteringVoice *pMasterVoice_ = nullptr;
     std::string directoryPath_;
     std::array<SoundData, kMaxSoundData> soundDatas_;
     size_t soundDataIndex_ = 0;
@@ -184,9 +195,9 @@ class Audio {
     std::map<std::string, uint32_t> debugLoadedMap_; // ファイル名 → soundIndex
 
     // 波形プレビュー用キャッシュ（再構築は選択音が変わったときだけ）
-    int debugWaveformIndex_ = -1;          // キャッシュ中の soundIndex（-1=未構築）
-    std::vector<float> debugWaveformX_;    // X 座標（0..buckets-1）
-    std::vector<float> debugWaveformMin_;  // 各バケットの最小サンプル
-    std::vector<float> debugWaveformMax_;  // 各バケットの最大サンプル
+    int debugWaveformIndex_ = -1;         // キャッシュ中の soundIndex（-1=未構築）
+    std::vector<float> debugWaveformX_;   // X 座標（0..buckets-1）
+    std::vector<float> debugWaveformMin_; // 各バケットの最小サンプル
+    std::vector<float> debugWaveformMax_; // 各バケットの最大サンプル
 };
 } // namespace Hagine

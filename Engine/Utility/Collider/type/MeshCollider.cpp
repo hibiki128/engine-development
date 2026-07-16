@@ -1,7 +1,7 @@
 #include "MeshCollider.h"
-#include "Model/Model.h"
+#include "model/Model.h"
 #include "line/DrawLine3D.h"
-#include "myMath.h"
+#include "MyMath.h"
 #include <algorithm>
 #include <array>
 #include <cfloat>
@@ -13,12 +13,14 @@ namespace Hagine {
 
 namespace {
 /// <summary>三角形の重心を求める</summary>
-Vector3 TriangleCentroid(const Triangle &t) {
+Vector3 TriangleCentroid(const Triangle &t)
+{
     return (t.v[0] + t.v[1] + t.v[2]) / 3.0f;
 }
 
 /// <summary>三角形を内包するAABBを求める</summary>
-AABB TriangleBounds(const Triangle &t) {
+AABB TriangleBounds(const Triangle &t)
+{
     AABB b;
     b.min = {
         (std::min)({t.v[0].x, t.v[1].x, t.v[2].x}),
@@ -32,7 +34,8 @@ AABB TriangleBounds(const Triangle &t) {
 }
 
 /// <summary>2つのAABBを内包する最小のAABBを返す</summary>
-AABB MergeAABB(const AABB &a, const AABB &b) {
+AABB MergeAABB(const AABB &a, const AABB &b)
+{
     AABB r;
     r.min = {(std::min)(a.min.x, b.min.x), (std::min)(a.min.y, b.min.y), (std::min)(a.min.z, b.min.z)};
     r.max = {(std::max)(a.max.x, b.max.x), (std::max)(a.max.y, b.max.y), (std::max)(a.max.z, b.max.z)};
@@ -40,14 +43,16 @@ AABB MergeAABB(const AABB &a, const AABB &b) {
 }
 
 /// <summary>AABB同士が重なっているか</summary>
-bool AABBOverlap(const AABB &a, const AABB &b) {
+bool AABBOverlap(const AABB &a, const AABB &b)
+{
     return (a.min.x <= b.max.x && a.max.x >= b.min.x) &&
            (a.min.y <= b.max.y && a.max.y >= b.min.y) &&
            (a.min.z <= b.max.z && a.max.z >= b.min.z);
 }
 
 /// <summary>三角形をワールド空間へ変換する</summary>
-Triangle TransformTriangle(const Triangle &tri, const Matrix4x4 &m) {
+Triangle TransformTriangle(const Triangle &tri, const Matrix4x4 &m)
+{
     Triangle out;
     out.v[0] = Transformation(tri.v[0], m);
     out.v[1] = Transformation(tri.v[1], m);
@@ -57,7 +62,8 @@ Triangle TransformTriangle(const Triangle &tri, const Matrix4x4 &m) {
 }
 
 /// <summary>点から三角形上の最近点を求める（Ericson, Real-Time Collision Detection）</summary>
-Vector3 ClosestPointOnTriangle(const Vector3 &p, const Vector3 &a, const Vector3 &b, const Vector3 &c) {
+Vector3 ClosestPointOnTriangle(const Vector3 &p, const Vector3 &a, const Vector3 &b, const Vector3 &c)
+{
     Vector3 ab = b - a;
     Vector3 ac = c - a;
     Vector3 ap = p - a;
@@ -73,7 +79,8 @@ Vector3 ClosestPointOnTriangle(const Vector3 &p, const Vector3 &a, const Vector3
         return b;
 
     float vc = d1 * d4 - d3 * d2;
-    if (vc <= 0.0f && d1 >= 0.0f && d3 <= 0.0f) {
+    if (vc <= 0.0f && d1 >= 0.0f && d3 <= 0.0f)
+    {
         float v = d1 / (d1 - d3);
         return a + ab * v;
     }
@@ -85,13 +92,15 @@ Vector3 ClosestPointOnTriangle(const Vector3 &p, const Vector3 &a, const Vector3
         return c;
 
     float vb = d5 * d2 - d1 * d6;
-    if (vb <= 0.0f && d2 >= 0.0f && d6 <= 0.0f) {
+    if (vb <= 0.0f && d2 >= 0.0f && d6 <= 0.0f)
+    {
         float w = d2 / (d2 - d6);
         return a + ac * w;
     }
 
     float va = d3 * d6 - d5 * d4;
-    if (va <= 0.0f && (d4 - d3) >= 0.0f && (d5 - d6) >= 0.0f) {
+    if (va <= 0.0f && (d4 - d3) >= 0.0f && (d5 - d6) >= 0.0f)
+    {
         float w = (d4 - d3) / ((d4 - d3) + (d5 - d6));
         return b + (c - b) * w;
     }
@@ -103,7 +112,8 @@ Vector3 ClosestPointOnTriangle(const Vector3 &p, const Vector3 &a, const Vector3
 }
 
 /// <summary>三角形と球の判定 + 押し戻しMTV（球を三角形から押し出す向き）</summary>
-bool TriangleVsSphere(const Triangle &tri, const Vector3 &center, float radius, Vector3 &outMTV) {
+bool TriangleVsSphere(const Triangle &tri, const Vector3 &center, float radius, Vector3 &outMTV)
+{
     Vector3 closest = ClosestPointOnTriangle(center, tri.v[0], tri.v[1], tri.v[2]);
     Vector3 d = center - closest;
     float distSq = d.LengthSq();
@@ -120,7 +130,8 @@ bool TriangleVsSphere(const Triangle &tri, const Vector3 &center, float radius, 
 /// 三角形とボックス（OBB/AABBを一般化）のSAT判定 + 押し戻しMTV
 /// ボックスは中心C・単位軸u[3]・半径extent e[3]で表す。MTVはボックスを三角形から押し出す向き。
 /// </summary>
-bool TriangleVsBox(const Triangle &tri, const Vector3 &C, const Vector3 u[3], const float e[3], Vector3 &outMTV) {
+bool TriangleVsBox(const Triangle &tri, const Vector3 &C, const Vector3 u[3], const float e[3], Vector3 &outMTV)
+{
     // ボックス中心を原点とした相対座標へ
     Vector3 v[3] = {tri.v[0] - C, tri.v[1] - C, tri.v[2] - C};
     Vector3 f[3] = {v[1] - v[0], v[2] - v[1], v[0] - v[2]};
@@ -138,7 +149,8 @@ bool TriangleVsBox(const Triangle &tri, const Vector3 &C, const Vector3 u[3], co
     float minPen = FLT_MAX;
     Vector3 bestAxis;
 
-    for (int i = 0; i < 13; ++i) {
+    for (int i = 0; i < 13; ++i)
+    {
         float len = axes[i].Length();
         if (len < 1e-6f)
             continue; // 退化軸（平行な辺など）はスキップ
@@ -159,7 +171,8 @@ bool TriangleVsBox(const Triangle &tri, const Vector3 &C, const Vector3 u[3], co
         if (pen < 0.0f)
             return false; // 分離軸 → 衝突なし
 
-        if (pen < minPen) {
+        if (pen < minPen)
+        {
             minPen = pen;
             // ボックスを三角形から離す向きを選ぶ（ボックス中心0が三角形中心の反対側へ）
             float triCenter = (triMin + triMax) * 0.5f;
@@ -172,9 +185,11 @@ bool TriangleVsBox(const Triangle &tri, const Vector3 &C, const Vector3 u[3], co
     return true;
 }
 
-/// <summary>線分と三角形の交差判定（Möller–Trumbore）</summary>
-bool SegmentTriangle(const Vector3 &p, const Vector3 &q,
-                     const Vector3 &a, const Vector3 &b, const Vector3 &c) {
+/// <summary>線分と三角形の交差判定（Möller–Trumbore）。ヒット時は媒介変数 t(0〜1) を返す</summary>
+bool SegmentTriangleParam(const Vector3 &p, const Vector3 &q,
+                          const Vector3 &a, const Vector3 &b, const Vector3 &c,
+                          float &outT)
+{
     Vector3 dir = q - p;
     Vector3 e1 = b - a;
     Vector3 e2 = c - a;
@@ -195,11 +210,24 @@ bool SegmentTriangle(const Vector3 &p, const Vector3 &q,
         return false;
 
     float t = e2.Dot(qv) * inv;
-    return t >= 0.0f && t <= 1.0f;
+    if (t < 0.0f || t > 1.0f)
+        return false;
+
+    outT = t;
+    return true;
+}
+
+/// <summary>線分と三角形の交差判定（Möller–Trumbore）</summary>
+bool SegmentTriangle(const Vector3 &p, const Vector3 &q,
+                     const Vector3 &a, const Vector3 &b, const Vector3 &c)
+{
+    float t;
+    return SegmentTriangleParam(p, q, a, b, c, t);
 }
 
 /// <summary>三角形同士の交差判定（辺-面の交差で近似。共面ケースは非対応）</summary>
-bool TriangleVsTriangle(const Triangle &A, const Triangle &B) {
+bool TriangleVsTriangle(const Triangle &A, const Triangle &B)
+{
     if (SegmentTriangle(A.v[0], A.v[1], B.v[0], B.v[1], B.v[2]))
         return true;
     if (SegmentTriangle(A.v[1], A.v[2], B.v[0], B.v[1], B.v[2]))
@@ -220,7 +248,8 @@ bool TriangleVsTriangle(const Triangle &A, const Triangle &B) {
 /// 同一法線方向には最大量までしか押さず（平坦面で過剰補正しない）、
 /// 直交方向は加算する（角での押し戻し）。
 /// </summary>
-void AccumulateMTV(Vector3 &sum, const Vector3 &mtv) {
+void AccumulateMTV(Vector3 &sum, const Vector3 &mtv)
+{
     float pen = mtv.Length();
     if (pen < 1e-6f)
         return;
@@ -231,13 +260,15 @@ void AccumulateMTV(Vector3 &sum, const Vector3 &mtv) {
 }
 
 /// <summary>球のワールドAABBを求める</summary>
-AABB SphereWorldBounds(const Sphere &s) {
+AABB SphereWorldBounds(const Sphere &s)
+{
     Vector3 r = {s.radius, s.radius, s.radius};
     return {s.center - r, s.center + r};
 }
 
 /// <summary>OBBのワールドAABBを求める</summary>
-AABB OBBWorldBounds(const OBB &obb) {
+AABB OBBWorldBounds(const OBB &obb)
+{
     Vector3 c = obb.scaleCenterRotated;
     Vector3 ext = {
         std::abs(obb.orientations[0].x) * obb.size.x + std::abs(obb.orientations[1].x) * obb.size.y + std::abs(obb.orientations[2].x) * obb.size.z,
@@ -247,7 +278,8 @@ AABB OBBWorldBounds(const OBB &obb) {
 }
 
 /// <summary>16要素の行列が完全一致するか（静的メッシュのキャッシュ無効化判定用）</summary>
-bool MatrixEqual(const Matrix4x4 &a, const Matrix4x4 &b) {
+bool MatrixEqual(const Matrix4x4 &a, const Matrix4x4 &b)
+{
     for (int i = 0; i < 4; ++i)
         for (int j = 0; j < 4; ++j)
             if (a.m[i][j] != b.m[i][j])
@@ -256,17 +288,21 @@ bool MatrixEqual(const Matrix4x4 &a, const Matrix4x4 &b) {
 }
 
 /// <summary>エッジの重複排除キー（端点を量子化し順不同で正規化）</summary>
-struct EdgeKey {
+struct EdgeKey
+{
     int64_t a[3];
     int64_t b[3];
-    bool operator==(const EdgeKey &o) const {
+    bool operator==(const EdgeKey &o) const
+    {
         return a[0] == o.a[0] && a[1] == o.a[1] && a[2] == o.a[2] &&
                b[0] == o.b[0] && b[1] == o.b[1] && b[2] == o.b[2];
     }
 };
 
-struct EdgeKeyHash {
-    size_t operator()(const EdgeKey &k) const {
+struct EdgeKeyHash
+{
+    size_t operator()(const EdgeKey &k) const
+    {
         size_t h = 1469598103934665603ull; // FNV-1a
         auto mix = [&](int64_t v) {
             h ^= static_cast<size_t>(v);
@@ -283,7 +319,8 @@ struct EdgeKeyHash {
 };
 
 /// <summary>2点から順不同・量子化済みのエッジキーを作る（共有エッジを同一視）</summary>
-EdgeKey MakeEdgeKey(const Vector3 &p, const Vector3 &q) {
+EdgeKey MakeEdgeKey(const Vector3 &p, const Vector3 &q)
+{
     const float inv = 1.0f / 1e-4f; // 0.1mm グリッドへ量子化
     int64_t pk[3] = {
         static_cast<int64_t>(std::llround(p.x * inv)),
@@ -299,7 +336,8 @@ EdgeKey MakeEdgeKey(const Vector3 &p, const Vector3 &q) {
     EdgeKey k;
     const int64_t *lo = pFirst ? pk : qk;
     const int64_t *hi = pFirst ? qk : pk;
-    for (int i = 0; i < 3; ++i) {
+    for (int i = 0; i < 3; ++i)
+    {
         k.a[i] = lo[i];
         k.b[i] = hi[i];
     }
@@ -307,13 +345,15 @@ EdgeKey MakeEdgeKey(const Vector3 &p, const Vector3 &q) {
 }
 } // namespace
 
-void MeshCollider::BuildFromModel(Model *model) {
+void MeshCollider::BuildFromModel(Model *model)
+{
     if (!model)
         return;
 
     std::vector<Triangle> tris;
     ModelData data = model->GetModelData();
-    for (const auto &mesh : data.meshes) {
+    for (const auto &mesh : data.meshes)
+    {
         const auto &verts = mesh.vertices;
         const auto &indices = mesh.indices;
 
@@ -328,12 +368,17 @@ void MeshCollider::BuildFromModel(Model *model) {
             tris.push_back(t);
         };
 
-        if (!indices.empty()) {
-            for (size_t i = 0; i + 2 < indices.size(); i += 3) {
+        if (!indices.empty())
+        {
+            for (size_t i = 0; i + 2 < indices.size(); i += 3)
+            {
                 makeTriangle(indices[i], indices[i + 1], indices[i + 2]);
             }
-        } else {
-            for (size_t i = 0; i + 2 < verts.size(); i += 3) {
+        }
+        else
+        {
+            for (size_t i = 0; i + 2 < verts.size(); i += 3)
+            {
                 makeTriangle(static_cast<uint32_t>(i), static_cast<uint32_t>(i + 1), static_cast<uint32_t>(i + 2));
             }
         }
@@ -342,7 +387,8 @@ void MeshCollider::BuildFromModel(Model *model) {
     BuildFromTriangles(tris);
 }
 
-void MeshCollider::BuildFromTriangles(const std::vector<Triangle> &localTriangles) {
+void MeshCollider::BuildFromTriangles(const std::vector<Triangle> &localTriangles)
+{
     triangles_ = localTriangles;
     BuildBVH();
     BuildEdges();
@@ -350,17 +396,21 @@ void MeshCollider::BuildFromTriangles(const std::vector<Triangle> &localTriangle
 
     // Mesh×Mesh押し戻し用のローカル・バウンディング球を算出する。
     // 中心はローカルAABBの中点、半径は中心から最も遠い頂点までの距離。
-    if (triangles_.empty()) {
+    if (triangles_.empty())
+    {
         localBoundingCenter_ = {0.0f, 0.0f, 0.0f};
         localBoundingRadius_ = 0.0f;
-    } else {
+    }
+    else
+    {
         AABB bounds = TriangleBounds(triangles_[0]);
         for (size_t i = 1; i < triangles_.size(); ++i)
             bounds = MergeAABB(bounds, TriangleBounds(triangles_[i]));
         localBoundingCenter_ = (bounds.min + bounds.max) * 0.5f;
         float maxDistSq = 0.0f;
         for (const auto &t : triangles_)
-            for (int k = 0; k < 3; ++k) {
+            for (int k = 0; k < 3; ++k)
+            {
                 float dSq = (t.v[k] - localBoundingCenter_).LengthSq();
                 if (dSq > maxDistSq)
                     maxDistSq = dSq;
@@ -373,7 +423,8 @@ void MeshCollider::BuildFromTriangles(const std::vector<Triangle> &localTriangle
     UpdateWorldTransform();
 }
 
-void MeshCollider::BuildEdges() {
+void MeshCollider::BuildEdges()
+{
     localEdges_.clear();
     if (triangles_.empty())
         return;
@@ -388,14 +439,16 @@ void MeshCollider::BuildEdges() {
             localEdges_.emplace_back(p, q);
     };
 
-    for (const auto &t : triangles_) {
+    for (const auto &t : triangles_)
+    {
         addEdge(t.v[0], t.v[1]);
         addEdge(t.v[1], t.v[2]);
         addEdge(t.v[2], t.v[0]);
     }
 }
 
-void MeshCollider::BuildBVH() {
+void MeshCollider::BuildBVH()
+{
     nodes_.clear();
     rootNode_ = -1;
     if (triangles_.empty())
@@ -405,7 +458,8 @@ void MeshCollider::BuildBVH() {
     rootNode_ = BuildNode(0, static_cast<int>(triangles_.size()), 0);
 }
 
-int MeshCollider::BuildNode(int start, int count, int depth) {
+int MeshCollider::BuildNode(int start, int count, int depth)
+{
     BVHNode node;
 
     // この範囲の三角形を内包する境界を計算
@@ -434,7 +488,8 @@ int MeshCollider::BuildNode(int start, int count, int depth) {
     // 重心の広がりから分割軸を選ぶ
     Vector3 cmin = TriangleCentroid(triangles_[start]);
     Vector3 cmax = cmin;
-    for (int i = 1; i < count; ++i) {
+    for (int i = 1; i < count; ++i)
+    {
         Vector3 c = TriangleCentroid(triangles_[start + i]);
         cmin = {(std::min)(cmin.x, c.x), (std::min)(cmin.y, c.y), (std::min)(cmin.z, c.z)};
         cmax = {(std::max)(cmax.x, c.x), (std::max)(cmax.y, c.y), (std::max)(cmax.z, c.z)};
@@ -451,8 +506,10 @@ int MeshCollider::BuildNode(int start, int count, int depth) {
         [axis](const Triangle &a, const Triangle &b) {
             Vector3 ca = TriangleCentroid(a);
             Vector3 cb = TriangleCentroid(b);
-            float va = (axis == 0) ? ca.x : (axis == 1) ? ca.y : ca.z;
-            float vb = (axis == 0) ? cb.x : (axis == 1) ? cb.y : cb.z;
+            float va = (axis == 0) ? ca.x : (axis == 1) ? ca.y
+                                                        : ca.z;
+            float vb = (axis == 0) ? cb.x : (axis == 1) ? cb.y
+                                                        : cb.z;
             return va < vb;
         });
 
@@ -472,7 +529,8 @@ int MeshCollider::BuildNode(int start, int count, int depth) {
     return idx;
 }
 
-void MeshCollider::QueryCandidates(const AABB &localBounds, std::vector<int> &outIndices) const {
+void MeshCollider::QueryCandidates(const AABB &localBounds, std::vector<int> &outIndices) const
+{
     if (rootNode_ < 0)
         return;
 
@@ -480,22 +538,27 @@ void MeshCollider::QueryCandidates(const AABB &localBounds, std::vector<int> &ou
     int sp = 0;
     stack[sp++] = rootNode_;
 
-    while (sp > 0) {
+    while (sp > 0)
+    {
         const BVHNode &n = nodes_[stack[--sp]];
         if (!AABBOverlap(n.bounds, localBounds))
             continue;
 
-        if (n.IsLeaf()) {
+        if (n.IsLeaf())
+        {
             for (int i = 0; i < n.count; ++i)
                 outIndices.push_back(n.start + i);
-        } else if (sp <= 62) {
+        }
+        else if (sp <= 62)
+        {
             stack[sp++] = n.left;
             stack[sp++] = n.right;
         }
     }
 }
 
-AABB MeshCollider::WorldBoundsToLocal(const AABB &w) const {
+AABB MeshCollider::WorldBoundsToLocal(const AABB &w) const
+{
     // ワールド境界の8隅を逆行列でローカルへ変換し、AABBを取り直す（保守的）
     std::array<Vector3, 8> corners = {
         Vector3{w.min.x, w.min.y, w.min.z},
@@ -511,7 +574,8 @@ AABB MeshCollider::WorldBoundsToLocal(const AABB &w) const {
     Vector3 first = Transformation(corners[0], cachedInverse_);
     local.min = first;
     local.max = first;
-    for (int i = 1; i < 8; ++i) {
+    for (int i = 1; i < 8; ++i)
+    {
         Vector3 p = Transformation(corners[i], cachedInverse_);
         local.min = {(std::min)(local.min.x, p.x), (std::min)(local.min.y, p.y), (std::min)(local.min.z, p.z)};
         local.max = {(std::max)(local.max.x, p.x), (std::max)(local.max.y, p.y), (std::max)(local.max.z, p.z)};
@@ -519,10 +583,14 @@ AABB MeshCollider::WorldBoundsToLocal(const AABB &w) const {
     return local;
 }
 
-void MeshCollider::UpdateWorldTransform() {
-    if (getMatrixFunc_) {
+void MeshCollider::UpdateWorldTransform()
+{
+    if (getMatrixFunc_)
+    {
         cachedWorld_ = getMatrixFunc_();
-    } else {
+    }
+    else
+    {
         // 行列取得関数が無い場合は位置・回転から構築（スケールは単位）
         cachedWorld_ = MakeAffineMatrix({1.0f, 1.0f, 1.0f}, GetCenterRotation(), GetCenterPosition());
     }
@@ -530,15 +598,18 @@ void MeshCollider::UpdateWorldTransform() {
     cachedScale_ = ExtractScale(cachedWorld_).x; // 一様スケール前提
 }
 
-void MeshCollider::DebugDraw(const ViewProjection &viewProjection) {
+void MeshCollider::DebugDraw(const ViewProjection &viewProjection)
+{
     if (!isVisible_ || !isEnabled_ || !isWireframeVisible_ || localEdges_.empty())
         return;
 
     // 静的メッシュではワールド行列が変わらない限り、エッジのワールド変換を再計算しない。
     // （色 color_ は毎フレーム変わり得るが SetPoints 時に渡すので再変換は不要）
-    if (!worldEdgesValid_ || !MatrixEqual(cachedWorld_, lastDrawMatrix_)) {
+    if (!worldEdgesValid_ || !MatrixEqual(cachedWorld_, lastDrawMatrix_))
+    {
         worldEdges_.resize(localEdges_.size());
-        for (size_t i = 0; i < localEdges_.size(); ++i) {
+        for (size_t i = 0; i < localEdges_.size(); ++i)
+        {
             worldEdges_[i].first = Transformation(localEdges_[i].first, cachedWorld_);
             worldEdges_[i].second = Transformation(localEdges_[i].second, cachedWorld_);
         }
@@ -551,28 +622,32 @@ void MeshCollider::DebugDraw(const ViewProjection &viewProjection) {
         line->SetPoints(e.first, e.second, color_);
 }
 
-void MeshCollider::SaveToJson() {
+void MeshCollider::SaveToJson()
+{
     ColliderBase::SaveToJson();
 
     dataHandler_->Save("sourceModelPath", sourceModelPath_);
     dataHandler_->Save("wireframeVisible", isWireframeVisible_);
 }
 
-void MeshCollider::LoadFromJson() {
+void MeshCollider::LoadFromJson()
+{
     ColliderBase::LoadFromJson();
 
     sourceModelPath_ = dataHandler_->Load<std::string>("sourceModelPath", sourceModelPath_);
     isWireframeVisible_ = dataHandler_->Load<bool>("wireframeVisible", true);
 }
 
-bool MeshCollider::Intersect(const Sphere &sphere) const {
+bool MeshCollider::Intersect(const Sphere &sphere) const
+{
     if (triangles_.empty())
         return false;
 
     std::vector<int> candidates;
     QueryCandidates(WorldBoundsToLocal(SphereWorldBounds(sphere)), candidates);
 
-    for (int i : candidates) {
+    for (int i : candidates)
+    {
         Triangle wt = TransformTriangle(triangles_[i], cachedWorld_);
         Vector3 mtv;
         if (TriangleVsSphere(wt, sphere.center, sphere.radius, mtv))
@@ -581,7 +656,8 @@ bool MeshCollider::Intersect(const Sphere &sphere) const {
     return false;
 }
 
-bool MeshCollider::Intersect(const OBB &obb) const {
+bool MeshCollider::Intersect(const OBB &obb) const
+{
     if (triangles_.empty())
         return false;
 
@@ -591,7 +667,8 @@ bool MeshCollider::Intersect(const OBB &obb) const {
     const Vector3 u[3] = {obb.orientations[0], obb.orientations[1], obb.orientations[2]};
     const float e[3] = {obb.size.x, obb.size.y, obb.size.z};
 
-    for (int i : candidates) {
+    for (int i : candidates)
+    {
         Triangle wt = TransformTriangle(triangles_[i], cachedWorld_);
         Vector3 mtv;
         if (TriangleVsBox(wt, obb.scaleCenterRotated, u, e, mtv))
@@ -600,7 +677,8 @@ bool MeshCollider::Intersect(const OBB &obb) const {
     return false;
 }
 
-bool MeshCollider::Intersect(const AABB &aabb) const {
+bool MeshCollider::Intersect(const AABB &aabb) const
+{
     if (triangles_.empty())
         return false;
 
@@ -611,7 +689,8 @@ bool MeshCollider::Intersect(const AABB &aabb) const {
     const Vector3 u[3] = {{1.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 1.0f}};
     const float e[3] = {(aabb.max.x - aabb.min.x) * 0.5f, (aabb.max.y - aabb.min.y) * 0.5f, (aabb.max.z - aabb.min.z) * 0.5f};
 
-    for (int i : candidates) {
+    for (int i : candidates)
+    {
         Triangle wt = TransformTriangle(triangles_[i], cachedWorld_);
         Vector3 mtv;
         if (TriangleVsBox(wt, center, u, e, mtv))
@@ -620,19 +699,22 @@ bool MeshCollider::Intersect(const AABB &aabb) const {
     return false;
 }
 
-bool MeshCollider::Intersect(const MeshCollider &other) const {
+bool MeshCollider::Intersect(const MeshCollider &other) const
+{
     if (triangles_.empty() || other.triangles_.empty())
         return false;
 
     // 自分の各三角形（ワールド）を相手BVHで絞り込み、三角形同士で判定
-    for (const auto &localTri : triangles_) {
+    for (const auto &localTri : triangles_)
+    {
         Triangle wt = TransformTriangle(localTri, cachedWorld_);
         AABB worldBounds = TriangleBounds(wt);
 
         std::vector<int> candidates;
         other.QueryCandidates(other.WorldBoundsToLocal(worldBounds), candidates);
 
-        for (int j : candidates) {
+        for (int j : candidates)
+        {
             Triangle ot = TransformTriangle(other.triangles_[j], other.cachedWorld_);
             if (TriangleVsTriangle(wt, ot))
                 return true;
@@ -641,7 +723,8 @@ bool MeshCollider::Intersect(const MeshCollider &other) const {
     return false;
 }
 
-bool MeshCollider::Depenetrate(const Sphere &sphere, Vector3 &outMTV) const {
+bool MeshCollider::Depenetrate(const Sphere &sphere, Vector3 &outMTV) const
+{
     if (triangles_.empty())
         return false;
 
@@ -650,10 +733,12 @@ bool MeshCollider::Depenetrate(const Sphere &sphere, Vector3 &outMTV) const {
 
     Vector3 sum = {0.0f, 0.0f, 0.0f};
     bool hit = false;
-    for (int i : candidates) {
+    for (int i : candidates)
+    {
         Triangle wt = TransformTriangle(triangles_[i], cachedWorld_);
         Vector3 mtv;
-        if (TriangleVsSphere(wt, sphere.center, sphere.radius, mtv)) {
+        if (TriangleVsSphere(wt, sphere.center, sphere.radius, mtv))
+        {
             AccumulateMTV(sum, mtv);
             hit = true;
         }
@@ -662,7 +747,8 @@ bool MeshCollider::Depenetrate(const Sphere &sphere, Vector3 &outMTV) const {
     return hit;
 }
 
-bool MeshCollider::Depenetrate(const OBB &obb, Vector3 &outMTV) const {
+bool MeshCollider::Depenetrate(const OBB &obb, Vector3 &outMTV) const
+{
     if (triangles_.empty())
         return false;
 
@@ -674,10 +760,12 @@ bool MeshCollider::Depenetrate(const OBB &obb, Vector3 &outMTV) const {
 
     Vector3 sum = {0.0f, 0.0f, 0.0f};
     bool hit = false;
-    for (int i : candidates) {
+    for (int i : candidates)
+    {
         Triangle wt = TransformTriangle(triangles_[i], cachedWorld_);
         Vector3 mtv;
-        if (TriangleVsBox(wt, obb.scaleCenterRotated, u, e, mtv)) {
+        if (TriangleVsBox(wt, obb.scaleCenterRotated, u, e, mtv))
+        {
             AccumulateMTV(sum, mtv);
             hit = true;
         }
@@ -686,7 +774,8 @@ bool MeshCollider::Depenetrate(const OBB &obb, Vector3 &outMTV) const {
     return hit;
 }
 
-bool MeshCollider::Depenetrate(const AABB &aabb, Vector3 &outMTV) const {
+bool MeshCollider::Depenetrate(const AABB &aabb, Vector3 &outMTV) const
+{
     if (triangles_.empty())
         return false;
 
@@ -699,10 +788,12 @@ bool MeshCollider::Depenetrate(const AABB &aabb, Vector3 &outMTV) const {
 
     Vector3 sum = {0.0f, 0.0f, 0.0f};
     bool hit = false;
-    for (int i : candidates) {
+    for (int i : candidates)
+    {
         Triangle wt = TransformTriangle(triangles_[i], cachedWorld_);
         Vector3 mtv;
-        if (TriangleVsBox(wt, center, u, e, mtv)) {
+        if (TriangleVsBox(wt, center, u, e, mtv))
+        {
             AccumulateMTV(sum, mtv);
             hit = true;
         }
@@ -711,7 +802,53 @@ bool MeshCollider::Depenetrate(const AABB &aabb, Vector3 &outMTV) const {
     return hit;
 }
 
-Sphere MeshCollider::GetWorldBoundingSphere() const {
+bool MeshCollider::Raycast(const Vector3 &origin, const Vector3 &direction, float maxDistance,
+                           float &outDistance, Vector3 &outNormal) const
+{
+    if (triangles_.empty() || maxDistance <= 0.0f)
+        return false;
+
+    float dirLen = direction.Length();
+    if (dirLen < 1e-6f)
+        return false;
+    Vector3 dirN = direction / dirLen;
+
+    // ワールドの線分をローカルへ変換（アフィン変換なので媒介変数 t は保存される）
+    Vector3 p = Transformation(origin, cachedInverse_);
+    Vector3 q = Transformation(origin + dirN * maxDistance, cachedInverse_);
+
+    AABB segBounds;
+    segBounds.min = {(std::min)(p.x, q.x), (std::min)(p.y, q.y), (std::min)(p.z, q.z)};
+    segBounds.max = {(std::max)(p.x, q.x), (std::max)(p.y, q.y), (std::max)(p.z, q.z)};
+
+    std::vector<int> candidates;
+    QueryCandidates(segBounds, candidates);
+
+    float bestT = FLT_MAX;
+    Vector3 bestNormal = {0.0f, 1.0f, 0.0f};
+    for (int i : candidates)
+    {
+        const Triangle &tri = triangles_[i];
+        float t;
+        if (SegmentTriangleParam(p, q, tri.v[0], tri.v[1], tri.v[2], t) && t < bestT)
+        {
+            bestT = t;
+            bestNormal = tri.normal;
+        }
+    }
+    if (bestT == FLT_MAX)
+        return false;
+
+    outDistance = bestT * maxDistance;
+    Vector3 n = TransformNormal(bestNormal, cachedWorld_).Normalize();
+    if (n.Dot(dirN) > 0.0f)
+        n = -n; // レイと向かい合う側の法線を返す
+    outNormal = n;
+    return true;
+}
+
+Sphere MeshCollider::GetWorldBoundingSphere() const
+{
     Sphere s;
     s.center = Transformation(localBoundingCenter_, cachedWorld_);
     s.radius = localBoundingRadius_ * cachedScale_; // 一様スケール前提

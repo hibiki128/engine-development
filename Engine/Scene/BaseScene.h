@@ -1,34 +1,34 @@
 #pragma once
 #include "Audio.h"
-#include "Camera/DebugCamera/DebugCamera.h"
-#include "Camera/ViewProjection/ViewProjection.h"
+#include "camera/debug/DebugCamera.h"
+#include "camera/projection/ViewProjection.h"
 #include "Input.h"
-#include "Light/LightGroup.h"
-#include "Object/Base/BaseObject.h"
-#include "Object/Base/BaseObjectManager.h"
-#include "Object/Object3dCommon.h"
-#include "Particle/CSParticle/ParticleCSEditor.h"
-#include "Particle/ParticleCommon.h"
-#include "Particle/ParticleEditor.h"
-#include "Particle/ParticleEmitter.h"
+#include "light/LightGroup.h"
+#include "object/base/BaseObject.h"
+#include "object/base/BaseObjectManager.h"
+#include "object/Object3dCommon.h"
+#include "particle/gpu/ParticleCSEditor.h"
+#include "particle/ParticleCommon.h"
+#include "particle/ParticleEditor.h"
+#include "particle/ParticleEmitter.h"
 #include "Sprite.h"
 #include "SpriteCommon.h"
 #include "SpriteManager.h"
-#include "Transform/WorldTransform.h"
+#include "transform/WorldTransform.h"
 #include "line/DrawLine3D.h"
 #ifdef _DEBUG
 #include <imgui.h>
 #endif // _DEBUG
 #include <OffScreen.h>
-#include"SpriteManager.h"
-#include"Object/Base/BaseObjectManager.h"
-#include "Render/DrawSystem.h"
+#include "SpriteManager.h"
+#include "object/base/BaseObjectManager.h"
+#include "render/DrawSystem.h"
 
 namespace Hagine {
 class SceneManager;
-class WinApp;
 
-class BaseScene {
+class BaseScene
+{
   public:
     virtual ~BaseScene() = default;
 
@@ -72,11 +72,12 @@ class BaseScene {
     /// </summary>
     virtual void DrawForOffScreen();
 
-    virtual void SetSceneManager(SceneManager *sceneManager) { sceneManager_ = sceneManager; }
+    virtual void SetSceneManager(SceneManager *sceneManager) { pSceneManager_ = sceneManager; }
 
-    void SetOffScreen(OffScreen *offscreen) { offScreen_ = offscreen; }
-    void SetDrawSystem(DrawSystem *drawSystem) { drawSystem_ = drawSystem; }
-    void SetWindow(WinApp *winApp) { winApp_ = winApp; }
+    void SetOffScreen(OffScreen *offscreen) { pOffScreen_ = offscreen; }
+    void SetDrawSystem(DrawSystem *drawSystem) { pDrawSystem_ = drawSystem; }
+
+    void DrawParticleEditorUI();
 
     void DrawAllObjects();
 
@@ -84,21 +85,20 @@ class BaseScene {
 
   protected:
     // シーンマネージャ
-    Audio *audio_ = nullptr;
-    Input *input_ = nullptr;
-    LightGroup *lightGroup_ = nullptr;
-    ParticleEditor *ptEditor_ = nullptr;
-    ParticleCSEditor *ptCSEditor_ = nullptr;
-    OffScreen *offScreen_ = nullptr;
+    Audio *pAudio_ = nullptr;
+    Input *pInput_ = nullptr;
+    LightGroup *pLightGroup_ = nullptr;
+    ParticleEditor *pPtEditor_ = nullptr;
+    ParticleCSEditor *pPtCSEditor_ = nullptr;
+    OffScreen *pOffScreen_ = nullptr;
 
     ViewProjection vp_;
     std::unique_ptr<DebugCamera> debugCamera_;
 
-    SceneManager *sceneManager_ = nullptr;
-    SpriteManager* spriteManager_= nullptr;
-    BaseObjectManager *objectManager_ = nullptr;
-    DrawSystem *drawSystem_ = nullptr;
-    WinApp *winApp_ = nullptr;
+    SceneManager *pSceneManager_ = nullptr;
+    SpriteManager *pSpriteManager_ = nullptr;
+    BaseObjectManager *pObjectManager_ = nullptr;
+    DrawSystem *pDrawSystem_ = nullptr;
 
     float ClearTime_ = 0.0f;
     float HP_ = 0.0f;

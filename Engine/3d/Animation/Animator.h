@@ -1,5 +1,5 @@
 #pragma once
-#include "Model/ModelStructs.h"
+#include "model/ModelStructs.h"
 #include <map>
 #include <string>
 #include <type/Quaternion.h>
@@ -11,7 +11,8 @@
 /// アニメーション補間の状態を管理する構造体
 /// </summary>
 namespace Hagine {
-struct AnimationBlendState {
+struct AnimationBlendState
+{
     Animation fromAnimation;        // 補間元のアニメーション
     Animation toAnimation;          // 補間先のアニメーション
     float blendFactor = 0.0f;       // 補間係数 (0.0 ~ 1.0)
@@ -28,7 +29,8 @@ struct AnimationBlendState {
 /// アニメーション管理クラス
 /// アニメーションの再生、切り替え、補間処理を行う
 /// </summary>
-class Animator {
+class Animator
+{
   public:
     /// ===================================================
     /// public method
@@ -197,15 +199,15 @@ class Animator {
 
   private:
     /// ===================================================
-    /// private variants
+    /// private variables
     /// ===================================================
 
     std::string filename_;           // 現在のファイル名
     std::string directorypath_;      // 現在のディレクトリパス
-    float animationTime_ = 0.0f;      // アニメーション再生時間
+    float animationTime_ = 0.0f;     // アニメーション再生時間
     Animation currentAnimation_;     // 現在のアニメーション
     AnimationBlendState blendState_; // 補間状態
-    Matrix4x4 localMatrix_;           // ローカル行列
+    Matrix4x4 localMatrix_;          // ローカル行列
     bool isAnimation_ = true;        // アニメーション再生フラグ
     bool isFinish_ = false;          // アニメーション終了フラグ
     ModelData modelData_;            // モデルデータ
