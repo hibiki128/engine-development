@@ -9,7 +9,7 @@
 #include "graphics/rtv/RtvManager.h"
 #include "ResourceFactory.h"
 #include "ShaderCompiler.h"
-#include "window/WinApp.h"
+#include "WinApp.h"
 #include "d3d12.h"
 #include "dxcapi.h"
 #include "dxgi1_6.h"

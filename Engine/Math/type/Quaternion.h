@@ -18,12 +18,12 @@ class Quaternion final
     /// <summary>
     /// コンストラクタ（単位クォータニオンで初期化）
     /// </summary>
-    constexpr Quaternion() : x(0.0f), y(0.0f), z(0.0f), w(1.0f) {}
+    Quaternion() : x(0.0f), y(0.0f), z(0.0f), w(1.0f) {}
 
     /// <summary>
     /// コンストラクタ（各成分を指定）
     /// </summary>
-    constexpr Quaternion(float x, float y, float z, float w) : x(x), y(y), z(z), w(w) {}
+    Quaternion(float x, float y, float z, float w) : x(x), y(y), z(z), w(w) {}
 
     /// <summary>
     /// クォータニオン同士の掛け算（回転の合成）
