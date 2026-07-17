@@ -1,9 +1,9 @@
 #pragma once
-#include "data/DataHandler.h"
+#include "Data/DataHandler.h"
 #include "d3d12.h"
 #include "nlohmann/json.hpp"
 #include "wrl.h"
-#include <camera/projection/ViewProjection.h>
+#include <Camera/ViewProjection/ViewProjection.h>
 #include <string>
 #include <type/Vector3.h>
 #include <type/Vector4.h>
@@ -15,8 +15,7 @@
 /// ライトタイプ種別
 /// </summary>
 namespace Hagine {
-enum class LightType
-{
+enum class LightType {
     Directional, // 平行光源
     Point,       // ポイントライト
     Spot         // スポットライト
@@ -28,9 +27,8 @@ class DirectXCommon;
 /// ライトグループクラス
 /// シーン内の各種光源（平行・点・スポット）を一括管理し、GPUへ定数データとして転送する
 /// </summary>
-class LightGroup
-{
-  public:
+class LightGroup {
+public:
     // ===================================================
     // 公開メソッド
     // ===================================================
@@ -38,8 +36,7 @@ class LightGroup
     /// <summary>
     /// シングルトンインスタンスを取得
     /// </summary>
-    static LightGroup *GetInstance()
-    {
+    static LightGroup *GetInstance() {
         static LightGroup instance;
         return &instance;
     }
@@ -87,18 +84,15 @@ class LightGroup
     /// </summary>
     void SetShowLightVisualization(bool show) { showLightVisualization_ = show; }
 
-    Vector3 GetDirectionalLightDirection() const
-    {
-        if (pDirectionalLightData_)
-            return pDirectionalLightData_->direction;
+    Vector3 GetDirectionalLightDirection() const {
+        if (directionalLightData_) return directionalLightData_->direction;
         return {0.f, -1.f, 0.f};
     }
-    bool IsDirectionalLightActive() const
-    {
-        return pDirectionalLightData_ && pDirectionalLightData_->active != 0;
+    bool IsDirectionalLightActive() const {
+        return directionalLightData_ && directionalLightData_->active != 0;
     }
 
-  private:
+private:
     // ===================================================
     // 非公開メソッド
     // ===================================================
@@ -165,7 +159,7 @@ class LightGroup
     /// </summary>
     void DrawLightVisualization();
 
-  private:
+private:
     // ===================================================
     // 構造体定義
     // ===================================================
@@ -173,8 +167,7 @@ class LightGroup
     /// <summary>
     /// 平行光源データ
     /// </summary>
-    struct DirectionLight
-    {
+    struct DirectionLight {
         Vector4 color;       // 色 (RGBA)
         Vector3 direction;   // 方向
         float intensity;     // 輝度
@@ -186,8 +179,7 @@ class LightGroup
     /// <summary>
     /// ポイントライトデータ
     /// </summary>
-    struct PointLight
-    {
+    struct PointLight {
         Vector4 color;       // 色 (RGBA)
         Vector3 position;    // 位置
         float intensity;     // 輝度
@@ -202,18 +194,16 @@ class LightGroup
     /// <summary>
     /// ポイントライト群
     /// </summary>
-    struct PointLights
-    {
-        alignas(16) PointLight lights[MAX_POINT_LIGHTS];
-        int32_t count; // 有効数
+    struct PointLights {
+        alignas(16) PointLight lights[MAX_POINT_LIGHTS]; 
+        int32_t count;                                   // 有効数
         float padding[3];
     };
 
     /// <summary>
     /// スポットライトデータ
     /// </summary>
-    struct SpotLight
-    {
+    struct SpotLight {
         Vector4 color;       // 色 (RGBA)
         Vector3 position;    // 位置
         float intensity;     // 輝度
@@ -230,50 +220,48 @@ class LightGroup
     /// <summary>
     /// スポットライト群
     /// </summary>
-    struct SpotLights
-    {
-        SpotLight lights[MAX_SPOT_LIGHTS];
-        int32_t count; // 有効数
+    struct SpotLights {
+        SpotLight lights[MAX_SPOT_LIGHTS]; 
+        int32_t count;                     // 有効数
         float padding[3];
     };
 
     /// <summary>
     /// GPU転送用カメラデータ
     /// </summary>
-    struct CameraForGPU
-    {
+    struct CameraForGPU {
         Vector3 worldPosition; // ワールド座標
     };
 
-  private:
+private:
     // ===================================================
     // メンバ変数
     // ===================================================
 
-    DirectXCommon *pDxCommon_ = nullptr; // DirectX基盤へのポインタ
+    DirectXCommon *dxCommon_ = nullptr; // DirectX基盤へのポインタ
 
     // リソース管理
     Microsoft::WRL::ComPtr<ID3D12Resource> directionalLightResource_; // 平行光源バッファ
-    DirectionLight *pDirectionalLightData_ = nullptr;
+    DirectionLight *directionalLightData_ = nullptr;                  
 
-    Microsoft::WRL::ComPtr<ID3D12Resource> pointLightsResource_; // ポイントライトバッファ
-    PointLights *pPointLightsData_ = nullptr;
+    Microsoft::WRL::ComPtr<ID3D12Resource> pointLightsResource_;      // ポイントライトバッファ
+    PointLights *pointLightsData_ = nullptr;                     
 
-    Microsoft::WRL::ComPtr<ID3D12Resource> spotLightsResource_; // スポットライトバッファ
-    SpotLights *pSpotLightsData_ = nullptr;
+    Microsoft::WRL::ComPtr<ID3D12Resource> spotLightsResource_;       // スポットライトバッファ
+    SpotLights *spotLightsData_ = nullptr;                      
 
-    Microsoft::WRL::ComPtr<ID3D12Resource> cameraForGPUResource_; // カメラデータバッファ
-    CameraForGPU *pCameraForGPUData_ = nullptr;
+    Microsoft::WRL::ComPtr<ID3D12Resource> cameraForGPUResource_;     // カメラデータバッファ
+    CameraForGPU *cameraForGPUData_ = nullptr;                    
 
     // ライトリスト管理
-    std::vector<PointLight> pointLights_;
-    std::vector<SpotLight> spotLights_;
+    std::vector<PointLight> pointLights_; 
+    std::vector<SpotLight> spotLights_;   
 
     // UI状態
-    std::string saveMessage_;
-    int saveMessageTimer_ = 0;
-    bool isDirectionalLight_ = true; // 平行光源の全体有効フラグ
-    bool showLightVisualization_ = false;
+    std::string saveMessage_;  
+    int saveMessageTimer_ = 0; 
+    bool isDirectionalLight_ = true;       // 平行光源の全体有効フラグ
+    bool showLightVisualization_ = false; 
 
     std::unique_ptr<DataHandler> DLightData_ = nullptr; // JSONハンドラー
 };

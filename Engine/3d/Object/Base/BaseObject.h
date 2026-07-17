@@ -1,25 +1,23 @@
 #pragma once
-#include "camera/projection/ViewProjection.h"
-#include "collider/ColliderBase.h"
-#include "collider/type/AABBCollider.h"
-#include "collider/type/CylinderCollider.h"
-#include "collider/type/MeshCollider.h"
-#include "collider/type/OBBCollider.h"
-#include "collider/type/SphereCollider.h"
-#include "data/DataHandler.h"
+#include "Camera/ViewProjection/ViewProjection.h"
+#include "Collider/ColliderBase.h"
+#include "Collider/type/AABBCollider.h"
+#include "Collider/type/CylinderCollider.h"
+#include "Collider/type/MeshCollider.h"
+#include "Collider/type/OBBCollider.h"
+#include "Collider/type/SphereCollider.h"
+#include "Data/DataHandler.h"
 #include "Easing.h"
-#include "object/Object3d.h"
-#include "transform/ObjColor.h"
-#include "transform/WorldTransform.h"
+#include "Object/Object3d.h"
+#include "Transform/ObjColor.h"
+#include "Transform/WorldTransform.h"
 #include "nlohmann/json.hpp"
-#include <graphics/pipeline/PipelineManager.h>
-#include <optional>
+#include <Graphics/PipeLine/PipeLineManager.h>
 #include <string>
 
 namespace Hagine {
 class SkyBox;
-class BaseObject
-{
+class BaseObject {
   public:
     /// ===================================================
     /// public variaus
@@ -57,12 +55,12 @@ class BaseObject
     std::string modelPath_{};
     std::vector<std::string> texturePaths_{};
     std::string texturePath_{};
-    std::string folderPath_ = "SceneData/Title/ObjectData";
+    std::string foldarPath_ = "SceneData/Title/ObjectData";
 
-    BaseObject *pParent_ = nullptr;
+    BaseObject *parent_ = nullptr;
     std::list<BaseObject *> children_{};
 
-    PrimitiveType type_ = PrimitiveType::Count;
+    PrimitiveType type_ = PrimitiveType::kCount;
 
   private:
     using json = nlohmann::json;
@@ -95,14 +93,6 @@ class BaseObject
     WorldTransform *GetWorldTransform() { return transform_.get(); }
     ModelAnimation *GetModelAnimation() { return obj3d_->GetCurrentModelAnimation(); }
 
-    /// <summary>
-    /// スキンモデルのジョイント（ボーン）のワールド座標を取得する
-    /// 描画オフセット(offSet_)込みで計算するため、描画中のモデル上の位置と一致する
-    /// </summary>
-    /// <param name="jointName">ジョイント名（例: "mixamorig:RightHand"）</param>
-    /// <returns>std::optional&lt;Vector3&gt;: ワールド座標（ジョイントが無ければ nullopt）</returns>
-    std::optional<Vector3> GetJointWorldPosition(const std::string &jointName);
-
     /// =================================================
     /// 親子付け
     /// =================================================
@@ -131,14 +121,12 @@ class BaseObject
     void LoadFromJson(std::string folderPath, std::string jsonName);
     void SaveColliders();
     void LoadColliders();
-    void SaveMaterials();
-    void LoadMaterials();
     void AnimaSaveToJson();
     void AnimaLoadFromJson();
     void DebugCollider();
     void SaveParentChildRelationship();
     void LoadParentChildRelationship();
-    void SetFolderPath(const std::string &folderPath) { folderPath_ = folderPath; }
+    void SetFolderPath(const std::string &folderPath) { foldarPath_ = folderPath; }
 
     /// ===================================================
     /// getter
@@ -166,8 +154,7 @@ class BaseObject
     const Vector4 GetColor(int index = 0) { return obj3d_->GetColor(index); }
     bool IsGizmoSelectable() const { return isGizmoSelectable_; }
     bool GetIsAlive() const { return isAlive_; }
-    Material *GetMaterial(uint32_t index = 0)
-    {
+    Material *GetMaterial(uint32_t index = 0) {
         return obj3d_->GetMaterial(index);
     }
     std::vector<std::unique_ptr<ColliderBase>> &GetColliders() { return colliders_; }
@@ -175,17 +162,14 @@ class BaseObject
     /// ===================================================
     /// setter
     /// ===================================================
-    void SetTexture(const std::string &filePath, uint32_t index = 0)
-    {
-        if (filePath.empty())
-        {
+    void SetTexture(const std::string &filePath, uint32_t index = 0) {
+        if (filePath.empty()) {
             return; // ファイルパスが空なら何もしない
         }
         obj3d_->SetTexture(filePath, index);
         texturePaths_[index] = filePath;
     }
-    void SetModel(std::unique_ptr<Object3d> obj)
-    {
+    void SetModel(std::unique_ptr<Object3d> obj) {
         obj3d_ = std::move(obj);
     }
     void SetModel(const std::string &filePath) { obj3d_->SetModel(filePath); }
@@ -193,8 +177,7 @@ class BaseObject
     void SetBlendMode(BlendMode blendMode) { obj3d_->SetBlendMode(blendMode); }
     void SetReflect(bool reflect) { reflect_ = reflect; }
     void SetColor(const Vector4 &color, int index = 0) { obj3d_->SetColor(color, index); }
-    void SetAlpha(const float &alpha, int index = 0)
-    {
+    void SetAlpha(const float &alpha, int index = 0) {
         Vector4 color;
         color.x = obj3d_->GetColor().x;
         color.y = obj3d_->GetColor().y;
@@ -218,8 +201,7 @@ class BaseObject
     /// <param name="offset">ローカル空間の回転オフセット</param>
     /// <param name="pivot">回転中心（ローカル軸・ワールド単位、原点からのオフセット）。
     /// モデルの中心が原点にない場合に、回転で位置がずれないよう補正するために使う</param>
-    void SetRenderRotationOffset(const Quaternion &offset, const Vector3 &pivot = {0.0f, 0.0f, 0.0f})
-    {
+    void SetRenderRotationOffset(const Quaternion &offset, const Vector3 &pivot = {0.0f, 0.0f, 0.0f}) {
         renderRotationOffset_ = offset;
         renderRotationPivot_ = pivot;
         applyRenderRotationOffset_ = true;
@@ -228,8 +210,7 @@ class BaseObject
     /// <summary>
     /// 描画専用の回転オフセットを解除する
     /// </summary>
-    void ClearRenderRotationOffset()
-    {
+    void ClearRenderRotationOffset() {
         renderRotationOffset_ = Quaternion::IdentityQuaternion();
         renderRotationPivot_ = {0.0f, 0.0f, 0.0f};
         applyRenderRotationOffset_ = false;
@@ -237,7 +218,7 @@ class BaseObject
 
     void SetAnimationSpeed(float speed) { obj3d_->SetAnimationSpeed(speed); }
     void SetAnimationBlendDuration(float duration) { obj3d_->SetAnimationBlendDuration(duration); }
-
+  
     /// <summary>
     /// アニメーションを追加登録する
     /// </summary>
@@ -252,8 +233,7 @@ class BaseObject
     /// <summary>
     /// リジッドボディの物理パラメータ
     /// </summary>
-    struct RigidBodyParams
-    {
+    struct RigidBodyParams {
         bool enabled = false;                  // リジッドボディとして物理挙動させるか
         bool useGravity = true;                // 重力を適用するか
         float mass = 1.0f;                     // 質量（外力 F=ma に使用）
@@ -304,19 +284,18 @@ class BaseObject
 
     bool shouldSave_ = true;
     bool isGizmoSelectable_ = true;
-    BlendMode blendMode_ = BlendMode::Normal;
+    BlendMode blendMode_ = BlendMode::kNormal;
     std::string parentName_{};
 
     std::vector<std::unique_ptr<ColliderBase>> colliders_;
 
     // --- 物理（リジッドボディ）状態 ---
-    RigidBodyParams rigidBody_;                     // 物理パラメータ
-    Vector3 accumulatedForce_ = {0.0f, 0.0f, 0.0f}; // 1フレーム分の外力
-    bool resolveCollision_ = false;                 // 衝突時に押し出すか
+    RigidBodyParams rigidBody_;                       // 物理パラメータ
+    Vector3 accumulatedForce_ = {0.0f, 0.0f, 0.0f};   // 1フレーム分の外力
+    bool resolveCollision_ = false;                   // 衝突時に押し出すか
 
     // スケールにイージングを適用してモーションを確認するためのデバッグ用状態
-    struct ScaleEaseState
-    {
+    struct ScaleEaseState {
         // EasingType enumの範囲（0〜30）＋Amplitude拡張（31〜33）をまとめて管理するインデックス
         // 31 = InElasticAmplitude, 32 = OutElasticAmplitude, 33 = InOutElasticAmplitude
         int selectedMode = 32; // デフォルト: OutElasticAmplitude
@@ -341,7 +320,7 @@ class BaseObject
     // 描画専用の回転オフセット（ゲームプレイ用の向きには影響しない。描画時のみ適用）
     Quaternion renderRotationOffset_ = Quaternion::IdentityQuaternion(); // ローカル空間の追加回転
     Vector3 renderRotationPivot_ = {0.0f, 0.0f, 0.0f};                   // 回転中心（原点からのオフセット）
-    bool applyRenderRotationOffset_ = false;                             // 描画回転オフセットを適用するか
+    bool applyRenderRotationOffset_ = false;                            // 描画回転オフセットを適用するか
 
     ScaleEaseState scaleEase_{};
 

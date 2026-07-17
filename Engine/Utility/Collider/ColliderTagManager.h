@@ -1,7 +1,7 @@
 #pragma once
-#include "camera/projection/ViewProjection.h"
-#include "data/DataHandler.h"
-#include "MyMath.h"
+#include "Camera/ViewProjection/ViewProjection.h"
+#include "Data/DataHandler.h"
+#include "myMath.h"
 #include "type/Quaternion.h"
 #include "type/Vector3.h"
 #include <functional>
@@ -15,8 +15,7 @@ namespace Hagine {
 /// コライダーのタグを一元管理するシングルトン
 /// 利用可能なタグの登録・削除・存在確認を行う
 /// </summary>
-class ColliderTagManager
-{
+class ColliderTagManager {
   public:
     /// ===================================================
     /// public method
@@ -26,8 +25,7 @@ class ColliderTagManager
     /// インスタンスを取得
     /// </summary>
     /// <returns>ColliderTagManager*: シングルトンインスタンス</returns>
-    static ColliderTagManager *GetInstance()
-    {
+    static ColliderTagManager *GetInstance() {
         static ColliderTagManager instance;
         return &instance;
     }
@@ -36,10 +34,8 @@ class ColliderTagManager
     /// タグを追加
     /// </summary>
     /// <param name="tag">追加するタグ名</param>
-    void AddTag(const std::string &tag)
-    {
-        if (!tag.empty())
-        {
+    void AddTag(const std::string &tag) {
+        if (!tag.empty()) {
             availableTags_.insert(tag);
         }
     }
@@ -48,8 +44,7 @@ class ColliderTagManager
     /// タグを削除
     /// </summary>
     /// <param name="tag">削除するタグ名</param>
-    void RemoveTag(const std::string &tag)
-    {
+    void RemoveTag(const std::string &tag) {
         availableTags_.erase(tag);
     }
 
@@ -57,8 +52,7 @@ class ColliderTagManager
     /// 全タグを取得
     /// </summary>
     /// <returns>const std::unordered_set&lt;std::string&gt;&: 登録済みタグの集合</returns>
-    const std::unordered_set<std::string> &GetAllTags() const
-    {
+    const std::unordered_set<std::string> &GetAllTags() const {
         return availableTags_;
     }
 
@@ -67,16 +61,14 @@ class ColliderTagManager
     /// </summary>
     /// <param name="tag">確認するタグ名</param>
     /// <returns>bool: 存在すれば true</returns>
-    bool HasTag(const std::string &tag) const
-    {
+    bool HasTag(const std::string &tag) const {
         return availableTags_.find(tag) != availableTags_.end();
     }
 
     /// <summary>
     /// デフォルトタグを初期化
     /// </summary>
-    void InitializeDefaultTags()
-    {
+    void InitializeDefaultTags() {
         AddTag("None");
         AddTag("Environment");
         AddTag("Player");
@@ -91,7 +83,6 @@ class ColliderTagManager
         AddTag("PlayerWall");
         AddTag("EnemyWall");
         AddTag("CylinderField");
-        AddTag("Ground");
     }
 
 #ifdef _DEBUG
@@ -109,8 +100,7 @@ class ColliderTagManager
     /// <summary>
     /// コンストラクタ（デフォルトタグを初期化）
     /// </summary>
-    ColliderTagManager()
-    {
+    ColliderTagManager() {
         InitializeDefaultTags();
     }
 
@@ -122,7 +112,7 @@ class ColliderTagManager
     ColliderTagManager &operator=(const ColliderTagManager &) = delete;
 
     /// ===================================================
-    /// private variables
+    /// private variants
     /// ===================================================
 
     std::unordered_set<std::string> availableTags_; // 利用可能なタグの集合

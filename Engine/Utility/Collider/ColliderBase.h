@@ -1,8 +1,8 @@
 #pragma once
-#include "camera/projection/ViewProjection.h"
-#include "collider/ColliderTagManager.h"
-#include "data/DataHandler.h"
-#include "MyMath.h"
+#include "Camera/ViewProjection/ViewProjection.h"
+#include "Collider/ColliderTagManager.h"
+#include "Data/DataHandler.h"
+#include "myMath.h"
 #include "type/Quaternion.h"
 #include "type/Vector3.h"
 #include <functional>
@@ -14,8 +14,7 @@ namespace Hagine {
 /// <summary>
 /// コライダーの形状種別
 /// </summary>
-enum class ColliderType
-{
+enum class ColliderType {
     Sphere,
     AABB,
     OBB,
@@ -29,8 +28,7 @@ class CollisionManager;
 /// 全コライダーの基底クラス
 /// 衝突コールバック、衝突マスク、タグ、描画色などの共通機能を提供する
 /// </summary>
-class ColliderBase
-{
+class ColliderBase {
   public:
     /// ===================================================
     /// public method
@@ -87,8 +85,7 @@ class ColliderBase
     /// 衝突した瞬間のコールバックを実行
     /// </summary>
     /// <param name="other">衝突した相手のコライダー</param>
-    void TriggerCollisionEnter(ColliderBase *other)
-    {
+    void TriggerCollisionEnter(ColliderBase *other) {
         if (onCollisionEnter_)
             onCollisionEnter_(other);
     }
@@ -97,8 +94,7 @@ class ColliderBase
     /// 衝突継続中のコールバックを実行
     /// </summary>
     /// <param name="other">衝突した相手のコライダー</param>
-    void TriggerCollision(ColliderBase *other)
-    {
+    void TriggerCollision(ColliderBase *other) {
         if (onCollision_)
             onCollision_(other);
     }
@@ -107,8 +103,7 @@ class ColliderBase
     /// 衝突が離れた瞬間のコールバックを実行
     /// </summary>
     /// <param name="other">衝突した相手のコライダー</param>
-    void TriggerCollisionExit(ColliderBase *other)
-    {
+    void TriggerCollisionExit(ColliderBase *other) {
         if (onCollisionExit_)
             onCollisionExit_(other);
     }
@@ -129,10 +124,8 @@ class ColliderBase
     /// 衝突対象のタグをマスクに追加（登録済みタグのみ有効）
     /// </summary>
     /// <param name="tag">追加するタグ名</param>
-    void AddCollisionMask(const std::string &tag)
-    {
-        if (ColliderTagManager::GetInstance()->HasTag(tag))
-        {
+    void AddCollisionMask(const std::string &tag) {
+        if (ColliderTagManager::GetInstance()->HasTag(tag)) {
             collisionMask_.insert(tag);
         }
     }
@@ -141,16 +134,14 @@ class ColliderBase
     /// 衝突対象のタグをマスクから除去
     /// </summary>
     /// <param name="tag">除去するタグ名</param>
-    void RemoveCollisionMask(const std::string &tag)
-    {
+    void RemoveCollisionMask(const std::string &tag) {
         collisionMask_.erase(tag);
     }
 
     /// <summary>
     /// 衝突マスクを全てクリア
     /// </summary>
-    void ClearCollisionMask()
-    {
+    void ClearCollisionMask() {
         collisionMask_.clear();
     }
 
@@ -158,8 +149,7 @@ class ColliderBase
     /// 衝突マスクを取得
     /// </summary>
     /// <returns>const std::unordered_set&lt;std::string&gt;&: 衝突対象タグの集合</returns>
-    const std::unordered_set<std::string> &GetCollisionMask() const
-    {
+    const std::unordered_set<std::string> &GetCollisionMask() const {
         return collisionMask_;
     }
 
@@ -168,8 +158,7 @@ class ColliderBase
     /// </summary>
     /// <param name="other">判定対象のコライダー</param>
     /// <returns>bool: 衝突対象なら true</returns>
-    bool ShouldCollideWith(const ColliderBase *other) const
-    {
+    bool ShouldCollideWith(const ColliderBase *other) const {
         return collisionMask_.find(other->GetTag()) != collisionMask_.end();
     }
 
@@ -278,8 +267,7 @@ class ColliderBase
     /// 中心座標を取得（取得関数が未設定なら原点を返す）
     /// </summary>
     /// <returns>Vector3: 中心座標</returns>
-    Vector3 GetCenterPosition() const
-    {
+    Vector3 GetCenterPosition() const {
         return getPositionFunc_ ? getPositionFunc_() : Vector3{0, 0, 0};
     }
 
@@ -287,8 +275,7 @@ class ColliderBase
     /// 中心回転を取得（取得関数が未設定なら単位回転を返す）
     /// </summary>
     /// <returns>Quaternion: 中心回転</returns>
-    Quaternion GetCenterRotation() const
-    {
+    Quaternion GetCenterRotation() const {
         return getRotationFunc_ ? getRotationFunc_() : Quaternion::IdentityQuaternion();
     }
 
@@ -320,10 +307,10 @@ class ColliderBase
     std::string name_;                              // 名前
     std::string tag_ = "None";                      // 自身のタグ
     std::unordered_set<std::string> collisionMask_; // 衝突対象タグの集合
-    bool collideWithAll_ = false;                   // タグ無視で全コライダーと判定（デバッグ用）
-    bool isEnabled_ = true;                         // 衝突判定の有効フラグ
-    bool isVisible_ = true;                         // デバッグ表示の可視フラグ
-    bool isCollidingInCurrentFrame_ = false;        // 現フレームの衝突フラグ
+    bool collideWithAll_ = false;                    // タグ無視で全コライダーと判定（デバッグ用）
+    bool isEnabled_ = true;                          // 衝突判定の有効フラグ
+    bool isVisible_ = true;                          // デバッグ表示の可視フラグ
+    bool isCollidingInCurrentFrame_ = false;         // 現フレームの衝突フラグ
 
     Vector4 color_ = {1.0f, 1.0f, 1.0f, 1.0f}; // デバッグ描画色
 

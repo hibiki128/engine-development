@@ -4,8 +4,8 @@
 #include "imgui.h"
 #include "ImGuizmo.h"
 #include <Input.h>
-#include <object/base/BaseObject.h>
-#include <transform/WorldTransform.h>
+#include <Object/Base/BaseObject.h>
+#include <Transform/WorldTransform.h>
 #include <algorithm>
 #include <cmath>
 #include <functional>
@@ -20,10 +20,8 @@ class Sprite;
 /// ギズモ操作対象を型に依存せず統一的に扱うためのラッパー構造体
 /// BaseObject・WorldTransform・Vector3直接参照・Spriteの各種に対応する
 /// </summary>
-struct GizmoTarget
-{
-    enum class Type
-    {
+struct GizmoTarget {
+    enum class Type {
         BaseObject,     // BaseObject* を持つオブジェクト
         WorldTransform, // WorldTransform* のみを持つオブジェクト
         FreeTransform,  // Vector3* の直接参照（ParticleEmitter など）
@@ -81,8 +79,7 @@ struct GizmoTarget
 /// ImGuizmoを用いたオブジェクトのギズモ操作（移動・回転・拡縮）を管理するシングルトン
 /// 複数選択・コピー＆ペースト・マウス選択・デバッグ描画などを提供する
 /// </summary>
-class ImGuizmoManager
-{
+class ImGuizmoManager {
   private:
     /// <summary>
     /// コンストラクタ
@@ -107,7 +104,7 @@ class ImGuizmoManager
     bool isDrawDebug_ = true;
 
     // カメラのビュープロジェクション
-    const ViewProjection *pViewProjection_ = nullptr;
+    const ViewProjection *viewProjection_ = nullptr;
 
     // 現在の操作モード・座標空間
     ImGuizmo::OPERATION currentOperation_ = ImGuizmo::TRANSLATE;
@@ -125,8 +122,7 @@ class ImGuizmoManager
     int overlapCycleIndex_ = 0;
 
   public:
-    static ImGuizmoManager *GetInstance()
-    {
+    static ImGuizmoManager *GetInstance() {
         static ImGuizmoManager instance;
         return &instance;
     }
@@ -181,43 +177,35 @@ class ImGuizmoManager
 
     // ギズモの選択状態をセット
     // selectable が false になった場合は、現在の選択状態からも除外する
-    void SetSelectable(const std::string &name, bool selectable)
-    {
+    void SetSelectable(const std::string &name, bool selectable) {
         auto it = transformMap_.find(name);
-        if (it != transformMap_.end())
-        {
+        if (it != transformMap_.end()) {
             it->second.selectable = selectable;
-            if (!selectable)
-            {
+            if (!selectable) {
                 selectedNames_.erase(name);
             }
         }
     }
 
     // スクリーン空間フラグと2Dヒット半径を設定する（Sprite登録後に呼ぶ）
-    void SetScreenSpace(const std::string &name, bool isScreenSpace, float hitRadius = 50.0f)
-    {
+    void SetScreenSpace(const std::string &name, bool isScreenSpace, float hitRadius = 50.0f) {
         auto it = transformMap_.find(name);
-        if (it != transformMap_.end())
-        {
+        if (it != transformMap_.end()) {
             it->second.isScreenSpace = isScreenSpace;
             it->second.screenHitRadius = hitRadius;
         }
     }
 
     // ギズモの選択状態を取得
-    bool GetSelectable(const std::string &name)
-    {
-        if (transformMap_.find(name) != transformMap_.end())
-        {
+    bool GetSelectable(const std::string &name) {
+        if (transformMap_.find(name) != transformMap_.end()) {
             return transformMap_[name].selectable;
         }
         return false;
     }
 
     // オブジェクト削除時にギズモからも消すためのメソッド
-    void RemoveTarget(const std::string &name)
-    {
+    void RemoveTarget(const std::string &name) {
         transformMap_.erase(name);
     }
 
