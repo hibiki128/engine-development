@@ -1,17 +1,22 @@
 #pragma once
 #include "Sprite.h"
-#include <Graphics/PipeLine/PipeLineManager.h>
+#include <graphics/pipeline/PipelineManager.h>
 #include <functional>
 #include <memory>
 #include <string>
 #include <unordered_map>
 #include <vector>
+#ifdef _DEBUG
+#include <edit/undo/ImGuiUndoTracker.h>
+#include <nlohmann/json.hpp>
+#endif // _DEBUG
 
 /// <summary>
 /// インスタンス単位でのSRTデータ構造体
 /// </summary>
 namespace Hagine {
-struct InstanceSRT {
+struct InstanceSRT
+{
     Vector3 scale = {1.0f, 1.0f, 1.0f};       // スケール
     Vector3 rotation = {0.0f, 0.0f, 0.0f};    // 回転
     Vector3 translation = {0.0f, 0.0f, 0.0f}; // 移動
@@ -21,13 +26,14 @@ struct InstanceSRT {
 /// <summary>
 /// スプライト情報を管理する構造体
 /// </summary>
-struct SpriteTransform {
-    Vector2 position = {0.0f, 0.0f};           // 位置
-    Vector4 color = {1.0f, 1.0f, 1.0f, 1.0f};  // 色
-    Vector2 anchorPoint = {0.0f, 0.0f};        // アンカーポイント
-    bool isFlipX = false;                      // 左右反転フラグ
-    bool isFlipY = false;                      // 上下反転フラグ
-    uint32_t instanceCount = 1;                // インスタンス数
+struct SpriteTransform
+{
+    Vector2 position = {0.0f, 0.0f};          // 位置
+    Vector4 color = {1.0f, 1.0f, 1.0f, 1.0f}; // 色
+    Vector2 anchorPoint = {0.0f, 0.0f};       // アンカーポイント
+    bool isFlipX = false;                     // 左右反転フラグ
+    bool isFlipY = false;                     // 上下反転フラグ
+    uint32_t instanceCount = 1;               // インスタンス数
 
     /// <summary>
     /// デフォルトコンストラクタ
@@ -45,7 +51,8 @@ struct SpriteTransform {
 /// <summary>
 /// スプライトデータを管理する構造体
 /// </summary>
-struct SpriteData {
+struct SpriteData
+{
     std::unique_ptr<Sprite> sprite;                          // スプライト本体
     std::string name;                                        // スプライト名
     std::string textureFilePath;                             // テクスチャファイルパス
@@ -53,7 +60,7 @@ struct SpriteData {
     std::function<void(SpriteData &, float)> updateFunction; // カスタム更新関数
     bool isVisible = true;                                   // 表示フラグ
     bool isBackMost = false;                                 // 背面フラグ
-    BlendMode blendMode = BlendMode::kNormal;                // ブレンドモード
+    BlendMode blendMode = BlendMode::Normal;                // ブレンドモード
     bool lockAspectRatio = false;                            // アスペクト比維持フラグ
     std::string drawGroup = "UI";                            // 描画グループ＝描画ステージ（スプライトは既定でUIレイヤー）
 
@@ -68,7 +75,8 @@ struct SpriteData {
 /// スプライト管理のシングルトンクラス
 /// 複数のスプライトの登録、更新、描画を一元管理
 /// </summary>
-class SpriteManager {
+class SpriteManager
+{
   public:
     /// ===================================================
     /// public method
@@ -77,7 +85,8 @@ class SpriteManager {
     /// <summary>
     /// シングルトンインスタンスを取得
     /// </summary>
-    static SpriteManager *GetInstance() {
+    static SpriteManager *GetInstance()
+    {
         static SpriteManager instance;
         return &instance;
     }
@@ -100,12 +109,12 @@ class SpriteManager {
     /// <summary>
     /// 外部所有スプライトを描画リストに追加（非所有登録）
     /// </summary>
-    void RegisterExternal(Sprite* sprite);
+    void RegisterExternal(Sprite *sprite);
 
     /// <summary>
     /// 外部所有スプライトを描画リストから削除
     /// </summary>
-    void UnregisterExternal(Sprite* sprite);
+    void UnregisterExternal(Sprite *sprite);
 
     /// <summary>
     /// すべてのスプライトを更新
@@ -142,7 +151,7 @@ class SpriteManager {
     /// ===================================================
     SpriteData *GetSprite(const std::string &name);
     std::string GetTextureFilePath(const std::string &name);
-    std::vector<SpriteData *>GetAllSprites();
+    std::vector<SpriteData *> GetAllSprites();
 
     /// ===================================================
     /// Setter
@@ -170,6 +179,22 @@ class SpriteManager {
     void LoadAllSprites();
     void Clear();
 
+#ifdef _DEBUG
+    /// <summary>
+    /// Undo用: 全所有スプライトの編集可能状態をJSON化する
+    /// （トップレベル = スプライト名 → 状態、"__order" = 描画順）
+    /// </summary>
+    /// <returns>nlohmann::json: 状態JSON</returns>
+    nlohmann::json CaptureUndoState();
+
+    /// <summary>
+    /// Undo用: CaptureUndoState で得た状態（差分可）を適用する
+    /// null のキーはスプライト削除、存在しない名前は再生成として扱う
+    /// </summary>
+    /// <param name="state">適用する状態JSON</param>
+    void RestoreUndoState(const nlohmann::json &state);
+#endif // _DEBUG
+
   private:
     /// ===================================================
     /// private method
@@ -189,9 +214,12 @@ class SpriteManager {
     /// private variables
     /// ===================================================
     std::vector<std::unique_ptr<SpriteData>> sprites_; // スプライトリスト
-    std::vector<Sprite*> externalSprites_;             // 外部所有スプライトリスト（非所有）
-    bool showSpriteCreationModal_ = false;              // 作成モーダル表示フラグ
+    std::vector<Sprite *> externalSprites_;            // 外部所有スプライトリスト（非所有）
+    bool showSpriteCreationModal_ = false;             // 作成モーダル表示フラグ
     std::string texturePath_ = "";                     // テクスチャパス
     std::string saveFolder_ = "Sprite";                // 保存先フォルダ
+#ifdef _DEBUG
+    ImGuiUndoTracker undoTracker_; // スプライトマネージャUIのUndoトラッカー
+#endif                             // _DEBUG
 };
 } // namespace Hagine

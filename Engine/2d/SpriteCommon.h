@@ -1,12 +1,13 @@
 #pragma once
 #include "DirectXCommon.h"
-#include <Graphics/PipeLine/PipeLineManager.h>
+#include <graphics/pipeline/PipelineManager.h>
 
 /// <summary>
 /// スプライト描画の共通処理を管理するシングルトンクラス
 /// </summary>
 namespace Hagine {
-class SpriteCommon {
+class SpriteCommon
+{
   public:
     /// ===================================================
     /// public method
@@ -15,7 +16,8 @@ class SpriteCommon {
     /// <summary>
     /// シングルトンインスタンスの取得
     /// </summary>
-    static SpriteCommon* GetInstance() {
+    static SpriteCommon *GetInstance()
+    {
         static SpriteCommon instance;
         return &instance;
     }
@@ -38,7 +40,7 @@ class SpriteCommon {
     /// <summary>
     /// DirectXCommonの取得
     /// </summary>
-    DirectXCommon* GetDxCommon() const { return dxCommon_; }
+    DirectXCommon *GetDxCommon() const { return pDxCommon_; }
 
     /// <summary>
     /// ブレンドモードの設定
@@ -52,15 +54,15 @@ class SpriteCommon {
 
     SpriteCommon() = default;
     ~SpriteCommon() = default;
-    SpriteCommon(SpriteCommon&) = delete;
-    SpriteCommon& operator=(SpriteCommon&) = delete;
+    SpriteCommon(SpriteCommon &) = delete;
+    SpriteCommon &operator=(SpriteCommon &) = delete;
 
   private:
     /// ===================================================
     /// private variables
     /// ===================================================
 
-    DirectXCommon* dxCommon_ = nullptr;        // DirectX共通処理
-    PipeLineManager* psoManager_ = nullptr;    // パイプライン管理
+    DirectXCommon *pDxCommon_ = nullptr;     // DirectX共通処理
+    PipelineManager *pPsoManager_ = nullptr; // パイプライン管理
 };
 } // namespace Hagine

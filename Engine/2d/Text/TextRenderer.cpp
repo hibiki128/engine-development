@@ -2,15 +2,15 @@
 #include "TextRenderer.h"
 #include "../SpriteCommon.h"
 #include "../SpriteManager.h"
-#include <Asset/AssetPath.h>
-#include <Graphics/Texture/TextureManager.h>
-#include <String/StringUtility.h>
+#include <asset/AssetPath.h>
+#include <graphics/texture/TextureManager.h>
+#include <string/StringUtility.h>
 #include <DirectXTex/DirectXTex.h>
 #include <imgui/imstb_truetype.h>
 #ifdef _DEBUG
 #include <imgui.h>
 #endif // _DEBUG
-#include <String/StringUtility.h>
+#include <string/StringUtility.h>
 #include <algorithm>
 #include <cassert>
 #include <cmath>
@@ -32,13 +32,17 @@ const std::string TextRenderer::kSaveFolder = AssetPath::Image(TextRenderer::kSa
 /// コードポイントをUTF-8文字列に変換する。
 /// サロゲートペアを構成する必要があるBMP外文字にも対応する。
 /// </summary>
-static std::string CodepointToUtf8(uint32_t codepoint) {
+static std::string CodepointToUtf8(uint32_t codepoint)
+{
     wchar_t wBuf[3] = {};
     int wLen = 0;
-    if (codepoint < 0x10000) {
+    if (codepoint < 0x10000)
+    {
         wBuf[0] = static_cast<wchar_t>(codepoint);
         wLen = 1;
-    } else {
+    }
+    else
+    {
         // BMP外文字はUTF-16サロゲートペアとしてエンコードする
         const uint32_t cp = codepoint - 0x10000;
         wBuf[0] = static_cast<wchar_t>(0xD800 + (cp >> 10));
@@ -54,14 +58,18 @@ static std::string CodepointToUtf8(uint32_t codepoint) {
 /// UTF-8文字列をコードポイントの配列に変換する。
 /// サロゲートペア（BMP外文字）にも対応する。
 /// </summary>
-static std::vector<uint32_t> Utf8ToCodepoints(const std::string &utf8) {
+static std::vector<uint32_t> Utf8ToCodepoints(const std::string &utf8)
+{
     const std::wstring wide = StringUtility::ConvertString(utf8);
     std::vector<uint32_t> codepoints;
-    for (size_t i = 0; i < wide.length(); ++i) {
+    for (size_t i = 0; i < wide.length(); ++i)
+    {
         uint32_t cp = static_cast<uint32_t>(wide[i]);
-        if (cp >= 0xD800 && cp <= 0xDBFF && i + 1 < wide.length()) {
+        if (cp >= 0xD800 && cp <= 0xDBFF && i + 1 < wide.length())
+        {
             const uint32_t low = static_cast<uint32_t>(wide[i + 1]);
-            if (low >= 0xDC00 && low <= 0xDFFF) {
+            if (low >= 0xDC00 && low <= 0xDFFF)
+            {
                 cp = 0x10000 + ((cp - 0xD800) << 10) + (low - 0xDC00);
                 ++i;
             }
@@ -83,9 +91,11 @@ void TextRenderer::CreateTextSprite(
     Vector4 color,
     bool outlineEnabled,
     float outlineThickness,
-    Vector4 outlineColor) {
+    Vector4 outlineColor)
+{
     // 同名スプライトが存在する場合は再生成のために先に削除する
-    if (SpriteManager::GetInstance()->GetSprite(spriteName) != nullptr) {
+    if (SpriteManager::GetInstance()->GetSprite(spriteName) != nullptr)
+    {
         SpriteManager::GetInstance()->UnregisterSprite(spriteName);
     }
 
@@ -109,15 +119,18 @@ void TextRenderer::CreateCharacterAtlasSprite(
     Vector4 color,
     bool outlineEnabled,
     float outlineThickness,
-    Vector4 outlineColor) {
+    Vector4 outlineColor)
+{
     // 同名スプライトが存在する場合は再生成のために先に削除する
-    if (SpriteManager::GetInstance()->GetSprite(spriteName) != nullptr) {
+    if (SpriteManager::GetInstance()->GetSprite(spriteName) != nullptr)
+    {
         SpriteManager::GetInstance()->UnregisterSprite(spriteName);
     }
 
     // 入力文字列をコードポイント列に変換する
     const std::vector<uint32_t> codepoints = Utf8ToCodepoints(chars);
-    if (codepoints.empty()) {
+    if (codepoints.empty())
+    {
         return;
     }
 
@@ -134,9 +147,11 @@ void TextRenderer::CreateCharacterAtlasSprite(
     SpriteManager::GetInstance()->RegisterSprite(spriteName, relPath, transform);
 }
 
-void TextRenderer::UpdateImGui() {
+void TextRenderer::UpdateImGui()
+{
 #ifdef _DEBUG
-    if (!ImGui::Begin("テキストレンダラー (TextRenderer)", nullptr, ImGuiWindowFlags_NoFocusOnAppearing)) {
+    if (!ImGui::Begin("テキストレンダラー (TextRenderer)", nullptr, ImGuiWindowFlags_NoFocusOnAppearing))
+    {
         ImGui::End();
         return;
     }
@@ -154,28 +169,36 @@ void TextRenderer::UpdateImGui() {
     // ================================================================
     // テキストスプライト作成
     // ================================================================
-    if (imguiMode_ == 0) {
+    if (imguiMode_ == 0)
+    {
         ImGui::SeparatorText("テキストスプライト作成");
 
         ImGui::InputText("スプライト名", imguiSpriteName_, sizeof(imguiSpriteName_));
         ImGui::InputText("テキスト", imguiText_, sizeof(imguiText_));
 
-        if (!fontKeys.empty()) {
+        if (!fontKeys.empty())
+        {
             imguiFontIndex_ = std::clamp(imguiFontIndex_, 0, static_cast<int>(fontKeys.size()) - 1);
             const char *current = fontKeys[imguiFontIndex_].c_str();
-            if (ImGui::BeginCombo("フォント", current)) {
-                for (int i = 0; i < static_cast<int>(fontKeys.size()); ++i) {
+            if (ImGui::BeginCombo("フォント", current))
+            {
+                for (int i = 0; i < static_cast<int>(fontKeys.size()); ++i)
+                {
                     const bool selected = (i == imguiFontIndex_);
-                    if (ImGui::Selectable(fontKeys[i].c_str(), selected)) {
+                    if (ImGui::Selectable(fontKeys[i].c_str(), selected))
+                    {
                         imguiFontIndex_ = i;
                     }
-                    if (selected) {
+                    if (selected)
+                    {
                         ImGui::SetItemDefaultFocus();
                     }
                 }
                 ImGui::EndCombo();
             }
-        } else {
+        }
+        else
+        {
             ImGui::TextDisabled("フォントがありません。TextureManager::LoadFontTexture()を呼んでください。");
         }
 
@@ -186,10 +209,13 @@ void TextRenderer::UpdateImGui() {
         ImGui::SeparatorText("アウトライン設定");
         ImGui::Checkbox("アウトラインを有効にする", &imguiOutlineEnabled_);
 
-        if (imguiOutlineEnabled_) {
+        if (imguiOutlineEnabled_)
+        {
             ImGui::DragFloat("太さ (px)", &imguiOutlineThickness_, 0.5f, 0.5f, 20.0f, "%.1f");
             ImGui::ColorEdit4("アウトライン色", imguiOutlineColor_);
-        } else {
+        }
+        else
+        {
             ImGui::BeginDisabled();
             ImGui::DragFloat("太さ (px)", &imguiOutlineThickness_, 0.5f, 0.5f, 20.0f, "%.1f");
             ImGui::ColorEdit4("アウトライン色", imguiOutlineColor_);
@@ -200,10 +226,12 @@ void TextRenderer::UpdateImGui() {
                                (imguiText_[0] != '\0') &&
                                !fontKeys.empty();
 
-        if (!canCreate) {
+        if (!canCreate)
+        {
             ImGui::BeginDisabled();
         }
-        if (ImGui::Button("テキストスプライトを作成")) {
+        if (ImGui::Button("テキストスプライトを作成"))
+        {
             CreateTextSprite(
                 std::string(imguiSpriteName_),
                 std::string(imguiText_),
@@ -214,7 +242,8 @@ void TextRenderer::UpdateImGui() {
                 imguiOutlineThickness_,
                 {imguiOutlineColor_[0], imguiOutlineColor_[1], imguiOutlineColor_[2], imguiOutlineColor_[3]});
         }
-        if (!canCreate) {
+        if (!canCreate)
+        {
             ImGui::EndDisabled();
         }
     }
@@ -224,29 +253,37 @@ void TextRenderer::UpdateImGui() {
     // 全文字を1枚のテクスチャに固定セルで横並びに配置する
     // UV操作による文字の切り出しは呼び出し側で行う
     // ================================================================
-    if (imguiMode_ == 1) {
+    if (imguiMode_ == 1)
+    {
         ImGui::SeparatorText("アトラススプライト作成");
         ImGui::TextDisabled("全文字を1枚のテクスチャに配置します。UV操作で各文字を切り出して使用してください。");
 
         ImGui::InputText("スプライト名", imguiAtlasSpriteName_, sizeof(imguiAtlasSpriteName_));
         ImGui::InputText("文字列 (例: ABCDE)", imguiAtlasChars_, sizeof(imguiAtlasChars_));
 
-        if (!fontKeys.empty()) {
+        if (!fontKeys.empty())
+        {
             imguiAtlasFontIndex_ = std::clamp(imguiAtlasFontIndex_, 0, static_cast<int>(fontKeys.size()) - 1);
             const char *atlasCurrent = fontKeys[imguiAtlasFontIndex_].c_str();
-            if (ImGui::BeginCombo("フォント##atlas", atlasCurrent)) {
-                for (int i = 0; i < static_cast<int>(fontKeys.size()); ++i) {
+            if (ImGui::BeginCombo("フォント##atlas", atlasCurrent))
+            {
+                for (int i = 0; i < static_cast<int>(fontKeys.size()); ++i)
+                {
                     const bool selected = (i == imguiAtlasFontIndex_);
-                    if (ImGui::Selectable(fontKeys[i].c_str(), selected)) {
+                    if (ImGui::Selectable(fontKeys[i].c_str(), selected))
+                    {
                         imguiAtlasFontIndex_ = i;
                     }
-                    if (selected) {
+                    if (selected)
+                    {
                         ImGui::SetItemDefaultFocus();
                     }
                 }
                 ImGui::EndCombo();
             }
-        } else {
+        }
+        else
+        {
             ImGui::TextDisabled("フォントがありません。TextureManager::LoadFontTexture()を呼んでください。");
         }
 
@@ -270,10 +307,13 @@ void TextRenderer::UpdateImGui() {
         ImGui::SeparatorText("アウトライン設定##atlas");
         ImGui::Checkbox("アウトラインを有効にする##atlas", &imguiAtlasOutlineEnabled_);
 
-        if (imguiAtlasOutlineEnabled_) {
+        if (imguiAtlasOutlineEnabled_)
+        {
             ImGui::DragFloat("太さ (px)##atlas", &imguiAtlasOutlineThickness_, 0.5f, 0.5f, 20.0f, "%.1f");
             ImGui::ColorEdit4("アウトライン色##atlas", imguiAtlasOutlineColor_);
-        } else {
+        }
+        else
+        {
             ImGui::BeginDisabled();
             ImGui::DragFloat("太さ (px)##atlas", &imguiAtlasOutlineThickness_, 0.5f, 0.5f, 20.0f, "%.1f");
             ImGui::ColorEdit4("アウトライン色##atlas", imguiAtlasOutlineColor_);
@@ -284,10 +324,12 @@ void TextRenderer::UpdateImGui() {
                                (imguiAtlasChars_[0] != '\0') &&
                                !fontKeys.empty();
 
-        if (!canCreate) {
+        if (!canCreate)
+        {
             ImGui::BeginDisabled();
         }
-        if (ImGui::Button("アトラススプライトを作成")) {
+        if (ImGui::Button("アトラススプライトを作成"))
+        {
             CreateCharacterAtlasSprite(
                 std::string(imguiAtlasSpriteName_),
                 std::string(imguiAtlasChars_),
@@ -300,7 +342,8 @@ void TextRenderer::UpdateImGui() {
                 imguiAtlasOutlineThickness_,
                 {imguiAtlasOutlineColor_[0], imguiAtlasOutlineColor_[1], imguiAtlasOutlineColor_[2], imguiAtlasOutlineColor_[3]});
         }
-        if (!canCreate) {
+        if (!canCreate)
+        {
             ImGui::EndDisabled();
         }
     }
@@ -319,14 +362,16 @@ std::string TextRenderer::RenderTextToFile(
     const std::string &fontKey,
     bool outlineEnabled,
     float outlineThickness,
-    Vector4 outlineColor) {
+    Vector4 outlineColor)
+{
     const TextureManager::FontData *fontData = TextureManager::GetInstance()->GetFontData(fontKey);
     assert(fontData != nullptr);
     assert(fontData->ttfBuffer != nullptr);
 
     // stb_truetypeの初期化
     stbtt_fontinfo fontInfo;
-    if (!stbtt_InitFont(&fontInfo, fontData->ttfBuffer->data(), 0)) {
+    if (!stbtt_InitFont(&fontInfo, fontData->ttfBuffer->data(), 0))
+    {
         assert(0 && "Failed to init font");
     }
 
@@ -341,12 +386,15 @@ std::string TextRenderer::RenderTextToFile(
 
     // std::wstring からコードポイントの配列を抽出（サロゲートペア対応）
     std::vector<uint32_t> codepoints;
-    for (size_t i = 0; i < wText.length(); ++i) {
+    for (size_t i = 0; i < wText.length(); ++i)
+    {
         uint32_t cp = static_cast<uint32_t>(wText[i]);
         // 絵文字や一部の難しい漢字など（サロゲートペア）の処理
-        if (cp >= 0xD800 && cp <= 0xDBFF && i + 1 < wText.length()) {
+        if (cp >= 0xD800 && cp <= 0xDBFF && i + 1 < wText.length())
+        {
             uint32_t low = static_cast<uint32_t>(wText[i + 1]);
-            if (low >= 0xDC00 && low <= 0xDFFF) {
+            if (low >= 0xDC00 && low <= 0xDFFF)
+            {
                 cp = 0x10000 + ((cp - 0xD800) << 10) + (low - 0xDC00);
                 ++i;
             }
@@ -356,12 +404,14 @@ std::string TextRenderer::RenderTextToFile(
 
     // テクスチャの全体横幅を計算する
     float totalWidth = 0.0f;
-    for (size_t i = 0; i < codepoints.size(); ++i) {
+    for (size_t i = 0; i < codepoints.size(); ++i)
+    {
         int advanceWidth, leftSideBearing;
         stbtt_GetCodepointHMetrics(&fontInfo, codepoints[i], &advanceWidth, &leftSideBearing);
         totalWidth += advanceWidth * scale;
 
-        if (i + 1 < codepoints.size()) {
+        if (i + 1 < codepoints.size())
+        {
             totalWidth += stbtt_GetCodepointKernAdvance(&fontInfo, codepoints[i], codepoints[i + 1]) * scale;
         }
     }
@@ -376,7 +426,8 @@ std::string TextRenderer::RenderTextToFile(
 
     // 各文字をビットマップ化してピクセルバッファに書き込む
     float cursorX = static_cast<float>(outlinePad);
-    for (size_t i = 0; i < codepoints.size(); ++i) {
+    for (size_t i = 0; i < codepoints.size(); ++i)
+    {
         uint32_t cp = codepoints[i];
 
         int advanceWidth, leftSideBearing;
@@ -392,19 +443,23 @@ std::string TextRenderer::RenderTextToFile(
         int dstX = static_cast<int>(std::round(cursorX)) + x0;
         int dstY = maxAscent + y0 + outlinePad;
 
-        if (glyphW > 0 && glyphH > 0) {
+        if (glyphW > 0 && glyphH > 0)
+        {
             std::vector<uint8_t> glyphBitmap(glyphW * glyphH);
             stbtt_MakeCodepointBitmap(&fontInfo, glyphBitmap.data(), glyphW, glyphH, glyphW, scale, scale, cp);
 
-            for (int gy = 0; gy < glyphH; ++gy) {
-                for (int gx = 0; gx < glyphW; ++gx) {
+            for (int gy = 0; gy < glyphH; ++gy)
+            {
+                for (int gx = 0; gx < glyphW; ++gx)
+                {
                     int px = dstX + gx;
                     int py = dstY + gy;
                     if (px < 0 || px >= texWidth || py < 0 || py >= texHeight)
                         continue;
 
                     uint8_t alpha = glyphBitmap[gy * glyphW + gx];
-                    if (alpha > 0) {
+                    if (alpha > 0)
+                    {
                         int dstIdx = (py * texWidth + px) * 4;
                         pixels[dstIdx + 0] = 255;
                         pixels[dstIdx + 1] = 255;
@@ -416,7 +471,8 @@ std::string TextRenderer::RenderTextToFile(
         }
 
         cursorX += advanceWidth * scale;
-        if (i + 1 < codepoints.size()) {
+        if (i + 1 < codepoints.size())
+        {
             cursorX += stbtt_GetCodepointKernAdvance(&fontInfo, cp, codepoints[i + 1]) * scale;
         }
     }
@@ -424,7 +480,8 @@ std::string TextRenderer::RenderTextToFile(
     // アウトライン処理:
     // グリフが描画済みのピクセルバッファに対して膨張処理（ダイレーション）を行い、
     // グリフの外周に指定した太さ・色のアウトラインを合成する
-    if (outlineEnabled && outlineThickness > 0.0f) {
+    if (outlineEnabled && outlineThickness > 0.0f)
+    {
         const int radius = static_cast<int>(std::ceil(outlineThickness));
 
         // アウトラインピクセルを格納するバッファ（alpha のみ判定に使用）
@@ -432,8 +489,10 @@ std::string TextRenderer::RenderTextToFile(
 
         // グリフが存在しないピクセルに対して近傍探索を行い、
         // 半径 outlineThickness 以内にグリフピクセルがあればアウトライン候補とする
-        for (int y = 0; y < texHeight; ++y) {
-            for (int x = 0; x < texWidth; ++x) {
+        for (int y = 0; y < texHeight; ++y)
+        {
+            for (int x = 0; x < texWidth; ++x)
+            {
                 const int selfIdx = (y * texWidth + x) * 4;
 
                 // グリフが描画済みの箇所はアウトライン不要
@@ -442,8 +501,10 @@ std::string TextRenderer::RenderTextToFile(
 
                 // 近傍ピクセルをサーチして半径内にグリフが存在するか確認
                 bool hasNeighbor = false;
-                for (int dy = -radius; dy <= radius && !hasNeighbor; ++dy) {
-                    for (int dx = -radius; dx <= radius && !hasNeighbor; ++dx) {
+                for (int dy = -radius; dy <= radius && !hasNeighbor; ++dy)
+                {
+                    for (int dx = -radius; dx <= radius && !hasNeighbor; ++dx)
+                    {
                         // 円形マスクにするため距離チェック
                         const float dist = std::sqrt(static_cast<float>(dx * dx + dy * dy));
                         if (dist > outlineThickness)
@@ -460,7 +521,8 @@ std::string TextRenderer::RenderTextToFile(
                     }
                 }
 
-                if (hasNeighbor) {
+                if (hasNeighbor)
+                {
                     outlineMask[y * texWidth + x] = 255;
                 }
             }
@@ -473,8 +535,10 @@ std::string TextRenderer::RenderTextToFile(
         const uint8_t outB = static_cast<uint8_t>(std::clamp(outlineColor.z, 0.0f, 1.0f) * 255.0f);
         const uint8_t outA = static_cast<uint8_t>(std::clamp(outlineColor.w, 0.0f, 1.0f) * 255.0f);
 
-        for (int y = 0; y < texHeight; ++y) {
-            for (int x = 0; x < texWidth; ++x) {
+        for (int y = 0; y < texHeight; ++y)
+        {
+            for (int x = 0; x < texWidth; ++x)
+            {
                 if (outlineMask[y * texWidth + x] == 0)
                     continue;
 
@@ -503,7 +567,8 @@ std::string TextRenderer::RenderTextToFile(
     assert(SUCCEEDED(hr));
 
     const DirectX::Image *img = scratchImage.GetImages();
-    for (int y = 0; y < texHeight; ++y) {
+    for (int y = 0; y < texHeight; ++y)
+    {
         std::memcpy(
             img->pixels + y * img->rowPitch,
             pixels.data() + y * texWidth * 4,
@@ -532,14 +597,16 @@ std::string TextRenderer::RenderCharacterAtlasToFile(
     int cellHeight,
     bool outlineEnabled,
     float outlineThickness,
-    Vector4 outlineColor) {
+    Vector4 outlineColor)
+{
     const TextureManager::FontData *fontData = TextureManager::GetInstance()->GetFontData(fontKey);
     assert(fontData != nullptr);
     assert(fontData->ttfBuffer != nullptr);
 
     // stb_truetypeの初期化
     stbtt_fontinfo fontInfo;
-    if (!stbtt_InitFont(&fontInfo, fontData->ttfBuffer->data(), 0)) {
+    if (!stbtt_InitFont(&fontInfo, fontData->ttfBuffer->data(), 0))
+    {
         assert(0 && "Failed to init font");
     }
 
@@ -574,7 +641,8 @@ std::string TextRenderer::RenderCharacterAtlasToFile(
     const uint8_t outB = static_cast<uint8_t>(std::clamp(outlineColor.z, 0.0f, 1.0f) * 255.0f);
     const uint8_t outA = static_cast<uint8_t>(std::clamp(outlineColor.w, 0.0f, 1.0f) * 255.0f);
 
-    for (int ci = 0; ci < numChars; ++ci) {
+    for (int ci = 0; ci < numChars; ++ci)
+    {
         const uint32_t cp = codepoints[ci];
 
         int advanceWidth, leftSideBearing;
@@ -598,19 +666,23 @@ std::string TextRenderer::RenderCharacterAtlasToFile(
         std::vector<uint8_t> cellPixels(static_cast<size_t>(cellWidth * cellHeight * 4), 0);
 
         // グリフビットマップをセルバッファに書き込む
-        if (glyphW > 0 && glyphH > 0) {
+        if (glyphW > 0 && glyphH > 0)
+        {
             std::vector<uint8_t> glyphBitmap(static_cast<size_t>(glyphW * glyphH));
             stbtt_MakeCodepointBitmap(&fontInfo, glyphBitmap.data(), glyphW, glyphH, glyphW, scale, scale, cp);
 
-            for (int gy = 0; gy < glyphH; ++gy) {
-                for (int gx = 0; gx < glyphW; ++gx) {
+            for (int gy = 0; gy < glyphH; ++gy)
+            {
+                for (int gx = 0; gx < glyphW; ++gx)
+                {
                     const int px = cellOffsetX + gx;
                     const int py = cellOffsetY + gy;
                     if (px < 0 || px >= cellWidth || py < 0 || py >= cellHeight)
                         continue;
 
                     const uint8_t alpha = glyphBitmap[gy * glyphW + gx];
-                    if (alpha > 0) {
+                    if (alpha > 0)
+                    {
                         const int idx = (py * cellWidth + px) * 4;
                         cellPixels[idx + 0] = 255;
                         cellPixels[idx + 1] = 255;
@@ -623,19 +695,24 @@ std::string TextRenderer::RenderCharacterAtlasToFile(
 
         // アウトライン処理をセル単位で実行する
         // セル単位で処理することで隣接セルへのアウトラインのはみ出しを防ぐ
-        if (outlineEnabled && outlineThickness > 0.0f) {
+        if (outlineEnabled && outlineThickness > 0.0f)
+        {
             std::vector<uint8_t> outlineMask(static_cast<size_t>(cellWidth * cellHeight), 0);
 
             // グリフピクセルの近傍を探索してアウトライン候補ピクセルを収集する
-            for (int y = 0; y < cellHeight; ++y) {
-                for (int x = 0; x < cellWidth; ++x) {
+            for (int y = 0; y < cellHeight; ++y)
+            {
+                for (int x = 0; x < cellWidth; ++x)
+                {
                     // グリフが描画済みの箇所はアウトライン不要
                     if (cellPixels[(y * cellWidth + x) * 4 + 3] > 0)
                         continue;
 
                     bool hasNeighbor = false;
-                    for (int dy = -outlineRadius; dy <= outlineRadius && !hasNeighbor; ++dy) {
-                        for (int dx = -outlineRadius; dx <= outlineRadius && !hasNeighbor; ++dx) {
+                    for (int dy = -outlineRadius; dy <= outlineRadius && !hasNeighbor; ++dy)
+                    {
+                        for (int dx = -outlineRadius; dx <= outlineRadius && !hasNeighbor; ++dx)
+                        {
                             // 円形マスクにするため距離チェック
                             const float dist = std::sqrt(static_cast<float>(dx * dx + dy * dy));
                             if (dist > outlineThickness)
@@ -651,15 +728,18 @@ std::string TextRenderer::RenderCharacterAtlasToFile(
                         }
                     }
 
-                    if (hasNeighbor) {
+                    if (hasNeighbor)
+                    {
                         outlineMask[y * cellWidth + x] = 255;
                     }
                 }
             }
 
             // アウトライン色をセルバッファに書き込む（グリフピクセルは上書きしない）
-            for (int y = 0; y < cellHeight; ++y) {
-                for (int x = 0; x < cellWidth; ++x) {
+            for (int y = 0; y < cellHeight; ++y)
+            {
+                for (int x = 0; x < cellWidth; ++x)
+                {
                     if (outlineMask[y * cellWidth + x] == 0)
                         continue;
 
@@ -677,10 +757,12 @@ std::string TextRenderer::RenderCharacterAtlasToFile(
 
         // セルのピクセルをアトラスバッファの対応する位置にコピーする
         const int cellStartX = ci * cellWidth;
-        for (int y = 0; y < cellHeight; ++y) {
+        for (int y = 0; y < cellHeight; ++y)
+        {
             const int srcRowStart = y * cellWidth;
             const int dstRowStart = y * atlasWidth + cellStartX;
-            for (int x = 0; x < cellWidth; ++x) {
+            for (int x = 0; x < cellWidth; ++x)
+            {
                 const int srcIdx = (srcRowStart + x) * 4;
                 const int dstIdx = (dstRowStart + x) * 4;
                 atlasPixels[dstIdx + 0] = cellPixels[srcIdx + 0];
@@ -703,7 +785,8 @@ std::string TextRenderer::RenderCharacterAtlasToFile(
     assert(SUCCEEDED(hr));
 
     const DirectX::Image *img = scratchImage.GetImages();
-    for (int y = 0; y < atlasHeight; ++y) {
+    for (int y = 0; y < atlasHeight; ++y)
+    {
         std::memcpy(
             img->pixels + y * img->rowPitch,
             atlasPixels.data() + y * atlasWidth * 4,
@@ -724,9 +807,11 @@ std::string TextRenderer::RenderCharacterAtlasToFile(
     return loadPath;
 }
 
-void TextRenderer::EnsureOutputDirectory() {
+void TextRenderer::EnsureOutputDirectory()
+{
     const std::filesystem::path dir(kSaveFolder);
-    if (!std::filesystem::exists(dir)) {
+    if (!std::filesystem::exists(dir))
+    {
         std::filesystem::create_directories(dir);
     }
 }
