@@ -208,6 +208,14 @@ class SpriteManager
     SpriteData *FindSpriteByName(const std::string &name);
     int FindSpriteIndex(const std::string &name);
     void UpdateSpriteInstances(SpriteData *spriteData);
+#ifdef _DEBUG
+    /// <summary>
+    /// 指定インスタンスの translation をギズモの操作対象として登録し直す。
+    /// instanceData の再確保（追加・削除・Undo復元）でポインタが無効になるため、
+    /// ギズモ登録は必ずこの関数を経由し gizmoBound_ で現在の登録先を追跡する。
+    /// </summary>
+    void SyncGizmoTarget(SpriteData *spriteData, int instanceIndex);
+#endif // _DEBUG
 
   private:
     /// ===================================================
@@ -219,7 +227,8 @@ class SpriteManager
     std::string texturePath_ = "";                     // テクスチャパス
     std::string saveFolder_ = "Sprite";                // 保存先フォルダ
 #ifdef _DEBUG
-    ImGuiUndoTracker undoTracker_; // スプライトマネージャUIのUndoトラッカー
-#endif                             // _DEBUG
+    ImGuiUndoTracker undoTracker_;                           // スプライトマネージャUIのUndoトラッカー
+    std::unordered_map<std::string, Vector3 *> gizmoBound_; // ギズモに登録中の平行移動ポインタ（スプライト名 → instanceData 内アドレス）
+#endif                                                       // _DEBUG
 };
 } // namespace Hagine

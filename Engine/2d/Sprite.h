@@ -84,6 +84,12 @@ class Sprite
     void SetInstanceCount(uint32_t count);
     void SetInstanceTransform(uint32_t index, const TransformationMatrix &transform);
 
+    /// <summary>
+    /// 変換行列を外部（SpriteManager など）が SetInstanceTransform で全て管理する場合 true。
+    /// true の間は Update() がインスタンス単体時の行列再計算（上書き）を行わない。
+    /// </summary>
+    void SetUseExternalTransforms(bool use) { useExternalTransforms_ = use; }
+
   private:
     /// ===================================================
     /// private method
@@ -152,6 +158,7 @@ class Sprite
 
     uint32_t instanceCount_ = 1;                // インスタンス数
     uint32_t transformationMatrixSrvIndex_ = 0; // 変換行列SRVインデックス
+    bool useExternalTransforms_ = false;        // 行列を外部管理するか（SpriteManager 所有スプライト用）
 
     float uvRotate_ = 0.0f;             // UV回転角度
     Vector2 uvSize_ = {1.0f, 1.0f};     // UVサイズ
