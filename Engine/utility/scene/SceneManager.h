@@ -8,7 +8,6 @@
 
 namespace Hagine {
 class BaseScene;
-class WinApp;
 class SceneManager
 {
   private:
@@ -91,7 +90,6 @@ class SceneManager
 
     void SetOffScreen(OffScreen *offscreen) { pOffscreen_ = offscreen; }
     void SetDrawSystem(DrawSystem *drawSystem) { pDrawSystem_ = drawSystem; }
-    void SetWinApp(WinApp *winApp) { pWinApp_ = winApp; }
 
     /// <summary>
     /// シーン遷移演出を取得（App 側からのフェード制御用）
@@ -101,7 +99,6 @@ class SceneManager
   private:
     OffScreen *pOffscreen_ = nullptr;
     DrawSystem *pDrawSystem_ = nullptr;
-    WinApp *pWinApp_ = nullptr;
     // 今のシーン（実行中のシーン）
     std::unique_ptr<BaseScene> scene_;
     // 次のシーン

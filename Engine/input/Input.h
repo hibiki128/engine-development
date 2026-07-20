@@ -14,10 +14,10 @@
 #include <XInput.h>
 #include <dinput.h>
 // input
-#include "Input/GamePad.h"
+#include "GamePad.h"
 #include "Mouse.h"
-#include <Camera/projection/ViewProjection.h>
-#include <myMath.h>
+#include <MyMath.h>
+#include <camera/projection/ViewProjection.h>
 #include <type/Vector3.h>
 #include <type/Vector4.h>
 
@@ -71,7 +71,7 @@ class Input {
     // マウス
     static std::unique_ptr<Mouse> mouse_;
     // ゲームパッド
-    std::unique_ptr<GamePad> gamePad_;
+    static std::unique_ptr<GamePad> gamePad_;
 
     Ray currentRay_;
     SceneViewport currentViewport_;

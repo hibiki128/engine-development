@@ -26,7 +26,6 @@
 
 namespace Hagine {
 class SceneManager;
-class WinApp;
 
 class BaseScene
 {
@@ -77,7 +76,6 @@ class BaseScene
 
     void SetOffScreen(OffScreen *offscreen) { pOffScreen_ = offscreen; }
     void SetDrawSystem(DrawSystem *drawSystem) { pDrawSystem_ = drawSystem; }
-    void SetWinApp(WinApp *winApp) { pWinApp_ = winApp; }
 
     void DrawParticleEditorUI();
 
@@ -98,7 +96,6 @@ class BaseScene
     std::unique_ptr<DebugCamera> debugCamera_;
 
     SceneManager *pSceneManager_ = nullptr;
-    WinApp *pWinApp_ = nullptr;
     SpriteManager *pSpriteManager_ = nullptr;
     BaseObjectManager *pObjectManager_ = nullptr;
     DrawSystem *pDrawSystem_ = nullptr;

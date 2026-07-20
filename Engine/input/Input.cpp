@@ -47,7 +47,7 @@ void Input::Init(HINSTANCE hInstance, HWND hWnd)
     mouse_ = std::make_unique<Mouse>();
     mouse_->Init(directInput_, hWnd);
 
-     // ゲームパッド初期化
+    // ゲームパッド初期化
     gamePad_ = std::make_unique<GamePad>();
     gamePad_->Init(0);
 

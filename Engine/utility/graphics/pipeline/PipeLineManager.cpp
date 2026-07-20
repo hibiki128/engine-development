@@ -1,26 +1,30 @@
 #include "PipelineManager.h"
 #include "ComputePipelineManager.h"
-#include <d3dx12.h>
 #include <debug/log/Logger.h>
+#include <d3dx12.h>
 
 namespace Hagine {
-void PipelineManager::Finalize() {
+void PipelineManager::Finalize()
+{
     pipelines_.clear();
     rootSignatures_.clear();
 }
 
-void PipelineManager::Initialize(DirectXCommon *dxCommon) {
+void PipelineManager::Initialize(DirectXCommon *dxCommon)
+{
     pDxCommon_ = dxCommon;
 
     CreateAllPipelines();
 }
 
-Microsoft::WRL::ComPtr<ID3D12PipelineState> PipelineManager::GetPipeline(PipelineType type, BlendMode blendMode, ShaderMode shaderMode) {
+Microsoft::WRL::ComPtr<ID3D12PipelineState> PipelineManager::GetPipeline(PipelineType type, BlendMode blendMode, ShaderMode shaderMode)
+{
     // キーを生成して対応するパイプラインを取得
     std::string key = MakePipelineKey(type, blendMode, shaderMode);
 
     // 対応するパイプラインが存在するか確認
-    if (pipelines_.find(key) == pipelines_.end()) {
+    if (pipelines_.find(key) == pipelines_.end())
+    {
         // パイプラインが見つからない場合は警告を出して、デフォルトを返す
         assert(false && "指定されたパイプラインが存在しません");
 
@@ -31,12 +35,14 @@ Microsoft::WRL::ComPtr<ID3D12PipelineState> PipelineManager::GetPipeline(Pipelin
     return pipelines_[key];
 }
 
-Microsoft::WRL::ComPtr<ID3D12RootSignature> PipelineManager::GetRootSignature(PipelineType type, ShaderMode shaderMode) {
+Microsoft::WRL::ComPtr<ID3D12RootSignature> PipelineManager::GetRootSignature(PipelineType type, ShaderMode shaderMode)
+{
     // キーを生成して対応するルートシグネチャを取得
     std::string key = MakeRootSignatureKey(type, shaderMode);
 
     // 対応するルートシグネチャが存在するか確認
-    if (rootSignatures_.find(key) == rootSignatures_.end()) {
+    if (rootSignatures_.find(key) == rootSignatures_.end())
+    {
         // ルートシグネチャが見つからない場合は警告を出して、デフォルトを返す
         assert(false && "指定されたルートシグネチャが存在しません");
 
@@ -47,7 +53,8 @@ Microsoft::WRL::ComPtr<ID3D12RootSignature> PipelineManager::GetRootSignature(Pi
     return rootSignatures_[key];
 }
 
-void PipelineManager::DrawCommonSetting(PipelineType type, BlendMode blendMode, ShaderMode shaderMode) {
+void PipelineManager::DrawCommonSetting(PipelineType type, BlendMode blendMode, ShaderMode shaderMode)
+{
     // 指定されたタイプのパイプラインとルートシグネチャを取得
     auto pipeline = GetPipeline(type, blendMode, shaderMode);
     auto rootSignature = GetRootSignature(type, shaderMode);
@@ -56,15 +63,19 @@ void PipelineManager::DrawCommonSetting(PipelineType type, BlendMode blendMode, 
     ID3D12GraphicsCommandList *commandList = pDxCommon_->GetCommandList().Get();
     commandList->SetPipelineState(pipeline.Get());
     commandList->SetGraphicsRootSignature(rootSignature.Get());
-    if (type == PipelineType::Line3d) {
+    if (type == PipelineType::Line3d)
+    {
         commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_LINELIST);
-    } else {
+    }
+    else
+    {
         commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
     }
 }
 
 // スキニングパイプラインの作成
-void PipelineManager::CreateSkinningPipelines() {
+void PipelineManager::CreateSkinningPipelines()
+{
     // ルートシグネチャを作成し、マップに格納
     auto rootSignature = CreateSkinningRootSignature();
     rootSignatures_[MakeRootSignatureKey(PipelineType::Skinning, ShaderMode::None)] = rootSignature;
@@ -75,7 +86,8 @@ void PipelineManager::CreateSkinningPipelines() {
 }
 
 // 3Dラインパイプラインの作成
-void PipelineManager::CreateLine3dPipelines() {
+void PipelineManager::CreateLine3dPipelines()
+{
     // ルートシグネチャを作成し、マップに格納
     auto rootSignature = CreateLine3dRootSignature();
     rootSignatures_[MakeRootSignatureKey(PipelineType::Line3d, ShaderMode::None)] = rootSignature;
@@ -86,20 +98,23 @@ void PipelineManager::CreateLine3dPipelines() {
 }
 
 // キー文字列を生成するヘルパー関数
-std::string PipelineManager::MakePipelineKey(PipelineType type, BlendMode blendMode, ShaderMode shaderMode) {
+std::string PipelineManager::MakePipelineKey(PipelineType type, BlendMode blendMode, ShaderMode shaderMode)
+{
     return std::format("Pipeline_{}_{}_{}",
                        static_cast<int>(type),
                        static_cast<int>(blendMode),
                        static_cast<int>(shaderMode));
 }
 
-std::string PipelineManager::MakeRootSignatureKey(PipelineType type, ShaderMode shaderMode) {
+std::string PipelineManager::MakeRootSignatureKey(PipelineType type, ShaderMode shaderMode)
+{
     return std::format("RootSignature_{}_{}",
                        static_cast<int>(type),
                        static_cast<int>(shaderMode));
 }
 
-D3D12_STATIC_SAMPLER_DESC PipelineManager::CreateCommonSamplerDesc() {
+D3D12_STATIC_SAMPLER_DESC PipelineManager::CreateCommonSamplerDesc()
+{
     D3D12_STATIC_SAMPLER_DESC desc{};
     desc.Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
     desc.AddressU = desc.AddressV = desc.AddressW = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
@@ -110,7 +125,8 @@ D3D12_STATIC_SAMPLER_DESC PipelineManager::CreateCommonSamplerDesc() {
     return desc;
 }
 
-Microsoft::WRL::ComPtr<ID3D12RootSignature> PipelineManager::CreateCommonRootSignature(bool hasCBV) {
+Microsoft::WRL::ComPtr<ID3D12RootSignature> PipelineManager::CreateCommonRootSignature(bool hasCBV)
+{
     D3D12_DESCRIPTOR_RANGE range{};
     range.BaseShaderRegister = 0;
     range.NumDescriptors = 1;
@@ -124,7 +140,8 @@ Microsoft::WRL::ComPtr<ID3D12RootSignature> PipelineManager::CreateCommonRootSig
     params[0].DescriptorTable.NumDescriptorRanges = 1;
 
     UINT paramCount = 1;
-    if (hasCBV) {
+    if (hasCBV)
+    {
         params[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
         params[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
         params[1].Descriptor.ShaderRegister = 0;
@@ -142,7 +159,8 @@ Microsoft::WRL::ComPtr<ID3D12RootSignature> PipelineManager::CreateCommonRootSig
 
     Microsoft::WRL::ComPtr<ID3DBlob> sigBlob, errBlob;
     HRESULT hr = D3D12SerializeRootSignature(&desc, D3D_ROOT_SIGNATURE_VERSION_1, &sigBlob, &errBlob);
-    if (FAILED(hr)) {
+    if (FAILED(hr))
+    {
         Logger::Log(reinterpret_cast<char *>(errBlob->GetBufferPointer()));
         assert(false);
     }
@@ -153,8 +171,9 @@ Microsoft::WRL::ComPtr<ID3D12RootSignature> PipelineManager::CreateCommonRootSig
     return rootSig;
 }
 
-Microsoft::WRL::ComPtr<ID3D12PipelineState> PipelineManager::CreateFullScreenPostEffectPipeline(const std::wstring &psPath, Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature) {
-    IDxcBlob *vs = pDxCommon_->CompileShader(shaderPath + L"shaders/OffScreen/FullScreen.VS.hlsl", L"vs_6_0");
+Microsoft::WRL::ComPtr<ID3D12PipelineState> PipelineManager::CreateFullScreenPostEffectPipeline(const std::wstring &psPath, Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature)
+{
+    IDxcBlob *vs = pDxCommon_->CompileShader(L"./Engine/EngineAssets/shaders/OffScreen/FullScreen.VS.hlsl", L"vs_6_0");
     IDxcBlob *ps = pDxCommon_->CompileShader(psPath.c_str(), L"ps_6_0");
 
     D3D12_GRAPHICS_PIPELINE_STATE_DESC desc{};
@@ -179,7 +198,8 @@ Microsoft::WRL::ComPtr<ID3D12PipelineState> PipelineManager::CreateFullScreenPos
     return pipelineState;
 }
 
-D3D12_DEPTH_STENCIL_DESC PipelineManager::SettingDepthStencilDesc(bool depth) {
+D3D12_DEPTH_STENCIL_DESC PipelineManager::SettingDepthStencilDesc(bool depth)
+{
     ///=========DepthStencilStateの設定==========
     D3D12_DEPTH_STENCIL_DESC depthStencilDesc{};
     // Depthの機能を有効化する
@@ -194,7 +214,8 @@ D3D12_DEPTH_STENCIL_DESC PipelineManager::SettingDepthStencilDesc(bool depth) {
     return depthStencilDesc;
 }
 
-void PipelineManager::CreateAllPipelines() {
+void PipelineManager::CreateAllPipelines()
+{
     // 各種パイプラインの作成
     CreateStandardPipelines();
     CreateParticlePipelines();
@@ -208,13 +229,15 @@ void PipelineManager::CreateAllPipelines() {
 }
 
 // 標準パイプラインの作成
-void PipelineManager::CreateStandardPipelines() {
+void PipelineManager::CreateStandardPipelines()
+{
     // ルートシグネチャを作成し、マップに格納
     auto rootSignature = CreateRootSignature();
     rootSignatures_[MakeRootSignatureKey(PipelineType::Standard, ShaderMode::None)] = rootSignature;
 
     // 各ブレンドモード用のパイプラインを作成し、マップに格納
-    for (int i = 0; i <= static_cast<int>(BlendMode::Screen); i++) {
+    for (int i = 0; i <= static_cast<int>(BlendMode::Screen); i++)
+    {
         BlendMode blendMode = static_cast<BlendMode>(i);
         auto pipeline = CreateGraphicsPipeline(rootSignature, blendMode);
         pipelines_[MakePipelineKey(PipelineType::Standard, blendMode, ShaderMode::None)] = pipeline;
@@ -222,13 +245,15 @@ void PipelineManager::CreateStandardPipelines() {
 }
 
 // スプライトパイプラインの作成
-void PipelineManager::CreateSpritePipelines() {
+void PipelineManager::CreateSpritePipelines()
+{
     // ルートシグネチャを作成し、マップに格納
     auto rootSignature = CreateSpriteRootSignature();
     rootSignatures_[MakeRootSignatureKey(PipelineType::Sprite, ShaderMode::None)] = rootSignature;
 
     // 各ブレンドモード用のパイプラインを作成し、マップに格納
-    for (int i = 0; i <= static_cast<int>(BlendMode::Screen); i++) {
+    for (int i = 0; i <= static_cast<int>(BlendMode::Screen); i++)
+    {
         BlendMode blendMode = static_cast<BlendMode>(i);
         auto pipeline = CreateSpriteGraphicsPipeline(rootSignature, blendMode);
         pipelines_[MakePipelineKey(PipelineType::Sprite, blendMode, ShaderMode::None)] = pipeline;
@@ -236,9 +261,11 @@ void PipelineManager::CreateSpritePipelines() {
 }
 
 // レンダーパイプラインの作成
-void PipelineManager::CreateRenderPipelines() {
+void PipelineManager::CreateRenderPipelines()
+{
     // 各シェーダーモード用のルートシグネチャとパイプラインを作成
-    for (int i = 0; i <= static_cast<int>(ShaderMode::Count) - 1; i++) {
+    for (int i = 0; i <= static_cast<int>(ShaderMode::Count) - 1; i++)
+    {
         ShaderMode shaderMode = static_cast<ShaderMode>(i);
 
         // ルートシグネチャを作成し、マップに格納
@@ -251,7 +278,8 @@ void PipelineManager::CreateRenderPipelines() {
     }
 }
 
-Microsoft::WRL::ComPtr<ID3D12RootSignature> PipelineManager::CreateRootSignature() {
+Microsoft::WRL::ComPtr<ID3D12RootSignature> PipelineManager::CreateRootSignature()
+{
     Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature;
     HRESULT hr;
     // RootSignature作成
@@ -368,18 +396,20 @@ Microsoft::WRL::ComPtr<ID3D12RootSignature> PipelineManager::CreateRootSignature
     ID3DBlob *signatureBlob = nullptr;
     ID3DBlob *errorBlob = nullptr;
     hr = D3D12SerializeRootSignature(&descriptionRootSignature, D3D_ROOT_SIGNATURE_VERSION_1, &signatureBlob, &errorBlob);
-    if (FAILED(hr)) {
+    if (FAILED(hr))
+    {
         Logger::Log(reinterpret_cast<char *>(errorBlob->GetBufferPointer()));
         assert(false);
     }
     hr = pDxCommon_->GetDevice()->CreateRootSignature(0, signatureBlob->GetBufferPointer(),
-                                                      signatureBlob->GetBufferSize(), IID_PPV_ARGS(&rootSignature));
+                                                     signatureBlob->GetBufferSize(), IID_PPV_ARGS(&rootSignature));
     assert(SUCCEEDED(hr));
     return rootSignature;
 }
 
 Microsoft::WRL::ComPtr<ID3D12PipelineState> PipelineManager::CreateGraphicsPipeline(
-    Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature, BlendMode blendMode) {
+    Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature, BlendMode blendMode)
+{
     Microsoft::WRL::ComPtr<ID3D12PipelineState> graphicsPipelineState;
     HRESULT hr;
 
@@ -407,7 +437,8 @@ Microsoft::WRL::ComPtr<ID3D12PipelineState> PipelineManager::CreateGraphicsPipel
     blendDesc.RenderTarget[0].RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
     blendDesc.RenderTarget[0].BlendEnable = TRUE;
 
-    switch (blendMode) {
+    switch (blendMode)
+    {
     case BlendMode::None:
         // ブレンドを無効化する
         blendDesc.RenderTarget[0].BlendEnable = FALSE;
@@ -452,10 +483,10 @@ Microsoft::WRL::ComPtr<ID3D12PipelineState> PipelineManager::CreateGraphicsPipel
     // 三角形の中を塗りつぶす
     rasterizerDesc.FillMode = D3D12_FILL_MODE_SOLID;
     // Shaderをコンパイルする
-    IDxcBlob *vertexShaderBlob = pDxCommon_->CompileShader(shaderPath + L"shaders/Object/Object3d.VS.hlsl", L"vs_6_0");
+    IDxcBlob *vertexShaderBlob = pDxCommon_->CompileShader(L"./Engine/EngineAssets/shaders/Object/Object3d.VS.hlsl", L"vs_6_0");
     assert(vertexShaderBlob != nullptr);
 
-    IDxcBlob *pixelShaderBlob = pDxCommon_->CompileShader(shaderPath + L"shaders/Object/Object3d.PS.hlsl", L"ps_6_0");
+    IDxcBlob *pixelShaderBlob = pDxCommon_->CompileShader(L"./Engine/EngineAssets/shaders/Object/Object3d.PS.hlsl", L"ps_6_0");
     assert(pixelShaderBlob != nullptr);
 
     ///=========DepthStencilStateの設定==========
@@ -491,38 +522,43 @@ Microsoft::WRL::ComPtr<ID3D12PipelineState> PipelineManager::CreateGraphicsPipel
     graphicsPipelineStateDesc.SampleMask = D3D12_DEFAULT_SAMPLE_MASK;
     // 実際に生成
     hr = pDxCommon_->GetDevice()->CreateGraphicsPipelineState(&graphicsPipelineStateDesc,
-                                                              IID_PPV_ARGS(&graphicsPipelineState));
+                                                             IID_PPV_ARGS(&graphicsPipelineState));
     assert(SUCCEEDED(hr));
     return graphicsPipelineState;
 }
 
-void PipelineManager::CreateParticlePipelines() {
+void PipelineManager::CreateParticlePipelines()
+{
     // ルートシグネチャを作成し、マップに格納
     auto rootSignature = CreateParticleRootSignature();
     rootSignatures_[MakeRootSignatureKey(PipelineType::Particle, ShaderMode::None)] = rootSignature;
 
     // 各ブレンドモード用のパイプラインを作成し、マップに格納
-    for (int i = 0; i <= static_cast<int>(BlendMode::Screen); i++) {
+    for (int i = 0; i <= static_cast<int>(BlendMode::Screen); i++)
+    {
         BlendMode blendMode = static_cast<BlendMode>(i);
         auto pipeline = CreateParticleGraphicsPipeline(rootSignature, blendMode);
         pipelines_[MakePipelineKey(PipelineType::Particle, blendMode, ShaderMode::None)] = pipeline;
     }
 }
 
-void PipelineManager::CreateGPUParticlePipelines() {
+void PipelineManager::CreateGPUParticlePipelines()
+{
     // ルートシグネチャを作成し、マップに格納
     auto rootSignature = CreateGPUParticleRootSignature();
     rootSignatures_[MakeRootSignatureKey(PipelineType::GPUParticle, ShaderMode::None)] = rootSignature;
 
     // 各ブレンドモード用のパイプラインを作成し、マップに格納
-    for (int i = 0; i <= static_cast<int>(BlendMode::Screen); i++) {
+    for (int i = 0; i <= static_cast<int>(BlendMode::Screen); i++)
+    {
         BlendMode blendMode = static_cast<BlendMode>(i);
         auto pipeline = CreateGPUParticleGraphicsPipeline(rootSignature, blendMode);
         pipelines_[MakePipelineKey(PipelineType::GPUParticle, blendMode, ShaderMode::None)] = pipeline;
     }
 }
 
-Microsoft::WRL::ComPtr<ID3D12RootSignature> PipelineManager::CreateGPUParticleRootSignature() {
+Microsoft::WRL::ComPtr<ID3D12RootSignature> PipelineManager::CreateGPUParticleRootSignature()
+{
     Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature;
     HRESULT hr;
 
@@ -629,18 +665,20 @@ Microsoft::WRL::ComPtr<ID3D12RootSignature> PipelineManager::CreateGPUParticleRo
     ID3DBlob *signatureBlob = nullptr;
     ID3DBlob *errorBlob = nullptr;
     hr = D3D12SerializeRootSignature(&descriptionRootSignature, D3D_ROOT_SIGNATURE_VERSION_1, &signatureBlob, &errorBlob);
-    if (FAILED(hr)) {
+    if (FAILED(hr))
+    {
         Logger::Log(reinterpret_cast<char *>(errorBlob->GetBufferPointer()));
         assert(false);
     }
     // パイナリを元に生成
     hr = pDxCommon_->GetDevice()->CreateRootSignature(0, signatureBlob->GetBufferPointer(),
-                                                      signatureBlob->GetBufferSize(), IID_PPV_ARGS(&rootSignature));
+                                                     signatureBlob->GetBufferSize(), IID_PPV_ARGS(&rootSignature));
     assert(SUCCEEDED(hr));
     return rootSignature;
 }
 
-Microsoft::WRL::ComPtr<ID3D12PipelineState> PipelineManager::CreateGPUParticleGraphicsPipeline(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature, BlendMode blendMode) {
+Microsoft::WRL::ComPtr<ID3D12PipelineState> PipelineManager::CreateGPUParticleGraphicsPipeline(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature, BlendMode blendMode)
+{
     Microsoft::WRL::ComPtr<ID3D12PipelineState> graphicsPipelineState;
     HRESULT hr;
 
@@ -668,7 +706,8 @@ Microsoft::WRL::ComPtr<ID3D12PipelineState> PipelineManager::CreateGPUParticleGr
     blendDesc.RenderTarget[0].RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
     blendDesc.RenderTarget[0].BlendEnable = TRUE;
     // BlendMode = Add
-    switch (blendMode) {
+    switch (blendMode)
+    {
     case BlendMode::None:
         // ブレンドを無効化する
         blendDesc.RenderTarget[0].BlendEnable = FALSE;
@@ -713,10 +752,10 @@ Microsoft::WRL::ComPtr<ID3D12PipelineState> PipelineManager::CreateGPUParticleGr
     // 三角形の中を塗りつぶす
     rasterizerDesc.FillMode = D3D12_FILL_MODE_SOLID;
     // Shaderをコンパイルする
-    IDxcBlob *vertexShaderBlob = pDxCommon_->CompileShader(shaderPath + L"shaders/Particle/CSParticle/ParticleCS.VS.hlsl", L"vs_6_0");
+    IDxcBlob *vertexShaderBlob = pDxCommon_->CompileShader(L"./Engine/EngineAssets/shaders/Particle/CSParticle/ParticleCS.VS.hlsl", L"vs_6_0");
     assert(vertexShaderBlob != nullptr);
 
-    IDxcBlob *pixelShaderBlob = pDxCommon_->CompileShader(shaderPath + L"shaders/Particle/CSParticle/ParticleCS.PS.hlsl", L"ps_6_0");
+    IDxcBlob *pixelShaderBlob = pDxCommon_->CompileShader(L"./Engine/EngineAssets/shaders/Particle/CSParticle/ParticleCS.PS.hlsl", L"ps_6_0");
     assert(pixelShaderBlob != nullptr);
 
     ///=========DepthStencilStateの設定==========
@@ -752,13 +791,14 @@ Microsoft::WRL::ComPtr<ID3D12PipelineState> PipelineManager::CreateGPUParticleGr
     graphicsPipelineStateDesc.SampleMask = D3D12_DEFAULT_SAMPLE_MASK;
     // 実際に生成
     hr = pDxCommon_->GetDevice()->CreateGraphicsPipelineState(&graphicsPipelineStateDesc,
-                                                              IID_PPV_ARGS(&graphicsPipelineState));
+                                                             IID_PPV_ARGS(&graphicsPipelineState));
     assert(SUCCEEDED(hr));
 
     return graphicsPipelineState;
 }
 
-Microsoft::WRL::ComPtr<ID3D12RootSignature> PipelineManager::CreateParticleRootSignature() {
+Microsoft::WRL::ComPtr<ID3D12RootSignature> PipelineManager::CreateParticleRootSignature()
+{
     Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature;
     HRESULT hr;
 
@@ -817,18 +857,20 @@ Microsoft::WRL::ComPtr<ID3D12RootSignature> PipelineManager::CreateParticleRootS
     ID3DBlob *signatureBlob = nullptr;
     ID3DBlob *errorBlob = nullptr;
     hr = D3D12SerializeRootSignature(&descriptionRootSignature, D3D_ROOT_SIGNATURE_VERSION_1, &signatureBlob, &errorBlob);
-    if (FAILED(hr)) {
+    if (FAILED(hr))
+    {
         Logger::Log(reinterpret_cast<char *>(errorBlob->GetBufferPointer()));
         assert(false);
     }
     // パイナリを元に生成
     hr = pDxCommon_->GetDevice()->CreateRootSignature(0, signatureBlob->GetBufferPointer(),
-                                                      signatureBlob->GetBufferSize(), IID_PPV_ARGS(&rootSignature));
+                                                     signatureBlob->GetBufferSize(), IID_PPV_ARGS(&rootSignature));
     assert(SUCCEEDED(hr));
     return rootSignature;
 }
 
-Microsoft::WRL::ComPtr<ID3D12PipelineState> PipelineManager::CreateParticleGraphicsPipeline(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature, BlendMode blendMode) {
+Microsoft::WRL::ComPtr<ID3D12PipelineState> PipelineManager::CreateParticleGraphicsPipeline(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature, BlendMode blendMode)
+{
     Microsoft::WRL::ComPtr<ID3D12PipelineState> graphicsPipelineState;
     HRESULT hr;
 
@@ -856,7 +898,8 @@ Microsoft::WRL::ComPtr<ID3D12PipelineState> PipelineManager::CreateParticleGraph
     blendDesc.RenderTarget[0].RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
     blendDesc.RenderTarget[0].BlendEnable = TRUE;
     // BlendMode = Add
-    switch (blendMode) {
+    switch (blendMode)
+    {
     case BlendMode::None:
         // ブレンドを無効化する
         blendDesc.RenderTarget[0].BlendEnable = FALSE;
@@ -901,10 +944,10 @@ Microsoft::WRL::ComPtr<ID3D12PipelineState> PipelineManager::CreateParticleGraph
     // 三角形の中を塗りつぶす
     rasterizerDesc.FillMode = D3D12_FILL_MODE_SOLID;
     // Shaderをコンパイルする
-    IDxcBlob *vertexShaderBlob = pDxCommon_->CompileShader(shaderPath + L"shaders/Particle/Particle.VS.hlsl", L"vs_6_0");
+    IDxcBlob *vertexShaderBlob = pDxCommon_->CompileShader(L"./Engine/EngineAssets/shaders/Particle/Particle.VS.hlsl", L"vs_6_0");
     assert(vertexShaderBlob != nullptr);
 
-    IDxcBlob *pixelShaderBlob = pDxCommon_->CompileShader(shaderPath + L"shaders/Particle/Particle.PS.hlsl", L"ps_6_0");
+    IDxcBlob *pixelShaderBlob = pDxCommon_->CompileShader(L"./Engine/EngineAssets/shaders/Particle/Particle.PS.hlsl", L"ps_6_0");
     assert(pixelShaderBlob != nullptr);
 
     ///=========DepthStencilStateの設定==========
@@ -940,13 +983,14 @@ Microsoft::WRL::ComPtr<ID3D12PipelineState> PipelineManager::CreateParticleGraph
     graphicsPipelineStateDesc.SampleMask = D3D12_DEFAULT_SAMPLE_MASK;
     // 実際に生成
     hr = pDxCommon_->GetDevice()->CreateGraphicsPipelineState(&graphicsPipelineStateDesc,
-                                                              IID_PPV_ARGS(&graphicsPipelineState));
+                                                             IID_PPV_ARGS(&graphicsPipelineState));
     assert(SUCCEEDED(hr));
 
     return graphicsPipelineState;
 }
 
-Microsoft::WRL::ComPtr<ID3D12RootSignature> PipelineManager::CreateSpriteRootSignature() {
+Microsoft::WRL::ComPtr<ID3D12RootSignature> PipelineManager::CreateSpriteRootSignature()
+{
     Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature;
     HRESULT hr;
 
@@ -992,7 +1036,7 @@ Microsoft::WRL::ComPtr<ID3D12RootSignature> PipelineManager::CreateSpriteRootSig
 
     // Samplerの設定
     D3D12_STATIC_SAMPLER_DESC staticSamplers[1] = {};
-    staticSamplers[0].Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;    // バイリニアフィルタ
+    staticSamplers[0].Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;   // バイリニアフィルタ
     staticSamplers[0].AddressU = D3D12_TEXTURE_ADDRESS_MODE_CLAMP; // 0～1の範囲外をリピート
     staticSamplers[0].AddressV = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
     staticSamplers[0].AddressW = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
@@ -1007,17 +1051,19 @@ Microsoft::WRL::ComPtr<ID3D12RootSignature> PipelineManager::CreateSpriteRootSig
     ID3DBlob *signatureBlob = nullptr;
     ID3DBlob *errorBlob = nullptr;
     hr = D3D12SerializeRootSignature(&descriptionRootSignature, D3D_ROOT_SIGNATURE_VERSION_1, &signatureBlob, &errorBlob);
-    if (FAILED(hr)) {
+    if (FAILED(hr))
+    {
         Logger::Log(reinterpret_cast<char *>(errorBlob->GetBufferPointer()));
         assert(false);
     }
     hr = pDxCommon_->GetDevice()->CreateRootSignature(0, signatureBlob->GetBufferPointer(),
-                                                      signatureBlob->GetBufferSize(), IID_PPV_ARGS(&rootSignature));
+                                                     signatureBlob->GetBufferSize(), IID_PPV_ARGS(&rootSignature));
     assert(SUCCEEDED(hr));
     return rootSignature;
 }
 
-Microsoft::WRL::ComPtr<ID3D12PipelineState> PipelineManager::CreateSpriteGraphicsPipeline(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature, BlendMode blendMode) {
+Microsoft::WRL::ComPtr<ID3D12PipelineState> PipelineManager::CreateSpriteGraphicsPipeline(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature, BlendMode blendMode)
+{
     Microsoft::WRL::ComPtr<ID3D12PipelineState> graphicsPipelineState;
     HRESULT hr;
 
@@ -1041,7 +1087,8 @@ Microsoft::WRL::ComPtr<ID3D12PipelineState> PipelineManager::CreateSpriteGraphic
     blendDesc.RenderTarget[0].RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
     blendDesc.RenderTarget[0].BlendEnable = TRUE;
 
-    switch (blendMode) {
+    switch (blendMode)
+    {
     case BlendMode::None:
         // ブレンドを無効化する
         blendDesc.RenderTarget[0].BlendEnable = FALSE;
@@ -1086,10 +1133,10 @@ Microsoft::WRL::ComPtr<ID3D12PipelineState> PipelineManager::CreateSpriteGraphic
     // 三角形の中を塗りつぶす
     rasterizerDesc.FillMode = D3D12_FILL_MODE_SOLID;
     // Shaderをコンパイルする
-    IDxcBlob *vertexShaderBlob = pDxCommon_->CompileShader(shaderPath + L"shaders/Sprite/Sprite.VS.hlsl", L"vs_6_0");
+    IDxcBlob *vertexShaderBlob = pDxCommon_->CompileShader(L"./Engine/EngineAssets/shaders/Sprite/Sprite.VS.hlsl", L"vs_6_0");
     assert(vertexShaderBlob != nullptr);
 
-    IDxcBlob *pixelShaderBlob = pDxCommon_->CompileShader(shaderPath + L"shaders/Sprite/Sprite.PS.hlsl", L"ps_6_0");
+    IDxcBlob *pixelShaderBlob = pDxCommon_->CompileShader(L"./Engine/EngineAssets/shaders/Sprite/Sprite.PS.hlsl", L"ps_6_0");
     assert(pixelShaderBlob != nullptr);
 
     ///=========DepthStencilStateの設定==========
@@ -1125,14 +1172,16 @@ Microsoft::WRL::ComPtr<ID3D12PipelineState> PipelineManager::CreateSpriteGraphic
     graphicsPipelineStateDesc.SampleMask = D3D12_DEFAULT_SAMPLE_MASK;
     // 実際に生成
     hr = pDxCommon_->GetDevice()->CreateGraphicsPipelineState(&graphicsPipelineStateDesc,
-                                                              IID_PPV_ARGS(&graphicsPipelineState));
+                                                             IID_PPV_ARGS(&graphicsPipelineState));
     assert(SUCCEEDED(hr));
     return graphicsPipelineState;
 }
 
-Microsoft::WRL::ComPtr<ID3D12RootSignature> PipelineManager::CreateRenderRootSignature(ShaderMode shaderMode) {
+Microsoft::WRL::ComPtr<ID3D12RootSignature> PipelineManager::CreateRenderRootSignature(ShaderMode shaderMode)
+{
     // シェーダーモードに応じて適切なルートシグネチャ作成メソッドを呼び出す
-    switch (shaderMode) {
+    switch (shaderMode)
+    {
     case ShaderMode::None:
         return CreateBaseRootSignature();
     case ShaderMode::Gray:
@@ -1171,10 +1220,12 @@ Microsoft::WRL::ComPtr<ID3D12RootSignature> PipelineManager::CreateRenderRootSig
 }
 
 Microsoft::WRL::ComPtr<ID3D12PipelineState> PipelineManager::CreateRenderGraphicsPipeline(
-    Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature, ShaderMode shaderMode) {
+    Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature, ShaderMode shaderMode)
+{
 
     // シェーダーモードに応じて適切なパイプライン作成メソッドを呼び出す
-    switch (shaderMode) {
+    switch (shaderMode)
+    {
     case ShaderMode::None:
         return CreateNoneGraphicsPipeline(rootSignature);
     case ShaderMode::Gray:
@@ -1212,7 +1263,8 @@ Microsoft::WRL::ComPtr<ID3D12PipelineState> PipelineManager::CreateRenderGraphic
     }
 }
 
-Microsoft::WRL::ComPtr<ID3D12RootSignature> PipelineManager::CreateSkinningRootSignature() {
+Microsoft::WRL::ComPtr<ID3D12RootSignature> PipelineManager::CreateSkinningRootSignature()
+{
     Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature;
     HRESULT hr;
     // RootSignature作成
@@ -1360,17 +1412,19 @@ Microsoft::WRL::ComPtr<ID3D12RootSignature> PipelineManager::CreateSkinningRootS
     ID3DBlob *signatureBlob = nullptr;
     ID3DBlob *errorBlob = nullptr;
     hr = D3D12SerializeRootSignature(&descriptionRootSignature, D3D_ROOT_SIGNATURE_VERSION_1, &signatureBlob, &errorBlob);
-    if (FAILED(hr)) {
+    if (FAILED(hr))
+    {
         Logger::Log(reinterpret_cast<char *>(errorBlob->GetBufferPointer()));
         assert(false);
     }
     hr = pDxCommon_->GetDevice()->CreateRootSignature(0, signatureBlob->GetBufferPointer(),
-                                                      signatureBlob->GetBufferSize(), IID_PPV_ARGS(&rootSignature));
+                                                     signatureBlob->GetBufferSize(), IID_PPV_ARGS(&rootSignature));
     assert(SUCCEEDED(hr));
     return rootSignature;
 }
 
-Microsoft::WRL::ComPtr<ID3D12PipelineState> PipelineManager::CreateSkinningGraphicsPipeline(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature) {
+Microsoft::WRL::ComPtr<ID3D12PipelineState> PipelineManager::CreateSkinningGraphicsPipeline(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature)
+{
     Microsoft::WRL::ComPtr<ID3D12PipelineState> graphicsPipelineState;
     HRESULT hr;
 
@@ -1420,10 +1474,10 @@ Microsoft::WRL::ComPtr<ID3D12PipelineState> PipelineManager::CreateSkinningGraph
     // 三角形の中を塗りつぶす
     rasterizerDesc.FillMode = D3D12_FILL_MODE_SOLID;
     // Shaderをコンパイルする
-    IDxcBlob *vertexShaderBlob = pDxCommon_->CompileShader(shaderPath + L"shaders/Skinning/Skinning.VS.hlsl", L"vs_6_0");
+    IDxcBlob *vertexShaderBlob = pDxCommon_->CompileShader(L"./Engine/EngineAssets/shaders/Skinning/Skinning.VS.hlsl", L"vs_6_0");
     assert(vertexShaderBlob != nullptr);
 
-    IDxcBlob *pixelShaderBlob = pDxCommon_->CompileShader(shaderPath + L"shaders/Object/Object3d.PS.hlsl", L"ps_6_0");
+    IDxcBlob *pixelShaderBlob = pDxCommon_->CompileShader(L"./Engine/EngineAssets/shaders/Object/Object3d.PS.hlsl", L"ps_6_0");
     assert(pixelShaderBlob != nullptr);
 
     ///=========DepthStencilStateの設定==========
@@ -1459,13 +1513,14 @@ Microsoft::WRL::ComPtr<ID3D12PipelineState> PipelineManager::CreateSkinningGraph
     graphicsPipelineStateDesc.SampleMask = D3D12_DEFAULT_SAMPLE_MASK;
     // 実際に生成
     hr = pDxCommon_->GetDevice()->CreateGraphicsPipelineState(&graphicsPipelineStateDesc,
-                                                              IID_PPV_ARGS(&graphicsPipelineState));
+                                                             IID_PPV_ARGS(&graphicsPipelineState));
 
     assert(SUCCEEDED(hr));
     return graphicsPipelineState;
 }
 
-Microsoft::WRL::ComPtr<ID3D12RootSignature> PipelineManager::CreateLine3dRootSignature() {
+Microsoft::WRL::ComPtr<ID3D12RootSignature> PipelineManager::CreateLine3dRootSignature()
+{
     Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature;
     HRESULT hr;
     // RootSignature作成
@@ -1505,17 +1560,19 @@ Microsoft::WRL::ComPtr<ID3D12RootSignature> PipelineManager::CreateLine3dRootSig
     ID3DBlob *signatureBlob = nullptr;
     ID3DBlob *errorBlob = nullptr;
     hr = D3D12SerializeRootSignature(&descriptionRootSignature, D3D_ROOT_SIGNATURE_VERSION_1, &signatureBlob, &errorBlob);
-    if (FAILED(hr)) {
+    if (FAILED(hr))
+    {
         Logger::Log(reinterpret_cast<char *>(errorBlob->GetBufferPointer()));
         assert(false);
     }
     hr = pDxCommon_->GetDevice()->CreateRootSignature(0, signatureBlob->GetBufferPointer(),
-                                                      signatureBlob->GetBufferSize(), IID_PPV_ARGS(&rootSignature));
+                                                     signatureBlob->GetBufferSize(), IID_PPV_ARGS(&rootSignature));
     assert(SUCCEEDED(hr));
     return rootSignature;
 }
 
-Microsoft::WRL::ComPtr<ID3D12PipelineState> PipelineManager::CreateLine3dGraphicsPipeline(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature) {
+Microsoft::WRL::ComPtr<ID3D12PipelineState> PipelineManager::CreateLine3dGraphicsPipeline(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature)
+{
     Microsoft::WRL::ComPtr<ID3D12PipelineState> graphicsPipelineState;
     HRESULT hr;
 
@@ -1552,10 +1609,10 @@ Microsoft::WRL::ComPtr<ID3D12PipelineState> PipelineManager::CreateLine3dGraphic
     // 三角形の中を塗りつぶす
     rasterizerDesc.FillMode = D3D12_FILL_MODE_SOLID;
     // Shaderをコンパイルする
-    IDxcBlob *vertexShaderBlob = pDxCommon_->CompileShader(shaderPath + L"shaders/Line/Line3d.VS.hlsl", L"vs_6_0");
+    IDxcBlob *vertexShaderBlob = pDxCommon_->CompileShader(L"./Engine/EngineAssets/shaders/Line/Line3d.VS.hlsl", L"vs_6_0");
     assert(vertexShaderBlob != nullptr);
 
-    IDxcBlob *pixelShaderBlob = pDxCommon_->CompileShader(shaderPath + L"shaders/Line/Line3d.PS.hlsl", L"ps_6_0");
+    IDxcBlob *pixelShaderBlob = pDxCommon_->CompileShader(L"./Engine/EngineAssets/shaders/Line/Line3d.PS.hlsl", L"ps_6_0");
     assert(pixelShaderBlob != nullptr);
 
     ///=========DepthStencilStateの設定==========
@@ -1591,12 +1648,13 @@ Microsoft::WRL::ComPtr<ID3D12PipelineState> PipelineManager::CreateLine3dGraphic
     graphicsPipelineStateDesc.SampleMask = D3D12_DEFAULT_SAMPLE_MASK;
     // 実際に生成
     hr = pDxCommon_->GetDevice()->CreateGraphicsPipelineState(&graphicsPipelineStateDesc,
-                                                              IID_PPV_ARGS(&graphicsPipelineState));
+                                                             IID_PPV_ARGS(&graphicsPipelineState));
     assert(SUCCEEDED(hr));
     return graphicsPipelineState;
 }
 
-void PipelineManager::CreateSkyboxPipelines() {
+void PipelineManager::CreateSkyboxPipelines()
+{
     // ルートシグネチャを作成し、マップに格納
     auto rootSignature = CreateSkyboxRootSignature();
     rootSignatures_[MakeRootSignatureKey(PipelineType::Skybox, ShaderMode::None)] = rootSignature;
@@ -1606,7 +1664,8 @@ void PipelineManager::CreateSkyboxPipelines() {
     pipelines_[MakePipelineKey(PipelineType::Skybox, BlendMode::Normal, ShaderMode::None)] = pipeline;
 }
 
-Microsoft::WRL::ComPtr<ID3D12RootSignature> PipelineManager::CreateSkyboxRootSignature() {
+Microsoft::WRL::ComPtr<ID3D12RootSignature> PipelineManager::CreateSkyboxRootSignature()
+{
     Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature;
     HRESULT hr;
 
@@ -1662,13 +1721,14 @@ Microsoft::WRL::ComPtr<ID3D12RootSignature> PipelineManager::CreateSkyboxRootSig
     ID3DBlob *signatureBlob = nullptr;
     ID3DBlob *errorBlob = nullptr;
     hr = D3D12SerializeRootSignature(&descriptionRootSignature, D3D_ROOT_SIGNATURE_VERSION_1, &signatureBlob, &errorBlob);
-    if (FAILED(hr)) {
+    if (FAILED(hr))
+    {
         Logger::Log(reinterpret_cast<char *>(errorBlob->GetBufferPointer()));
         assert(false);
     }
 
     hr = pDxCommon_->GetDevice()->CreateRootSignature(0, signatureBlob->GetBufferPointer(),
-                                                      signatureBlob->GetBufferSize(), IID_PPV_ARGS(&rootSignature));
+                                                     signatureBlob->GetBufferSize(), IID_PPV_ARGS(&rootSignature));
     assert(SUCCEEDED(hr));
 
     // リソースを解放
@@ -1680,7 +1740,8 @@ Microsoft::WRL::ComPtr<ID3D12RootSignature> PipelineManager::CreateSkyboxRootSig
     return rootSignature;
 }
 
-Microsoft::WRL::ComPtr<ID3D12PipelineState> PipelineManager::CreateSkyboxGraphicsPipeline(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature) {
+Microsoft::WRL::ComPtr<ID3D12PipelineState> PipelineManager::CreateSkyboxGraphicsPipeline(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature)
+{
     Microsoft::WRL::ComPtr<ID3D12PipelineState> graphicsPipelineState;
     HRESULT hr;
 
@@ -1714,10 +1775,10 @@ Microsoft::WRL::ComPtr<ID3D12PipelineState> PipelineManager::CreateSkyboxGraphic
     rasterizerDesc.FillMode = D3D12_FILL_MODE_SOLID;
 
     // Shaderをコンパイル
-    IDxcBlob *vertexShaderBlob = pDxCommon_->CompileShader(shaderPath + L"shaders/Skybox/Skybox.VS.hlsl", L"vs_6_0");
+    IDxcBlob *vertexShaderBlob = pDxCommon_->CompileShader(L"./Engine/EngineAssets/shaders/Skybox/Skybox.VS.hlsl", L"vs_6_0");
     assert(vertexShaderBlob != nullptr);
 
-    IDxcBlob *pixelShaderBlob = pDxCommon_->CompileShader(shaderPath + L"shaders/Skybox/Skybox.PS.hlsl", L"ps_6_0");
+    IDxcBlob *pixelShaderBlob = pDxCommon_->CompileShader(L"./Engine/EngineAssets/shaders/Skybox/Skybox.PS.hlsl", L"ps_6_0");
     assert(pixelShaderBlob != nullptr);
 
     // DepthStencilStateの設定
@@ -1747,37 +1808,44 @@ Microsoft::WRL::ComPtr<ID3D12PipelineState> PipelineManager::CreateSkyboxGraphic
 
     // パイプラインステート作成
     hr = pDxCommon_->GetDevice()->CreateGraphicsPipelineState(&graphicsPipelineStateDesc,
-                                                              IID_PPV_ARGS(&graphicsPipelineState));
+                                                             IID_PPV_ARGS(&graphicsPipelineState));
     assert(SUCCEEDED(hr));
 
     return graphicsPipelineState;
 }
 
-Microsoft::WRL::ComPtr<ID3D12RootSignature> PipelineManager::CreateBaseRootSignature() {
+Microsoft::WRL::ComPtr<ID3D12RootSignature> PipelineManager::CreateBaseRootSignature()
+{
     return CreateCommonRootSignature(false);
 }
 
-Microsoft::WRL::ComPtr<ID3D12RootSignature> PipelineManager::CreateGrayRootSignature() {
+Microsoft::WRL::ComPtr<ID3D12RootSignature> PipelineManager::CreateGrayRootSignature()
+{
     return CreateBaseRootSignature();
 }
 
-Microsoft::WRL::ComPtr<ID3D12RootSignature> PipelineManager::CreateVignetteRootSignature() {
+Microsoft::WRL::ComPtr<ID3D12RootSignature> PipelineManager::CreateVignetteRootSignature()
+{
     return CreateCommonRootSignature(true);
 }
 
-Microsoft::WRL::ComPtr<ID3D12RootSignature> PipelineManager::CreateSmoothRootSignature() {
+Microsoft::WRL::ComPtr<ID3D12RootSignature> PipelineManager::CreateSmoothRootSignature()
+{
     return CreateCommonRootSignature(true);
 }
 
-Microsoft::WRL::ComPtr<ID3D12RootSignature> PipelineManager::CreateGaussRootSignature() {
+Microsoft::WRL::ComPtr<ID3D12RootSignature> PipelineManager::CreateGaussRootSignature()
+{
     return CreateCommonRootSignature(true);
 }
 
-Microsoft::WRL::ComPtr<ID3D12RootSignature> PipelineManager::CreateOutlineRootSignature() {
+Microsoft::WRL::ComPtr<ID3D12RootSignature> PipelineManager::CreateOutlineRootSignature()
+{
     return CreateCommonRootSignature(true);
 }
 
-Microsoft::WRL::ComPtr<ID3D12RootSignature> PipelineManager::CreateDepthRootSignature() {
+Microsoft::WRL::ComPtr<ID3D12RootSignature> PipelineManager::CreateDepthRootSignature()
+{
     Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature;
     HRESULT hr;
 
@@ -1849,8 +1917,10 @@ Microsoft::WRL::ComPtr<ID3D12RootSignature> PipelineManager::CreateDepthRootSign
     ID3DBlob *signatureBlob = nullptr;
     ID3DBlob *errorBlob = nullptr;
     hr = D3D12SerializeRootSignature(&descriptionRootSignature, D3D_ROOT_SIGNATURE_VERSION_1, &signatureBlob, &errorBlob);
-    if (FAILED(hr)) {
-        if (errorBlob) {
+    if (FAILED(hr))
+    {
+        if (errorBlob)
+        {
             Logger::Log(reinterpret_cast<char *>(errorBlob->GetBufferPointer()));
         }
         assert(false);
@@ -1861,15 +1931,18 @@ Microsoft::WRL::ComPtr<ID3D12RootSignature> PipelineManager::CreateDepthRootSign
     return rootSignature;
 }
 
-Microsoft::WRL::ComPtr<ID3D12RootSignature> PipelineManager::CreateBlurRootSignature() {
+Microsoft::WRL::ComPtr<ID3D12RootSignature> PipelineManager::CreateBlurRootSignature()
+{
     return CreateCommonRootSignature(true);
 }
 
-Microsoft::WRL::ComPtr<ID3D12RootSignature> PipelineManager::CreateCinematicRootSignature() {
+Microsoft::WRL::ComPtr<ID3D12RootSignature> PipelineManager::CreateCinematicRootSignature()
+{
     return CreateCommonRootSignature(true);
 }
 
-Microsoft::WRL::ComPtr<ID3D12RootSignature> PipelineManager::CreateDissolveRootSignature() {
+Microsoft::WRL::ComPtr<ID3D12RootSignature> PipelineManager::CreateDissolveRootSignature()
+{
     Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature;
     HRESULT hr;
 
@@ -1931,8 +2004,10 @@ Microsoft::WRL::ComPtr<ID3D12RootSignature> PipelineManager::CreateDissolveRootS
     ID3DBlob *signatureBlob = nullptr;
     ID3DBlob *errorBlob = nullptr;
     hr = D3D12SerializeRootSignature(&descriptionRootSignature, D3D_ROOT_SIGNATURE_VERSION_1, &signatureBlob, &errorBlob);
-    if (FAILED(hr)) {
-        if (errorBlob) {
+    if (FAILED(hr))
+    {
+        if (errorBlob)
+        {
             Logger::Log(reinterpret_cast<char *>(errorBlob->GetBufferPointer()));
         }
         assert(false);
@@ -1943,27 +2018,33 @@ Microsoft::WRL::ComPtr<ID3D12RootSignature> PipelineManager::CreateDissolveRootS
     return rootSignature;
 }
 
-Microsoft::WRL::ComPtr<ID3D12RootSignature> PipelineManager::CreateRandomRootSignature() {
+Microsoft::WRL::ComPtr<ID3D12RootSignature> PipelineManager::CreateRandomRootSignature()
+{
     return CreateCommonRootSignature(true);
 }
 
-Microsoft::WRL::ComPtr<ID3D12RootSignature> PipelineManager::CreateFocusLineRootSignature() {
+Microsoft::WRL::ComPtr<ID3D12RootSignature> PipelineManager::CreateFocusLineRootSignature()
+{
     return CreateCommonRootSignature(true);
 }
 
-Microsoft::WRL::ComPtr<ID3D12RootSignature> PipelineManager::CreatePixelateRootSignature() {
+Microsoft::WRL::ComPtr<ID3D12RootSignature> PipelineManager::CreatePixelateRootSignature()
+{
     return CreateCommonRootSignature(true);
 }
 
-Microsoft::WRL::ComPtr<ID3D12RootSignature> PipelineManager::CreateBloomRootSignature() {
+Microsoft::WRL::ComPtr<ID3D12RootSignature> PipelineManager::CreateBloomRootSignature()
+{
     return CreateCommonRootSignature(true);
 }
 
-Microsoft::WRL::ComPtr<ID3D12RootSignature> PipelineManager::CreateRetroRootSignature() {
+Microsoft::WRL::ComPtr<ID3D12RootSignature> PipelineManager::CreateRetroRootSignature()
+{
     return CreateCommonRootSignature(true);
 }
 
-Microsoft::WRL::ComPtr<ID3D12RootSignature> PipelineManager::CreateShockwaveRootSignature() {
+Microsoft::WRL::ComPtr<ID3D12RootSignature> PipelineManager::CreateShockwaveRootSignature()
+{
     // 専用RootSig: t0(srcRT), t1(flareTex), b0(cbuffer)
     D3D12_DESCRIPTOR_RANGE rangeSrc{};
     rangeSrc.BaseShaderRegister = 0;
@@ -2003,7 +2084,8 @@ Microsoft::WRL::ComPtr<ID3D12RootSignature> PipelineManager::CreateShockwaveRoot
 
     Microsoft::WRL::ComPtr<ID3DBlob> sigBlob, errBlob;
     HRESULT hr = D3D12SerializeRootSignature(&desc, D3D_ROOT_SIGNATURE_VERSION_1, &sigBlob, &errBlob);
-    if (FAILED(hr)) {
+    if (FAILED(hr))
+    {
         Logger::Log(reinterpret_cast<char *>(errBlob->GetBufferPointer()));
         assert(false);
     }
@@ -2016,7 +2098,8 @@ Microsoft::WRL::ComPtr<ID3D12RootSignature> PipelineManager::CreateShockwaveRoot
 
 // ========== シャドウマップパイプライン ==========
 
-void PipelineManager::CreateShadowMapPipelines() {
+void PipelineManager::CreateShadowMapPipelines()
+{
     auto rootSignature = CreateShadowMapRootSignature();
     rootSignatures_[MakeRootSignatureKey(PipelineType::ShadowMap, ShaderMode::None)] = rootSignature;
 
@@ -2024,7 +2107,8 @@ void PipelineManager::CreateShadowMapPipelines() {
     pipelines_[MakePipelineKey(PipelineType::ShadowMap, BlendMode::Normal, ShaderMode::None)] = pipeline;
 }
 
-Microsoft::WRL::ComPtr<ID3D12RootSignature> PipelineManager::CreateShadowMapRootSignature() {
+Microsoft::WRL::ComPtr<ID3D12RootSignature> PipelineManager::CreateShadowMapRootSignature()
+{
     Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature;
 
     D3D12_ROOT_PARAMETER rootParameters[1] = {};
@@ -2039,7 +2123,8 @@ Microsoft::WRL::ComPtr<ID3D12RootSignature> PipelineManager::CreateShadowMapRoot
 
     ID3DBlob *sigBlob = nullptr, *errBlob = nullptr;
     HRESULT hr = D3D12SerializeRootSignature(&desc, D3D_ROOT_SIGNATURE_VERSION_1, &sigBlob, &errBlob);
-    if (FAILED(hr)) {
+    if (FAILED(hr))
+    {
         Logger::Log(reinterpret_cast<char *>(errBlob->GetBufferPointer()));
         assert(false);
     }
@@ -2048,7 +2133,8 @@ Microsoft::WRL::ComPtr<ID3D12RootSignature> PipelineManager::CreateShadowMapRoot
     return rootSignature;
 }
 
-Microsoft::WRL::ComPtr<ID3D12PipelineState> PipelineManager::CreateShadowMapGraphicsPipeline(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature) {
+Microsoft::WRL::ComPtr<ID3D12PipelineState> PipelineManager::CreateShadowMapGraphicsPipeline(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature)
+{
     Microsoft::WRL::ComPtr<ID3D12PipelineState> pipelineState;
 
     D3D12_INPUT_ELEMENT_DESC inputElementDescs[3] = {};
@@ -2068,7 +2154,7 @@ Microsoft::WRL::ComPtr<ID3D12PipelineState> PipelineManager::CreateShadowMapGrap
     inputLayoutDesc.pInputElementDescs = inputElementDescs;
     inputLayoutDesc.NumElements = _countof(inputElementDescs);
 
-    IDxcBlob *vs = pDxCommon_->CompileShader(shaderPath + L"shaders/Shadow/ShadowMap.VS.hlsl", L"vs_6_0");
+    IDxcBlob *vs = pDxCommon_->CompileShader(L"./Engine/EngineAssets/shaders/Shadow/ShadowMap.VS.hlsl", L"vs_6_0");
     assert(vs != nullptr);
 
     D3D12_RASTERIZER_DESC rasterizerDesc{};
@@ -2105,84 +2191,100 @@ Microsoft::WRL::ComPtr<ID3D12PipelineState> PipelineManager::CreateShadowMapGrap
 
 // ========== ポストエフェクト ==========
 
-Microsoft::WRL::ComPtr<ID3D12PipelineState> PipelineManager::CreateNoneGraphicsPipeline(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature) {
+Microsoft::WRL::ComPtr<ID3D12PipelineState> PipelineManager::CreateNoneGraphicsPipeline(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature)
+{
     SettingDepthStencilDesc(false);
-    return CreateFullScreenPostEffectPipeline(shaderPath + L"shaders/OffScreen/CopyImage.PS.hlsl", rootSignature);
+    return CreateFullScreenPostEffectPipeline(L"./Engine/EngineAssets/shaders/OffScreen/CopyImage.PS.hlsl", rootSignature);
 }
 
-Microsoft::WRL::ComPtr<ID3D12PipelineState> PipelineManager::CreateGrayGraphicsPipeline(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature) {
+Microsoft::WRL::ComPtr<ID3D12PipelineState> PipelineManager::CreateGrayGraphicsPipeline(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature)
+{
     SettingDepthStencilDesc(false);
-    return CreateFullScreenPostEffectPipeline(shaderPath + L"shaders/OffScreen/GrayScale.PS.hlsl", rootSignature);
+    return CreateFullScreenPostEffectPipeline(L"./Engine/EngineAssets/shaders/OffScreen/GrayScale.PS.hlsl", rootSignature);
 }
 
-Microsoft::WRL::ComPtr<ID3D12PipelineState> PipelineManager::CreateVignetteGraphicsPipeline(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature) {
+Microsoft::WRL::ComPtr<ID3D12PipelineState> PipelineManager::CreateVignetteGraphicsPipeline(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature)
+{
     SettingDepthStencilDesc(false);
-    return CreateFullScreenPostEffectPipeline(shaderPath + L"shaders/OffScreen/Vignette.PS.hlsl", rootSignature);
+    return CreateFullScreenPostEffectPipeline(L"./Engine/EngineAssets/shaders/OffScreen/Vignette.PS.hlsl", rootSignature);
 }
 
-Microsoft::WRL::ComPtr<ID3D12PipelineState> PipelineManager::CreateSmoothGraphicsPipeline(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature) {
+Microsoft::WRL::ComPtr<ID3D12PipelineState> PipelineManager::CreateSmoothGraphicsPipeline(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature)
+{
     SettingDepthStencilDesc(false);
-    return CreateFullScreenPostEffectPipeline(shaderPath + L"shaders/OffScreen/BoxFilter.PS.hlsl", rootSignature);
+    return CreateFullScreenPostEffectPipeline(L"./Engine/EngineAssets/shaders/OffScreen/BoxFilter.PS.hlsl", rootSignature);
 }
 
-Microsoft::WRL::ComPtr<ID3D12PipelineState> PipelineManager::CreateGaussGraphicsPipeline(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature) {
+Microsoft::WRL::ComPtr<ID3D12PipelineState> PipelineManager::CreateGaussGraphicsPipeline(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature)
+{
     SettingDepthStencilDesc(false);
-    return CreateFullScreenPostEffectPipeline(shaderPath + L"shaders/OffScreen/GaussianFilter.PS.hlsl", rootSignature);
+    return CreateFullScreenPostEffectPipeline(L"./Engine/EngineAssets/shaders/OffScreen/GaussianFilter.PS.hlsl", rootSignature);
 }
 
-Microsoft::WRL::ComPtr<ID3D12PipelineState> PipelineManager::CreateOutlineGraphicsPipeline(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature) {
+Microsoft::WRL::ComPtr<ID3D12PipelineState> PipelineManager::CreateOutlineGraphicsPipeline(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature)
+{
     SettingDepthStencilDesc(false);
-    return CreateFullScreenPostEffectPipeline(shaderPath + L"shaders/OffScreen/LuminanceBasedOutline.PS.hlsl", rootSignature);
+    return CreateFullScreenPostEffectPipeline(L"./Engine/EngineAssets/shaders/OffScreen/LuminanceBasedOutline.PS.hlsl", rootSignature);
 }
 
-Microsoft::WRL::ComPtr<ID3D12PipelineState> PipelineManager::CreateDepthGraphicsPipeline(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature) {
+Microsoft::WRL::ComPtr<ID3D12PipelineState> PipelineManager::CreateDepthGraphicsPipeline(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature)
+{
     SettingDepthStencilDesc(true);
-    return CreateFullScreenPostEffectPipeline(shaderPath + L"shaders/OffScreen/DepthBasedOutline.PS.hlsl", rootSignature);
+    return CreateFullScreenPostEffectPipeline(L"./Engine/EngineAssets/shaders/OffScreen/DepthBasedOutline.PS.hlsl", rootSignature);
 }
 
-Microsoft::WRL::ComPtr<ID3D12PipelineState> PipelineManager::CreateBlurGraphicsPipeline(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature) {
+Microsoft::WRL::ComPtr<ID3D12PipelineState> PipelineManager::CreateBlurGraphicsPipeline(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature)
+{
     SettingDepthStencilDesc(false);
-    return CreateFullScreenPostEffectPipeline(shaderPath + L"shaders/OffScreen/RadialBlur.PS.hlsl", rootSignature);
+    return CreateFullScreenPostEffectPipeline(L"./Engine/EngineAssets/shaders/OffScreen/RadialBlur.PS.hlsl", rootSignature);
 }
 
-Microsoft::WRL::ComPtr<ID3D12PipelineState> PipelineManager::CreateCinematicGraphicsPipeline(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature) {
+Microsoft::WRL::ComPtr<ID3D12PipelineState> PipelineManager::CreateCinematicGraphicsPipeline(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature)
+{
     SettingDepthStencilDesc(false);
-    return CreateFullScreenPostEffectPipeline(shaderPath + L"shaders/OffScreen/Cinematic.PS.hlsl", rootSignature);
+    return CreateFullScreenPostEffectPipeline(L"./Engine/EngineAssets/shaders/OffScreen/Cinematic.PS.hlsl", rootSignature);
 }
 
-Microsoft::WRL::ComPtr<ID3D12PipelineState> PipelineManager::CreateDissolveGraphicsPipeline(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature) {
+Microsoft::WRL::ComPtr<ID3D12PipelineState> PipelineManager::CreateDissolveGraphicsPipeline(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature)
+{
     SettingDepthStencilDesc(false);
-    return CreateFullScreenPostEffectPipeline(shaderPath + L"shaders/OffScreen/Dissolve.PS.hlsl", rootSignature);
+    return CreateFullScreenPostEffectPipeline(L"./Engine/EngineAssets/shaders/OffScreen/Dissolve.PS.hlsl", rootSignature);
 }
 
-Microsoft::WRL::ComPtr<ID3D12PipelineState> PipelineManager::CreateRandomGraphicsPipeline(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature) {
+Microsoft::WRL::ComPtr<ID3D12PipelineState> PipelineManager::CreateRandomGraphicsPipeline(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature)
+{
     SettingDepthStencilDesc(false);
-    return CreateFullScreenPostEffectPipeline(shaderPath + L"shaders/OffScreen/Random.PS.hlsl", rootSignature);
+    return CreateFullScreenPostEffectPipeline(L"./Engine/EngineAssets/shaders/OffScreen/Random.PS.hlsl", rootSignature);
 }
 
-Microsoft::WRL::ComPtr<ID3D12PipelineState> PipelineManager::CreateFocusLineGraphicsPipeline(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature) {
+Microsoft::WRL::ComPtr<ID3D12PipelineState> PipelineManager::CreateFocusLineGraphicsPipeline(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature)
+{
     SettingDepthStencilDesc(false);
-    return CreateFullScreenPostEffectPipeline(shaderPath + L"shaders/OffScreen/FocusLine.PS.hlsl", rootSignature);
+    return CreateFullScreenPostEffectPipeline(L"./Engine/EngineAssets/shaders/OffScreen/FocusLine.PS.hlsl", rootSignature);
 }
 
-Microsoft::WRL::ComPtr<ID3D12PipelineState> PipelineManager::CreatePixelateGraphicsPipeline(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature) {
+Microsoft::WRL::ComPtr<ID3D12PipelineState> PipelineManager::CreatePixelateGraphicsPipeline(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature)
+{
     SettingDepthStencilDesc(false);
-    return CreateFullScreenPostEffectPipeline(shaderPath + L"shaders/OffScreen/Pixelate.PS.hlsl", rootSignature);
+    return CreateFullScreenPostEffectPipeline(L"./Engine/EngineAssets/shaders/OffScreen/Pixelate.PS.hlsl", rootSignature);
 }
 
-Microsoft::WRL::ComPtr<ID3D12PipelineState> PipelineManager::CreateBloomGraphicsPipeline(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature) {
+Microsoft::WRL::ComPtr<ID3D12PipelineState> PipelineManager::CreateBloomGraphicsPipeline(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature)
+{
     SettingDepthStencilDesc(false);
-    return CreateFullScreenPostEffectPipeline(shaderPath + L"shaders/OffScreen/Bloom.PS.hlsl", rootSignature);
+    return CreateFullScreenPostEffectPipeline(L"./Engine/EngineAssets/shaders/OffScreen/Bloom.PS.hlsl", rootSignature);
 }
 
-Microsoft::WRL::ComPtr<ID3D12PipelineState> PipelineManager::CreateRetroGraphicsPipeline(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature) {
+Microsoft::WRL::ComPtr<ID3D12PipelineState> PipelineManager::CreateRetroGraphicsPipeline(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature)
+{
     SettingDepthStencilDesc(false);
-    return CreateFullScreenPostEffectPipeline(shaderPath + L"shaders/OffScreen/Retro.PS.hlsl", rootSignature);
+    return CreateFullScreenPostEffectPipeline(L"./Engine/EngineAssets/shaders/OffScreen/Retro.PS.hlsl", rootSignature);
 }
 
-Microsoft::WRL::ComPtr<ID3D12PipelineState> PipelineManager::CreateShockwaveGraphicsPipeline(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature) {
+Microsoft::WRL::ComPtr<ID3D12PipelineState> PipelineManager::CreateShockwaveGraphicsPipeline(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature)
+{
     SettingDepthStencilDesc(false);
-    return CreateFullScreenPostEffectPipeline(shaderPath + L"shaders/OffScreen/Shockwave.PS.hlsl", rootSignature);
+    return CreateFullScreenPostEffectPipeline(L"./Engine/EngineAssets/shaders/OffScreen/Shockwave.PS.hlsl", rootSignature);
 }
 
 } // namespace Hagine

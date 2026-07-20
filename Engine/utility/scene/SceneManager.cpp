@@ -118,7 +118,6 @@ void SceneManager::NextSceneReservation(const std::string &sceneName)
     assert(nextScene_ && "シーンが登録されていません。REGISTER_SCENE を確認してください");
     nextScene_->SetOffScreen(pOffscreen_);
     nextScene_->SetDrawSystem(pDrawSystem_);
-    nextScene_->SetWinApp(pWinApp_);
     if (!firstChange_)
     {
         pTransition_->SetFadeOutStart(true);
