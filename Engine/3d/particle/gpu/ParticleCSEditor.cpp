@@ -1,5 +1,6 @@
 #define NOMINMAX
 #include "ParticleCSEditor.h"
+#include <asset/AssetPath.h>
 #include "../utility/debug/imgui/ImGuizmoManager.h"
 #include <camera/projection/ViewProjection.h>
 #include <line/DrawLine3D.h>
@@ -960,7 +961,7 @@ void ParticleCSEditor::ShowImGuiEditor()
                     {
                         // モデルファイル選択 (既存のコードと同じ)
                         // models はエンジン(debug)とアプリの 2 ルートに分割。ラジオで切り替える。
-                        static const std::filesystem::path kRootsObj[2] = {"Engine/EngineAssets/models", "Application/Assets/models"};
+                        static const std::vector<std::string> kRootsObj = AssetPath::ModelScanRoots(); // [0]=エンジン, [1]=アプリ
                         static int rootSelObj = 1; // 既定: App
                         static std::filesystem::path currentDirObj = kRootsObj[rootSelObj];
                         static std::string selectedFolderObj = "";
@@ -1123,7 +1124,7 @@ void ParticleCSEditor::ShowImGuiEditor()
                     {
                         // モデルファイル選択
                         // models はエンジン(debug)とアプリの 2 ルートに分割。ラジオで切り替える。
-                        static const std::filesystem::path kRootsObj[2] = {"Engine/EngineAssets/models", "Application/Assets/models"};
+                        static const std::vector<std::string> kRootsObj = AssetPath::ModelScanRoots(); // [0]=エンジン, [1]=アプリ
                         static int rootSelObj = 1; // 既定: App
                         static std::filesystem::path currentDirObj = kRootsObj[rootSelObj];
                         static std::string selectedFolderObj = "";
@@ -1399,7 +1400,7 @@ std::vector<std::string> ParticleCSEditor::GetJsonFiles()
 {
     static std::vector<std::string> jsonFiles; // キャッシュされたJSONファイルリスト
     static size_t lastFileCount = 0;           // 最後に取得したJSONファイル数
-    std::filesystem::path baseDir = "Application/Assets/jsons/ParticleCS";
+    std::filesystem::path baseDir = AssetPath::Json("ParticleCS");
 
     // ディレクトリが存在しない場合はキャッシュをクリア
     if (!std::filesystem::exists(baseDir) || !std::filesystem::is_directory(baseDir))

@@ -74,8 +74,8 @@ void ImGuiManager::Initialize(WinApp *winApp, ImGuizmoManager *imguizmoManager) 
     ImGui::CreateContext();
     ImPlot::CreateContext();
 
-    editorIniFilePath_ = AssetPath::AppRoot() + "Config/imgui_editor.ini";
-    gameIniFilePath_ = AssetPath::AppRoot() + "Config/imgui_game.ini";
+    editorIniFilePath_ = AssetPath::Config("imgui_editor.ini");
+    gameIniFilePath_ = AssetPath::Config("imgui_game.ini");
 
     // Docking機能を有効化
     ImGuiIO &io = ImGui::GetIO();
@@ -997,7 +997,7 @@ void ImGuiManager::ShowAssetBrowserWindow() {
     ImGuiWindowFlags flags = ImGuiWindowFlags_NoFocusOnAppearing;
     ImGui::Begin("アセットブラウザ", &showAssetBrowserView_, flags);
 
-    // Application/Assets/images 配下の画像を列挙（初回スキャン + 再スキャン）。
+    // images ルート配下の画像を列挙（初回スキャン + 再スキャン）。
     // textureFilePath 規約に合わせ base からの相対パス('/'区切り)で保持し、
     // 親フォルダごとにまとめる（map のキーがフォルダ＝表示順もフォルダ順になる）。
     static std::map<std::string, std::vector<std::string>> s_byDir;
@@ -1539,7 +1539,7 @@ void ImGuiManager::SaveCurrentLayout() {
     // 現在のモードに応じたファイルにレイアウトを保存
     const char *iniFilePath = isEditorMode_ ? editorIniFilePath_.c_str() : gameIniFilePath_.c_str();
 
-    // 保存先フォルダ(Application/Config)が無ければ作成する（fopen はディレクトリを作らないため）。
+    // 保存先フォルダ(AssetPath::ConfigRoot())が無ければ作成する（fopen はディレクトリを作らないため）。
     std::error_code ec;
     std::filesystem::create_directories(std::filesystem::path(iniFilePath).parent_path(), ec);
 

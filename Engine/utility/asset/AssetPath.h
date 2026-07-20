@@ -8,11 +8,17 @@ namespace Hagine {
 /// エンジン／アプリのアセットルートと、相対パスからの実パス解決を集約するヘルパー。
 ///
 /// アセットは 2 つのルートに分割されている:
-///   - エンジンアセット : Engine/EngineAssets/ (fonts / shaders / images/debug / models/debug)
-///   - アプリアセット   : Application/Assets/  (それ以外の images / models / jsons / sounds)
+///   - エンジンアセット : EngineRoot() (fonts / shaders / images/debug / models/debug)
+///   - アプリアセット   : AppRoot()    (それ以外の images / models / jsons / sounds / Config)
 ///
 /// images / models は相対パスの先頭が "debug/" ならエンジン側、それ以外はアプリ側へ振り分ける。
-/// 返すパスはいずれも作業ディレクトリ (＝プロジェクトルート) からの相対パス。
+///
+/// 【重要】アセットパスを直書きせず、必ずこのヘッダー経由で解決すること。
+///         ルートを変更したいときは EngineRoot() / AppRoot() の 2 箇所だけを書き換えればよい。
+///
+/// 返すパスはいずれも実行時の作業ディレクトリからの相対パス。
+/// 作業ディレクトリは Hagine.vcxproj の OutDir ($(ProjectDir)..\Generated\Outputs\$(Configuration)\)
+/// を前提としているため、OutDir を変えた場合は下記 2 つのルートも合わせて調整すること。
 /// </summary>
 namespace AssetPath {
 
@@ -77,6 +83,17 @@ inline std::string Json(const std::string &rel) { return AppRoot() + "jsons/" + 
 
 /// <summary>サウンドルート (末尾スラッシュ無し)。</summary>
 inline std::string SoundRoot() { return AppRoot() + "sounds"; }
+
+/// <summary>サウンドの実パス。rel は sounds ルートからの相対パス。</summary>
+inline std::string Sound(const std::string &rel) { return SoundRoot() + "/" + rel; }
+
+// --- config (アプリ専用。ImGui レイアウト ini など) -----------------------
+
+/// <summary>設定ファイルルート (末尾スラッシュ無し)。</summary>
+inline std::string ConfigRoot() { return AppRoot() + "Config"; }
+
+/// <summary>設定ファイルの実パス。rel は Config ルートからの相対パス。</summary>
+inline std::string Config(const std::string &rel) { return ConfigRoot() + "/" + rel; }
 
 // --- ブラウザ用: 全走査ルート一覧 (エンジン→アプリの順) ------------------
 

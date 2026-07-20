@@ -3,6 +3,7 @@
 #define NOMINMAX
 #include "ShowFolder.h"
 #include "utility/debug/imgui/AssetDragDrop.h"
+#include <asset/AssetPath.h>
 #include <graphics/texture/TextureManager.h>
 #include <algorithm>
 #include <icon/IconsFontAwesome5.h>
@@ -20,7 +21,7 @@ void ShowTextureFile(std::string &selectedTexturePath)
 
     // images はエンジン(debug)とアプリの 2 ルートに分割されているため、ルートをラジオで切り替える。
     static const char *kRootNamesTex[2] = {"Engine(debug)", "App"};
-    static const fs::path kRootsTex[2] = {"Engine/EngineAssets/images", "Application/Assets/images"};
+    static const std::vector<std::string> kRootsTex = AssetPath::ImageScanRoots(); // [0]=エンジン, [1]=アプリ
     static int rootSelTex = 1; // 既定: App
     static fs::path currentDirTex = kRootsTex[rootSelTex];
     static std::string selectedFolderTex;
@@ -264,7 +265,7 @@ void ShowModelFile(std::string &selectedModelPath)
 
     // models はエンジン(debug)とアプリの 2 ルートに分割されているため、ルートをラジオで切り替える。
     static const char *kRootNamesModel[2] = {"Engine(debug)", "App"};
-    static const fs::path kRootsModel[2] = {"Engine/EngineAssets/models", "Application/Assets/models"};
+    static const std::vector<std::string> kRootsModel = AssetPath::ModelScanRoots(); // [0]=エンジン, [1]=アプリ
     static int rootSelModel = 1; // 既定: App
     static fs::path currentDirModel = kRootsModel[rootSelModel];
     static std::string selectedFolderModel;
@@ -495,8 +496,8 @@ void ShowJsonFile(std::string &selectedJsonPath, std::string &startPath)
     namespace fs = std::filesystem;
     ImGuiStyle &style = ImGui::GetStyle();
 
-    static fs::path baseDirJson = "Application/Assets/jsons/" + startPath;
-    static fs::path currentDirJson = "Application/Assets/jsons/" + startPath;
+    static fs::path baseDirJson = AssetPath::Json(startPath);
+    static fs::path currentDirJson = AssetPath::Json(startPath);
     static std::string selectedFolderJson;
     static std::string selectedFileJson;
     static ImGuiTextFilter filter;
@@ -705,8 +706,8 @@ void ShowJsonFile(std::string &selectedJsonPath, std::string &startPath)
 }
 
 // ============================================================
-// ShowGltfFile  — Application/Assets/models/animation 以下の .gltf / .glb を閲覧する
-//                 選択されたパスは Application/Assets/models を基点とした相対パスで返す
+// ShowGltfFile  — models/animation 以下の .gltf / .glb を閲覧する
+//                 選択されたパスは models ルートを基点とした相対パスで返す
 //                 例: animation/walk.gltf
 // ============================================================
 void ShowGltfFile(std::string &selectedGltfPath)
@@ -716,8 +717,8 @@ void ShowGltfFile(std::string &selectedGltfPath)
 
     // animation フォルダをルートとするが、SetAnimation に渡すパスの基点は
     // その一つ上の models/ なので parent_path() を相対パス計算に使う
-    static fs::path baseDirGltf = "Application/Assets/models/animation";
-    static fs::path currentDirGltf = "Application/Assets/models/animation";
+    static fs::path baseDirGltf = AssetPath::Model("animation");
+    static fs::path currentDirGltf = AssetPath::Model("animation");
     static std::string selectedFolderGltf;
     static std::string selectedFileGltf;
     static ImGuiTextFilter filter;
@@ -856,7 +857,7 @@ void ShowGltfFile(std::string &selectedGltfPath)
                 return {0.8f, 0.8f, 0.8f, 1.0f};
             };
 
-            // Application/Assets/models を基点とした相対パスを生成（例: animation/walk.gltf）
+            // models ルートを基点とした相対パスを生成（例: animation/walk.gltf）
             auto getRelPath = [&](const std::string &f) {
                 std::string p = (currentDirGltf / f)
                                     .lexically_relative(baseDirGltf.parent_path())

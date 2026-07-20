@@ -5,6 +5,7 @@
 #include "SpriteCommon.h"
 #include "WinApp.h"
 #include "MyMath.h"
+#include <asset/AssetPath.h>
 #include <data/DataHandler.h>
 #include <shadow/ShadowMap.h>
 #include <utility/debug/imgui/ImGuiNotification.h>
@@ -1007,7 +1008,7 @@ void SpriteManager::DrawSpriteManager()
 
     // 説明テキスト
     ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kTextDim);
-    ImGui::TextWrapped("スプライトは Application/Assets/jsons/Sprites/<フォルダ名> にJSONとして保存されます。");
+    ImGui::TextWrapped("スプライトは %s/Sprites/<フォルダ名> にJSONとして保存されます。", AssetPath::JsonRoot().c_str());
     ImGui::PopStyleColor();
     ImGui::Spacing();
 
@@ -1106,7 +1107,7 @@ void SpriteManager::SaveDrawOrder()
 void SpriteManager::LoadDrawOrder()
 {
     // DrawOrder.jsonファイルが存在するかチェック
-    std::string drawOrderPath = "Application/Assets/jsons/Sprites/" + saveFolder_ + "/DrawOrder.json";
+    std::string drawOrderPath = AssetPath::Json("Sprites/" + saveFolder_ + "/DrawOrder.json");
     if (!fs::exists(drawOrderPath))
     {
         return;
@@ -1160,7 +1161,7 @@ void SpriteManager::SaveAllSprites()
 {
     SaveDrawOrder();
 
-    std::string folderPath = "Application/Assets/jsons/Sprites/" + saveFolder_;
+    std::string folderPath = AssetPath::Json("Sprites/" + saveFolder_);
     if (!fs::exists(folderPath))
     {
         fs::create_directories(folderPath);
@@ -1217,7 +1218,7 @@ void SpriteManager::SaveAllSprites()
 
 void SpriteManager::LoadAllSprites()
 {
-    std::string folderPath = "Application/Assets/jsons/Sprites/" + saveFolder_;
+    std::string folderPath = AssetPath::Json("Sprites/" + saveFolder_);
 
     if (!fs::exists(folderPath) || !fs::is_directory(folderPath))
     {

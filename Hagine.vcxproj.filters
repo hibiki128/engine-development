@@ -480,7 +480,7 @@
     <ClCompile Include="Engine\Utility\Data\DataHandler.cpp">
       <Filter>Engine\Utility\Data</Filter>
     </ClCompile>
-    <ClCompile Include="Engine\Utility\Debug\ImGui\ImGuiManager.cpp">
+    <ClCompile Include="Engine\utility\debug\imgui\ImGuiManager.cpp">
       <Filter>Engine\Utility\Debug\ImGui</Filter>
     </ClCompile>
     <ClCompile Include="Engine\Utility\Debug\ImGui\ImGuiNotification.cpp">
@@ -857,7 +857,7 @@
     <ClInclude Include="Engine\utility\debug\imgui\DebugUIHelper.h">
       <Filter>Engine\utility\debug\imgui</Filter>
     </ClInclude>
-    <ClInclude Include="Engine\Utility\Debug\ImGui\ImGuiManager.h">
+    <ClInclude Include="Engine\utility\debug\imgui\ImGuiManager.h">
       <Filter>Engine\Utility\Debug\ImGui</Filter>
     </ClInclude>
     <ClInclude Include="Engine\Utility\Debug\ImGui\ImGuiNotification.h">

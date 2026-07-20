@@ -27,7 +27,7 @@ class DataHandler
     /// private variables
     /// ===================================================
 
-    std::string basePath_ = AssetPath::JsonRoot(); // 固定の基準パス（Application/Assets/jsons）
+    std::string basePath_ = AssetPath::JsonRoot(); // 固定の基準パス（jsons ルート）
     std::string folderPath_ = "";                  // インスタンスごとのフォルダパス
     std::string fileName_ = "data.json";           // インスタンスごとのファイル名
     json cachedJson_;                              // メモリ上にキャッシュしたJSONデータ

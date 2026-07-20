@@ -1,4 +1,5 @@
 #include "BaseObjectManager.h"
+#include <asset/AssetPath.h>
 #include <utility/debug/imgui/ImGuiNotification.h>
 #ifdef _DEBUG
 #include "debug/imgui/ImGuizmoManager.h"
@@ -121,8 +122,9 @@ void BaseObjectManager::SaveAll()
 
 void BaseObjectManager::LoadAll(std::string sceneName)
 {
-    // シーンデータのフォルダパスを構築
-    std::string sceneDataPath = "Application/Assets/jsons/SceneData/" + sceneName + "/ObjectDatas";
+    // シーンデータのフォルダパスを構築（jsons ルートからの相対パスと、走査用の実パス）
+    const std::string objectDataFolder = "SceneData/" + sceneName + "/ObjectDatas";
+    const std::string sceneDataPath = AssetPath::Json(objectDataFolder);
 
     // フォルダが存在するかチェック
     if (!std::filesystem::exists(sceneDataPath))
@@ -152,10 +154,9 @@ void BaseObjectManager::LoadAll(std::string sceneName)
 
         // 新しいオブジェクトを作成
         std::unique_ptr<BaseObject> newObject = std::make_unique<BaseObject>();
-        std::string folderPath = "SceneData/" + sceneName + "/ObjectDatas";
         // フォルダパスを設定
-        newObject->SetFolderPath("SceneData/" + sceneName + "/ObjectDatas");
-        std::unique_ptr<DataHandler> ObjectDatas = std::make_unique<DataHandler>(folderPath, objectName);
+        newObject->SetFolderPath(objectDataFolder);
+        std::unique_ptr<DataHandler> ObjectDatas = std::make_unique<DataHandler>(objectDataFolder, objectName);
         // オブジェクト名でInit
         newObject->Init(objectName);
         newObject->SetIsScene(true);
@@ -1019,8 +1020,8 @@ void BaseObjectManager::DrawObjectLoadModel()
 
 void BaseObjectManager::LoadObjectFromJson(const std::string &startPath, const std::string &objectName)
 {
-    // フルパスを構築 (startPath/objectName.json)
-    std::string fullPath = "Application/Assets/jsons/" + startPath + "/" + objectName + ".json";
+    // ログ表示用のフルパスを構築 (jsons/startPath/objectName.json)
+    std::string fullPath = AssetPath::Json(startPath + "/" + objectName + ".json");
 
     // BaseObjectのLoadFromJson機能を使用してオブジェクトを作成
     auto newObject = std::make_unique<BaseObject>();

@@ -9,7 +9,7 @@
 /// <summary>
 /// ロード済みフォントアトラスからテキストをRGBAテクスチャとして生成・保存し、
 /// SpriteManagerにスプライトとして登録するシングルトンクラス。
-/// 生成したPNGはApplication/Assets/images/Text/配下に保存される。
+/// 生成したPNGは images ルートの Text/ 配下に保存される。
 /// </summary>
 namespace Hagine {
 class TextRenderer
@@ -30,9 +30,9 @@ class TextRenderer
         return &instance;
     }
 
-    // テキストテクスチャの保存先（Application/Assets/images/ 以下の相対パスと実パス）
+    // テキストテクスチャの保存先（images ルートからの相対パスと、解決済みの実パス）
     static const std::string kSaveFolderRelative; // "Text"
-    static const std::string kSaveFolder;         // "Application/Assets/images/Text"
+    static const std::string kSaveFolder;         // AssetPath::Image(kSaveFolderRelative) の結果
 
     /// <summary>
     /// テキストをテクスチャとして生成し、SpriteManagerにスプライトとして登録する。

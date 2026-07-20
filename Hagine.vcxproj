@@ -155,7 +155,7 @@ copy "$(WindowsSdkDIr)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClCompile Include="Engine\Utility\Collider\type\MeshCollider.cpp" />
     <ClCompile Include="Engine\Utility\Collider\type\OBBCollider.cpp" />
     <ClCompile Include="Engine\Utility\Collider\type\SphereCollider.cpp" />
-    <ClCompile Include="Engine\Utility\Debug\ImGui\ImGuiManager.cpp" />
+    <ClCompile Include="Engine\utility\debug\imgui\ImGuiManager.cpp" />
     <ClCompile Include="Engine\Utility\Debug\ImGui\ImGuiNotification.cpp" />
     <ClCompile Include="Engine\Utility\Debug\ImGui\ImGuizmoManager.cpp" />
     <ClCompile Include="Engine\Utility\Graphics\PipeLine\ComputePipeLineManager.cpp" />
@@ -309,7 +309,7 @@ copy "$(WindowsSdkDIr)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClInclude Include="Engine\Utility\Collider\type\MeshCollider.h" />
     <ClInclude Include="Engine\Utility\Collider\type\OBBCollider.h" />
     <ClInclude Include="Engine\Utility\Collider\type\SphereCollider.h" />
-    <ClInclude Include="Engine\Utility\Debug\ImGui\ImGuiManager.h" />
+    <ClInclude Include="Engine\utility\debug\imgui\ImGuiManager.h" />
     <ClInclude Include="Engine\Utility\Debug\ImGui\ImGuiNotification.h" />
     <ClInclude Include="Engine\Utility\Debug\ImGui\ImGuizmoManager.h" />
     <ClInclude Include="Engine\Utility\Graphics\PipeLine\ComputePipeLineManager.h" />

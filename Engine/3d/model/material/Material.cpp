@@ -83,15 +83,16 @@ MaterialData Material::LoadMaterialTemplateFile(const std::string &directoryPath
         {
             std::string textureFilename;
             s >> textureFilename;
-            // 連結してファイルパスにする
-            materialData.textureFilePath = directoryPath + "../images/" + textureFilename;
+            // textureFilePath は images ルートからの相対パスで保持する。
+            // 実パスへの解決は TextureManager 側（AssetPath::Image）が行う。
+            materialData.textureFilePath = textureFilename;
         }
     }
 
     // テクスチャが張られていない場合の処理
     if (materialData.textureFilePath.empty())
     {
-        materialData.textureFilePath = directoryPath + "/" + "white1x1.png";
+        materialData.textureFilePath = "debug/white1x1.png";
     }
 
     return materialData;
