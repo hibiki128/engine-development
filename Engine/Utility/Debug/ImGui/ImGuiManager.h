@@ -1,17 +1,17 @@
 #pragma once
+#include "Asset/AssetPath.h"
 #include "DirectXCommon.h"
-#include "WinApp.h"
-#include <BaseScene.h>
-#include "object/base/BaseObjectManager.h"
 #include "SpriteManager.h"
+#include "WinApp.h"
+#include "object/base/BaseObjectManager.h"
 #include <Audio.h>
+#include <BaseScene.h>
 
 namespace Hagine {
 class ImGuizmoManager;
 class OffScreen;
 class DrawSystem;
-class ImGuiManager
-{
+class ImGuiManager {
   private:
     ImGuizmoManager *pImGuizmoManager_ = nullptr;
     WinApp *pWinApp_ = nullptr;
@@ -90,19 +90,16 @@ class ImGuiManager
     bool &GetIsShowMainUI();
     void SetCurrentScene(BaseScene *currentScene) { pCurrentScene_ = currentScene; };
 
-    void SetImGuizmoManager(ImGuizmoManager *manager)
-    {
+    void SetImGuizmoManager(ImGuizmoManager *manager) {
         pImGuizmoManager_ = manager;
     }
 
-    void SetShortcutWindow(bool show)
-    {
+    void SetShortcutWindow(bool show) {
         showShortcutWindow_ = show;
     }
 
     // 必要に応じてImGuizmoManagerへのアクセサを追加
-    ImGuizmoManager *GetImGuizmoManager() const
-    {
+    ImGuizmoManager *GetImGuizmoManager() const {
         return pImGuizmoManager_;
     }
 
@@ -114,18 +111,15 @@ class ImGuiManager
     // レイ計算用のシーン矩形（仮想解像度座標系。Mouse::GetMousePos と同じ空間）。
     // ImGui 座標のシーン矩形をマウスと同じレターボックス逆変換に通してあり、
     // ウィンドウサイズ変更・マルチビューポート時もレイ計算と整合する。
-    Vector2 GetScenePosForRay() const
-    {
+    Vector2 GetScenePosForRay() const {
         return Vector2(scenePosForRay_.x, scenePosForRay_.y);
     }
-    Vector2 GetSceneSizeForRay() const
-    {
+    Vector2 GetSceneSizeForRay() const {
         return Vector2(sceneSizeForRay_.x, sceneSizeForRay_.y);
     }
 #endif // USE_IMGUI
 
-    bool GetEditorMode() const
-    {
+    bool GetEditorMode() const {
         return isEditorMode_;
     }
 
