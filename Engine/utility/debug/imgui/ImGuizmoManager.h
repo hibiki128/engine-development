@@ -50,6 +50,13 @@ struct GizmoTarget
     // Type::Sprite2D 用（Sprite::position_ への直接ポインタ）
     Vector2 *position2D = nullptr;
 
+    // スクリーン空間の当たり判定をカスタマイズする関数。
+    // 設定されている場合は screenHitRadius の円判定より優先される。
+    // 引数はスプライト座標系（仮想解像度ピクセル）のマウス位置。
+    // スプライトのように原点が矩形の角にある対象は、円判定だと本体をクリックしても
+    // 当たらないため、実際の矩形で判定させる用途で使う。
+    std::function<bool(const Vector2 &)> screenHitTest;
+
     // ImGui 詳細表示コールバック（nullptr の場合はデフォルト表示）
     std::function<void()> imguiCallback;
 
@@ -202,6 +209,16 @@ class ImGuizmoManager
         {
             it->second.isScreenSpace = isScreenSpace;
             it->second.screenHitRadius = hitRadius;
+        }
+    }
+
+    // スクリーン空間の当たり判定関数を設定する（設定時は半径判定より優先。AddTarget後に呼ぶ）
+    void SetScreenHitTest(const std::string &name, std::function<bool(const Vector2 &)> hitTest)
+    {
+        auto it = transformMap_.find(name);
+        if (it != transformMap_.end())
+        {
+            it->second.screenHitTest = std::move(hitTest);
         }
     }
 

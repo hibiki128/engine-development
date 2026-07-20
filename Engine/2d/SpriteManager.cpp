@@ -18,8 +18,10 @@ namespace fs = std::filesystem;
 
 void SpriteManager::Finalize()
 {
-    // 保持している全てのスプライトデータを解放する
-    sprites_.clear();
+    // 保持している全てのスプライトデータを解放する。
+    // ギズモにはインスタンスへのポインタと SpriteData を捕捉したヒット判定関数が
+    // 登録されているため、必ず登録解除を伴う Clear() 経由で破棄する。
+    Clear();
 }
 
 void SpriteManager::RegisterSprite(const std::string &name, const std::string &textureFilePath, const SpriteTransform &transform)
@@ -377,6 +379,45 @@ void SpriteManager::SyncGizmoTarget(SpriteData *spriteData, int instanceIndex)
 
     gizmo->AddTarget(spriteData->name, translation, nullptr, nullptr, true);
     gizmo->SetScreenSpace(spriteData->name, true, 50.0f);
+
+    // 当たり判定はスプライトの実際の矩形で行う。
+    // translation は矩形の角（アンカー基準）なので、既定の円判定のままだと
+    // 本体をクリックしても選択できない。
+    // spriteData は unique_ptr の指す先なので vector 再確保でもアドレスは不変。
+    // instanceIndex は再確保のたびに SyncGizmoTarget が呼び直されるため値キャプチャで良い。
+    gizmo->SetScreenHitTest(spriteData->name, [spriteData, instanceIndex](const Vector2 &p) -> bool {
+        if (!spriteData->sprite || instanceIndex >= static_cast<int>(spriteData->instanceData.size()))
+            return false;
+
+        const InstanceSRT &inst = spriteData->instanceData[instanceIndex];
+        if (!inst.isActive)
+            return false;
+
+        // UpdateSpriteInstances と同じ規則で矩形を組み立てる
+        const Vector2 size = spriteData->sprite->GetSize();
+        const Vector2 anchor = spriteData->sprite->GetAnchorPoint();
+        const float w = size.x * inst.scale.x;
+        const float h = size.y * inst.scale.y;
+        const float angle = inst.rotation.z + spriteData->sprite->GetRotation();
+
+        // マウス位置をスプライトのローカル空間へ逆変換する（回転を打ち消す）
+        const float relX = p.x - inst.translation.x;
+        const float relY = p.y - inst.translation.y;
+        const float c = std::cos(angle);
+        const float s = std::sin(angle);
+        const float localX = relX * c + relY * s;
+        const float localY = -relX * s + relY * c;
+
+        // 頂点は [-anchor, 1-anchor] の範囲にスケールを掛けたもの
+        const float left = -anchor.x * w;
+        const float right = (1.0f - anchor.x) * w;
+        const float top = -anchor.y * h;
+        const float bottom = (1.0f - anchor.y) * h;
+
+        return localX >= std::min(left, right) && localX <= std::max(left, right) &&
+               localY >= std::min(top, bottom) && localY <= std::max(top, bottom);
+    });
+
     gizmoBound_[spriteData->name] = translation;
 }
 #endif // _DEBUG
