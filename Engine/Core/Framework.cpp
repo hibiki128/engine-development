@@ -145,6 +145,7 @@ void Framework::Initialize()
     ///-------SceneManager--------
     pSceneManager_ = SceneManager::GetInstance();
     pSceneManager_->Initialize(sceneTransition_.get());
+    pSceneManager_->SetWinApp(winApp_.get());
     ///---------------------------
 
     ///-------OffScreen--------
