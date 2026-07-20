@@ -76,6 +76,7 @@ class BaseScene
 
     void SetOffScreen(OffScreen *offscreen) { pOffScreen_ = offscreen; }
     void SetDrawSystem(DrawSystem *drawSystem) { pDrawSystem_ = drawSystem; }
+    void SetWinApp(WinApp *winApp) { pWinApp_ = winApp; }
 
     void DrawParticleEditorUI();
 
@@ -91,6 +92,7 @@ class BaseScene
     ParticleEditor *pPtEditor_ = nullptr;
     ParticleCSEditor *pPtCSEditor_ = nullptr;
     OffScreen *pOffScreen_ = nullptr;
+    WinApp *pWinApp_ = nullptr;
 
     ViewProjection vp_;
     std::unique_ptr<DebugCamera> debugCamera_;

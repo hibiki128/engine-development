@@ -1,90 +1,72 @@
 #include "SceneManager.h"
 #include <DirectXCommon.h>
-#include <utility/debug/imgui/ImGuiNotification.h>
 #include <SpriteManager.h>
 #include <cassert>
+#include <utility/debug/imgui/ImGuiNotification.h>
 #ifdef _DEBUG
 #include <edit/undo/UndoRedoManager.h>
 #endif // _DEBUG
 
 namespace Hagine {
-SceneManager::~SceneManager()
-{
+SceneManager::~SceneManager() {
 }
 
-void SceneManager::Initialize(SceneTransition *transition)
-{
+void SceneManager::Initialize(SceneTransition *transition) {
     pTransition_ = transition;
     pTransition_->Initialize();
 }
 
-void SceneManager::SceneFinalize()
-{
-    if (scene_)
-    {
+void SceneManager::SceneFinalize() {
+    if (scene_) {
         scene_->Finalize();
         firstChange_ = false;
     }
 }
 
-void SceneManager::Finalize()
-{
+void SceneManager::Finalize() {
     // 次シーンが残っていれば先に解放
     nextScene_.reset();
     // 現在のシーンを解放
     scene_.reset();
 }
 
-void SceneManager::Update()
-{
+void SceneManager::Update() {
     // 次のシーンの予約があるなら
-    if (nextScene_)
-    {
-        if (!firstChange_)
-        {
+    if (nextScene_) {
+        if (!firstChange_) {
             pTransition_->SetFadeInFinish(true);
             firstChange_ = true;
         }
         SceneChange();
     }
 
-    if (!pTransition_->IsEnd())
-    {
+    if (!pTransition_->IsEnd()) {
         transitionEnd_ = false;
         pTransition_->Update();
-    }
-    else
-    {
+    } else {
         transitionEnd_ = true;
     }
 
-    if (scene_)
-    {
+    if (scene_) {
         scene_->Update();
     }
 }
 
-void SceneManager::Draw()
-{
-    if (scene_)
-    {
+void SceneManager::Draw() {
+    if (scene_) {
         scene_->Draw();
     }
 }
 
-void SceneManager::DrawForOffScreen()
-{
-    if (scene_)
-    {
+void SceneManager::DrawForOffScreen() {
+    if (scene_) {
         scene_->DrawForOffScreen();
     }
 }
 
-void SceneManager::SceneSelection(const std::string &sceneName)
-{
+void SceneManager::SceneSelection(const std::string &sceneName) {
 #ifdef _DEBUG
-    if (!pTransition_->IsEnd() && pTransition_->FadeInStart())
-    {
+    if (!pTransition_->IsEnd() && pTransition_->FadeInStart()) {
         return;
     }
     pTransition_->Reset();
@@ -93,18 +75,14 @@ void SceneManager::SceneSelection(const std::string &sceneName)
 #endif // _DEBUG
 }
 
-void SceneManager::DrawTransition()
-{
-    if (!pTransition_->IsEnd())
-    {
+void SceneManager::DrawTransition() {
+    if (!pTransition_->IsEnd()) {
         pTransition_->Draw();
     }
 }
 
-void SceneManager::NextSceneReservation(const std::string &sceneName)
-{
-    if (!pTransition_->IsEnd() && pTransition_->FadeInStart())
-    {
+void SceneManager::NextSceneReservation(const std::string &sceneName) {
+    if (!pTransition_->IsEnd() && pTransition_->FadeInStart()) {
         return; // すでに遷移中なので次の予約はしない
     }
     pTransition_->Reset();
@@ -118,23 +96,18 @@ void SceneManager::NextSceneReservation(const std::string &sceneName)
     assert(nextScene_ && "シーンが登録されていません。REGISTER_SCENE を確認してください");
     nextScene_->SetOffScreen(pOffscreen_);
     nextScene_->SetDrawSystem(pDrawSystem_);
-    if (!firstChange_)
-    {
+    nextScene_->SetWinApp(pWinApp_);
+    if (!firstChange_) {
         pTransition_->SetFadeOutStart(true);
-    }
-    else
-    {
+    } else {
         pTransition_->SetFadeInStart(true);
     }
 }
 
-void SceneManager::SceneChange()
-{
-    if (pTransition_->FadeInFinish())
-    {
+void SceneManager::SceneChange() {
+    if (pTransition_->FadeInFinish()) {
         // 旧シーンの終了
-        if (scene_)
-        {
+        if (scene_) {
             // 旧シーンのオブジェクト（D3D12リソース）を破棄する前に GPU の全作業完了を待つ。
             // ダブルバッファのため、前フレームで投入したGPUコマンドが旧シーンのリソースを
             // まだ参照している状態で解放すると、デバッグレイヤーが「使用中リソースの解放」を
@@ -157,8 +130,7 @@ void SceneManager::SceneChange()
         }
 
         // 旧シーンの描画エントリをすべて削除（ダングリングラムダ呼び出し防止）
-        if (pDrawSystem_)
-        {
+        if (pDrawSystem_) {
             pDrawSystem_->Clear();
         }
 
