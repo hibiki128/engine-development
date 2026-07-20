@@ -627,7 +627,13 @@ void ImGuizmoManager::HandleMouseSelection(const ImVec2 &scenePosition, const Im
         float dy = spriteSpaceY - posY;
         float dist = std::sqrt(dx * dx + dy * dy);
 
-        if (dist <= target.screenHitRadius && dist < minDist2D)
+        // カスタム判定があれば実際の形状で、無ければ従来どおり原点まわりの円で判定する
+        const bool isHit = target.screenHitTest
+                               ? target.screenHitTest(Vector2{spriteSpaceX, spriteSpaceY})
+                               : (dist <= target.screenHitRadius);
+
+        // 距離は候補が重なった場合の優先度にのみ使う（近い原点のものを優先）
+        if (isHit && dist < minDist2D)
         {
             minDist2D = dist;
             pickedName = pair.first;
@@ -856,6 +862,12 @@ void ImGuizmoManager::DisplayGizmo(const ImVec2 &scenePosition, const ImVec2 &sc
     {
         effectiveOp = ImGuizmo::TRANSLATE_X | ImGuizmo::TRANSLATE_Y;
     }
+
+    // 正射影かどうかを ImGuizmo に伝える（グローバル状態なので毎回明示的に設定する）。
+    // これを怠ると、スプライト用の正射影（nearClip=0）では原点の clip z が 0 になり、
+    // ImGuizmo の「カメラ後方」判定 (mIsOrthographic==false && z < 0.001) に引っかかって
+    // Manipulate が描画前に return し、ギズモが一切表示されない。
+    ImGuizmo::SetOrthographic(anyScreenSpace);
 
     if (ImGuizmo::Manipulate(viewArray, projArray, effectiveOp, currentMode_, matrixArray))
     {
