@@ -10,6 +10,7 @@
 
 namespace Hagine {
 std::unique_ptr<Mouse> Input::mouse_ = nullptr;
+std::unique_ptr<GamePad> Input::gamePad_ = nullptr;
 
 template bool Input::GetJoystickState<DIJOYSTATE2>(int32_t stickNo, DIJOYSTATE2 &out) const;
 template bool Input::GetJoystickState<XINPUT_STATE>(int32_t stickNo, XINPUT_STATE &out) const;
