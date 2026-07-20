@@ -691,7 +691,7 @@ void CollisionManager::ImGuiColliderInspector()
     ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.45f, 0.68f, 0.52f, 0.40f));
     bool saveAll = ImGui::SmallButton("全部保存");
     ImGui::PopStyleColor(2);
-    ImGui::SetItemTooltip("全コライダー設定を Application/Assets/jsons/Collider/ 以下へ保存");
+    ImGui::SetItemTooltip("全コライダー設定を jsons/Collider/ 以下へ保存");
     if (saveAll)
     {
         int saved = 0;
@@ -874,7 +874,7 @@ void CollisionManager::ImGuiColliderInspector()
         ImGui::Spacing();
         SectionHeader("[ 保存 / 読込 ]", DebugTheme::kAccentGreen);
 
-        // Application/Assets/jsons/Collider/<名前>.json への保存・読込
+        // jsons/Collider/<名前>.json への保存・読込
         float bw = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
         ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.20f, 0.45f, 0.20f, 0.85f));
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.26f, 0.55f, 0.26f, 0.95f));

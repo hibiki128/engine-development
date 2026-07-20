@@ -6,6 +6,7 @@
 #include "vector"
 #include "wrl.h"
 #include "xaudio2.h"
+#include <asset/AssetPath.h>
 #include <filesystem>
 #include <map>
 #include <set>
@@ -92,7 +93,7 @@ class Audio
     /// <summary>
     /// 初期化
     /// </summary>
-    void Initialize(const std::string &directoryPath = "Application/Assets/sounds");
+    void Initialize(const std::string &directoryPath = AssetPath::SoundRoot());
 
     /// <summary>
     /// 音声読み込み
@@ -147,7 +148,7 @@ class Audio
     // デバッグ補助関数（private）
     //------------------------------------------------------------------
 
-    /// Application/Assets/sounds/ を再帰スキャンして .wav ファイル一覧を更新する
+    /// サウンドルート配下を再帰スキャンして .wav ファイル一覧を更新する
     void DebugScanWavFiles();
 
     /// 指定インデックスの音声総時間（秒）を返す

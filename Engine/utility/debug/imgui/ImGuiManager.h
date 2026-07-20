@@ -167,7 +167,7 @@ class ImGuiManager {
 
     void ShowDrawSystemWindow();
 
-    // アセットブラウザ窓（Application/Assets/images をサムネ一覧表示、各サムネをD&Dのドラッグ元にする）
+    // アセットブラウザ窓（images ルートをサムネ一覧表示、各サムネをD&Dのドラッグ元にする）
     void ShowAssetBrowserWindow();
 
     // ゲームパラメータHub窓（コード登録済みパラメータを実行中に仕分け・調整する）
@@ -257,7 +257,7 @@ class ImGuiManager {
     SpriteManager *pSpriteManager_ = nullptr;
     Audio *pAudio_ = nullptr;
 
-    // ImGui レイアウト ini は Application/Config/ 配下に生成する（プロジェクトルートを散らかさない）。
+    // ImGui レイアウト ini は AssetPath::ConfigRoot() 配下に生成する（プロジェクトルートを散らかさない）。
     std::string editorIniFilePath_;
     std::string gameIniFilePath_;
 };

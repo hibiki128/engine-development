@@ -1263,7 +1263,7 @@ void BaseObject::ImGui()
 
 namespace {
 /// <summary>
-/// コライダー生成時、保存フォルダ(Application/Assets/jsons/Collider)に同名のJSONがあれば
+/// コライダー生成時、保存フォルダ(jsons/Collider)に同名のJSONがあれば
 /// その設定（サイズ・オフセット・色・表示/判定・タグ・マスク）を読み込む。
 /// 無ければ何もしない（コードの既定値のまま）。
 /// CollisionManager への登録より前に呼ぶことで、保存されたタグで正しく登録される。

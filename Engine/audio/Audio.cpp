@@ -278,9 +278,8 @@ void Audio::DebugScanWavFiles()
 {
     debugWavFileList_.clear();
 
-    // Application/Assets/sounds/ を走査
-    // 作業ディレクトリがプロジェクトルートである前提
-    std::filesystem::path dir("Application/Assets/sounds");
+    // 現在のサウンドルート配下を走査（Initialize で差し替えられている場合もそれに追従する）
+    std::filesystem::path dir(directoryPath_);
 
     if (!std::filesystem::exists(dir))
     {
@@ -555,7 +554,7 @@ void Audio::Debug()
     ImGui::Spacing();
 
     // ── ファイルブラウザ ──
-    SectionHeader("[ ファイルブラウザ  Application/Assets/sounds/ ]", DebugTheme::kAccentGreen);
+    SectionHeader(("[ ファイルブラウザ  " + directoryPath_ + "/ ]").c_str(), DebugTheme::kAccentGreen);
     ImGui::PushStyleColor(ImGuiCol_Button, DebugTheme::kBgGreen);
     ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.45f, 0.68f, 0.52f, 0.40f));
     if (ImGui::Button("WAVファイルをスキャン"))
@@ -630,11 +629,9 @@ void Audio::Debug()
             ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.45f, 0.60f, 0.78f, 0.40f));
             if (ImGui::Button("ロード", ImVec2(120, 0)))
             {
-                // デバッグ用に Application/Assets/sounds から一時的にロードする
-                std::string savedDir = directoryPath_;
-                directoryPath_ = "Application/Assets/sounds";
+                // selectedName は DebugScanWavFiles が directoryPath_ 基準で列挙した相対パスなので、
+                // LoadWave にそのまま渡せる
                 uint32_t newIdx = LoadWave(selectedName);
-                directoryPath_ = savedDir;
                 debugLoadedMap_[selectedName] = newIdx;
                 ImGuiNotification::Post("ロードしました: " + selectedName, {0.42f, 0.66f, 0.68f, 1.0f});
             }

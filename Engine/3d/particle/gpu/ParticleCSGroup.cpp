@@ -1429,7 +1429,7 @@ void ParticleCSGroup::DrawImGui()
     if (openTex && !particleGroupData_.materials.empty())
     {
         ImGui::Indent();
-        // Application/Assets/images 配下の画像を列挙（初回スキャン + 再スキャンボタン）。
+        // images ルート配下の画像を列挙（初回スキャン + 再スキャンボタン）。
         // textureFilePath は base からの相対パス('/'区切り)で持つ規約に合わせる。
         static std::vector<std::string> s_imageFiles;
         static bool s_scanned = false;
