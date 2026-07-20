@@ -74,6 +74,9 @@ void ImGuiManager::Initialize(WinApp *winApp, ImGuizmoManager *imguizmoManager) 
     ImGui::CreateContext();
     ImPlot::CreateContext();
 
+    editorIniFilePath_ = AssetPath::AppRoot() + "Config/imgui_editor.ini";
+    gameIniFilePath_ = AssetPath::AppRoot() + "Config/imgui_game.ini";
+
     // Docking機能を有効化
     ImGuiIO &io = ImGui::GetIO();
     // 高度な機能を有効化
@@ -137,9 +140,6 @@ void ImGuiManager::Initialize(WinApp *winApp, ImGuizmoManager *imguizmoManager) 
     ImGui_ImplDX12_Init(&initInfo);
 
     pImGuizmoManager_ = imguizmoManager;
-
-    editorIniFilePath_ = AssetPath::AppRoot() + "Config/imgui_editor.ini";
-    gameIniFilePath_ = AssetPath::AppRoot() + "Config/imgui_game.ini";
 }
 
 void ImGuiManager::SetupTheme() {
