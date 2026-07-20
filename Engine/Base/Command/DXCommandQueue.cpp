@@ -65,10 +65,16 @@ void DXCommandQueue::WaitOnGPU(const DXCommandQueue &other)
 
 void DXCommandQueue::Flush()
 {
-    if (fenceCounter_ == 0 || !fence_)
+    if (!fence_)
     {
         return;
     }
+    // 新たにシグナルを発行してから待つ。
+    // 最後の Signal 以降に投入されたコマンドリスト（ImGui のマルチビューポート描画など、
+    // Signal を伴わない ExecuteCommandLists）も確実に完了させるため。
+    // 既存のシグナル値まで待つだけでは、それらが実行中のままシーン破棄が走り、
+    // 「使用中リソースの解放」(OBJECT_DELETED_WHILE_STILL_IN_USE) を誘発する
+    Signal();
     WaitForFenceCPU(fenceCounter_);
 }
 } // namespace Hagine
