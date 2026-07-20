@@ -1,13 +1,14 @@
 #pragma once
 #include "d3d12.h"
+#include "string/stringUtility.h"
 #include "wrl.h"
+#include <Asset/AssetPath.h>
 #include <DirectXCommon.h>
 #include <string>
 #include <unordered_map>
 
 namespace Hagine {
-enum class BlendMode
-{
+enum class BlendMode {
     // ブレンドなし
     None,
     // 通常ブレンド
@@ -22,8 +23,7 @@ enum class BlendMode
     Screen,
 };
 
-enum class ShaderMode
-{
+enum class ShaderMode {
     None,
     Gray,
     Vignette,
@@ -43,8 +43,7 @@ enum class ShaderMode
     Count,
 };
 
-enum class PipelineType
-{
+enum class PipelineType {
     Standard,
     Particle,
     Sprite,
@@ -56,8 +55,7 @@ enum class PipelineType
     ShadowMap,
 };
 
-class PipelineManager
-{
+class PipelineManager {
   private:
     /// ====================================
     /// public method
@@ -69,8 +67,7 @@ class PipelineManager
     PipelineManager &operator=(PipelineManager &) = delete;
 
   public:
-    static PipelineManager *GetInstance()
-    {
+    static PipelineManager *GetInstance() {
         static PipelineManager instance;
         return &instance;
     }
@@ -184,6 +181,8 @@ class PipelineManager
 
   private:
     DirectXCommon *pDxCommon_;
+
+    std::wstring shaderPath = Hagine::StringUtility::ConvertString(AssetPath::EngineRoot());
 
     // パイプラインとルートシグネチャの格納用マップ
     std::unordered_map<std::string, Microsoft::WRL::ComPtr<ID3D12PipelineState>> pipelines_;
