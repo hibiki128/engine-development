@@ -7,8 +7,7 @@
 #include "wrl.h"
 
 namespace Hagine {
-enum class ComputePipelineType
-{
+enum class ComputePipelineType {
     Skinning,
     InitParticle,
     Emitter,
@@ -18,8 +17,7 @@ enum class ComputePipelineType
     Count,
 };
 
-class ComputePipelineManager
-{
+class ComputePipelineManager {
   private:
     /// ====================================
     /// public method
@@ -31,8 +29,7 @@ class ComputePipelineManager
     ComputePipelineManager &operator=(ComputePipelineManager &) = delete;
 
   public:
-    static ComputePipelineManager *GetInstance()
-    {
+    static ComputePipelineManager *GetInstance() {
         static ComputePipelineManager instance;
         return &instance;
     }
@@ -100,6 +97,8 @@ class ComputePipelineManager
 
   private:
     DirectXCommon *pDxCommon_;
+
+    std::wstring shaderPath = Hagine::StringUtility::ConvertString(AssetPath::EngineRoot());
 
     // パイプラインとルートシグネチャの格納用マップ
     std::unordered_map<std::string, Microsoft::WRL::ComPtr<ID3D12PipelineState>> pipelines_;
