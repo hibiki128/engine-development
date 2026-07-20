@@ -556,6 +556,12 @@ void BaseObject::LoadFromJson()
     transform_->translation_ = ObjectDatas_->Load<Vector3>("translation", {0.0f, 0.0f, 0.0f});
     transform_->quateRotation_ = ObjectDatas_->Load<Quaternion>("rotation", Quaternion::IdentityQuaternion());
     transform_->scale_ = ObjectDatas_->Load<Vector3>("scale", {1.0f, 1.0f, 1.0f});
+
+    // 読み込んだTRSをワールド行列へ即反映する。
+    // 初回の全体更新前にコライダー構築（行列キャッシュ）や位置問い合わせが
+    // 行われても、単位行列のままにならないようにする
+    transform_->UpdateMatrix();
+
     isLighting_ = ObjectDatas_->Load<bool>("Lighting", true);
     type_ = ObjectDatas_->Load<PrimitiveType>("PrimitiveType", PrimitiveType::Count);
     skeletonDraw_ = ObjectDatas_->Load<bool>("skeletonDraw", false);
@@ -626,6 +632,10 @@ void BaseObject::LoadFromJson(std::string folderPath, std::string jsonName)
     transform_->translation_ = ObjectDatas_->Load<Vector3>("translation", {0.0f, 0.0f, 0.0f});
     transform_->quateRotation_ = ObjectDatas_->Load<Quaternion>("rotation", Quaternion::IdentityQuaternion());
     transform_->scale_ = ObjectDatas_->Load<Vector3>("scale", {1.0f, 1.0f, 1.0f});
+
+    // 読み込んだTRSをワールド行列へ即反映する（LoadFromJson() と同じ理由）
+    transform_->UpdateMatrix();
+
     isLighting_ = ObjectDatas_->Load<bool>("Lighting", true);
     type_ = ObjectDatas_->Load<PrimitiveType>("PrimitiveType", type_);
     skeletonDraw_ = ObjectDatas_->Load<bool>("skeletonDraw", false);
