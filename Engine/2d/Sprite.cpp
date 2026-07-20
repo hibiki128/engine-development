@@ -106,8 +106,10 @@ void Sprite::Update(bool isBackMost)
     pIndexData_[4] = 3;
     pIndexData_[5] = 2;
 
-    // インスタンス数が単体の場合、座標変換行列を再計算して更新する
-    if (instanceCount_ <= 1)
+    // インスタンス数が単体の場合、座標変換行列を再計算して更新する。
+    // ただし SpriteManager 所有スプライトは UpdateSpriteInstances が全行列を管理するため
+    // ここで上書きしない（上書きするとインスタンス編集が一切反映されなくなる）。
+    if (instanceCount_ <= 1 && !useExternalTransforms_)
     {
         Transform transform;
         transform.scale = {size_.x, size_.y, 1.0f};
