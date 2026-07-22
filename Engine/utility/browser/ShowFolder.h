@@ -8,8 +8,7 @@ namespace Hagine {
 /// <summary>
 /// テクスチャプレビュー用のキャッシュ情報
 /// </summary>
-struct TextureCache
-{
+struct TextureCache {
     uint32_t srvIndex = 0;              // SRVインデックス
     D3D12_GPU_DESCRIPTOR_HANDLE handle; // GPUハンドル
     int width = 0;                      // 幅
@@ -20,7 +19,10 @@ struct TextureCache
 /// テクスチャファイルの選択UIを表示
 /// </summary>
 /// <param name="selectedTexturePath">選択されたテクスチャパス（出力）</param>
-void ShowTextureFile(std::string &selectedTexturePath);
+/// <param name="uiId">UIインスタンス識別子。同一ウィンドウ内に複数の
+/// ブラウザ（アルベド用・法線マップ用など）を並べる場合に、
+/// 閲覧中フォルダなどの状態とウィジェットIDを分離するために使う</param>
+void ShowTextureFile(std::string &selectedTexturePath, const char *uiId = "default");
 
 /// <summary>
 /// モデルファイルの選択UIを表示
