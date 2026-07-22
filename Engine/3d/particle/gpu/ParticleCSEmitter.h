@@ -146,12 +146,6 @@ class ParticleCSEmitter
         }
     }
 
-    /// <summary>
-    /// 自身を複製する
-    /// </summary>
-    /// <returns>std::unique_ptr&lt;ParticleCSEmitter&gt;: 複製されたエミッター</returns>
-    std::unique_ptr<ParticleCSEmitter> Clone() const;
-
     void SetTranslate(Vector3 transform)
     {
         // 親がいるときは親からのローカル座標として扱う
@@ -297,16 +291,6 @@ class ParticleCSEmitter
         return Vector3(1.0f, 1.0f, 1.0f);
     }
 
-    static void ClearNameCounter()
-    {
-        GetNameCounter().clear();
-    }
-
-    static void ClearNameCounter(const std::string &baseName)
-    {
-        GetNameCounter().erase(baseName);
-    }
-
     size_t GetTotalAliveParticles();
 
     // グループごとの統計情報
@@ -405,9 +389,6 @@ class ParticleCSEmitter
     /// <summary>設定をJsonから読み込み</summary>
     void LoadSetting();
 
-    /// <summary>複製時の設定を読み込み</summary>
-    void LoadCloneSetting();
-
     /// <summary>発生源メッシュのモデルを読み込み</summary>
     /// <param name="modelPath">モデルパス</param>
     void LoadModel(const std::string &modelPath);
@@ -433,12 +414,6 @@ class ParticleCSEmitter
     /// private variables
     /// ==============================================
     ///
-
-    static std::unordered_map<std::string, int> &GetNameCounter()
-    {
-        static std::unordered_map<std::string, int> nameCounter;
-        return nameCounter;
-    }
 
     Microsoft::WRL::ComPtr<ID3D12Resource> emitterMeshResource_ = nullptr;
     EmitterMesh *pEmitterMeshData_ = nullptr;

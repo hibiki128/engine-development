@@ -757,21 +757,6 @@ void ParticleCSEditor::AddPrimitiveParticleGroup(const std::string &name, Primit
     pParticleGroupManager_->AddParticleCSGroup(std::move(group));
 }
 
-std::unique_ptr<ParticleCSEmitter> ParticleCSEditor::CreateEmitterFromTemplate(const std::string &name)
-{
-    ParticleCSEmitter *originalEmitter = nullptr;
-    auto it = emitters_.find(name);
-    if (it != emitters_.end())
-    {
-        originalEmitter = it->second.get();
-    }
-    if (!originalEmitter)
-    {
-        return nullptr;
-    }
-    return originalEmitter->Clone();
-}
-
 void ParticleCSEditor::ShowGPUParticleStatistics()
 {
 #ifdef USE_IMGUI

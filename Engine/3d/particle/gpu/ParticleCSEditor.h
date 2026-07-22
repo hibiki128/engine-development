@@ -86,7 +86,6 @@ class ParticleCSEditor
     void AddParticleGroup(const std::string &name, const std::string &fileName, uint32_t maxParticleCount, const std::string &texturePath);
     // パーティクルグループ追加（プリミティブ使用）
     void AddPrimitiveParticleGroup(const std::string &name, PrimitiveType type, uint32_t maxParticleCount, const std::string &texturePath);
-    std::unique_ptr<ParticleCSEmitter> CreateEmitterFromTemplate(const std::string &name);
     void ShowGPUParticleStatistics();
     // ImGuiエディターの表示
     void EditorWindow();
