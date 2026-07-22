@@ -2,6 +2,7 @@
 #include <DirectXCommon.h>
 #include <SpriteManager.h>
 #include <cassert>
+#include <particle/gpu/ParticleCSSpawner.h>
 #include <utility/debug/imgui/ImGuiNotification.h>
 #ifdef _DEBUG
 #include <edit/undo/UndoRedoManager.h>
@@ -117,6 +118,12 @@ void SceneManager::SceneChange() {
             scene_->Finalize();
             // delete 不要、reset() で解放
             scene_.reset();
+            // 実行時配置の GPU パーティクルを片付ける。
+            // オブジェクト破棄より前に行うこと（親子付けしたエミッターが
+            // 破棄済み BaseObject を指したままになるのを防ぐ）。
+            // 後段の ClearIndependentGroups より前でもある必要がある
+            // （エミッターは破棄時にグループをプールへ返却するため）。
+            ParticleCSSpawner::GetInstance()->ClearSceneScoped();
             BaseObjectManager::GetInstance()->RemoveAllObjects();
             SpriteManager::GetInstance()->Clear();
 #ifndef _DEBUG

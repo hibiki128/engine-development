@@ -18,6 +18,8 @@ void BaseScene::Finalize()
     {
         pDrawSystem_->Clear();
     }
+    // 実行時配置の GPU パーティクルの片付けは SceneManager 側で行う
+    // （派生シーンが BaseScene::Finalize を呼ばないことがあるため、ここには置かない）。
 }
 
 void BaseScene::Update()

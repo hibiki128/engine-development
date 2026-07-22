@@ -330,6 +330,9 @@
     <ClCompile Include="Engine\3d\particle\gpu\ParticleCSGroupManager.cpp">
       <Filter>Engine\3d\particle\gpu</Filter>
     </ClCompile>
+    <ClCompile Include="Engine\3d\particle\gpu\ParticleCSSpawner.cpp">
+      <Filter>Engine\3d\particle\gpu</Filter>
+    </ClCompile>
     <ClCompile Include="Engine\3d\Particle\ParticleCommon.cpp">
       <Filter>Engine\3d\Particle</Filter>
     </ClCompile>
@@ -672,6 +675,9 @@
       <Filter>Engine\3d\particle\gpu</Filter>
     </ClInclude>
     <ClInclude Include="Engine\3d\particle\gpu\ParticleCSGroupManager.h">
+      <Filter>Engine\3d\particle\gpu</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\3d\particle\gpu\ParticleCSSpawner.h">
       <Filter>Engine\3d\particle\gpu</Filter>
     </ClInclude>
     <ClInclude Include="Engine\3d\Particle\ParticleCommon.h">

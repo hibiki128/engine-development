@@ -4,6 +4,7 @@
 #include <debug/profiler/CpuProfiler.h>
 #include <debug/log/Logger.h>
 #include <Frame.h>
+#include <particle/gpu/ParticleCSSpawner.h>
 #include <shadow/ShadowMap.h>
 #include <iterator>
 #ifdef _DEBUG
@@ -240,6 +241,9 @@ void Framework::Finalize()
     pModelManager_->Finalize();
     pPrimitiveModel_->Finalize();
     pParticleGroupManager_->Finalize();
+    // 実行時配置のエミッターは破棄時にグループをグループマネージャーへ返却するので、
+    // そのマネージャーを Finalize する前に片付ける。
+    ParticleCSSpawner::GetInstance()->Finalize();
     pParticleCSGroupManager_->Finalize();
     csvLoad_->Finalize();
 

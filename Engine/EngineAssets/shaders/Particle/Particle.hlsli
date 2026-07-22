@@ -322,6 +322,10 @@ struct ParticleCSSettings
     float audioAttackSharpness;      // 反応カーブ指数（>1で大きい音だけドンと反応・小さい音は無視）
     float audioReleaseRate;          // エンベロープ減衰速度[1/s]（CPUが使用。shaderは未使用）
     float audioPad0;                 // 16B境界パディング
+    // ※ C++ ParticleCSSettings はこの後ろに CPU 専用メンバ（effectSpace / vortexAxisBase）を持つ。
+    //   それらは CB 末尾に乗るだけでシェーダからは参照しない（渦の軸・目標は CPU 側で
+    //   ワールド空間へ解決してから vortexAxis / vortexTarget / gatherTarget に入れて渡す）。
+    //   ここまでのレイアウトが一致していれば良い。
 };
 
 // 【重要】このレイアウトは C++ 側 `struct ParticleFieldData`

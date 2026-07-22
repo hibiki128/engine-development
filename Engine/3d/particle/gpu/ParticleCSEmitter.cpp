@@ -12,8 +12,36 @@
 #include <regex>
 #include "../utility/debug/imgui/ImGuizmoManager.h"
 #include "../utility/debug/imgui/ImGuiNotification.h"
+#include <object/base/BaseObject.h>
+#include <transform/WorldTransform.h>
 
 namespace Hagine {
+namespace {
+/// ワールド行列から回転成分だけを取り出す（各行を正規化してスケールを落とす。行ベクトル規約）。
+/// 行0/1/2 がそれぞれ右/上/前のワールド方向になる。
+Matrix4x4 ExtractRotation(const Matrix4x4 &world)
+{
+    Matrix4x4 rot = MakeIdentity4x4();
+    for (int row = 0; row < 3; ++row)
+    {
+        Vector3 axis = {world.m[row][0], world.m[row][1], world.m[row][2]};
+        const float len = axis.Length();
+        if (len > 1e-6f)
+        {
+            axis = axis / len;
+        }
+        else
+        {
+            // 潰れた行はその軸の単位ベクトルで代用（0除算と行列の破綻を避ける）
+            axis = {row == 0 ? 1.0f : 0.0f, row == 1 ? 1.0f : 0.0f, row == 2 ? 1.0f : 0.0f};
+        }
+        rot.m[row][0] = axis.x;
+        rot.m[row][1] = axis.y;
+        rot.m[row][2] = axis.z;
+    }
+    return rot;
+}
+} // namespace
 ParticleCSEmitter::~ParticleCSEmitter()
 {
     // 保有していた独立グループを破棄せず再利用プールへ返却する。
@@ -41,7 +69,9 @@ void ParticleCSEmitter::Initialize(const std::string &name)
     CreateEmitterMeshResource();
     LoadSetting();
 #ifdef _DEBUG
-    if (pEmitterMeshData_)
+    // 実行時に量産されるインスタンス(registerGizmo_=false)は登録しない。
+    // 登録するとエディタ上の同名テンプレートのギズモ対象を奪ってしまう。
+    if (registerGizmo_ && pEmitterMeshData_)
     {
         ImGuizmoManager::GetInstance()->AddTarget(
             name_,
@@ -71,10 +101,69 @@ void ParticleCSEmitter::Initialize(const std::string &name, PrimitiveType primit
     CreateModelEdges();
 }
 
+void ParticleCSEmitter::SetParent(BaseObject *parent)
+{
+    pParentTransform_ = parent ? parent->GetWorldTransform() : nullptr;
+}
+
+void ParticleCSEmitter::ResolveEmitterTransform(const ViewProjection &vp)
+{
+    // カメラのワールド回転。matWorld_ の行0/1/2 が右/上/前のワールド方向。
+    cameraRotation_ = ExtractRotation(vp.matWorld_);
+
+    if (!pEmitterMeshData_)
+        return;
+
+    // ---- 位置 ----
+    Matrix4x4 parentRot = MakeIdentity4x4();
+    if (pParentTransform_)
+    {
+        const Matrix4x4 &pw = pParentTransform_->matWorld_;
+        parentRot = ExtractRotation(pw);
+        const Vector3 parentPos = {pw.m[3][0], pw.m[3][1], pw.m[3][2]};
+        // 親のスケールは意図しない拡大を避けるため乗せない（回転済みオフセットのみ足す）
+        pEmitterMeshData_->translate = parentPos + TransformNormal(localTranslate_, parentRot);
+    }
+
+    // ---- 向き ----
+    if (!billboardEmitter_ && !pParentTransform_)
+    {
+        pEmitterMeshData_->rotation = baseRotation_; // 合成不要（毎フレームの再変換による誤差も避ける）
+        return;
+    }
+
+    // ローカル → 親（またはカメラ）の順に適用する（行ベクトル規約なので行列積もこの順）。
+    // QuaternionToMatrix4x4 と Quaternion::FromMatrix は互いに逆変換なので、
+    // 合成結果をそのままエミッターの回転クォータニオンへ戻せる。
+    // ビルボードONのときは「常にカメラへ正対」が目的なので親の回転は使わない
+    // （位置だけ親に追従し、向きはカメラが決める）。
+    Matrix4x4 resolved = QuaternionToMatrix4x4(baseRotation_);
+    resolved = resolved * (billboardEmitter_ ? cameraRotation_ : parentRot);
+    pEmitterMeshData_->rotation = Quaternion::FromMatrix(resolved).Normalize();
+}
+
+Matrix4x4 ParticleCSEmitter::GetEffectSpaceMatrix(uint32_t effectSpace) const
+{
+    switch (effectSpace)
+    {
+    case 1: // エミッター基準（ビルボードON時はカメラ回転も既に含まれている）
+        return pEmitterMeshData_ ? QuaternionToMatrix4x4(pEmitterMeshData_->rotation) : MakeIdentity4x4();
+    case 2: // ビルボード（カメラの向きに追従）
+        return cameraRotation_;
+    default: // 0 = ワールド固定（従来動作）
+        return MakeIdentity4x4();
+    }
+}
+
 void ParticleCSEmitter::DrawCompute(const ViewProjection &vp)
 {
     if (ShadowMap::GetInstance()->IsShadowPassActive())
         return;
+
+    // 発生源メッシュの位置・向き（親追従＝ビルボード）を Emit/Update のディスパッチより前に確定させる。
+    // グループが空でもワイヤーフレーム表示のために解決しておく。
+    ResolveEmitterTransform(vp);
+
     if (particleGroups_.empty())
         return;
 
@@ -598,8 +687,14 @@ void ParticleCSEmitter::EmitterDisPatch(ID3D12GraphicsCommandList *cmdList)
 
         ParticleCSSettings *settings = group->GetSettingsData();
 
-        settings->gatherTarget = pEmitterMeshData_->translate + settings->gatherTargetOffset;
-        settings->vortexTarget = pEmitterMeshData_->translate + settings->vortexTargetOffset;
+        // 渦の軸と目標オフセットを「基準空間」からワールドへ解決してから GPU へ渡す。
+        // effectSpace=0(ワールド) では単位行列なので従来と完全に同じ値になる。
+        // 1(エミッター)/2(ビルボード) では軸もオフセットも一緒に回るため、
+        // エミッターやカメラを回しても渦の見え方（＝動き）が変わらない。
+        const Matrix4x4 space = GetEffectSpaceMatrix(settings->effectSpace);
+        settings->gatherTarget = pEmitterMeshData_->translate + TransformNormal(settings->gatherTargetOffset, space);
+        settings->vortexTarget = pEmitterMeshData_->translate + TransformNormal(settings->vortexTargetOffset, space);
+        settings->vortexAxis = TransformNormal(settings->vortexAxisBase, space);
 
         // SoA UAV (u0-u5)
         cl->SetComputeRootDescriptorTable(0, group->GetLifeUavGpu());
@@ -707,6 +802,12 @@ std::unique_ptr<ParticleCSEmitter> ParticleCSEmitter::Clone() const
     newEmitter->isVisible_ = this->isVisible_;
 
     *newEmitter->pEmitterMeshData_ = *this->pEmitterMeshData_;
+    // pEmitterMeshData_->rotation は解決済みの値なので、元になる回転とビルボード設定も引き継ぐ
+    // （これが無いと複製直後の1フレームだけ Json の値に戻る）。
+    newEmitter->baseRotation_ = this->baseRotation_;
+    newEmitter->billboardEmitter_ = this->billboardEmitter_;
+    newEmitter->pParentTransform_ = this->pParentTransform_;
+    newEmitter->localTranslate_ = this->localTranslate_;
 
     return newEmitter;
 }
@@ -969,7 +1070,9 @@ void ParticleCSEmitter::SaveSetting()
     data->Save("frequency", pEmitterMeshData_->frequency);
     data->Save("frequencyTime", pEmitterMeshData_->frequencyTime);
     data->Save<Vector3>("translate", pEmitterMeshData_->translate);
-    data->Save<Quaternion>("rotation", pEmitterMeshData_->rotation);
+    // ビルボード合成前の回転を保存する（pEmitterMeshData_->rotation はカメラを含む解決済みの値）
+    data->Save<Quaternion>("rotation", baseRotation_);
+    data->Save("billboardEmitter", billboardEmitter_);
     data->Save<Vector3>("scale", pEmitterMeshData_->scale);
     data->Save("emitFromSurface", pEmitterMeshData_->emitFromSurface);
     data->Save("modelPath", modelPath_);
@@ -1038,7 +1141,10 @@ void ParticleCSEmitter::SaveSetting()
         data->Save(prefix + "vortexTargetOffset", group->GetSettingsData()->vortexTargetOffset);
         data->Save(prefix + "vortexStrength", group->GetSettingsData()->vortexStrength);
         data->Save(prefix + "enableVortexForTrail", group->GetSettingsData()->enableVortexForTrail);
-        data->Save(prefix + "vortexAxis", group->GetSettingsData()->vortexAxis);
+        // 保存するのは基準空間での軸（vortexAxis は毎フレーム作られる解決済みワールド値）。
+        // キー名は従来どおりなので、旧データ・旧ビルドとそのまま行き来できる。
+        data->Save(prefix + "vortexAxis", group->GetSettingsData()->vortexAxisBase);
+        data->Save(prefix + "effectSpace", group->GetSettingsData()->effectSpace);
 
         data->Save(prefix + "enableAcceleration", group->GetSettingsData()->enableAcceleration);
         data->Save(prefix + "acceleration", group->GetSettingsData()->acceleration);
@@ -1154,7 +1260,9 @@ void ParticleCSEmitter::LoadSetting()
     pEmitterMeshData_->frequency = data->Load("frequency", 0.1f);
     pEmitterMeshData_->frequencyTime = data->Load("frequencyTime", 0.0f);
     pEmitterMeshData_->translate = data->Load<Vector3>("translate", Vector3(0.0f, 0.0f, 0.0f));
-    pEmitterMeshData_->rotation = data->Load<Quaternion>("rotation", Quaternion::IdentityQuaternion());
+    baseRotation_ = data->Load<Quaternion>("rotation", Quaternion::IdentityQuaternion());
+    billboardEmitter_ = data->Load("billboardEmitter", false);
+    pEmitterMeshData_->rotation = baseRotation_; // 次の DrawCompute でビルボードが合成される
     pEmitterMeshData_->scale = data->Load<Vector3>("scale", Vector3(1.0f, 1.0f, 1.0f));
     pEmitterMeshData_->emitFromSurface = data->Load<uint32_t>("emitFromSurface", 1);
 
@@ -1234,7 +1342,10 @@ void ParticleCSEmitter::LoadSetting()
         settings.vortexTargetOffset = data->Load<Vector3>(prefix + "vortexTargetOffset", {0.0f, 0.0f, 0.0f});
         settings.vortexStrength = data->Load(prefix + "vortexStrength", 1.0f);
         settings.enableVortexForTrail = data->Load<uint32_t>(prefix + "enableVortexForTrail", 0);
-        settings.vortexAxis = data->Load<Vector3>(prefix + "vortexAxis", {0.0f, 1.0f, 0.0f});
+        // "vortexAxis" は基準空間での軸として読む（解決済みの settings.vortexAxis は毎フレーム作り直される）。
+        settings.vortexAxisBase = data->Load<Vector3>(prefix + "vortexAxis", {0.0f, 1.0f, 0.0f});
+        settings.vortexAxis = settings.vortexAxisBase;
+        settings.effectSpace = data->Load<uint32_t>(prefix + "effectSpace", 0);
 
         settings.enableAcceleration = data->Load<uint32_t>(prefix + "enableAcceleration", 0);
         settings.acceleration = data->Load<Vector3>(prefix + "acceleration", {0.0f, 0.0f, 0.0f});
@@ -1387,7 +1498,9 @@ void ParticleCSEmitter::LoadCloneSetting()
     pEmitterMeshData_->frequency = data->Load("frequency", 0.1f);
     pEmitterMeshData_->frequencyTime = data->Load("frequencyTime", 0.0f);
     pEmitterMeshData_->translate = data->Load<Vector3>("translate", Vector3(0.0f, 0.0f, 0.0f));
-    pEmitterMeshData_->rotation = data->Load<Quaternion>("rotation", Quaternion::IdentityQuaternion());
+    baseRotation_ = data->Load<Quaternion>("rotation", Quaternion::IdentityQuaternion());
+    billboardEmitter_ = data->Load("billboardEmitter", false);
+    pEmitterMeshData_->rotation = baseRotation_; // 次の DrawCompute でビルボードが合成される
     pEmitterMeshData_->scale = data->Load<Vector3>("scale", Vector3(1.0f, 1.0f, 1.0f));
     pEmitterMeshData_->emitFromSurface = data->Load<uint32_t>("emitFromSurface", 1);
 
@@ -1468,7 +1581,10 @@ void ParticleCSEmitter::LoadCloneSetting()
         settings.vortexTargetOffset = data->Load<Vector3>(prefix + "vortexTargetOffset", {0.0f, 0.0f, 0.0f});
         settings.vortexStrength = data->Load(prefix + "vortexStrength", 1.0f);
         settings.enableVortexForTrail = data->Load<uint32_t>(prefix + "enableVortexForTrail", 0);
-        settings.vortexAxis = data->Load<Vector3>(prefix + "vortexAxis", {0.0f, 1.0f, 0.0f});
+        // "vortexAxis" は基準空間での軸として読む（解決済みの settings.vortexAxis は毎フレーム作り直される）。
+        settings.vortexAxisBase = data->Load<Vector3>(prefix + "vortexAxis", {0.0f, 1.0f, 0.0f});
+        settings.vortexAxis = settings.vortexAxisBase;
+        settings.effectSpace = data->Load<uint32_t>(prefix + "effectSpace", 0);
 
         settings.enableAcceleration = data->Load<uint32_t>(prefix + "enableAcceleration", 0);
         settings.acceleration = data->Load<Vector3>(prefix + "acceleration", {0.0f, 0.0f, 0.0f});
@@ -1626,27 +1742,44 @@ void ParticleCSEmitter::DrawImGui()
                 ImGui::DragFloat("発生間隔##Freq", &pEmitterMeshData_->frequency, 0.001f, 0.001f, 10.0f);
                 ImGui::DragFloat3("エミッタの座標##Translate", &pEmitterMeshData_->translate.x, 0.1f);
 
-                Vector3 currentEuler = pEmitterMeshData_->rotation.ToEulerDegrees();
+                Vector3 currentEuler = baseRotation_.ToEulerDegrees();
                 ImGui::Text("現在の回転: %.1f° %.1f° %.1f°", currentEuler.x, currentEuler.y, currentEuler.z);
 
                 static Vector3 deltaRotation = {0.0f, 0.0f, 0.0f};
                 if (ImGui::DragFloat3("##EmitterRotation", &deltaRotation.x, 0.1f, -10.0f, 10.0f, "%.1f°"))
                 {
-                    Quaternion currentRotation = pEmitterMeshData_->rotation;
+                    Quaternion currentRotation = baseRotation_;
                     Quaternion deltaQuatX = Quaternion::FromAxisAngle(Vector3(1, 0, 0), deltaRotation.x * std::numbers::pi_v<float> / 180.0f);
                     Quaternion deltaQuatY = Quaternion::FromAxisAngle(Vector3(0, 1, 0), deltaRotation.y * std::numbers::pi_v<float> / 180.0f);
                     Quaternion deltaQuatZ = Quaternion::FromAxisAngle(Vector3(0, 0, 1), deltaRotation.z * std::numbers::pi_v<float> / 180.0f);
                     Quaternion deltaQuat = deltaQuatY * deltaQuatX * deltaQuatZ;
                     Quaternion newRotation = currentRotation * deltaQuat;
-                    pEmitterMeshData_->rotation = newRotation.Normalize();
+                    baseRotation_ = newRotation.Normalize();
                     deltaRotation = {0.0f, 0.0f, 0.0f};
                 }
 
                 ImGui::SameLine();
                 if (ImGui::Button("リセット##EmitterRotation"))
                 {
-                    pEmitterMeshData_->rotation = Quaternion::IdentityQuaternion();
+                    baseRotation_ = Quaternion::IdentityQuaternion();
                     deltaRotation = {0.0f, 0.0f, 0.0f};
+                }
+
+                {
+                    bool bb = billboardEmitter_;
+                    if (ImGui::Checkbox("ビルボード（常にカメラへ正対）##EmitterBillboard", &bb))
+                        billboardEmitter_ = bb;
+                    if (ImGui::IsItemHovered())
+                        ImGui::SetTooltip("発生形状の向きを毎フレームカメラの回転で置き換える。\n"
+                                          "上の回転はカメラ空間でのオフセットとして残る。\n"
+                                          "渦などの「基準空間」を エミッター にしておくと、\n"
+                                          "発生形状と渦の軸が一緒にカメラへ追従して\n"
+                                          "どの角度から見ても同じ動きになる。");
+                    if (billboardEmitter_)
+                    {
+                        Vector3 resolved = pEmitterMeshData_->rotation.ToEulerDegrees();
+                        ImGui::TextDisabled("  解決後: %.1f° %.1f° %.1f°", resolved.x, resolved.y, resolved.z);
+                    }
                 }
 
                 ImGui::DragFloat3("エミッタの大きさ##Scale", &pEmitterMeshData_->scale.x, 0.1f);
