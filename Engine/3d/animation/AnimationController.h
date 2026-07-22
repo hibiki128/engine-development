@@ -81,6 +81,28 @@ class AnimationController
     bool HasClip(const std::string &name) const;
 
     /// <summary>
+    /// 登録済みクリップを部分レイヤーとして再生する
+    /// SetLayerMaskRoot() で指定したジョイント以下だけがこのクリップで上書きされ、
+    /// それ以外は通常再生中のクリップのまま進む（走りながら撃つ等）。
+    /// 同じクリップの再指定は先頭から再生し直す
+    /// </summary>
+    /// <param name="name">クリップ名</param>
+    /// <param name="fadeDuration">レイヤーの出入りにかける時間（秒）</param>
+    void PlayLayer(const std::string &name, float fadeDuration = 0.1f);
+
+    /// <summary>
+    /// レイヤー再生を解除する
+    /// </summary>
+    /// <param name="fadeDuration">フェードアウトにかける時間（秒）</param>
+    void StopLayer(float fadeDuration = 0.1f);
+
+    /// <summary>
+    /// レイヤー再生中かを取得
+    /// </summary>
+    /// <returns>bool: 再生中なら true</returns>
+    bool IsLayerPlaying() const;
+
+    /// <summary>
     /// ImGuiによる調整・編集UIの描画（ウィンドウは生成せず内容のみ描画）
     /// </summary>
     void DrawImGui();
@@ -104,6 +126,13 @@ class AnimationController
     /// Getter
     /// ===================================================
     const std::string &GetCurrentClipName() const { return currentClipName_; }
+
+    /// <summary>
+    /// レイヤー再生中のクリップ名（PlayLayerFile の場合はファイルパス）を取得する。
+    /// 自動解除された場合も名前は残るため、IsLayerPlaying() と併せて判定すること
+    /// </summary>
+    /// <returns>const std::string&: レイヤーのクリップ名</returns>
+    const std::string &GetLayerClipName() const { return layerClipName_; }
     bool IsFinished() const;
     bool IsBlending() const;
     bool IsPaused() const { return paused_; }
@@ -132,6 +161,14 @@ class AnimationController
     /// </summary>
     /// <param name="speed">速度倍率</param>
     void SetGlobalSpeed(float speed);
+
+    /// <summary>
+    /// レイヤー再生で上書きする範囲の根ジョイントを設定する
+    /// （例：上半身だけ差し替えるなら背骨の根ジョイント名）。
+    /// 未設定のあいだ PlayLayer() は何もしない
+    /// </summary>
+    /// <param name="jointName">ジョイント名</param>
+    void SetLayerMaskRoot(const std::string &jointName) { layerMaskRoot_ = jointName; }
 
   private:
     /// ===================================================
@@ -182,6 +219,8 @@ class AnimationController
     std::unordered_map<std::string, int> index_; // クリップ名 -> clips_ のインデックス
 
     std::string currentClipName_;   // 現在再生中のクリップ名
+    std::string layerClipName_;     // レイヤー再生中のクリップ名
+    std::string layerMaskRoot_;     // レイヤーで上書きする範囲の根ジョイント名（空ならレイヤー無効）
     float currentClipSpeed_ = 1.0f; // 現在クリップ固有の速度（globalSpeed_ と乗算）
     float globalSpeed_ = 1.0f;      // 全体速度倍率
     bool paused_ = false;           // 一時停止中フラグ

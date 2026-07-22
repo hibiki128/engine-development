@@ -319,6 +319,31 @@ void Object3d::SetAnimation(const std::string &animationFileName)
     nextAnimationFileName_ = animationFileName;
 }
 
+void Object3d::PlayLayerAnimation(const std::string &animationFileName, const std::string &maskRootJoint,
+                                  bool loop, float fadeDuration)
+{
+    if (!currentModelAnimation_)
+    {
+        return;
+    }
+    currentModelAnimation_->PlayLayerAnimation(AssetPath::ModelsRoot(animationFileName), animationFileName,
+                                               maskRootJoint, loop, fadeDuration);
+}
+
+void Object3d::StopLayerAnimation(float fadeDuration)
+{
+    if (!currentModelAnimation_)
+    {
+        return;
+    }
+    currentModelAnimation_->StopLayerAnimation(fadeDuration);
+}
+
+bool Object3d::IsLayerAnimationPlaying() const
+{
+    return currentModelAnimation_ && currentModelAnimation_->IsLayerPlaying();
+}
+
 void Object3d::AddAnimation(const std::string &fileName, bool loop)
 {
     // ループフラグを登録（既存エントリも上書き更新）

@@ -89,6 +89,13 @@ class SceneManager
     void SetIsGameOver(bool flag) { isGameOver_ = flag; }
 
     void SetOffScreen(OffScreen *offscreen) { pOffscreen_ = offscreen; }
+
+    /// <summary>
+    /// メインのオフスクリーン（ステージ0）を取得する。
+    /// ゲーム側からポストエフェクトを一時的に制御する演出（必殺技の白黒フラッシュ等）に使う
+    /// </summary>
+    OffScreen *GetOffScreen() const { return pOffscreen_; }
+
     void SetDrawSystem(DrawSystem *drawSystem) { pDrawSystem_ = drawSystem; }
     void SetWinApp(WinApp *winApp) { pWinApp_ = winApp; }
 

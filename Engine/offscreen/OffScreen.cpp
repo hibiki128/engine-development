@@ -141,7 +141,33 @@ void OffScreen::Setting()
     const char *shaderModeItems[] = {
         "なし", "グレイ", "ビネット", "スムース", "ガウス",
         "アウトライン(エッジ検出)", "アウトライン(深度ベース)",
-        "ブラー", "シネマティック", "ディゾルブ", "ランダム", "集中線", "ピクセル化", "ブルーム", "レトロ", "衝撃波"};
+        "ブラー", "シネマティック", "ディゾルブ", "ランダム", "集中線", "ピクセル化", "ブルーム", "レトロ", "衝撃波", "白黒(二値)"};
+
+    // 各エフェクトが何をするかの一言説明（shaderModeItems と同じ並び＝ShaderMode順）。
+    // 「効果の中身が分からない」対策として追加/選択UIに表示する。
+    const char *shaderModeDescs[] = {
+        "エフェクトなし（そのまま出力）",
+        "全体を灰色にする（グレースケール）",
+        "画面の四隅を暗く落とす（ビネット）",
+        "画面全体をなめらかにぼかす",
+        "ガウスぼかし（きれいなぼかし）",
+        "色の変化から輪郭線を抽出して縁取る",
+        "奥行き（深度）の差から輪郭線を描く",
+        "中心から放射状にブレさせる（集中ぼかし）",
+        "コントラスト/彩度/明度を整える映画風",
+        "ノイズ画像でだんだん溶かして消す（画像を設定可）",
+        "画面全体にノイズ（ざらつき）を乗せる",
+        "中心へ向かう集中線を描く",
+        "モザイク状にピクセル化する",
+        "明るい部分を光らせて滲ませる（ブルーム）",
+        "レトロ風（走査線など）に加工する",
+        "衝撃波のように画面を歪ませる",
+        "完全な白黒（明度で白か黒に二値化）",
+    };
+    static_assert(IM_ARRAYSIZE(shaderModeItems) == static_cast<int>(ShaderMode::Count),
+                  "shaderModeItems は ShaderMode::Count と同数にすること");
+    static_assert(IM_ARRAYSIZE(shaderModeDescs) == static_cast<int>(ShaderMode::Count),
+                  "shaderModeDescs は ShaderMode::Count と同数にすること");
 
     // 削除用の控えめな赤ボタン色をまとめて適用するヘルパー
     auto pushDangerButton = [] {
@@ -271,6 +297,10 @@ void OffScreen::Setting()
     ImGui::PopStyleColor();
     ImGui::SetNextItemWidth(-1);
     ImGui::Combo("##addmode", &selectedMode, shaderModeItems, IM_ARRAYSIZE(shaderModeItems));
+    // 選択中のエフェクトの説明を出す（何を追加しようとしているか分かるように）
+    ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kTextDim);
+    ImGui::TextWrapped("%s", shaderModeDescs[selectedMode]);
+    ImGui::PopStyleColor();
     ImGui::SetNextItemWidth(-1);
     ImGui::InputTextWithHint("##addname", "エフェクト名（省略可）", effectName, sizeof(effectName));
     ImGui::SetNextItemWidth(-1);
@@ -375,15 +405,25 @@ void OffScreen::Setting()
             continue;
         }
 
+        // 何のエフェクトかを毎行の説明で示す（有効/無効に関わらず一目で分かるように）
+        ImGui::Indent();
+        ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kTextDim);
+        ImGui::TextWrapped("%s", shaderModeDescs[static_cast<int>(mode)]);
+        ImGui::PopStyleColor();
+
         // 有効時のみパラメータUI表示
         if (slot.enabled)
         {
-            ImGui::Indent();
+            ImGui::Spacing();
+            // 各エフェクトのスライダー幅を揃えて雑然感を減らす
+            ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x * 0.6f);
             slot.params->DrawUI();
-            ImGui::Unindent();
+            ImGui::PopItemWidth();
         }
+        ImGui::Unindent();
 
         ImGui::PopID();
+        ImGui::Spacing();
         ImGui::Separator();
     }
     // ドロップ確定後にまとめて入れ替える（ループ中のスロット変更を避ける）

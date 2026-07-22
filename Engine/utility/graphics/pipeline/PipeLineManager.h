@@ -40,6 +40,7 @@ enum class ShaderMode {
     Bloom,
     Retro,
     Shockwave,
+    Monochrome, // 完全な白黒（明度で白or黒に二値化）
     Count,
 };
 
@@ -160,6 +161,7 @@ class PipelineManager {
     Microsoft::WRL::ComPtr<ID3D12RootSignature> CreateBloomRootSignature();
     Microsoft::WRL::ComPtr<ID3D12RootSignature> CreateRetroRootSignature();
     Microsoft::WRL::ComPtr<ID3D12RootSignature> CreateShockwaveRootSignature();
+    Microsoft::WRL::ComPtr<ID3D12RootSignature> CreateMonochromeRootSignature();
 
     // シェーダーモード別のパイプライン作成
     Microsoft::WRL::ComPtr<ID3D12PipelineState> CreateNoneGraphicsPipeline(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature);
@@ -178,6 +180,7 @@ class PipelineManager {
     Microsoft::WRL::ComPtr<ID3D12PipelineState> CreateBloomGraphicsPipeline(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature);
     Microsoft::WRL::ComPtr<ID3D12PipelineState> CreateRetroGraphicsPipeline(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature);
     Microsoft::WRL::ComPtr<ID3D12PipelineState> CreateShockwaveGraphicsPipeline(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature);
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> CreateMonochromeGraphicsPipeline(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature);
 
   private:
     DirectXCommon *pDxCommon_;

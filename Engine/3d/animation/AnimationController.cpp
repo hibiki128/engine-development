@@ -91,6 +91,39 @@ void AnimationController::Play(const std::string &name)
     paused_ = false;
 }
 
+void AnimationController::PlayLayer(const std::string &name, float fadeDuration)
+{
+    if (!pObject_ || layerMaskRoot_.empty())
+    {
+        return;
+    }
+    auto it = index_.find(name);
+    if (it == index_.end())
+    {
+        return;
+    }
+
+    // レイヤーは専用アニメーターで独立に進むため、通常再生の速度・補間設定は変更しない
+    const AnimationClip &clip = clips_[it->second];
+    pObject_->PlayLayerAnimation(clip.filePath, layerMaskRoot_, clip.loop, fadeDuration);
+    layerClipName_ = name;
+}
+
+void AnimationController::StopLayer(float fadeDuration)
+{
+    if (!pObject_)
+    {
+        return;
+    }
+    pObject_->StopLayerAnimation(fadeDuration);
+    layerClipName_.clear();
+}
+
+bool AnimationController::IsLayerPlaying() const
+{
+    return pObject_ && pObject_->IsLayerAnimationPlaying();
+}
+
 void AnimationController::PlayImmediate(const std::string &name)
 {
     if (!pObject_)

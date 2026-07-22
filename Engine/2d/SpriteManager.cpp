@@ -18,9 +18,7 @@ namespace fs = std::filesystem;
 
 void SpriteManager::Finalize()
 {
-    // 保持している全てのスプライトデータを解放する。
-    // ギズモにはインスタンスへのポインタと SpriteData を捕捉したヒット判定関数が
-    // 登録されているため、必ず登録解除を伴う Clear() 経由で破棄する。
+    // ギズモがインスタンスへのポインタを握っているので、登録解除を伴う Clear() 経由で破棄する
     Clear();
 }
 
@@ -34,7 +32,6 @@ void SpriteManager::RegisterSprite(const std::string &name, const std::string &t
                                    transform.anchorPoint, transform.isFlipX, transform.isFlipY);
     spriteData->sprite->SetInstanceCount(transform.instanceCount);
     // 行列は UpdateSpriteInstances が instanceData から毎フレーム構築する
-    //（Sprite::Update 側の単体インスタンス上書きを無効化しないと、インスタンス編集が反映されない）
     spriteData->sprite->SetUseExternalTransforms(true);
     spriteData->sprite->SetUVPosition({0.0f, 0.0f});
     spriteData->sprite->SetUVSize({1.0f, 1.0f});
@@ -48,6 +45,7 @@ void SpriteManager::RegisterSprite(const std::string &name, const std::string &t
         spriteData->instanceData[i].rotation = {0.0f, 0.0f, 0.0f};
         spriteData->instanceData[i].isActive = true;
     }
+    spriteData->syncedPosition = transform.position;
 
     sprites_.push_back(std::move(spriteData));
     UpdateSpriteInstances(sprites_.back().get());
@@ -80,8 +78,7 @@ void SpriteManager::UnregisterSprite(const std::string &name)
 
 void SpriteManager::DrawAll()
 {
-    // シャドウパス中(D32 DSV)はスプライト(D24 PSO)を描かない。
-    // スプライトは影を落とさないためスキップして良い（深度フォーマット不一致を防ぐ）。
+    // シャドウパス中(D32 DSV)はスプライト(D24 PSO)を描かない（深度フォーマット不一致を防ぐ）
     if (ShadowMap::GetInstance()->IsShadowPassActive())
     {
         return;
@@ -311,6 +308,7 @@ void SpriteManager::SetSpritePosition(const std::string &name, const Vector2 &po
             spriteData->instanceData[0].translation.x = position.x;
             spriteData->instanceData[0].translation.y = position.y;
         }
+        spriteData->syncedPosition = position;
     }
 }
 
@@ -380,11 +378,8 @@ void SpriteManager::SyncGizmoTarget(SpriteData *spriteData, int instanceIndex)
     gizmo->AddTarget(spriteData->name, translation, nullptr, nullptr, true);
     gizmo->SetScreenSpace(spriteData->name, true, 50.0f);
 
-    // 当たり判定はスプライトの実際の矩形で行う。
-    // translation は矩形の角（アンカー基準）なので、既定の円判定のままだと
-    // 本体をクリックしても選択できない。
-    // spriteData は unique_ptr の指す先なので vector 再確保でもアドレスは不変。
-    // instanceIndex は再確保のたびに SyncGizmoTarget が呼び直されるため値キャプチャで良い。
+    // 当たり判定はスプライトの実際の矩形で行う（translation は矩形の角なので円判定だと掴めない）。
+    // spriteData は unique_ptr の指す先なので vector 再確保でもアドレスは不変
     gizmo->SetScreenHitTest(spriteData->name, [spriteData, instanceIndex](const Vector2 &p) -> bool {
         if (!spriteData->sprite || instanceIndex >= static_cast<int>(spriteData->instanceData.size()))
             return false;
@@ -429,6 +424,18 @@ void SpriteManager::UpdateSpriteInstances(SpriteData *spriteData)
         return;
 
     spriteData->sprite->SetInstanceCount(static_cast<uint32_t>(spriteData->instanceData.size()));
+
+    // 行列は instanceData 起点で作るため、Sprite::SetPosition の変化分を先頭インスタンスへ反映する
+    const Vector2 basePosition = spriteData->sprite->GetPosition();
+    if (basePosition.x != spriteData->syncedPosition.x || basePosition.y != spriteData->syncedPosition.y)
+    {
+        if (!spriteData->instanceData.empty())
+        {
+            spriteData->instanceData[0].translation.x = basePosition.x;
+            spriteData->instanceData[0].translation.y = basePosition.y;
+        }
+        spriteData->syncedPosition = basePosition;
+    }
 
     // スプライト本体のサイズと回転を取得してインスタンス行列に反映する
     Vector2 spriteSize = spriteData->sprite->GetSize();
@@ -782,10 +789,8 @@ void SpriteManager::DrawSpriteManager()
             ImGui::PushID(sp->name.c_str());
             ImGui::Indent(6.0f);
 
-            // ギズモのバインド先を「選択中スプライトの選択中インスタンス」へ追従させる。
-            // instanceData の再確保（追加・削除・Undo復元）で登録済みポインタが無効になるため、
-            // アドレス比較で検出して張り直す。インスタンス編集ツリーが閉じていても追従させたいので、
-            // ここと、要素数が変わりうる追加・削除操作の直後の 2 箇所で呼ぶ。
+            // ギズモのバインド先を選択中インスタンスへ追従させる。
+            // instanceData の再確保で登録済みポインタが無効になるため、アドレス比較で張り直す
             auto syncGizmoToSelection = [&] {
                 if (sp->instanceData.empty())
                     return;
@@ -1629,6 +1634,9 @@ void SpriteManager::RestoreUndoState(const nlohmann::json &state)
                 SyncGizmoTarget(sp, 0);
             }
         }
+
+        // 復元した instanceData が基準位置の差分反映で上書きされないよう同期を取り直す
+        sp->syncedPosition = sp->sprite->GetPosition();
 
         UpdateSpriteInstances(sp);
     }

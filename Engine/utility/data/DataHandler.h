@@ -109,6 +109,27 @@ class DataHandler
     T Load(const std::string &key, const T &defaultValue);
 
     /// <summary>
+    /// 指定キーをキャッシュから削除する（次回Flushでファイルへ反映）
+    /// </summary>
+    /// <param name="key">削除するキー</param>
+    void Remove(const std::string &key)
+    {
+        if (cachedJson_.is_object() && cachedJson_.contains(key))
+        {
+            cachedJson_.erase(key);
+            isDirty_ = true;
+        }
+    }
+
+    /// <summary>
+    /// 指定キーが存在するか
+    /// </summary>
+    bool Contains(const std::string &key) const
+    {
+        return cachedJson_.is_object() && cachedJson_.contains(key);
+    }
+
+    /// <summary>
     /// JSONファイルの存在確認
     /// </summary>
     /// <returns>bool: 存在すれば true</returns>
