@@ -1,4 +1,5 @@
 #pragma once
+#include "Easing.h"
 #include "camera/projection/ViewProjection.h"
 #include "collider/ColliderBase.h"
 #include "collider/type/AABBCollider.h"
@@ -7,19 +8,17 @@
 #include "collider/type/OBBCollider.h"
 #include "collider/type/SphereCollider.h"
 #include "data/DataHandler.h"
-#include "Easing.h"
+#include "nlohmann/json.hpp"
 #include "object/Object3d.h"
 #include "transform/ObjColor.h"
 #include "transform/WorldTransform.h"
-#include "nlohmann/json.hpp"
 #include <graphics/pipeline/PipelineManager.h>
 #include <optional>
 #include <string>
 
 namespace Hagine {
 class SkyBox;
-class BaseObject
-{
+class BaseObject {
   public:
     /// ===================================================
     /// public variaus
@@ -57,6 +56,7 @@ class BaseObject
     std::string modelPath_{};
     std::vector<std::string> texturePaths_{};
     std::string texturePath_{};
+    std::string normalMapPath_{}; // 法線マップ選択UIで選ばれた（適用前の）パス
     std::string folderPath_ = "SceneData/Title/ObjectData";
 
     BaseObject *pParent_ = nullptr;
@@ -166,8 +166,7 @@ class BaseObject
     const Vector4 GetColor(int index = 0) { return obj3d_->GetColor(index); }
     bool IsGizmoSelectable() const { return isGizmoSelectable_; }
     bool GetIsAlive() const { return isAlive_; }
-    Material *GetMaterial(uint32_t index = 0)
-    {
+    Material *GetMaterial(uint32_t index = 0) {
         return obj3d_->GetMaterial(index);
     }
     std::vector<std::unique_ptr<ColliderBase>> &GetColliders() { return colliders_; }
@@ -175,17 +174,14 @@ class BaseObject
     /// ===================================================
     /// setter
     /// ===================================================
-    void SetTexture(const std::string &filePath, uint32_t index = 0)
-    {
-        if (filePath.empty())
-        {
+    void SetTexture(const std::string &filePath, uint32_t index = 0) {
+        if (filePath.empty()) {
             return; // ファイルパスが空なら何もしない
         }
         obj3d_->SetTexture(filePath, index);
         texturePaths_[index] = filePath;
     }
-    void SetModel(std::unique_ptr<Object3d> obj)
-    {
+    void SetModel(std::unique_ptr<Object3d> obj) {
         obj3d_ = std::move(obj);
     }
     void SetModel(const std::string &filePath) { obj3d_->SetModel(filePath); }
@@ -193,8 +189,7 @@ class BaseObject
     void SetBlendMode(BlendMode blendMode) { obj3d_->SetBlendMode(blendMode); }
     void SetReflect(bool reflect) { reflect_ = reflect; }
     void SetColor(const Vector4 &color, int index = 0) { obj3d_->SetColor(color, index); }
-    void SetAlpha(const float &alpha, int index = 0)
-    {
+    void SetAlpha(const float &alpha, int index = 0) {
         Vector4 color;
         color.x = obj3d_->GetColor().x;
         color.y = obj3d_->GetColor().y;
@@ -218,8 +213,7 @@ class BaseObject
     /// <param name="offset">ローカル空間の回転オフセット</param>
     /// <param name="pivot">回転中心（ローカル軸・ワールド単位、原点からのオフセット）。
     /// モデルの中心が原点にない場合に、回転で位置がずれないよう補正するために使う</param>
-    void SetRenderRotationOffset(const Quaternion &offset, const Vector3 &pivot = {0.0f, 0.0f, 0.0f})
-    {
+    void SetRenderRotationOffset(const Quaternion &offset, const Vector3 &pivot = {0.0f, 0.0f, 0.0f}) {
         renderRotationOffset_ = offset;
         renderRotationPivot_ = pivot;
         applyRenderRotationOffset_ = true;
@@ -228,8 +222,7 @@ class BaseObject
     /// <summary>
     /// 描画専用の回転オフセットを解除する
     /// </summary>
-    void ClearRenderRotationOffset()
-    {
+    void ClearRenderRotationOffset() {
         renderRotationOffset_ = Quaternion::IdentityQuaternion();
         renderRotationPivot_ = {0.0f, 0.0f, 0.0f};
         applyRenderRotationOffset_ = false;
@@ -252,8 +245,7 @@ class BaseObject
     /// <summary>
     /// リジッドボディの物理パラメータ
     /// </summary>
-    struct RigidBodyParams
-    {
+    struct RigidBodyParams {
         bool enabled = false;                  // リジッドボディとして物理挙動させるか
         bool useGravity = true;                // 重力を適用するか
         float mass = 1.0f;                     // 質量（外力 F=ma に使用）
@@ -315,8 +307,7 @@ class BaseObject
     bool resolveCollision_ = false;                 // 衝突時に押し出すか
 
     // スケールにイージングを適用してモーションを確認するためのデバッグ用状態
-    struct ScaleEaseState
-    {
+    struct ScaleEaseState {
         // EasingType enumの範囲（0〜30）＋Amplitude拡張（31〜33）をまとめて管理するインデックス
         // 31 = InElasticAmplitude, 32 = OutElasticAmplitude, 33 = InOutElasticAmplitude
         int selectedMode = 32; // デフォルト: OutElasticAmplitude
