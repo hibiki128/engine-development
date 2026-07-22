@@ -159,6 +159,9 @@ void Sprite::SetTexturePath(std::string textureFilePath)
     fullpath_ = textureFilePath;
     TextureManager::GetInstance()->LoadTexture(textureFilePath);
     TextureManager::GetInstance()->GetTextureIndexByFilePath(fullpath_);
+
+    // 変更後テクスチャサイズに合わせる
+    AdjustTextureSize();
 }
 
 void Sprite::CreateVertexData()
