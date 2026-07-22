@@ -27,6 +27,28 @@ class Bone
     void Update(const Animation &animation, float animationTime);
 
     /// <summary>
+    /// レイヤー合成付きの更新処理
+    /// 全身へ基準アニメーションを適用したあと、マスクで指定したジョイントだけ
+    /// レイヤーアニメーションで上書きする（上半身だけ別モーションにする用途）
+    /// </summary>
+    /// <param name="baseAnimation">全身に適用する基準アニメーション</param>
+    /// <param name="baseTime">基準アニメーションの再生時間</param>
+    /// <param name="layerAnimation">一部のジョイントへ上書きするアニメーション</param>
+    /// <param name="layerTime">レイヤーアニメーションの再生時間</param>
+    /// <param name="mask">ジョイントインデックスごとの適用フラグ（1で上書き対象）</param>
+    /// <param name="weight">上書きの強さ（0で基準のみ・1で完全にレイヤー）</param>
+    void UpdateLayered(const Animation &baseAnimation, float baseTime,
+                       const Animation &layerAnimation, float layerTime,
+                       const std::vector<uint8_t> &mask, float weight);
+
+    /// <summary>
+    /// 指定ジョイントとその子孫だけを立てたマスクを生成する
+    /// </summary>
+    /// <param name="rootJointName">部分木の根になるジョイント名</param>
+    /// <returns>std::vector&lt;uint8_t&gt;: ジョイント数ぶんのマスク（見つからなければ全て0）</returns>
+    std::vector<uint8_t> MakeSubtreeMask(const std::string &rootJointName) const;
+
+    /// <summary>
     /// ジョイントのワールド座標を取得
     /// </summary>
     /// <param name="jointName">ジョイント名</param>
@@ -86,6 +108,21 @@ class Bone
     /// <param name="animation">アニメーションデータ</param>
     /// <param name="animationTime">アニメーション時間</param>
     void ApplyAnimation(const Animation &animation, float animationTime);
+
+    /// <summary>
+    /// マスクで指定したジョイントへアニメーションを重ね書きする
+    /// </summary>
+    /// <param name="animation">アニメーションデータ</param>
+    /// <param name="animationTime">アニメーション時間</param>
+    /// <param name="mask">ジョイントインデックスごとの適用フラグ</param>
+    /// <param name="weight">上書きの強さ（0〜1）</param>
+    void ApplyLayer(const Animation &animation, float animationTime,
+                    const std::vector<uint8_t> &mask, float weight);
+
+    /// <summary>
+    /// 現在のジョイントのSRTから階層行列を計算する
+    /// </summary>
+    void CalculateMatrices();
 
   private:
     /// ===================================================

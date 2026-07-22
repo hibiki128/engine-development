@@ -117,7 +117,9 @@ D3D12_STATIC_SAMPLER_DESC PipelineManager::CreateCommonSamplerDesc()
 {
     D3D12_STATIC_SAMPLER_DESC desc{};
     desc.Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
-    desc.AddressU = desc.AddressV = desc.AddressW = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+    // ポストエフェクトは全画面テクスチャをサンプルするため、UVが0〜1の範囲外に
+    // ずれたとき（ブラー等）に反対側の端（画面上部など）を巻き込まないよう CLAMP にする
+    desc.AddressU = desc.AddressV = desc.AddressW = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
     desc.ComparisonFunc = D3D12_COMPARISON_FUNC_NEVER;
     desc.MaxLOD = D3D12_FLOAT32_MAX;
     desc.ShaderRegister = 0;
@@ -1214,6 +1216,8 @@ Microsoft::WRL::ComPtr<ID3D12RootSignature> PipelineManager::CreateRenderRootSig
         return CreateRetroRootSignature();
     case ShaderMode::Shockwave:
         return CreateShockwaveRootSignature();
+    case ShaderMode::Monochrome:
+        return CreateMonochromeRootSignature();
     default:
         return CreateBaseRootSignature();
     }
@@ -1258,6 +1262,8 @@ Microsoft::WRL::ComPtr<ID3D12PipelineState> PipelineManager::CreateRenderGraphic
         return CreateRetroGraphicsPipeline(rootSignature);
     case ShaderMode::Shockwave:
         return CreateShockwaveGraphicsPipeline(rootSignature);
+    case ShaderMode::Monochrome:
+        return CreateMonochromeGraphicsPipeline(rootSignature);
     default:
         return CreateNoneGraphicsPipeline(rootSignature);
     }
@@ -2285,6 +2291,18 @@ Microsoft::WRL::ComPtr<ID3D12PipelineState> PipelineManager::CreateShockwaveGrap
 {
     SettingDepthStencilDesc(false);
     return CreateFullScreenPostEffectPipeline(shaderPath + L"shaders/OffScreen/Shockwave.PS.hlsl", rootSignature);
+}
+
+Microsoft::WRL::ComPtr<ID3D12RootSignature> PipelineManager::CreateMonochromeRootSignature()
+{
+    // 二値化の閾値をCBV(b0)で受け取る
+    return CreateCommonRootSignature(true);
+}
+
+Microsoft::WRL::ComPtr<ID3D12PipelineState> PipelineManager::CreateMonochromeGraphicsPipeline(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature)
+{
+    SettingDepthStencilDesc(false);
+    return CreateFullScreenPostEffectPipeline(shaderPath + L"shaders/OffScreen/Monochrome.PS.hlsl", rootSignature);
 }
 
 } // namespace Hagine

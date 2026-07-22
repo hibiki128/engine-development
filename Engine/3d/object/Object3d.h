@@ -111,6 +111,29 @@ class Object3d
     void SetAnimation(const std::string &animationFileName);
 
     /// <summary>
+    /// 体の一部だけを別モーションで上書きするレイヤー再生を開始する
+    /// （下半身は通常のアニメーション、指定ジョイント以下だけこのモーションになる）
+    /// </summary>
+    /// <param name="animationFileName">アニメーションファイルパス</param>
+    /// <param name="maskRootJoint">上書き範囲の根になるジョイント名</param>
+    /// <param name="loop">ループ再生するか（false なら再生終了で自動解除）</param>
+    /// <param name="fadeDuration">レイヤーの出入りにかける時間（秒）</param>
+    void PlayLayerAnimation(const std::string &animationFileName, const std::string &maskRootJoint,
+                            bool loop = false, float fadeDuration = 0.1f);
+
+    /// <summary>
+    /// レイヤー再生を解除する
+    /// </summary>
+    /// <param name="fadeDuration">フェードアウトにかける時間（秒）</param>
+    void StopLayerAnimation(float fadeDuration = 0.1f);
+
+    /// <summary>
+    /// レイヤー再生中かを取得
+    /// </summary>
+    /// <returns>bool: 再生中なら true</returns>
+    bool IsLayerAnimationPlaying() const;
+
+    /// <summary>
     /// アニメーションの有無
     /// </summary>
     /// <param name="anime"></param>

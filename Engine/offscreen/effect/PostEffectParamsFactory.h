@@ -19,8 +19,8 @@ class PostEffectParamsFactory
             params = std::make_unique<NoneParams>();
             break;
         case ShaderMode::Gray:
-            params = std::make_unique<NoneParams>();
-            break; // パラメータなし
+            params = std::make_unique<GrayParams>();
+            break; // パラメータなし（グレイスケール化のみ・GetMode()でGrayを返す）
         case ShaderMode::Vignette:
             params = std::make_unique<VignetteParams>();
             break;
@@ -62,6 +62,9 @@ class PostEffectParamsFactory
             break;
         case ShaderMode::Shockwave:
             params = std::make_unique<ShockwaveParams>();
+            break;
+        case ShaderMode::Monochrome:
+            params = std::make_unique<MonochromeParams>();
             break;
         default:
             assert(false && "未対応のShaderModeです。PostEffectParamsFactory::Createにcaseを追加してください。");

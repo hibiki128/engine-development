@@ -8,6 +8,7 @@
 #include <asset/AssetPath.h>
 #ifdef _DEBUG
 #include "imgui.h"
+#include "utility/debug/imgui/AssetDragDrop.h" // テクスチャのD&D設定（ドロップ先）
 #endif
 
 // ============================================================
@@ -26,6 +27,58 @@ static void CreateConstantBuffer(DirectXCommon *dxCommon,
 }
 } // namespace PostEffectParamsHelper
 
+#ifdef _DEBUG
+namespace PostEffectParamsHelper {
+/// <summary>
+/// テクスチャ選択UI（サムネ表示＋アセットブラウザからのドラッグ&ドロップ受け）。
+/// ノイズ画像等を使うポストエフェクトのDrawUIから共通で呼ぶ。
+/// </summary>
+/// <param name="label">見出しラベル</param>
+/// <param name="outRelPath">現在のテクスチャ相対パス（images ルート基準）。変更時に書き換わる</param>
+/// <returns>ドロップで差し替えられたら true</returns>
+inline bool DrawTextureSelector(const char *label, std::string &outRelPath)
+{
+    bool changed = false;
+    ImGui::PushID(label);
+    ImGui::SeparatorText(label);
+
+    auto *tm = TextureManager::GetInstance();
+
+    // 現在のテクスチャのサムネイル（未設定ならドロップ用プレースホルダ）
+    D3D12_GPU_DESCRIPTOR_HANDLE handle{};
+    if (!outRelPath.empty())
+    {
+        tm->LoadTexture(outRelPath); // 未ロードなら読む（ロード済みは即return）
+        handle = tm->GetSrvHandleGPU(AssetPath::Image(outRelPath));
+    }
+    if (handle.ptr != 0)
+        ImGui::Image(static_cast<ImTextureID>(handle.ptr), ImVec2(56.0f, 56.0f));
+    else
+        ImGui::Button("ここへ\nドロップ", ImVec2(56.0f, 56.0f));
+
+    // サムネ（またはプレースホルダ）をアセットブラウザからのドロップ先にする
+    {
+        std::string dropped;
+        if (AssetDragDrop::TextureTarget(dropped))
+        {
+            outRelPath = dropped;
+            tm->LoadTexture(outRelPath);
+            changed = true;
+        }
+    }
+
+    ImGui::SameLine();
+    ImGui::BeginGroup();
+    ImGui::TextUnformatted(outRelPath.empty() ? "(未設定)" : outRelPath.c_str());
+    ImGui::TextDisabled("アセットブラウザからD&Dで変更");
+    ImGui::EndGroup();
+
+    ImGui::PopID();
+    return changed;
+}
+} // namespace PostEffectParamsHelper
+#endif
+
 // ============================================================
 //  None
 // ============================================================
@@ -38,6 +91,69 @@ class NoneParams : public IPostEffectParams
     void DrawUI() override {}
     void Save(DataHandler *, const std::string &) const override {}
     void Load(DataHandler *, const std::string &) override {}
+};
+
+// ============================================================
+//  Gray（グレイスケール・調整パラメータなし）
+// ============================================================
+// None と同じくパラメータ（CBV）を持たないが、GetMode() で Gray を返すことで
+// レンダラが Gray シェーダの PSO を選択できるようにする。
+// （NoneParams を流用すると GetMode()==None となり「エフェクト無し」扱いになってしまう）
+class GrayParams : public IPostEffectParams
+{
+  public:
+    void Initialize(DirectXCommon *) override {}
+    ShaderMode GetMode() const override { return ShaderMode::Gray; }
+    void Apply(ID3D12GraphicsCommandList *, SrvManager *, DirectXCommon *) override {}
+    void DrawUI() override {}
+    void Save(DataHandler *, const std::string &) const override {}
+    void Load(DataHandler *, const std::string &) override {}
+};
+
+// ============================================================
+//  Monochrome（完全な白黒・明度で白or黒に二値化）
+// ============================================================
+// グレイスケール（灰色化）と違い、明度(輝度)が閾値以上なら白、未満なら黒に振り分ける。
+class MonochromeParams : public IPostEffectParams
+{
+  public:
+    struct Data
+    {
+        float threshold = 0.5f; // この明度を境に白/黒へ二値化する
+        float pad[3] = {};
+    };
+
+    void Initialize(DirectXCommon *dxCommon) override
+    {
+        PostEffectParamsHelper::CreateConstantBuffer(dxCommon, resource_, &pData_);
+        *pData_ = Data{};
+    }
+    ShaderMode GetMode() const override { return ShaderMode::Monochrome; }
+    void Apply(ID3D12GraphicsCommandList *cmd, SrvManager *, DirectXCommon *) override
+    {
+        cmd->SetGraphicsRootConstantBufferView(1, resource_->GetGPUVirtualAddress());
+    }
+    void DrawUI() override
+    {
+#ifdef _DEBUG
+        ImGui::DragFloat("白黒の閾値", &pData_->threshold, 0.01f, 0.0f, 1.0f);
+#endif
+    }
+    void Save(DataHandler *h, const std::string &p) const override
+    {
+        h->Save<float>(p + "threshold", pData_->threshold);
+    }
+    void Load(DataHandler *h, const std::string &p) override
+    {
+        pData_->threshold = h->Load<float>(p + "threshold", 0.5f);
+    }
+
+    Data *GetData() { return pData_; }
+    const Data *GetData() const { return pData_; }
+
+  private:
+    Microsoft::WRL::ComPtr<ID3D12Resource> resource_;
+    Data *pData_ = nullptr;
 };
 
 // ============================================================
@@ -402,11 +518,21 @@ class DissolveParams : public IPostEffectParams
     {
         PostEffectParamsHelper::CreateConstantBuffer(dxCommon, resource_, &pData_);
         *pData_ = Data{};
+        // ノイズ(マスク)テクスチャを読み込んでおく（未指定なら既定のノイズ画像）
+        TextureManager::GetInstance()->LoadTexture(maskTexturePath_);
     }
     ShaderMode GetMode() const override { return ShaderMode::Dissolve; }
     void Apply(ID3D12GraphicsCommandList *cmd, SrvManager *srv, DirectXCommon *dxCommon) override
     {
         cmd->SetGraphicsRootConstantBufferView(1, resource_->GetGPUVirtualAddress());
+        // t1: ノイズ(マスク)テクスチャをバインドする。
+        // ルートシグネチャは t0=画面 / b0=パラメータ / t1=マスク の3パラメータ構成。
+        if (srv)
+        {
+            auto *tm = TextureManager::GetInstance();
+            tm->LoadTexture(maskTexturePath_); // 未ロードなら読む（ロード済みは即return）
+            srv->SetGraphicsRootDescriptorTable(2, tm->GetTextureIndexByFilePath(maskTexturePath_));
+        }
     }
     void DrawUI() override
     {
@@ -419,6 +545,7 @@ class DissolveParams : public IPostEffectParams
         {
             pData_->invert = inv ? 1 : 0;
         }
+        PostEffectParamsHelper::DrawTextureSelector("ノイズ画像", maskTexturePath_);
 #endif
     }
     void Save(DataHandler *h, const std::string &p) const override
@@ -429,6 +556,7 @@ class DissolveParams : public IPostEffectParams
         h->Save<float>(p + "edgeG", pData_->edgeColor.y);
         h->Save<float>(p + "edgeB", pData_->edgeColor.z);
         h->Save<bool>(p + "invert", pData_->invert != 0);
+        h->Save<std::string>(p + "maskTex", maskTexturePath_);
     }
     void Load(DataHandler *h, const std::string &p) override
     {
@@ -438,9 +566,16 @@ class DissolveParams : public IPostEffectParams
         pData_->edgeColor.y = h->Load<float>(p + "edgeG", 0.5f);
         pData_->edgeColor.z = h->Load<float>(p + "edgeB", 0.0f);
         pData_->invert = h->Load<bool>(p + "invert", false) ? 1 : 0;
+        maskTexturePath_ = h->Load<std::string>(p + "maskTex", "debug/noise0.png");
+        TextureManager::GetInstance()->LoadTexture(maskTexturePath_);
     }
 
-    void SetNoiseTextureSrvIndex(uint32_t idx) { noiseSrvIndex_ = idx; }
+    /// <summary>マスクに使うテクスチャを差し替える（images ルート基準の相対パス）</summary>
+    void SetMaskTexture(const std::string &relPath)
+    {
+        maskTexturePath_ = relPath;
+        TextureManager::GetInstance()->LoadTexture(maskTexturePath_);
+    }
 
     Data *GetData() { return pData_; }
     const Data *GetData() const { return pData_; }
@@ -448,7 +583,7 @@ class DissolveParams : public IPostEffectParams
   private:
     Microsoft::WRL::ComPtr<ID3D12Resource> resource_;
     Data *pData_ = nullptr;
-    uint32_t noiseSrvIndex_ = 0;
+    std::string maskTexturePath_ = "debug/noise0.png"; ///< ノイズ(マスク)画像（images ルート基準の相対パス）
 };
 
 // ============================================================

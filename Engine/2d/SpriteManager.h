@@ -63,6 +63,7 @@ struct SpriteData
     BlendMode blendMode = BlendMode::Normal;                // ブレンドモード
     bool lockAspectRatio = false;                            // アスペクト比維持フラグ
     std::string drawGroup = "UI";                            // 描画グループ＝描画ステージ（スプライトは既定でUIレイヤー）
+    Vector2 syncedPosition = {0.0f, 0.0f};                   // 先頭インスタンスへ反映済みの基準位置（Sprite::SetPosition の変化検出用）
 
     /// <summary>
     /// コンストラクタ
