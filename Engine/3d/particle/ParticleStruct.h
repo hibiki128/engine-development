@@ -312,15 +312,17 @@ struct ParticleCSSettings
     float gatherStartRatio = 0.5f;
     float gatherStrength = 2.0f;
     float padding5{};
-    Vector3 gatherTarget = {0, 0, 0};
+    Vector3 gatherTarget = {0, 0, 0}; // 解決済みワールド座標（毎フレーム emitter が offset から算出）
     float padding6{};
-    Vector3 gatherTargetOffset = {0, 0, 0};
+    Vector3 gatherTargetOffset = {0, 0, 0}; // エミッターからの相対座標（effectSpace の空間で解釈）
     uint32_t enableGatherForTrail = 0;
     uint32_t enableVortex = 0;
-    Vector3 vortexTarget = {0, 0, 0};
-    Vector3 vortexTargetOffset = {0, 0, 0};
+    Vector3 vortexTarget = {0, 0, 0};       // 解決済みワールド座標（毎フレーム emitter が offset から算出）
+    Vector3 vortexTargetOffset = {0, 0, 0}; // エミッターからの相対座標（effectSpace の空間で解釈）
     float vortexStrength = 5.0f;
     uint32_t enableVortexForTrail = 0;
+    // 解決済みワールド回転軸。毎フレーム vortexAxisBase を effectSpace で変換した値が入る
+    //（作者が指定する軸は下の vortexAxisBase。こちらを直接編集しても毎フレーム上書きされる）
     Vector3 vortexAxis = {0.0f, 1.0f, 0.0f};
     uint32_t enableAcceleration = 0;
     Vector3 acceleration = {0.0f, 0.0f, 0.0f};
@@ -407,6 +409,18 @@ struct ParticleCSSettings
     float audioAttackSharpness = 1.8f;      // 反応カーブ指数（>1で大きい音だけドンと反応）
     float audioReleaseRate = 10.0f;         // エンベロープ減衰速度[1/s]（大きいほど早く落ち着く）
     float audioPad0 = 0.0f;                 // 16B境界パディング
+
+    // ---- 演出の基準空間（ここから下は CPU 専用。HLSL 側には対応メンバが無い）----
+    // 「渦の回転軸」「渦/集束の目標オフセット」をどの空間の値として解釈するか。
+    // GPU へ渡るのは解決済みのワールド値（vortexAxis / vortexTarget / gatherTarget）だけなので、
+    // 以下のメンバは CB 末尾に乗るだけでシェーダからは一切参照されない
+    //   （＝ HLSL struct ParticleCSSettings は audioPad0 までで一致していれば良い）。
+    //
+    //   0 = ワールド固定（従来動作。既存 Json は 0 になるので無回帰）
+    //   1 = エミッター基準（エミッターの回転に追従。エミッター側をビルボードすればカメラにも追従する）
+    //   2 = ビルボード（カメラの向きに追従＝カメラをどこへ回しても渦を正面から見た動きになる）
+    uint32_t effectSpace = 0;
+    Vector3 vortexAxisBase = {0.0f, 1.0f, 0.0f}; // 基準空間での回転軸（ImGui/Json が読み書きする元の値）
 };
 
 /// =====================================================================

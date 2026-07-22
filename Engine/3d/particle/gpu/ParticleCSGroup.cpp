@@ -1178,6 +1178,29 @@ void ParticleCSGroup::DrawImGui()
         return open;
     };
 
+    // 「演出の基準空間」セレクタ。渦の回転軸と、渦/集束の目標オフセットの解釈をまとめて切り替える。
+    // 同じ pSettingsData_->effectSpace を指すので、ギャザー側で変えても渦側に反映される。
+    auto effectSpaceCombo = [&](const char *id) {
+        static const char *kNames[] = {"ワールド固定", "エミッター基準", "ビルボード（カメラ）"};
+        int space = static_cast<int>(pSettingsData_->effectSpace);
+        if (space < 0 || space > 2)
+            space = 0;
+        ImGui::PushID(id);
+        ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.2f, 0.2f, 0.3f, 0.6f));
+        if (ImGui::Combo("基準空間", &space, kNames, IM_ARRAYSIZE(kNames)))
+            pSettingsData_->effectSpace = static_cast<uint32_t>(space);
+        ImGui::PopStyleColor();
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("回転軸と目標座標をどの空間の値として扱うか（ギャザーと渦で共通）。\n\n"
+                              "ワールド固定     : 従来動作。エミッターやカメラを回しても軸は動かない。\n"
+                              "エミッター基準   : エミッターの回転に軸も追従する。\n"
+                              "                   エミッター側の「ビルボード」と併用すると\n"
+                              "                   発生形状ごとカメラへ正対する。\n"
+                              "ビルボード（カメラ）: 軸がカメラの向きに追従する。\n"
+                              "                   Z=(0,0,1) なら常に画面と平行に渦が回る。");
+        ImGui::PopID();
+    };
+
     // =======================================================
     // 1. 出現・寿命・サイズ（赤系）【コア・常設】
     // =======================================================
@@ -2241,6 +2264,9 @@ void ParticleCSGroup::DrawImGui()
             ImGui::DragFloat("ギャザー強度##gstr", &pSettingsData_->gatherStrength, 0.1f, 0.0f, 999.0f, "%.4f");
             ImGui::DragFloat3("目標座標##gt", &pSettingsData_->gatherTargetOffset.x, 0.1f, -9999.0f, 9999.0f, "%.4f");
             ImGui::PopStyleColor();
+            effectSpaceCombo("gatherSpace");
+            ImGui::TextDisabled("  解決後: %.2f, %.2f, %.2f",
+                                pSettingsData_->gatherTarget.x, pSettingsData_->gatherTarget.y, pSettingsData_->gatherTarget.z);
             bool gft = pSettingsData_->enableGatherForTrail != 0;
             if (ImGui::Checkbox("トレイルにも適用##gft", &gft))
                 pSettingsData_->enableGatherForTrail = gft ? 1 : 0;
@@ -2272,16 +2298,24 @@ void ParticleCSGroup::DrawImGui()
             ImGui::Text("回転軸:");
             ImGui::SameLine();
             if (ImGui::SmallButton("X##vx"))
-                pSettingsData_->vortexAxis = {1, 0, 0};
+                pSettingsData_->vortexAxisBase = {1, 0, 0};
             ImGui::SameLine();
             if (ImGui::SmallButton("Y##vy"))
-                pSettingsData_->vortexAxis = {0, 1, 0};
+                pSettingsData_->vortexAxisBase = {0, 1, 0};
             ImGui::SameLine();
             if (ImGui::SmallButton("Z##vz"))
-                pSettingsData_->vortexAxis = {0, 0, 1};
+                pSettingsData_->vortexAxisBase = {0, 0, 1};
             ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.05f, 0.3f, 0.4f, 0.5f));
-            ImGui::DragFloat3("軸ベクトル##vax", &pSettingsData_->vortexAxis.x, 0.05f, -1.0f, 1.0f, "%.4f");
+            ImGui::DragFloat3("軸ベクトル##vax", &pSettingsData_->vortexAxisBase.x, 0.05f, -1.0f, 1.0f, "%.4f");
             ImGui::PopStyleColor();
+
+            effectSpaceCombo("vortexSpace");
+            if (pSettingsData_->effectSpace != 0)
+            {
+                // 実際に GPU へ渡っているワールド軸。カメラ/エミッターを回すとここが動く。
+                ImGui::TextDisabled("  解決後の軸: %.2f, %.2f, %.2f",
+                                    pSettingsData_->vortexAxis.x, pSettingsData_->vortexAxis.y, pSettingsData_->vortexAxis.z);
+            }
 
             bool vft = pSettingsData_->enableVortexForTrail != 0;
             if (ImGui::Checkbox("トレイルにも適用##vft", &vft))
@@ -2615,7 +2649,18 @@ void ParticleCSGroup::DrawImGui()
     if (pSettingsData_->enableGather)
         DrawLine3D::GetInstance()->DrawSphere(pSettingsData_->gatherTarget, {1.0f, 0.0f, 1.0f, 1.0f}, 0.1f, 8);
     if (pSettingsData_->enableVortex)
+    {
         DrawLine3D::GetInstance()->DrawSphere(pSettingsData_->vortexTarget, {0.5f, 1.0f, 0.0f, 1.0f}, 0.1f, 8);
+        // 解決済みの回転軸（＝渦の向き）。基準空間を変えると、この線がエミッター/カメラに追従する。
+        const float axisLen = pSettingsData_->vortexAxis.Length();
+        if (axisLen > 1e-6f)
+        {
+            const Vector3 axis = pSettingsData_->vortexAxis / axisLen;
+            DrawLine3D::GetInstance()->SetPoints(pSettingsData_->vortexTarget - axis,
+                                                 pSettingsData_->vortexTarget + axis,
+                                                 {0.5f, 1.0f, 0.0f, 1.0f});
+        }
+    }
 
 #endif // USE_IMGUI
 }

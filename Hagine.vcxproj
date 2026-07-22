@@ -117,6 +117,7 @@ copy "$(WindowsSdkDIr)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClCompile Include="Engine\3d\particle\gpu\ParticleCSFieldManager.cpp" />
     <ClCompile Include="Engine\3d\particle\gpu\ParticleCSGroup.cpp" />
     <ClCompile Include="Engine\3d\particle\gpu\ParticleCSGroupManager.cpp" />
+    <ClCompile Include="Engine\3d\particle\gpu\ParticleCSSpawner.cpp" />
     <ClCompile Include="Engine\Base\Command\DXCommandList.cpp" />
     <ClCompile Include="Engine\Base\Command\DXCommandQueue.cpp" />
     <ClCompile Include="Engine\Base\Device\DXDevice.cpp" />
@@ -256,6 +257,7 @@ copy "$(WindowsSdkDIr)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClInclude Include="Engine\3d\particle\gpu\ParticleCSFieldSettingOverride.h" />
     <ClInclude Include="Engine\3d\particle\gpu\ParticleCSGroup.h" />
     <ClInclude Include="Engine\3d\particle\gpu\ParticleCSGroupManager.h" />
+    <ClInclude Include="Engine\3d\particle\gpu\ParticleCSSpawner.h" />
     <ClInclude Include="Engine\3d\Shadow\ShadowMap.h" />
     <ClInclude Include="Engine\Base\Command\DXCommandList.h" />
     <ClInclude Include="Engine\Base\Command\DXCommandQueue.h" />

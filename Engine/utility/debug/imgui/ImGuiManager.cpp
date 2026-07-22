@@ -30,6 +30,7 @@
 #include <line/DrawLine3D.h>
 #include <map>
 #include <particle/gpu/ParticleCSFieldManager.h>
+#include <particle/gpu/ParticleCSSpawner.h>
 #include <render/DrawSystem.h>
 #include <shadow/ShadowMap.h>
 #endif // _DEBUG
@@ -777,6 +778,10 @@ void ImGuiManager::ShowParticleSettingWindow() {
     pCurrentScene_->AddParticleSetting();
 
     ParticleCSFieldManager::GetInstance()->DrawImGui();
+
+    // json を選んでシーンへ実行時配置する UI（エディタのエミッターはプレビュー窓にしか
+    // 出ないので、ゲーム画面で確認したいときはこちらから出す）
+    ParticleCSSpawner::GetInstance()->DrawImGui();
 
     ImGui::End();
 }

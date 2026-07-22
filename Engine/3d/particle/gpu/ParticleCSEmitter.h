@@ -11,6 +11,9 @@
 
 namespace Hagine {
 
+class WorldTransform;
+class BaseObject;
+
 /// <summary>
 /// GPU（コンピュートシェーダー）パーティクルの発生源クラス
 /// 発生源メッシュ・グループを保持し、Emit/Updateのコンピュート実行と描画を行う
@@ -151,9 +154,51 @@ class ParticleCSEmitter
 
     void SetTranslate(Vector3 transform)
     {
+        // 親がいるときは親からのローカル座標として扱う
+        //（ワールド座標は毎フレーム親の行列から解決されるので直接書いても上書きされる）。
+        if (pParentTransform_)
+        {
+            localTranslate_ = transform;
+            return;
+        }
         if (pEmitterMeshData_)
             pEmitterMeshData_->translate = transform;
     }
+
+    /// ===================================================
+    /// 親子付け（位置と回転が親に追従する。スケールは追従しない）
+    /// ===================================================
+
+    /// <summary>
+    /// 親のワールド変換を設定する。以後このエミッターの位置は
+    /// 「親のワールド位置 ＋ 親の回転 × ローカル座標」で毎フレーム解決される。
+    /// 向きも親の回転に追従する（ビルボードONのときは向きだけカメラ優先）。
+    /// </summary>
+    /// <param name="parent">親のワールド変換（nullptr で解除）</param>
+    void SetParent(const WorldTransform *parent) { pParentTransform_ = parent; }
+
+    /// <summary>BaseObject を親にする（内部でその WorldTransform を使う）</summary>
+    /// <param name="parent">親オブジェクト（nullptr で解除）</param>
+    void SetParent(BaseObject *parent);
+
+    /// <summary>親子付けを解除する（現在のワールド位置・向きにその場で留まる）</summary>
+    void ClearParent() { pParentTransform_ = nullptr; }
+
+    const WorldTransform *GetParentTransform() const { return pParentTransform_; }
+
+    /// <summary>
+    /// 親からのローカル座標を設定する。親がいないときは使われない
+    /// （その場合は SetTranslate がそのままワールド座標になる）。
+    /// </summary>
+    void SetLocalTranslate(const Vector3 &translate) { localTranslate_ = translate; }
+    Vector3 GetLocalTranslate() const { return localTranslate_; }
+
+    /// <summary>
+    /// ImGuizmo へギズモ対象として登録するかどうか。Initialize より前に呼ぶこと。
+    /// 実行時に量産されるインスタンスは false にして、エディタ上の
+    /// テンプレート（同名エミッター）のギズモ登録を奪わないようにする。
+    /// </summary>
+    void SetRegisterGizmo(bool enable) { registerGizmo_ = enable; }
 
     void SetStartColor(Vector4 color)
     {
@@ -173,9 +218,22 @@ class ParticleCSEmitter
 
     void SetRotation(Quaternion rotation)
     {
+        baseRotation_ = -rotation;
+        // ビルボードONなら次の DrawCompute が baseRotation_ にカメラ回転を合成して上書きする。
+        // OFF（またはこのフレームがアイドル）でも即座に反映されるようここでも入れておく。
         if (pEmitterMeshData_)
-            pEmitterMeshData_->rotation = -rotation;
+            pEmitterMeshData_->rotation = baseRotation_;
     }
+
+    // ビルボード（常にカメラへ正対）: true にすると発生源メッシュの向きを毎フレーム
+    // カメラの回転で置き換える（作者が指定した回転はカメラ空間でのオフセットとして残る）。
+    // 渦の基準空間（ParticleCSSettings::effectSpace）を「エミッター」にしておくと
+    // 発生形状と渦の軸が一緒にカメラへ追従し、どの角度から見ても同じ動きになる。
+    void SetBillboardEmitter(bool enable) { billboardEmitter_ = enable; }
+    bool GetBillboardEmitter() const { return billboardEmitter_; }
+
+    // ビルボード合成前の、作者が指定した回転
+    Quaternion GetBaseRotation() const { return baseRotation_; }
 
     void SetScale(Vector3 scale)
     {
@@ -281,6 +339,22 @@ class ParticleCSEmitter
     /// </summary>
     /// <param name="cmdList">使用するコマンドリスト（省略時は既定）</param>
     void EmitterDisPatch(ID3D12GraphicsCommandList *cmdList = nullptr);
+
+    /// <summary>
+    /// 発生源メッシュの位置と向き（CB の translate / rotation）を解決する。
+    ///   位置: 親がいれば「親のワールド位置 ＋ 親の回転 × localTranslate_」
+    ///   向き: baseRotation_ に親の回転（またはビルボードON時はカメラ回転）を合成
+    /// あわせて「演出の基準空間」用のカメラ回転行列をキャッシュする。
+    /// Emit/Update のディスパッチより前に呼ぶこと。
+    /// </summary>
+    /// <param name="vp">このフレームのビュープロジェクション</param>
+    void ResolveEmitterTransform(const ViewProjection &vp);
+
+    /// <summary>
+    /// ParticleCSSettings::effectSpace に対応する回転行列（行ベクトル規約）を返す。
+    /// </summary>
+    /// <param name="effectSpace">0=ワールド / 1=エミッター / 2=ビルボード</param>
+    Matrix4x4 GetEffectSpaceMatrix(uint32_t effectSpace) const;
 
   public:
     /// ---- バッチ非同期コンピュート用 2フェーズ API ----
@@ -421,5 +495,21 @@ class ParticleCSEmitter
     bool receiveFields_ = true;
     int32_t fieldGroupId_ = -1;           // -1=全フィールド対象, 0以上=同じIDのフィールドのみ対象
     bool emitOnlyOnFieldContact_ = false; // true=フィールド接触部分にのみEmit（数・間隔はフィールド側が管理）
+
+    // ---- 向きの解決（ビルボード）----
+    // pEmitterMeshData_->rotation は「解決済み」の値。作者が指定した回転はこちらに持ち、
+    // 毎フレーム ResolveEmitterRotation() が baseRotation_(+カメラ回転) から CB を作り直す。
+    bool billboardEmitter_ = false;
+    Quaternion baseRotation_ = Quaternion::IdentityQuaternion();
+    // 今フレームのカメラ回転（行ベクトル規約・平行移動なし）。effectSpace=ビルボード で使う。
+    Matrix4x4 cameraRotation_ = MakeIdentity4x4();
+
+    // ---- 親子付け ----
+    // 親がいる間、pEmitterMeshData_ の translate/rotation は毎フレーム解決される値になる。
+    const WorldTransform *pParentTransform_ = nullptr;
+    Vector3 localTranslate_ = {0.0f, 0.0f, 0.0f};
+
+    // ImGuizmo へ登録するか（実行時インスタンスは false。Initialize より前に決めること）
+    bool registerGizmo_ = true;
 };
 } // namespace Hagine

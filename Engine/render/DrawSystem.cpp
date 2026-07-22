@@ -7,6 +7,7 @@
 #include "utility/debug/imgui/ImGuiNotification.h"
 #include "graphics/srv/SrvManager.h"
 #include "particle/ParticleEditor.h"
+#include "particle/gpu/ParticleCSSpawner.h"
 #include "scene/SceneManager.h"
 #include <shadow/ShadowMap.h>
 #include <algorithm>
@@ -125,6 +126,10 @@ void DrawSystem::Draw(const ViewProjection &vp)
         // （Compute=シミュレーションのみここで実行。Graphics はプレビューに隔離済み）
         ParticleCSEditor::GetInstance()->DrawAllCompute(vp);
 #endif
+        // 実行時にシーンへ置かれた GPU パーティクル（ParticleCSSpawner 所有）。
+        // エディタのものと違いゲーム画面にも描画するので、_DEBUG に閉じず常に実行する。
+        // ここで登録不要にしているのは、シーン遷移で entries_ が Clear() されるため。
+        ParticleCSSpawner::GetInstance()->DrawCompute(vp);
 
         // Compute スパンを Execute 前に resolve（リストが閉じる前に記録する必要がある）
         GpuProfiler::GetInstance()->ResolveCompute(pDxCommon_->GetComputeCommandList().Get());
@@ -204,6 +209,10 @@ void DrawSystem::Draw(const ViewProjection &vp)
             }
             GpuProfiler::GetInstance()->Close(pDxCommon_->GetCommandList().Get(), gpuScene);
 
+            // 実行時にシーンへ置かれた GPU パーティクルを、このステージに属するものだけ描画する。
+            // （どのステージかは各エミッターの drawGroup から DrawGroupManager::StageOf で決まる）
+            ParticleCSSpawner::GetInstance()->DrawGraphics(vp, stageIdx);
+
             // 注: GPUパーティクルエディタのエミッターは「プレビュー窓のみ」で確認する。
             // 以前はここで DrawAllGraphics(vp) を呼び現在のシーン offscreen にも描画していたが、
             // 編集中のパーティクルがゲームシーンに漏れて見えてしまうため撤去。
@@ -255,6 +264,9 @@ void DrawSystem::Draw(const ViewProjection &vp)
                 entry.draw(vp);
             }
         }
+
+        // drawGroup が "UI" の実行時 GPU パーティクル
+        ParticleCSSpawner::GetInstance()->DrawGraphics(vp, kUILayer);
 
         // シーン遷移は最前面（UIの上）
         pSceneManager_->DrawTransition();
