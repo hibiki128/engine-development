@@ -383,6 +383,9 @@ void Framework::Update() {
         endRequest_ = winApp_->ProcessMessage();
     }
 
+    // 鳴り終わったボイスを回収する（毎フレーム呼ばないと鳴らすたびに溜まっていく）
+    pAudio_->CleanupFinishedVoices();
+
     // ウィンドウサイズが変わっていたらスワップチェーンを追従させる
     // （内部レンダリング解像度は固定のまま、最終合成時に拡縮される）
     {

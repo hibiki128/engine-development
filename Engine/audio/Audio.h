@@ -1,5 +1,6 @@
 #pragma once
 #include "array"
+#include "atomic"
 #include "cstdint"
 #include "memory"
 #include "string"
@@ -29,10 +30,13 @@ class Audio
         {
             if (pBufferContext)
             {
+                // ここはXAudio2のオーディオスレッドから呼ばれる。
+                // DestroyVoice をこの中で呼ぶとデッドロックするので、印だけ付けて
+                // 実際の破棄は CleanupFinishedVoices（メインスレッド）に任せる
                 Voice *voice = reinterpret_cast<Voice *>(pBufferContext);
-                if (voice && voice->sourceVoice)
+                if (voice)
                 {
-                    voice->sourceVoice = nullptr;
+                    voice->isFinished = true;
                 }
             }
         }
@@ -77,6 +81,8 @@ class Audio
         uint32_t handle = 0u;
         IXAudio2SourceVoice *sourceVoice = nullptr;
         float volume = 1.0f;
+        // 再生し終えたか（オーディオスレッドが立て、メインスレッドが読む）
+        std::atomic<bool> isFinished = false;
         std::unique_ptr<VoiceCallback> callback;
     };
 
@@ -97,6 +103,8 @@ class Audio
 
     /// <summary>
     /// 音声読み込み
+    /// .wav はそのまま、.mp3 等の圧縮音声は PCM へ展開して読み込む
+    /// （XAudio2 は PCM しか再生できないため、展開はこの時点で一度だけ行う）
     /// </summary>
     uint32_t LoadWave(const std::string &filename);
 
@@ -145,11 +153,24 @@ class Audio
 
   private:
     //------------------------------------------------------------------
+    // 読み込み補助関数（private）
+    //------------------------------------------------------------------
+
+    /// RIFF/WAVE を解析して PCM を取り出す（.wav の入口）
+    bool LoadWaveFile(const std::string &fullPath, SoundData &soundData);
+
+    /// Media Foundation で圧縮音声を PCM へ展開する（.mp3 等の入口）
+    bool LoadCompressedFile(const std::string &fullPath, SoundData &soundData);
+
+    /// Media Foundation を必要になった時点で一度だけ起動する
+    bool EnsureMediaFoundation();
+
+    //------------------------------------------------------------------
     // デバッグ補助関数（private）
     //------------------------------------------------------------------
 
-    /// サウンドルート配下を再帰スキャンして .wav ファイル一覧を更新する
-    void DebugScanWavFiles();
+    /// サウンドルート配下を再帰スキャンして再生できるファイル一覧を更新する
+    void DebugScanSoundFiles();
 
     /// 指定インデックスの音声総時間（秒）を返す
     float DebugGetDurationSec(uint32_t index) const;
@@ -178,6 +199,9 @@ class Audio
     std::set<std::unique_ptr<Voice>> voices_;
     std::set<std::string> loadedFiles_;
 
+    // Media Foundation を起動済みか（Finalize で必ず落とすため覚えておく）
+    bool isMediaFoundationStarted_ = false;
+
     uint16_t audioFormat_ = 0;
     uint16_t numChannels_ = 0;
     uint32_t sampleRate_ = 0;
@@ -188,7 +212,7 @@ class Audio
     //------------------------------------------------------------------
     // デバッグ専用メンバ
     //------------------------------------------------------------------
-    std::vector<std::string> debugWavFileList_;      // スキャン済み .wav 一覧
+    std::vector<std::string> debugSoundFileList_;    // スキャン済みの再生可能ファイル一覧
     int debugSelectedFile_ = -1;                     // リスト選択インデックス
     float debugVolume_ = 1.0f;                       // 再生ボリューム
     bool debugLoop_ = false;                         // ループフラグ

@@ -1,10 +1,18 @@
 #include "Audio.h"
 #include "utility/debug/imgui/ImGuiNotification.h"
 #include <debug/log/Logger.h>
+#include <algorithm>
 #include <cassert>
 #include <cmath>
 #include <cstring>
 #include <fstream>
+#include <mfapi.h>
+#include <mfidl.h>
+#include <mfreadwrite.h>
+
+#pragma comment(lib, "mfplat.lib")
+#pragma comment(lib, "mfreadwrite.lib")
+#pragma comment(lib, "mfuuid.lib")
 
 #ifdef _DEBUG
 #include "imgui.h"
@@ -45,6 +53,22 @@ float NormalizeSample(const uint8_t *p, uint16_t bits, uint16_t formatTag)
         return 0.0f;
     }
 }
+
+// 拡張子を小文字で取り出す（".wav" のようにドット付きで返る）
+std::string LowerExtension(const std::string &path)
+{
+    std::string ext = std::filesystem::path(path).extension().string();
+    std::transform(ext.begin(), ext.end(), ext.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return ext;
+}
+
+// 再生できる拡張子か（wav はそのまま、それ以外は Media Foundation で展開する）
+bool IsSupportedExtension(const std::string &extension)
+{
+    return extension == ".wav" || extension == ".mp3" || extension == ".wma" ||
+           extension == ".m4a" || extension == ".aac";
+}
 } // namespace
 void Audio::Initialize(const std::string &directoryPath)
 {
@@ -70,15 +94,41 @@ uint32_t Audio::LoadWave(const std::string &filename)
         }
     }
 
-    std::string fullPath = directoryPath_ + "/" + filename;
+    const std::string fullPath = directoryPath_ + "/" + filename;
+    const std::string extension = LowerExtension(filename);
 
+    // 読み込みに失敗しても書きかけのスロットを消費しないよう、一旦手元に組み立てる
+    SoundData soundData;
+
+    // wav は自前で RIFF を解析し、それ以外は Media Foundation に PCM へ展開させる
+    const bool loaded = (extension == ".wav") ? LoadWaveFile(fullPath, soundData)
+                                              : LoadCompressedFile(fullPath, soundData);
+    if (!loaded)
+    {
+        return UINT32_MAX;
+    }
+
+    soundData.name_ = filename;
+    soundDatas_[soundDataIndex_] = std::move(soundData);
+
+    loadedFiles_.insert(filename);
+
+    uint32_t currentIndex = static_cast<uint32_t>(soundDataIndex_);
+    soundDataIndex_ = (soundDataIndex_ + 1) % kMaxSoundData;
+
+    ImGuiNotification::Post("音声ファイルを読み込みました: " + filename, {0.2f, 0.8f, 0.8f, 1.0f});
+    return currentIndex;
+}
+
+bool Audio::LoadWaveFile(const std::string &fullPath, SoundData &soundData)
+{
     std::ifstream file;
     file.open(fullPath, std::ios_base::binary);
     if (!file.is_open())
     {
         Logger::Error("Failed to open audio file: \"" + fullPath + "\". The file was not found.");
         assert(file.is_open());
-        return UINT32_MAX;
+        return false;
     }
 
     RiffHeader riff;
@@ -88,11 +138,13 @@ uint32_t Audio::LoadWave(const std::string &filename)
     {
         Logger::Error("Invalid audio file (missing RIFF header): \"" + fullPath + "\".");
         assert(0);
+        return false;
     }
     if (strncmp(riff.type, "WAVE", 4) != 0)
     {
         Logger::Error("Invalid audio file (not WAVE format): \"" + fullPath + "\".");
         assert(0);
+        return false;
     }
 
     ChunkHeader chunkHeader;
@@ -117,6 +169,7 @@ uint32_t Audio::LoadWave(const std::string &filename)
     {
         Logger::Error("Invalid audio file (missing fmt chunk): \"" + fullPath + "\".");
         assert(0);
+        return false;
     }
 
     ChunkHeader data;
@@ -136,24 +189,154 @@ uint32_t Audio::LoadWave(const std::string &filename)
     {
         Logger::Error("Invalid audio file (missing data chunk): \"" + fullPath + "\".");
         assert(0);
+        return false;
     }
 
     std::vector<uint8_t> buffer(data.size);
     file.read(reinterpret_cast<char *>(buffer.data()), data.size);
     file.close();
 
-    SoundData &soundData = soundDatas_[soundDataIndex_];
     soundData.wfex = format.fmt;
     soundData.buffer = std::move(buffer);
-    soundData.name_ = filename;
+    return true;
+}
 
-    loadedFiles_.insert(filename);
+bool Audio::EnsureMediaFoundation()
+{
+    if (isMediaFoundationStarted_)
+    {
+        return true;
+    }
 
-    uint32_t currentIndex = static_cast<uint32_t>(soundDataIndex_);
-    soundDataIndex_ = (soundDataIndex_ + 1) % kMaxSoundData;
+    // MFSTARTUP_LITE で足りる（必要なのはデコード用のソースリーダーだけ）
+    const HRESULT hr = MFStartup(MF_VERSION, MFSTARTUP_LITE);
+    if (FAILED(hr))
+    {
+        Logger::Error("Failed to start Media Foundation. Compressed audio cannot be loaded.");
+        return false;
+    }
 
-    ImGuiNotification::Post("音声ファイルを読み込みました: " + filename, {0.2f, 0.8f, 0.8f, 1.0f});
-    return currentIndex;
+    isMediaFoundationStarted_ = true;
+    return true;
+}
+
+bool Audio::LoadCompressedFile(const std::string &fullPath, SoundData &soundData)
+{
+    if (!std::filesystem::exists(fullPath))
+    {
+        Logger::Error("Failed to open audio file: \"" + fullPath + "\". The file was not found.");
+        assert(0);
+        return false;
+    }
+
+    if (!EnsureMediaFoundation())
+    {
+        return false;
+    }
+
+    // ソースリーダーに「PCM で寄こせ」と伝えると、デコードは中で済ませてくれる
+    Microsoft::WRL::ComPtr<IMFSourceReader> reader;
+    const std::wstring widePath = std::filesystem::path(fullPath).wstring();
+    HRESULT hr = MFCreateSourceReaderFromURL(widePath.c_str(), nullptr, &reader);
+    if (FAILED(hr))
+    {
+        Logger::Error("Failed to create a source reader for: \"" + fullPath + "\".");
+        assert(0);
+        return false;
+    }
+
+    // 音声ストリーム以外は読まない
+    reader->SetStreamSelection(MF_SOURCE_READER_ALL_STREAMS, FALSE);
+    reader->SetStreamSelection(MF_SOURCE_READER_FIRST_AUDIO_STREAM, TRUE);
+
+    Microsoft::WRL::ComPtr<IMFMediaType> pcmType;
+    hr = MFCreateMediaType(&pcmType);
+    if (SUCCEEDED(hr))
+    {
+        pcmType->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Audio);
+        pcmType->SetGUID(MF_MT_SUBTYPE, MFAudioFormat_PCM);
+        hr = reader->SetCurrentMediaType(MF_SOURCE_READER_FIRST_AUDIO_STREAM, nullptr, pcmType.Get());
+    }
+    if (FAILED(hr))
+    {
+        Logger::Error("Failed to set the PCM output format for: \"" + fullPath + "\".");
+        assert(0);
+        return false;
+    }
+
+    // 実際に決まった PCM の形式（サンプリングレート等）を受け取る
+    Microsoft::WRL::ComPtr<IMFMediaType> outputType;
+    hr = reader->GetCurrentMediaType(MF_SOURCE_READER_FIRST_AUDIO_STREAM, &outputType);
+    if (FAILED(hr))
+    {
+        Logger::Error("Failed to query the decoded format of: \"" + fullPath + "\".");
+        assert(0);
+        return false;
+    }
+
+    WAVEFORMATEX *pWaveFormat = nullptr;
+    UINT32 waveFormatSize = 0;
+    hr = MFCreateWaveFormatExFromMFMediaType(outputType.Get(), &pWaveFormat, &waveFormatSize);
+    if (FAILED(hr) || !pWaveFormat)
+    {
+        Logger::Error("Failed to build a WAVEFORMATEX for: \"" + fullPath + "\".");
+        assert(0);
+        return false;
+    }
+    soundData.wfex = *pWaveFormat;
+    // SoundData は WAVEFORMATEX 本体しか持たないので、拡張部は無いものとして扱う
+    // （PCM を要求しているため拡張部は元々付かない）
+    soundData.wfex.cbSize = 0;
+    CoTaskMemFree(pWaveFormat);
+
+    // 展開した PCM を最後まで繋ぎ合わせる
+    std::vector<uint8_t> buffer;
+    while (true)
+    {
+        DWORD streamFlags = 0;
+        Microsoft::WRL::ComPtr<IMFSample> sample;
+        hr = reader->ReadSample(MF_SOURCE_READER_FIRST_AUDIO_STREAM, 0, nullptr, &streamFlags, nullptr, &sample);
+        if (FAILED(hr))
+        {
+            Logger::Error("Failed while decoding: \"" + fullPath + "\".");
+            assert(0);
+            return false;
+        }
+        if (streamFlags & MF_SOURCE_READERF_ENDOFSTREAM)
+        {
+            break;
+        }
+        if (!sample)
+        {
+            // ストリームの切れ目などでサンプルが返らないことがあるので、読み進める
+            continue;
+        }
+
+        Microsoft::WRL::ComPtr<IMFMediaBuffer> mediaBuffer;
+        if (FAILED(sample->ConvertToContiguousBuffer(&mediaBuffer)))
+        {
+            continue;
+        }
+
+        BYTE *pAudio = nullptr;
+        DWORD audioSize = 0;
+        if (FAILED(mediaBuffer->Lock(&pAudio, nullptr, &audioSize)))
+        {
+            continue;
+        }
+        buffer.insert(buffer.end(), pAudio, pAudio + audioSize);
+        mediaBuffer->Unlock();
+    }
+
+    if (buffer.empty())
+    {
+        Logger::Error("Decoded no audio data from: \"" + fullPath + "\".");
+        assert(0);
+        return false;
+    }
+
+    soundData.buffer = std::move(buffer);
+    return true;
 }
 
 void Audio::Unload(uint32_t soundIndex)
@@ -222,7 +405,7 @@ void Audio::SetVolume(uint32_t soundIndex, float volume)
 {
     for (auto &voice : voices_)
     {
-        if (voice->handle == soundIndex)
+        if (voice->handle == soundIndex && voice->sourceVoice)
         {
             voice->volume = volume;
             voice->sourceVoice->SetVolume(volume);
@@ -235,8 +418,15 @@ void Audio::CleanupFinishedVoices()
 {
     for (auto it = voices_.begin(); it != voices_.end();)
     {
-        if ((*it)->sourceVoice == nullptr)
+        if ((*it)->isFinished)
         {
+            // 破棄はここ（メインスレッド）でまとめて行う。
+            // 放置するとXAudio2のソースボイスが鳴らすたびに増え続ける
+            if ((*it)->sourceVoice)
+            {
+                (*it)->sourceVoice->DestroyVoice();
+                (*it)->sourceVoice = nullptr;
+            }
             it = voices_.erase(it);
         }
         else
@@ -268,15 +458,21 @@ void Audio::Finalize()
     }
 
     voices_.clear();
+
+    if (isMediaFoundationStarted_)
+    {
+        MFShutdown();
+        isMediaFoundationStarted_ = false;
+    }
 }
 
 //==============================================================================
 // デバッグ補助関数
 //==============================================================================
 
-void Audio::DebugScanWavFiles()
+void Audio::DebugScanSoundFiles()
 {
-    debugWavFileList_.clear();
+    debugSoundFileList_.clear();
 
     // 現在のサウンドルート配下を走査（Initialize で差し替えられている場合もそれに追従する）
     std::filesystem::path dir(directoryPath_);
@@ -292,14 +488,14 @@ void Audio::DebugScanWavFiles()
         {
             continue;
         }
-        if (entry.path().extension() != ".wav")
+        if (!IsSupportedExtension(LowerExtension(entry.path().string())))
         {
             continue;
         }
 
         // directoryPath_ からの相対パスをファイル名として登録
         auto rel = std::filesystem::relative(entry.path(), dir);
-        debugWavFileList_.push_back(rel.string());
+        debugSoundFileList_.push_back(rel.string());
     }
 }
 
@@ -557,22 +753,22 @@ void Audio::Debug()
     SectionHeader(("[ ファイルブラウザ  " + directoryPath_ + "/ ]").c_str(), DebugTheme::kAccentGreen);
     ImGui::PushStyleColor(ImGuiCol_Button, DebugTheme::kBgGreen);
     ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.45f, 0.68f, 0.52f, 0.40f));
-    if (ImGui::Button("WAVファイルをスキャン"))
+    if (ImGui::Button("音声ファイルをスキャン"))
     {
-        DebugScanWavFiles();
+        DebugScanSoundFiles();
         debugSelectedFile_ = -1;
-        ImGuiNotification::Post("WAVを " + std::to_string(debugWavFileList_.size()) + " 件検出しました",
+        ImGuiNotification::Post("音声ファイルを " + std::to_string(debugSoundFileList_.size()) + " 件検出しました",
                                 {0.45f, 0.68f, 0.52f, 1.0f});
     }
     ImGui::PopStyleColor(2);
     ImGui::SameLine();
-    ImGui::TextDisabled("(%zu ファイル)", debugWavFileList_.size());
+    ImGui::TextDisabled("(%zu ファイル)", debugSoundFileList_.size());
 
     ImGui::BeginChild("##filelist", ImVec2(0, 150), ImGuiChildFlags_Borders);
-    for (int i = 0; i < static_cast<int>(debugWavFileList_.size()); ++i)
+    for (int i = 0; i < static_cast<int>(debugSoundFileList_.size()); ++i)
     {
         const bool selected = (debugSelectedFile_ == i);
-        if (ImGui::Selectable(debugWavFileList_[i].c_str(), selected))
+        if (ImGui::Selectable(debugSoundFileList_[i].c_str(), selected))
         {
             debugSelectedFile_ = i;
         }
@@ -585,7 +781,7 @@ void Audio::Debug()
     SectionHeader("[ 再生コントロール ]", DebugTheme::kAccentOrange);
 
     const bool hasSelection = (debugSelectedFile_ >= 0 &&
-                               debugSelectedFile_ < static_cast<int>(debugWavFileList_.size()));
+                               debugSelectedFile_ < static_cast<int>(debugSoundFileList_.size()));
 
     if (!hasSelection)
     {
@@ -595,7 +791,7 @@ void Audio::Debug()
     }
     else
     {
-        const std::string &selectedName = debugWavFileList_[debugSelectedFile_];
+        const std::string &selectedName = debugSoundFileList_[debugSelectedFile_];
 
         uint32_t idx = DebugResolveIndex(selectedName);
         const bool loaded = (idx != UINT32_MAX);
@@ -629,7 +825,7 @@ void Audio::Debug()
             ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.45f, 0.60f, 0.78f, 0.40f));
             if (ImGui::Button("ロード", ImVec2(120, 0)))
             {
-                // selectedName は DebugScanWavFiles が directoryPath_ 基準で列挙した相対パスなので、
+                // selectedName は DebugScanSoundFiles が directoryPath_ 基準で列挙した相対パスなので、
                 // LoadWave にそのまま渡せる
                 uint32_t newIdx = LoadWave(selectedName);
                 debugLoadedMap_[selectedName] = newIdx;
