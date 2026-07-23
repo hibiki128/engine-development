@@ -16,19 +16,17 @@ namespace Hagine {
 /// </summary>
 namespace AssetPath {
 
-/// <summary>エンジンアセットのルート (末尾スラッシュ付き)。</summary>
-inline const std::string &EngineRoot()
-{
-    static const std::string kRoot = "EngineAssets/";
-    return kRoot;
-}
+/// <summary>エンジンアセットのルート (末尾スラッシュ付き)。
+/// exe と同じ場所に "EngineAssets/" があればそれを最優先で使い (配布時)、
+/// 無ければソースツリー "../module/Hagine/Engine/EngineAssets/" を使う (開発時)。
+/// 実装は AssetPath.cpp。切り替え先のパスもそこに記述している。</summary>
+const std::string &EngineRoot();
 
-/// <summary>アプリケーションアセットのルート (末尾スラッシュ付き)。</summary>
-inline const std::string &AppRoot()
-{
-    static const std::string kRoot = "Assets/";
-    return kRoot;
-}
+/// <summary>アプリケーションアセットのルート (末尾スラッシュ付き)。
+/// exe と同じ場所に "Assets/" があればそれを最優先で使い (配布時)、
+/// 無ければソースツリー "../app/Assets/" を使う (開発時)。
+/// 実装は AssetPath.cpp。切り替え先のパスもそこに記述している。</summary>
+const std::string &AppRoot();
 
 /// <summary>相対パスがエンジン側 (debug 配下) かどうかを判定する。</summary>
 /// <param name="rel">images / models ルートからの相対パス</param>
