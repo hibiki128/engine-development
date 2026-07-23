@@ -1124,9 +1124,13 @@ Microsoft::WRL::ComPtr<ID3D12PipelineState> PipelineManager::CreateSpriteGraphic
         break;
     }
 
+    // アルファは通常のover合成（a_out = a_src + a_dst * (1 - a_src)）にする。
+    // DestBlendAlpha を ZERO にすると半透明スプライトのαがRTへそのまま焼き込まれ、
+    // 合成先（finalResult）を後段でα合成する側（ImGuiのゲームビュー等）から見ると
+    // スプライトの矩形ごと——裏の3Dオブジェクトも含めて——透けて見えてしまう。
     blendDesc.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ONE;
     blendDesc.RenderTarget[0].BlendOpAlpha = D3D12_BLEND_OP_ADD;
-    blendDesc.RenderTarget[0].DestBlendAlpha = D3D12_BLEND_ZERO;
+    blendDesc.RenderTarget[0].DestBlendAlpha = D3D12_BLEND_INV_SRC_ALPHA;
 
     // RasterizerStateの設定
     D3D12_RASTERIZER_DESC rasterizerDesc{};
