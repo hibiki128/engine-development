@@ -549,6 +549,9 @@
     <ClCompile Include="Engine\Utility\Scene\SceneTransition.cpp">
       <Filter>Engine\Utility\Scene</Filter>
     </ClCompile>
+    <ClCompile Include="Engine\Utility\Asset\AssetPath.cpp">
+      <Filter>Engine\Utility\Asset</Filter>
+    </ClCompile>
     <ClCompile Include="Engine\Utility\String\StringUtility.cpp">
       <Filter>Engine\Utility\String</Filter>
     </ClCompile>

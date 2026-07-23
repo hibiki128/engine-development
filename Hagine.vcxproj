@@ -217,6 +217,7 @@ copy "$(WindowsSdkDIr)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClCompile Include="Engine\Utility\Graphics\PipeLine\PipeLineManager.cpp" />
     <ClCompile Include="Engine\Utility\Graphics\Srv\SrvManager.cpp" />
     <ClCompile Include="Engine\Utility\Scene\SceneManager.cpp" />
+    <ClCompile Include="Engine\Utility\Asset\AssetPath.cpp" />
     <ClCompile Include="Engine\Utility\String\StringUtility.cpp" />
     <ClCompile Include="Engine\Utility\Graphics\Texture\TextureManager.cpp" />
     <ClCompile Include="Engine\Utility\Scene\SceneTransition.cpp" />
