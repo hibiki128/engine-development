@@ -1,20 +1,19 @@
 #include "Framework.h"
 #include "utility/debug/imgui/ImGuiNotification.h"
 #include "utility/scene/SceneRegistry.h"
-#include <debug/profiler/CpuProfiler.h>
-#include <debug/log/Logger.h>
 #include <Frame.h>
+#include <debug/log/Logger.h>
+#include <debug/profiler/CpuProfiler.h>
+#include <iterator>
 #include <particle/gpu/ParticleCSSpawner.h>
 #include <shadow/ShadowMap.h>
-#include <iterator>
 #ifdef _DEBUG
 #include <edit/undo/UndoRedoManager.h>
 #include <imgui.h>
 #endif // _DEBUG
 
 namespace Hagine {
-void Framework::Run()
-{
+void Framework::Run() {
     // ゲームの初期化
     Initialize();
 
@@ -23,8 +22,7 @@ void Framework::Run()
         // 更新
         Update();
         // 終了リクエストが来たら抜ける
-        if (IsEndRequest())
-        {
+        if (IsEndRequest()) {
             break;
         }
         // 描画
@@ -34,8 +32,7 @@ void Framework::Run()
     Finalize();
 }
 
-void Framework::Initialize()
-{
+void Framework::Initialize() {
     Logger::Info("Application initialization started.");
 
     ///---------WinApp--------
@@ -227,8 +224,7 @@ void Framework::Initialize()
     Logger::Info("Application initialization finished.");
 }
 
-void Framework::Finalize()
-{
+void Framework::Finalize() {
     Logger::Info("Application shutting down.");
 
     pCollisionManager_->Clear();
@@ -271,8 +267,7 @@ void Framework::Finalize()
     pDxCommon_->Finalize();
 }
 
-void Framework::RegisterShortcutKey()
-{
+void Framework::RegisterShortcutKey() {
     // フルスクリーン
     shortcutManager_->RegisterShortcut("FullScreen", DIK_F11, [this]() {
         winApp_->ToggleFullScreen();
@@ -304,8 +299,7 @@ void Framework::RegisterShortcutKey()
     // シーン切替（SceneRegistry に自己登録された全シーンへ Ctrl+数字 を割り当てる）
     const std::vector<std::string> sceneNames = SceneRegistry::GetInstance()->GetSceneNames();
     constexpr BYTE kNumberKeys[] = {DIK_1, DIK_2, DIK_3, DIK_4, DIK_5, DIK_6, DIK_7, DIK_8, DIK_9};
-    for (size_t i = 0; i < sceneNames.size() && i < std::size(kNumberKeys); ++i)
-    {
+    for (size_t i = 0; i < sceneNames.size() && i < std::size(kNumberKeys); ++i) {
         const std::string sceneName = sceneNames[i];
         shortcutManager_->RegisterShortcut(sceneName + "Scene", {DIK_LCONTROL, kNumberKeys[i]}, [this, sceneName]() {
             pSceneManager_->SceneSelection(sceneName);
@@ -317,27 +311,23 @@ void Framework::RegisterShortcutKey()
     });
     // 元に戻す（ImGuiのテキスト入力中は入力欄自身のUndoを優先してスキップ）
     shortcutManager_->RegisterShortcut("Undo", {DIK_LCONTROL, DIK_Z}, []() {
-        if (ImGui::GetCurrentContext() && ImGui::GetIO().WantTextInput)
-        {
+        if (ImGui::GetCurrentContext() && ImGui::GetIO().WantTextInput) {
             return;
         }
         UndoRedoManager *undoMgr = UndoRedoManager::GetInstance();
         const std::string label = undoMgr->GetUndoLabel();
-        if (undoMgr->Undo())
-        {
+        if (undoMgr->Undo()) {
             ImGuiNotification::Post("元に戻す: " + label, {0.42f, 0.66f, 0.68f, 1.0f});
         }
     });
     // やり直し
     shortcutManager_->RegisterShortcut("Redo", {DIK_LCONTROL, DIK_Y}, []() {
-        if (ImGui::GetCurrentContext() && ImGui::GetIO().WantTextInput)
-        {
+        if (ImGui::GetCurrentContext() && ImGui::GetIO().WantTextInput) {
             return;
         }
         UndoRedoManager *undoMgr = UndoRedoManager::GetInstance();
         const std::string label = undoMgr->GetRedoLabel();
-        if (undoMgr->Redo())
-        {
+        if (undoMgr->Redo()) {
             ImGuiNotification::Post("やり直し: " + label, {0.42f, 0.66f, 0.68f, 1.0f});
         }
     });
@@ -357,8 +347,7 @@ void Framework::RegisterShortcutKey()
 #endif // _DEBUG
 }
 
-void Framework::Update()
-{
+void Framework::Update() {
 
     /// deltaTimeの更新
     Frame::Update();
@@ -398,29 +387,26 @@ void Framework::Update()
     // （内部レンダリング解像度は固定のまま、最終合成時に拡縮される）
     {
         uint32_t newWidth = 0, newHeight = 0;
-        if (winApp_->ConsumeResize(newWidth, newHeight))
-        {
+        if (winApp_->ConsumeResize(newWidth, newHeight)) {
             pDxCommon_->ResizeSwapChain(newWidth, newHeight);
         }
     }
 }
 
-void Framework::LoadResource()
-{
+void Framework::LoadResource() {
 
     pTextureManager_->LoadAllTextures();
 
     pTextureManager_->LoadFontTexture("NotoSansJP-Medium.ttf", 100);
+    pTextureManager_->LoadFontTexture("YDWyadewanoji.ttf", 50);
 
     ImGuiNotification::Post("全ての基本リソースを読み込みました", {0.2f, 0.8f, 0.2f, 1.0f});
     Logger::Info("All base resources loaded.");
 }
 
-void Framework::PlaySounds()
-{
+void Framework::PlaySounds() {
 }
 
-void Framework::Draw()
-{
+void Framework::Draw() {
 }
 } // namespace Hagine

@@ -19,14 +19,14 @@ namespace AssetPath {
 /// <summary>エンジンアセットのルート (末尾スラッシュ付き)。</summary>
 inline const std::string &EngineRoot()
 {
-    static const std::string kRoot = "../module/Hagine/Engine/EngineAssets/";
+    static const std::string kRoot = "EngineAssets/";
     return kRoot;
 }
 
 /// <summary>アプリケーションアセットのルート (末尾スラッシュ付き)。</summary>
 inline const std::string &AppRoot()
 {
-    static const std::string kRoot = "../app/Assets/";
+    static const std::string kRoot = "Assets/";
     return kRoot;
 }
 
