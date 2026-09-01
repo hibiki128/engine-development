@@ -48,9 +48,9 @@ std::vector<uint8_t> Bone::MakeSubtreeMask(const std::string &rootJointName) con
         const int32_t index = stack.back();
         stack.pop_back();
         mask[index] = 1;
-        for (int32_t child : skeleton_.joints[index].children)
+        for (int32_t pChild : skeleton_.joints[index].children)
         {
-            stack.push_back(child);
+            stack.push_back(pChild);
         }
     }
 
@@ -140,9 +140,9 @@ int32_t Bone::CreateJoint(const Node &node, const std::optional<int32_t> &parent
     joints.push_back(joint);
 
     // 子ノードに対して再帰的にジョイント作成処理を行う
-    for (const Node &child : node.children)
+    for (const Node &pChild : node.children)
     {
-        int32_t childIndex = CreateJoint(child, joint.index, joints);
+        int32_t childIndex = CreateJoint(pChild, joint.index, joints);
         joints[joint.index].children.push_back(childIndex);
     }
 

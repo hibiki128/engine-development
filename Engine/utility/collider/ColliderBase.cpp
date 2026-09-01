@@ -62,7 +62,7 @@ void ColliderBase::LoadFromJson()
     }
 }
 
-#ifdef _DEBUG
+#ifdef USE_IMGUI
 void ColliderBase::ImGuiTagSettings()
 {
     // タグ・マスクを無視して全コライダーと判定する（押し戻し検証用）
@@ -129,5 +129,5 @@ void ColliderBase::ImGuiTagSettings()
         }
     }
 }
-#endif // _DEBUG
+#endif // USE_IMGUI
 } // namespace Hagine

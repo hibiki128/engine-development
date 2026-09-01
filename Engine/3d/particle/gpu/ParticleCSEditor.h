@@ -1,5 +1,6 @@
 #pragma once
 #include "particle/ParticleStruct.h"
+#include "line/LineRenderer.h"
 #include "ParticleCSEmitter.h"
 #include "ParticleCSGroupManager.h"
 #include "map"
@@ -14,7 +15,7 @@ class ParticleCSEditor
 {
   private:
     /// ===================================
-    /// private methods
+    /// private method
     /// ===================================
 
     /// <summary>
@@ -26,7 +27,7 @@ class ParticleCSEditor
 
   private:
     /// ===================================
-    /// private variaus
+    /// private variables
     /// ===================================
 
     std::unordered_map<std::string, std::unique_ptr<ParticleCSEmitter>> emitters_;
@@ -135,24 +136,20 @@ class ParticleCSEditor
     Microsoft::WRL::ComPtr<ID3D12Resource> previewDepthResource_;
     D3D12_CPU_DESCRIPTOR_HANDLE previewDsvHandle_{};
 
-    // 白グリッド線（共有 DrawLine3D とは独立した専用VB）。kLine3d PSO を流用して描画する。
-    struct PreviewLineVertex
-    {
-        Vector3 pos;
-        Vector4 color;
-    };
+    // 白グリッド線（共有 LineRenderer とは独立した専用VB）。Line3d PSO を流用して描画する。
+    // 頂点形式は LineRenderer と共通（LineVertex = float3 + RGBA8）。
     static constexpr int kPreviewGridMaxDivision_ = 600; // VB容量の上限（(div+1)*4 頂点）。ほぼ無限グリッド用に拡大。
     Microsoft::WRL::ComPtr<ID3D12Resource> previewGridVB_;
     D3D12_VERTEX_BUFFER_VIEW previewGridVBView_{};
     uint32_t previewGridVertexCount_ = 0;
-    PreviewLineVertex *pPreviewGridMapped_ = nullptr; // 永続マップ（設定変更時に内容だけ書き換える）
+    LineVertex *pPreviewGridMapped_ = nullptr; // 永続マップ（設定変更時に内容だけ書き換える）
 
-    // 選択エミッタのワイヤーフレーム線（共有 DrawLine3D を使わずプレビュー専用VBで描画）。
+    // 選択エミッタのワイヤーフレーム線（共有 LineRenderer を使わずプレビュー専用VBで描画）。
     static constexpr uint32_t kPreviewWireMaxVerts_ = 24000; // 上限（超過分は切り捨て）
     Microsoft::WRL::ComPtr<ID3D12Resource> previewWireVB_;
     D3D12_VERTEX_BUFFER_VIEW previewWireVBView_{};
     uint32_t previewWireVertexCount_ = 0;
-    PreviewLineVertex *pPreviewWireMapped_ = nullptr;
+    LineVertex *pPreviewWireMapped_ = nullptr;
 
     // プレビュー表示設定（背景色・グリッド）
     float previewBgColor_[4] = {0.02f, 0.02f, 0.03f, 1.0f};

@@ -25,14 +25,14 @@ void GpuProfiler::EnsureInit()
     if (!pDxCommon_ || !pDxCommon_->GetDevice())
         return;
 
-    ID3D12Device *device = pDxCommon_->GetDevice().Get();
+    ID3D12Device *pDevice = pDxCommon_->GetDevice().Get();
 
     // タイムスタンプ用 QueryHeap（kRing フレーム分）
     D3D12_QUERY_HEAP_DESC qhd{};
     qhd.Type = D3D12_QUERY_HEAP_TYPE_TIMESTAMP;
     qhd.Count = kTotalSlots;
     qhd.NodeMask = 0;
-    if (FAILED(device->CreateQueryHeap(&qhd, IID_PPV_ARGS(&queryHeap_))))
+    if (FAILED(pDevice->CreateQueryHeap(&qhd, IID_PPV_ARGS(&queryHeap_))))
         return;
 
     // Readback バッファ（resolve 先・CPU 読み取り）
@@ -49,14 +49,14 @@ void GpuProfiler::EnsureInit()
     rd.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
     // Direct/Compute の両キューが同一 readback を書くとクロスキュー同時アクセスに
     // なるため、キューごとに 1 本ずつ用意する。
-    if (FAILED(device->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &rd,
+    if (FAILED(pDevice->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &rd,
                                                D3D12_RESOURCE_STATE_COPY_DEST, nullptr,
                                                IID_PPV_ARGS(&readbackGraphics_))))
         return;
     readbackGraphics_->SetName(L"GpuProfiler_Readback_Graphics");
     readbackGraphics_->Map(0, nullptr, reinterpret_cast<void **>(&pMappedGraphics_));
 
-    if (FAILED(device->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &rd,
+    if (FAILED(pDevice->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &rd,
                                                D3D12_RESOURCE_STATE_COPY_DEST, nullptr,
                                                IID_PPV_ARGS(&readbackCompute_))))
         return;
@@ -117,16 +117,16 @@ void GpuProfiler::BeginFrame()
     rf.valid = true;
 }
 
-int GpuProfiler::Open(ID3D12GraphicsCommandList *cl, const char *label, bool isCompute)
+int GpuProfiler::Open(ID3D12GraphicsCommandList *pCommandList, const char *label, bool isCompute)
 {
-    if (!enabled_ || !initialized_ || !cl)
+    if (!enabled_ || !initialized_ || !pCommandList)
         return -1;
     if (pairCursor_ >= kMaxPairsPerFrame)
         return -1;
 
     uint32_t pair = pairCursor_++;
     uint32_t slot = ringIndex_ * kSlotsPerRing + pair * 2;
-    cl->EndQuery(queryHeap_.Get(), D3D12_QUERY_TYPE_TIMESTAMP, slot);
+    pCommandList->EndQuery(queryHeap_.Get(), D3D12_QUERY_TYPE_TIMESTAMP, slot);
 
     RingFrame &rf = rings_[ringIndex_];
     int handle = static_cast<int>(rf.entries.size());
@@ -134,31 +134,31 @@ int GpuProfiler::Open(ID3D12GraphicsCommandList *cl, const char *label, bool isC
     return handle;
 }
 
-int GpuProfiler::OpenCompute(ID3D12GraphicsCommandList *cl, const char *label)
+int GpuProfiler::OpenCompute(ID3D12GraphicsCommandList *pCommandList, const char *label)
 {
-    return Open(cl, label, true);
+    return Open(pCommandList, label, true);
 }
 
-int GpuProfiler::OpenGraphics(ID3D12GraphicsCommandList *cl, const char *label)
+int GpuProfiler::OpenGraphics(ID3D12GraphicsCommandList *pCommandList, const char *label)
 {
-    return Open(cl, label, false);
+    return Open(pCommandList, label, false);
 }
 
-void GpuProfiler::Close(ID3D12GraphicsCommandList *cl, int handle)
+void GpuProfiler::Close(ID3D12GraphicsCommandList *pCommandList, int handle)
 {
-    if (!enabled_ || !initialized_ || !cl || handle < 0)
+    if (!enabled_ || !initialized_ || !pCommandList || handle < 0)
         return;
     RingFrame &rf = rings_[ringIndex_];
     if (handle >= static_cast<int>(rf.entries.size()))
         return;
     uint32_t pair = rf.entries[handle].pair;
     uint32_t slot = ringIndex_ * kSlotsPerRing + pair * 2 + 1;
-    cl->EndQuery(queryHeap_.Get(), D3D12_QUERY_TYPE_TIMESTAMP, slot);
+    pCommandList->EndQuery(queryHeap_.Get(), D3D12_QUERY_TYPE_TIMESTAMP, slot);
 }
 
-void GpuProfiler::Resolve(ID3D12GraphicsCommandList *cl, bool isCompute)
+void GpuProfiler::Resolve(ID3D12GraphicsCommandList *pCommandList, bool isCompute)
 {
-    if (!enabled_ || !initialized_ || !cl)
+    if (!enabled_ || !initialized_ || !pCommandList)
         return;
     RingFrame &rf = rings_[ringIndex_];
     const uint32_t ringBase = ringIndex_ * kSlotsPerRing;
@@ -168,14 +168,14 @@ void GpuProfiler::Resolve(ID3D12GraphicsCommandList *cl, bool isCompute)
             continue;
         uint32_t startSlot = ringBase + e.pair * 2;
         ID3D12Resource *dst = isCompute ? readbackCompute_.Get() : readbackGraphics_.Get();
-        cl->ResolveQueryData(queryHeap_.Get(), D3D12_QUERY_TYPE_TIMESTAMP,
+        pCommandList->ResolveQueryData(queryHeap_.Get(), D3D12_QUERY_TYPE_TIMESTAMP,
                              startSlot, 2, dst,
                              static_cast<UINT64>(startSlot) * sizeof(uint64_t));
     }
 }
 
-void GpuProfiler::ResolveCompute(ID3D12GraphicsCommandList *cl) { Resolve(cl, true); }
-void GpuProfiler::ResolveGraphics(ID3D12GraphicsCommandList *cl) { Resolve(cl, false); }
+void GpuProfiler::ResolveCompute(ID3D12GraphicsCommandList *pCommandList) { Resolve(pCommandList, true); }
+void GpuProfiler::ResolveGraphics(ID3D12GraphicsCommandList *pCommandList) { Resolve(pCommandList, false); }
 
 void GpuProfiler::DrawImGui()
 {

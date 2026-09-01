@@ -1,6 +1,5 @@
 #include "AABBCollider.h"
-#include "line/DrawLine3D.h"
-#include <array>
+#include "line/LineRenderer.h"
 
 namespace Hagine {
 void AABBCollider::UpdateWorldTransform()
@@ -18,25 +17,18 @@ void AABBCollider::DebugDraw(const ViewProjection &viewProjection)
         return;
     }
 
-    std::array<Vector3, 8> vertices = {
-        cachedAABB_.min,
-        {cachedAABB_.max.x, cachedAABB_.min.y, cachedAABB_.min.z},
-        {cachedAABB_.min.x, cachedAABB_.max.y, cachedAABB_.min.z},
-        {cachedAABB_.max.x, cachedAABB_.max.y, cachedAABB_.min.z},
-        {cachedAABB_.min.x, cachedAABB_.min.y, cachedAABB_.max.z},
-        {cachedAABB_.max.x, cachedAABB_.min.y, cachedAABB_.max.z},
-        {cachedAABB_.min.x, cachedAABB_.max.y, cachedAABB_.max.z},
-        cachedAABB_.max};
+    LineRenderer *pLine = LineRenderer::GetInstance();
 
-    const std::array<std::pair<int, int>, 12> edges = {
-        std::make_pair(0, 1), std::make_pair(1, 3), std::make_pair(3, 2), std::make_pair(2, 0),
-        std::make_pair(4, 5), std::make_pair(5, 7), std::make_pair(7, 6), std::make_pair(6, 4),
-        std::make_pair(0, 4), std::make_pair(1, 5), std::make_pair(2, 6), std::make_pair(3, 7)};
-
-    for (const auto &edge : edges)
+    // 画面外なら線を積まない
+    const Vector3 center = (cachedAABB_.min + cachedAABB_.max) * 0.5f;
+    const Vector3 extent = (cachedAABB_.max - cachedAABB_.min) * 0.5f;
+    const float boundingRadius = extent.Length();
+    if (!pLine->IsSphereVisible(center, boundingRadius))
     {
-        DrawLine3D::GetInstance()->SetPoints(vertices[edge.first], vertices[edge.second], color_);
+        return;
     }
+
+    pLine->AddBox(cachedAABB_.min, cachedAABB_.max, color_);
 }
 
 void AABBCollider::SaveToJson()

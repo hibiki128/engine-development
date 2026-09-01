@@ -60,7 +60,7 @@ enum class MotionStatus
 /// </summary>
 struct Motion
 {
-    Hagine::BaseObject *target = nullptr;
+    Hagine::BaseObject *pTarget = nullptr;
     std::string objectName;
     float totalTime = 1.0f;
     float currentTime = 0.0f;
@@ -121,8 +121,15 @@ class MotionEditor
     /// <summary>
     /// オブジェクトを登録
     /// </summary>
-    /// <param name="object">登録するオブジェクト</param>
-    void Register(Hagine::BaseObject *object);
+    /// <param name="pObject">登録するオブジェクト</param>
+    void Register(Hagine::BaseObject *pObject);
+
+    /// <summary>
+    /// オブジェクトの登録を解除する
+    /// 解除しないと破棄済みオブジェクトへのポインタが残り、再生・編集時に不正アクセスになる
+    /// </summary>
+    /// <param name="pObject">解除するオブジェクト</param>
+    void Unregister(Hagine::BaseObject *pObject);
 
     /// <summary>
     /// 更新処理
@@ -186,11 +193,11 @@ class MotionEditor
     /// <summary>
     /// 元の位置に戻すフラグ付きでモーションをファイルから再生
     /// </summary>
-    /// <param name="target">対象オブジェクト</param>
+    /// <param name="pTarget">対象オブジェクト</param>
     /// <param name="fileName">ファイル名</param>
     /// <param name="returnToOriginal">元の位置に戻すか</param>
     /// <returns>bool: 再生成功フラグ</returns>
-    bool PlayFromFile(Hagine::BaseObject *target, const std::string &fileName, bool returnToOriginal = false);
+    bool PlayFromFile(Hagine::BaseObject *pTarget, const std::string &fileName, bool returnToOriginal = false);
 
     /// <summary>
     /// 初期位置をリセット
@@ -201,20 +208,20 @@ class MotionEditor
     /// <summary>
     /// コンボの開始位置を設定
     /// </summary>
-    /// <param name="target">対象オブジェクト</param>
-    void SetComboStartPosition(Hagine::BaseObject *target);
+    /// <param name="pTarget">対象オブジェクト</param>
+    void SetComboStartPosition(Hagine::BaseObject *pTarget);
 
     /// <summary>
     /// コンボ終了時に開始位置に戻す
     /// </summary>
-    /// <param name="target">対象オブジェクト</param>
-    void ReturnToComboStart(Hagine::BaseObject *target);
+    /// <param name="pTarget">対象オブジェクト</param>
+    void ReturnToComboStart(Hagine::BaseObject *pTarget);
 
     /// <summary>
     /// 特定オブジェクトのコンボ開始位置をクリア
     /// </summary>
-    /// <param name="target">対象オブジェクト</param>
-    void ClearComboStartPosition(Hagine::BaseObject *target);
+    /// <param name="pTarget">対象オブジェクト</param>
+    void ClearComboStartPosition(Hagine::BaseObject *pTarget);
 
     /// <summary>
     /// すべてのコンボ開始位置をクリア
@@ -224,37 +231,37 @@ class MotionEditor
     /// <summary>
     /// 攻撃が終了したかを判定
     /// </summary>
-    /// <param name="target">対象オブジェクト</param>
+    /// <param name="pTarget">対象オブジェクト</param>
     /// <returns>bool: 攻撃終了フラグ</returns>
-    bool IsAttackFinished(Hagine::BaseObject *target);
+    bool IsAttackFinished(Hagine::BaseObject *pTarget);
 
     /// <summary>
     /// インターバル付きで攻撃が終了したかを判定
     /// </summary>
-    /// <param name="target">対象オブジェクト</param>
+    /// <param name="pTarget">対象オブジェクト</param>
     /// <returns>bool: 攻撃終了フラグ</returns>
-    bool IsAttackFinishedWithInterval(Hagine::BaseObject *target);
+    bool IsAttackFinishedWithInterval(Hagine::BaseObject *pTarget);
 
     /// <summary>
     /// 攻撃終了後のインターバルを設定
     /// </summary>
-    /// <param name="target">対象オブジェクト</param>
+    /// <param name="pTarget">対象オブジェクト</param>
     /// <param name="interval">インターバル時間</param>
-    void SetAttackEndInterval(Hagine::BaseObject *target, float interval = 0.3f);
+    void SetAttackEndInterval(Hagine::BaseObject *pTarget, float interval = 0.3f);
 
     /// <summary>
     /// 攻撃終了後のインターバルをクリア
     /// </summary>
-    /// <param name="target">対象オブジェクト</param>
-    void ClearAttackEndInterval(Hagine::BaseObject *target);
+    /// <param name="pTarget">対象オブジェクト</param>
+    void ClearAttackEndInterval(Hagine::BaseObject *pTarget);
 
     /// <summary>
     /// 一時的なモーションが終了したかを判定
     /// </summary>
-    /// <param name="target">対象オブジェクト</param>
+    /// <param name="pTarget">対象オブジェクト</param>
     /// <param name="fileName">ファイル名</param>
     /// <returns>bool: 終了フラグ</returns>
-    bool IsTemporaryMotionFinished(Hagine::BaseObject *target, const std::string &fileName);
+    bool IsTemporaryMotionFinished(Hagine::BaseObject *pTarget, const std::string &fileName);
 
     /// <summary>
     /// 再生状態を取得
@@ -280,10 +287,10 @@ class MotionEditor
     /// <summary>
     /// 一時的なモーション名を取得
     /// </summary>
-    /// <param name="target">対象オブジェクト</param>
+    /// <param name="pTarget">対象オブジェクト</param>
     /// <param name="fileName">ファイル名</param>
     /// <returns>std::string: モーション名</returns>
-    std::string GetTemporaryMotionName(Hagine::BaseObject *target, const std::string &fileName);
+    std::string GetTemporaryMotionName(Hagine::BaseObject *pTarget, const std::string &fileName);
 
   private:
     /// ===================================================
@@ -306,29 +313,29 @@ class MotionEditor
     /// <summary>
     /// 親のワールド行列の逆行列を取得
     /// </summary>
-    /// <param name="object">対象オブジェクト</param>
+    /// <param name="pObject">対象オブジェクト</param>
     /// <returns>Matrix4x4: 逆行列</returns>
-    Hagine::Matrix4x4 GetParentInverseWorldMatrix(Hagine::BaseObject *object);
+    Hagine::Matrix4x4 GetParentInverseWorldMatrix(Hagine::BaseObject *pObject);
 
     /// <summary>
     /// ローカルコントロールポイントの位置を取得
     /// </summary>
-    /// <param name="object">対象オブジェクト</param>
+    /// <param name="pObject">対象オブジェクト</param>
     /// <param name="worldPos">ワールド座標</param>
     /// <returns>Vector3: ローカル座標</returns>
-    Hagine::Vector3 GetLocalControlPointPosition(Hagine::BaseObject *object, const Hagine::Vector3 &worldPos);
+    Hagine::Vector3 GetLocalControlPointPosition(Hagine::BaseObject *pObject, const Hagine::Vector3 &worldPos);
 
     /// <summary>
     /// ローカルコントロールポイントをワールド座標に変換
     /// </summary>
-    /// <param name="object">対象オブジェクト</param>
+    /// <param name="pObject">対象オブジェクト</param>
     /// <param name="localPos">ローカル座標</param>
     /// <returns>Vector3: ワールド座標</returns>
-    Hagine::Vector3 TransformLocalControlPointToWorld(Hagine::BaseObject *object, const Hagine::Vector3 &localPos);
+    Hagine::Vector3 TransformLocalControlPointToWorld(Hagine::BaseObject *pObject, const Hagine::Vector3 &localPos);
 
   private:
     /// ===================================================
-    /// private varians
+    /// private variables
     /// ===================================================
 
     std::unordered_map<Hagine::BaseObject *, Hagine::Vector3> comboStartPositions_; // コンボ開始位置

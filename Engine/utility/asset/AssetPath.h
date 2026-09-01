@@ -17,14 +17,17 @@ namespace Hagine {
 namespace AssetPath {
 
 /// <summary>エンジンアセットのルート (末尾スラッシュ付き)。
-/// exe と同じ場所に "EngineAssets/" があればそれを最優先で使い (配布時)、
-/// 無ければソースツリー "../module/Hagine/Engine/EngineAssets/" を使う (開発時)。
+/// exe と同じ場所に "EngineAssets/" があれば配布構成とみなし、カレントディレクトリを
+/// exe の場所へ移したうえで "EngineAssets/" を返す。無ければソースツリーの
+/// "Engine/EngineAssets/" を使う (開発時)。
+/// いずれも ASCII のみの相対パスで、配布先フォルダ名に日本語が入っても壊れない。
 /// 実装は AssetPath.cpp。切り替え先のパスもそこに記述している。</summary>
 const std::string &EngineRoot();
 
 /// <summary>アプリケーションアセットのルート (末尾スラッシュ付き)。
-/// exe と同じ場所に "Assets/" があればそれを最優先で使い (配布時)、
-/// 無ければソースツリー "../app/Assets/" を使う (開発時)。
+/// exe と同じ場所に "Assets/" があれば配布構成とみなし、カレントディレクトリを
+/// exe の場所へ移したうえで "Assets/" を返す。無ければソースツリーの
+/// "Application/Assets/" を使う (開発時)。
 /// 実装は AssetPath.cpp。切り替え先のパスもそこに記述している。</summary>
 const std::string &AppRoot();
 

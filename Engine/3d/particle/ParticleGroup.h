@@ -103,7 +103,7 @@ class ParticleGroup
     uint32_t *indexData_{};                                          // バッファ内データへのポインタ
     D3D12_INDEX_BUFFER_VIEW indexBufferView_{};                      // インデックスバッファビュー
 
-    Model *model_{};                        // モデル
+    Model *pModel_{};                        // モデル
     ModelData modelData_{};                 // モデルデータ
     ParticleGroupData particleGroupData_{}; // パーティクルグループデータ
     PrimitiveType type_{};                  // プリミティブ種別

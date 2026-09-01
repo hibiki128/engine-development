@@ -1,6 +1,6 @@
 #include "MeshCollider.h"
 #include "model/Model.h"
-#include "line/DrawLine3D.h"
+#include "line/LineRenderer.h"
 #include "MyMath.h"
 #include <algorithm>
 #include <array>
@@ -277,16 +277,6 @@ AABB OBBWorldBounds(const OBB &obb)
     return {c - ext, c + ext};
 }
 
-/// <summary>16要素の行列が完全一致するか（静的メッシュのキャッシュ無効化判定用）</summary>
-bool MatrixEqual(const Matrix4x4 &a, const Matrix4x4 &b)
-{
-    for (int i = 0; i < 4; ++i)
-        for (int j = 0; j < 4; ++j)
-            if (a.m[i][j] != b.m[i][j])
-                return false;
-    return true;
-}
-
 /// <summary>エッジの重複排除キー（端点を量子化し順不同で正規化）</summary>
 struct EdgeKey
 {
@@ -392,7 +382,7 @@ void MeshCollider::BuildFromTriangles(const std::vector<Triangle> &localTriangle
     triangles_ = localTriangles;
     BuildBVH();
     BuildEdges();
-    worldEdgesValid_ = false; // ワールドエッジキャッシュを作り直させる
+    ReleaseWireframeBatch(); // 次の描画で新しいエッジからバッチを作り直させる
 
     // Mesh×Mesh押し戻し用のローカル・バウンディング球を算出する。
     // 中心はローカルAABBの中点、半径は中心から最も遠い頂点までの距離。
@@ -598,28 +588,54 @@ void MeshCollider::UpdateWorldTransform()
     cachedScale_ = ExtractScale(cachedWorld_).x; // 一様スケール前提
 }
 
+void MeshCollider::EnsureWireframeBatch()
+{
+    if (wireframeBatch_ != kInvalidLineBatch || localEdges_.empty())
+    {
+        return;
+    }
+
+    // ローカル座標のまま白（=tintがそのまま色になる）でGPUへ常駐させる。
+    // 地形のように数万本になるメッシュでも、以降のCPUコストはドロー1回ぶんだけになる。
+    std::vector<LineVertex> vertices;
+    vertices.reserve(localEdges_.size() * 2);
+    constexpr uint32_t kWhite = 0xFFFFFFFFu;
+    for (const auto &edge : localEdges_)
+    {
+        vertices.push_back({edge.first, kWhite});
+        vertices.push_back({edge.second, kWhite});
+    }
+
+    wireframeBatch_ = LineRenderer::GetInstance()->CreateBatch(vertices.data(), static_cast<uint32_t>(vertices.size()));
+}
+
+void MeshCollider::ReleaseWireframeBatch()
+{
+    if (wireframeBatch_ != kInvalidLineBatch)
+    {
+        LineRenderer::GetInstance()->DestroyBatch(wireframeBatch_);
+        wireframeBatch_ = kInvalidLineBatch;
+    }
+}
+
 void MeshCollider::DebugDraw(const ViewProjection &viewProjection)
 {
     if (!isVisible_ || !isEnabled_ || !isWireframeVisible_ || localEdges_.empty())
         return;
 
-    // 静的メッシュではワールド行列が変わらない限り、エッジのワールド変換を再計算しない。
-    // （色 color_ は毎フレーム変わり得るが SetPoints 時に渡すので再変換は不要）
-    if (!worldEdgesValid_ || !MatrixEqual(cachedWorld_, lastDrawMatrix_))
-    {
-        worldEdges_.resize(localEdges_.size());
-        for (size_t i = 0; i < localEdges_.size(); ++i)
-        {
-            worldEdges_[i].first = Transformation(localEdges_[i].first, cachedWorld_);
-            worldEdges_[i].second = Transformation(localEdges_[i].second, cachedWorld_);
-        }
-        lastDrawMatrix_ = cachedWorld_;
-        worldEdgesValid_ = true;
-    }
+    EnsureWireframeBatch();
+    if (wireframeBatch_ == kInvalidLineBatch)
+        return;
 
-    auto *line = DrawLine3D::GetInstance();
-    for (const auto &e : worldEdges_)
-        line->SetPoints(e.first, e.second, color_);
+    LineRenderer *pLine = LineRenderer::GetInstance();
+
+    // 画面外なら描画予約自体を省く
+    const Vector3 worldCenter = Transformation(localBoundingCenter_, cachedWorld_);
+    if (!pLine->IsSphereVisible(worldCenter, localBoundingRadius_ * cachedScale_))
+        return;
+
+    // 頂点は白なので tint がそのまま線の色になる（当たり判定の色変化に追従する）
+    pLine->SubmitBatch(wireframeBatch_, cachedWorld_, color_);
 }
 
 void MeshCollider::SaveToJson()

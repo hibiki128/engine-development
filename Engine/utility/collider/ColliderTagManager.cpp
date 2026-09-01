@@ -1,6 +1,6 @@
 #include "ColliderTagManager.h"
 
-#ifdef _DEBUG
+#ifdef USE_IMGUI
 #include <imgui.h>
 #include "utility/debug/imgui/ImGuiNotification.h"
 #include "utility/debug/imgui/DebugUIHelper.h"
@@ -15,9 +15,10 @@ void ColliderTagManager::ImGuiTagManager()
     std::vector<std::string> tagList(availableTags_.begin(), availableTags_.end());
     std::sort(tagList.begin(), tagList.end());
 
-    // 既定タグ（削除不可）かどうか
+    // エンジン組み込みタグ（削除不可）かどうか。
+    // ゲーム固有のタグ名をここに直書きしないこと（判定は ColliderTagManager に持たせている）。
     auto isDefault = [](const std::string &t) {
-        return t == "None" || t == "Environment" || t == "Player";
+        return ColliderTagManager::IsBuiltInTag(t);
     };
 
     if (ImGui::BeginTable("##TagTable", 2,

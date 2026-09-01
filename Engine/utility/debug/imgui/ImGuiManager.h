@@ -73,7 +73,7 @@ class ImGuiManager {
     /// <summary>
     /// メインUI表示
     /// </summary>
-    void ShowMainUI(OffScreen *offscreen);
+    void ShowMainUI(OffScreen *pOffScreen);
 
     /// <summary>
     /// メニュー表示
@@ -147,7 +147,7 @@ class ImGuiManager {
 
     void ShowStatisticsWindow();
 
-    void ShowOffScreenSettingWindow(OffScreen *offscreen);
+    void ShowOffScreenSettingWindow(OffScreen *pOffScreen);
 
     void ShowLightSettingWindow();
 
@@ -159,6 +159,9 @@ class ImGuiManager {
 
     void ShowSpriteManagerWindow();
 
+    // UIエディタ窓（スプライトのグループ管理＋名前付きトゥイーン）
+    void ShowUIEditorWindow();
+
     void ShowColliderTagManagerWindow();
 
     void ShowAudioManagerWindow();
@@ -167,8 +170,17 @@ class ImGuiManager {
 
     void ShowDrawSystemWindow();
 
+    // カメラ窓（登録カメラの一覧・切り替え・各カメラの設定）
+    void ShowCameraWindow();
+
     // アセットブラウザ窓（images ルートをサムネ一覧表示、各サムネをD&Dのドラッグ元にする）
     void ShowAssetBrowserWindow();
+
+    /// <summary>
+    /// アセットブラウザの画像タブ（サムネイル一覧）を描画する
+    /// ウィンドウの Begin/End は呼び出し元が行う
+    /// </summary>
+    void ShowImageAssetGrid();
 
     // ゲームパラメータHub窓（コード登録済みパラメータを実行中に仕分け・調整する）
     void ShowGameParamWindow();
@@ -190,7 +202,7 @@ class ImGuiManager {
 
   private:
     /// ====================================
-    /// private variaus
+    /// private variables
     /// ====================================
 
     std::string dockLayoutBackup_;
@@ -212,15 +224,9 @@ class ImGuiManager {
     ImVec2 sceneSizeForRay_ = {}; // 仮想解像度座標系（レイ計算用）
 
 #endif // USE_IMGUI
-    int cubeCount_ = 0;
-    int sphereCount_ = 0;
-    int planeCount_ = 0;
-    int cylinderCount_ = 0;
-    int ringCount_ = 0;
-    int triangleCount_ = 0;
-    int capsuleCount_ = 0;
-    int pyramidCount_ = 0;
-    int coneCount_ = 0;
+    // プリミティブごとの連番カウンタは廃止。
+    // 名前の一意化は BaseObjectManager::MakeUniqueObjectName が行う
+    // （カウンタ方式は読み込み後の既存名と衝突しうるため）。
 
     // エンジンのウィンドウを描画するフラグ
     // 重いUIコンポーネントの表示状態管理
@@ -239,10 +245,12 @@ class ImGuiManager {
     bool showHierarchyView_ = true;
     bool showMotionEditorView_ = true;
     bool showSpriteManagerView_ = true;
+    bool showUIEditorView_ = false; // UIエディタ窓
     bool showColliderTagManagerView_ = false;
     bool showAudioManagerView_ = false;
     bool showShadowMapView_ = true;
     bool showDrawSystemView_ = true;
+    bool showCameraView_ = false; // カメラ窓
     bool showGameParamView_ = true;     // ゲームパラメータHub窓
     bool showAssetBrowserView_ = false; // アセットブラウザ窓
 
@@ -252,6 +260,17 @@ class ImGuiManager {
     int gridDivision_ = 1000;
     float gridSize_ = 5000.0f;
     Vector4 gridColor_ = {0.5f, 0.5f, 0.5f, 1.0f}; // グレー
+
+    // グリッドは形が変わらないので静的バッチとしてGPUへ常駐させる。
+    // 分割数・サイズが変わったときだけ作り直し、Y座標と色は描画時に差し替える。
+    LineBatchId gridBatch_ = kInvalidLineBatch;
+    int builtGridDivision_ = -1;
+    float builtGridSize_ = -1.0f;
+
+    /// <summary>
+    /// グリッドの静的バッチを必要なら作り直す
+    /// </summary>
+    void RebuildGridBatchIfNeeded();
 
     BaseObjectManager *pBaseObjectManager_ = nullptr;
     SpriteManager *pSpriteManager_ = nullptr;

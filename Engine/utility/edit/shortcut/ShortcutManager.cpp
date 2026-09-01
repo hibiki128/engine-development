@@ -1,8 +1,41 @@
 #include "ShortcutManager.h"
 #include "Input.h"
 #include "frame/Frame.h"
+#include <algorithm>
 
 namespace Hagine {
+namespace {
+
+// 組み合わせの判定で「押されていないこと」まで見る修飾キー
+constexpr BYTE kModifierKeys[] = {DIK_LCONTROL, DIK_RCONTROL, DIK_LSHIFT, DIK_RSHIFT, DIK_LALT, DIK_RALT};
+
+/// <summary>
+/// 登録キーに含まれない修飾キーが押されているかを調べる。
+///
+/// 単純に「登録キーが全部押されているか」だけで判定すると、Ctrl+Shift+P を押したときに
+/// Ctrl+P のショートカットまで一緒に発火してしまう（停止したのに即再生される等）。
+/// 余計な修飾キーが押されている組み合わせは発火させない。
+/// </summary>
+/// <param name="keys">ショートカットに登録されたキー</param>
+/// <returns>bool: 登録外の修飾キーが押されていれば true</returns>
+bool HasExtraModifier(const std::vector<BYTE> &keys)
+{
+    for (BYTE modifier : kModifierKeys)
+    {
+        if (std::find(keys.begin(), keys.end(), modifier) != keys.end())
+        {
+            continue; // このショートカット自身が要求している修飾キー
+        }
+        if (Input::GetInstance()->PushKey(modifier))
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+} // namespace
+
 void ShortcutManager::RegisterShortcut(const std::string &name, BYTE key, std::function<void()> callback)
 {
     shortcuts_[name] = Shortcut{std::vector<BYTE>{key}, callback};
@@ -45,6 +78,11 @@ void ShortcutManager::Update()
                     allPressed = false;
                     break;
                 }
+            }
+            // 登録外の修飾キーが押されていたら別のショートカットとみなす
+            if (allPressed && HasExtraModifier(shortcut.keys))
+            {
+                allPressed = false;
             }
             if (allPressed)
             {

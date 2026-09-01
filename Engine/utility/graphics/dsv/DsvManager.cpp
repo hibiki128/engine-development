@@ -4,10 +4,10 @@
 
 namespace Hagine {
 
-void DsvManager::Initialize(DXDevice *device)
+void DsvManager::Initialize(DXDevice *pDevice)
 {
-    assert(device);
-    pDevice_ = device;
+    assert(pDevice);
+    pDevice_ = pDevice;
 
     // デスクリプタ1つ分のサイズを取得
     descriptorSize_ = pDevice_->Get()->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_DSV);

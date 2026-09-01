@@ -1,38 +1,45 @@
 #include "DrawSystem.h"
+#ifdef USE_IMGUI
+#include <edit/play/PlayModeManager.h>
+#endif
 #include "DirectXCommon.h"
 #include "collider/CollisionManager.h"
 #include "debug/profiler/CpuProfiler.h"
 #include "debug/profiler/GpuProfiler.h"
 #include "data/DataHandler.h"
+#include "deferred/DeferredRenderer.h"
+#include "light/LightGroup.h"
+#include "object/Object3dInstancing.h"
 #include "utility/debug/imgui/ImGuiNotification.h"
 #include "graphics/srv/SrvManager.h"
 #include "particle/ParticleEditor.h"
+#include "particle/gpu/ParticleCSEmitter.h"
 #include "particle/gpu/ParticleCSSpawner.h"
 #include "scene/SceneManager.h"
 #include <shadow/ShadowMap.h>
 #include <algorithm>
-#ifdef _DEBUG
+#ifdef USE_IMGUI
 #include "particle/gpu/ParticleCSEditor.h"
 #endif
-#ifdef _DEBUG
+#ifdef USE_IMGUI
 #include "imgui.h"
-#include "line/DrawLine3D.h"
+#include "line/LineRenderer.h"
 #include "utility/debug/imgui/DebugUIHelper.h"
 #include <set>
 #include <vector>
 #endif
 
 namespace Hagine {
-void DrawSystem::Initialize(DirectXCommon *dxCommon, SrvManager *srvManager,
-                            OffScreen *offscreen, SceneManager *sceneManager,
+void DrawSystem::Initialize(DirectXCommon *pDxCommon, SrvManager *pSrvManager,
+                            OffScreen *pOffScreen, SceneManager *sceneManager,
                             CollisionManager *collision)
 {
-    pDxCommon_ = dxCommon;
-    pSrvManager_ = srvManager;
+    pDxCommon_ = pDxCommon;
+    pSrvManager_ = pSrvManager;
     pSceneManager_ = sceneManager;
     pCollision_ = collision;
 
-    stageOffScreens_[0] = offscreen;
+    stageOffScreens_[0] = pOffScreen;
     nextStageIndex_ = 1;
 }
 
@@ -110,6 +117,10 @@ void DrawSystem::Draw(const ViewProjection &vp)
     // GPU プロファイラ: フレーム先頭で ring を進め、過去フレームの結果を取り込む
     GpuProfiler::GetInstance()->BeginFrame();
 
+    // オブジェクトのインスタンシング描画: インスタンスバッファの書き込み位置をフレーム先頭で戻す。
+    // 影 / G-Buffer / 前方描画で内容が違うので、1フレーム内では領域を使い回さない。
+    Object3dInstancing::GetInstance()->BeginFrame();
+
     // ─── GPU パーティクル Compute フェーズ（全エミッターを一括実行して Direct Queue に Wait 挿入）───
     {
         HAGINE_CPU_PROFILE("DS/ParticleCompute+Wait");
@@ -120,16 +131,24 @@ void DrawSystem::Draw(const ViewProjection &vp)
                 entry.draw(vp);
             }
         }
-#ifdef _DEBUG
+#ifdef USE_IMGUI
         // GPUパーティクルエディタのエミッターをシーン非依存でシミュレートする。
         // 描画はプレビュー窓(RenderPreview)の専用VPだけが行うためゲームシーンには漏れない。
         // （Compute=シミュレーションのみここで実行。Graphics はプレビューに隔離済み）
         ParticleCSEditor::GetInstance()->DrawAllCompute(vp);
 #endif
         // 実行時にシーンへ置かれた GPU パーティクル（ParticleCSSpawner 所有）。
-        // エディタのものと違いゲーム画面にも描画するので、_DEBUG に閉じず常に実行する。
+        // エディタのものと違いゲーム画面にも描画するので、USE_IMGUI に閉じず常に実行する。
         // ここで登録不要にしているのは、シーン遷移で entries_ が Clear() されるため。
-        ParticleCSSpawner::GetInstance()->DrawCompute(vp);
+        //
+        // これはゲーム世界のシミュレーションなので、一時停止・停止中は進めない
+        // （止めないと発生・移動が続いてしまう。描画は別なので見た目は止まったまま残る）。
+#ifdef USE_IMGUI
+        if (PlayModeManager::GetInstance()->ShouldUpdateGame())
+#endif // USE_IMGUI
+        {
+            ParticleCSSpawner::GetInstance()->DrawCompute(vp);
+        }
 
         // Compute スパンを Execute 前に resolve（リストが閉じる前に記録する必要がある）
         GpuProfiler::GetInstance()->ResolveCompute(pDxCommon_->GetComputeCommandList().Get());
@@ -139,7 +158,7 @@ void DrawSystem::Draw(const ViewProjection &vp)
         pDxCommon_->WaitForComputeOnDirectQueue();
     }
 
-#ifdef _DEBUG
+#ifdef USE_IMGUI
     // ─── GPUパーティクル プレビュー窓を描画（Compute 完了後・ステージ束ね前）───
     // Compute 済みの生存バッファを VS 読み取り可能な状態のままプレビューVPで再描画する。
     // 後段のステージループ(PreRenderTexture)がオフスクリーンRTと全画面ビューポートを束ね直すため復元不要。
@@ -178,6 +197,26 @@ void DrawSystem::Draw(const ViewProjection &vp)
     }
     std::sort(sortedStages.begin(), sortedStages.end());
 
+    // GPUパーティクルの発光など、Compute フェーズで登録された動的ポイントライトを
+    // ここで定数バッファへ反映する。以降のシーン描画が同じフレームの光を拾える。
+    LightGroup *lightGroup = LightGroup::GetInstance();
+    lightGroup->CommitPointLights();
+
+    // ─── 粒子1個1個の光源化（ディファードON時のみ）───
+    // CPU側のライトをGPUバッファへ転送してから、生存粒子から光源を追記する。
+    // パーティクルの Compute は上で Execute + Wait 済みなので、生存バッファは確定している。
+    // ライトの中身はステージ共通なので、ステージループより前に1回だけ行う。
+    if (DeferredRenderer::GetInstance()->IsEnabled())
+    {
+        HAGINE_CPU_PROFILE("DS/ParticleLights");
+        ID3D12GraphicsCommandList *pCommandList = pDxCommon_->GetCommandList().Get();
+        int gpuLightGen = GpuProfiler::GetInstance()->OpenGraphics(pCommandList, "ParticleLightGen");
+        lightGroup->BeginGpuLightAppend(pCommandList);
+        ParticleCSEmitter::SubmitAllParticleLights(vp, pCommandList);
+        lightGroup->EndGpuLightAppend(pCommandList);
+        GpuProfiler::GetInstance()->Close(pCommandList, gpuLightGen);
+    }
+
     OffScreen *lastOffScreen = nullptr;
 
     // ステージループ（本描画の記録＋ポストエフェクト）を計測。
@@ -199,6 +238,33 @@ void DrawSystem::Draw(const ViewProjection &vp)
                 stageOS->BlitToOffScreen(lastOffScreen->GetFinalResultSrvIndex());
             }
 
+            DeferredRenderer *deferred = DeferredRenderer::GetInstance();
+
+            // ─── ディファード: G-Buffer パス ───
+            // 不透明の Object3d だけがここに描かれる（Object3d 側がパス状態を見て分岐する）。
+            // スカイボックス・スプライト・パーティクル・線は後段の前方描画へ回る。
+            if (deferred->IsEnabled())
+            {
+                HAGINE_CPU_PROFILE("DS/GBuffer");
+                int gpuGBuffer = GpuProfiler::GetInstance()->OpenGraphics(pDxCommon_->GetCommandList().Get(), "G-Buffer");
+                deferred->BeginGBufferPass(vp);
+                for (auto &entry : entries_)
+                {
+                    if (entry.enabled && entry.stageIndex == stageIdx)
+                    {
+                        entry.draw(vp);
+                    }
+                }
+                deferred->EndGBufferPass();
+                GpuProfiler::GetInstance()->Close(pDxCommon_->GetCommandList().Get(), gpuGBuffer);
+
+                int gpuLighting = GpuProfiler::GetInstance()->OpenGraphics(pDxCommon_->GetCommandList().Get(), "Deferred(cull+lighting)");
+                deferred->CullLights();
+                deferred->RenderLighting();
+                deferred->BeginForwardPass();
+                GpuProfiler::GetInstance()->Close(pDxCommon_->GetCommandList().Get(), gpuLighting);
+            }
+
             int gpuScene = GpuProfiler::GetInstance()->OpenGraphics(pDxCommon_->GetCommandList().Get(), "Scene(不透明+UI等)");
             for (auto &entry : entries_)
             {
@@ -214,16 +280,17 @@ void DrawSystem::Draw(const ViewProjection &vp)
             ParticleCSSpawner::GetInstance()->DrawGraphics(vp, stageIdx);
 
             // 注: GPUパーティクルエディタのエミッターは「プレビュー窓のみ」で確認する。
-            // 以前はここで DrawAllGraphics(vp) を呼び現在のシーン offscreen にも描画していたが、
+            // 以前はここで DrawAllGraphics(vp) を呼び現在のシーン pOffScreen にも描画していたが、
             // 編集中のパーティクルがゲームシーンに漏れて見えてしまうため撤去。
             // シミュレーション（DrawAllCompute）は上のフェーズで実行済みで、
             // 描画は RenderPreview()（プレビュー専用VP）だけが行う。
 
-#ifdef _DEBUG
+#ifdef USE_IMGUI
             if (stageIdx == 0)
             {
-                DrawLine3D::GetInstance()->Draw(vp);
+                // コライダーの線を積んでから描く（旧実装は順序が逆で1フレーム遅れていた）
                 pCollision_->DebugDraw(vp);
+                LineRenderer::GetInstance()->Render(vp);
             }
 #endif
 
@@ -289,10 +356,14 @@ void DrawSystem::Draw(const ViewProjection &vp)
 
 void DrawSystem::UpdateImGui(bool *open)
 {
-#ifdef _DEBUG
+#ifdef USE_IMGUI
     // 表示名は日本語、ウィンドウIDは "DrawSystem" のまま（保存済みレイアウトとの互換維持）
     if (ImGui::Begin("描画システム###DrawSystem", open, ImGuiWindowFlags_NoFocusOnAppearing))
     {
+        SectionHeader("[ ディファードレンダリング ]", DebugTheme::kAccentBlue);
+        DeferredRenderer::GetInstance()->DrawImGui();
+        ImGui::Spacing();
+
         SectionHeader("[ 描画エントリ ]", DebugTheme::kAccentBlue);
         ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kTextDim);
         ImGui::Text("登録: %zu 件", entries_.size());

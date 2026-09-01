@@ -199,6 +199,23 @@ class Input {
                                          const AABB &aabb = {Vector3(-1.0f, -1.0f, -1.0f), Vector3(1.0f, 1.0f, 1.0f)});
 
     /// <summary>
+    /// レイとOBB（有向境界ボックス）の衝突判定。
+    ///
+    /// RayIntersectAABBByMatrix はローカルAABBの8頂点をワールドへ変換してから
+    /// 「ワールド軸に平行な箱」を作り直して判定するため、対象が回転しているほど
+    /// 実際の形より大きな箱で当たってしまう。
+    /// こちらはレイの側をオブジェクトのローカル空間へ移してから判定するので、
+    /// 回転していても箱の形どおりに当たる。
+    /// </summary>
+    /// <param name="ray">ワールド空間のレイ</param>
+    /// <param name="worldMatrix">対象のワールド行列</param>
+    /// <param name="hitInfo">ヒット情報（出力）</param>
+    /// <param name="localBounds">対象のローカル空間AABB</param>
+    /// <returns>bool: 交差したか</returns>
+    static bool RayIntersectOBBByMatrix(const Ray &ray, const Matrix4x4 &worldMatrix, RayHitInfo &hitInfo,
+                                        const AABB &localBounds = {Vector3(-1.0f, -1.0f, -1.0f), Vector3(1.0f, 1.0f, 1.0f)});
+
+    /// <summary>
     /// レイとスフィアの衝突判定（BaseObject版）
     /// </summary>
     static bool RayIntersectSphere(const Ray &ray, BaseObject *targetObject, RayHitInfo &hitInfo,

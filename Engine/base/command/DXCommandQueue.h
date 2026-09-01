@@ -23,15 +23,15 @@ class DXCommandQueue
     /// <summary>
     /// 初期化（キュー・フェンス・待機イベントの生成）
     /// </summary>
-    /// <param name="device">デバイス</param>
+    /// <param name="pDevice">デバイス</param>
     /// <param name="type">キューの種類（DIRECT / COMPUTE）</param>
-    void Initialize(DXDevice *device, D3D12_COMMAND_LIST_TYPE type);
+    void Initialize(DXDevice *pDevice, D3D12_COMMAND_LIST_TYPE type);
 
     /// <summary>
     /// コマンドリストをGPUに送信する
     /// </summary>
-    /// <param name="commandList">実行するコマンドリスト</param>
-    void Execute(ID3D12CommandList *commandList);
+    /// <param name="pCommandList">実行するコマンドリスト</param>
+    void Execute(ID3D12CommandList *pCommandList);
 
     /// <summary>
     /// フェンスにシグナルを発行する

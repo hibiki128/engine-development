@@ -14,19 +14,19 @@ DXCommandQueue::~DXCommandQueue()
     }
 }
 
-void DXCommandQueue::Initialize(DXDevice *device, D3D12_COMMAND_LIST_TYPE type)
+void DXCommandQueue::Initialize(DXDevice *pDevice, D3D12_COMMAND_LIST_TYPE type)
 {
     HRESULT hr;
 
     // コマンドキューを生成する
     D3D12_COMMAND_QUEUE_DESC queueDesc{};
     queueDesc.Type = type;
-    hr = device->Get()->CreateCommandQueue(&queueDesc, IID_PPV_ARGS(&queue_));
+    hr = pDevice->Get()->CreateCommandQueue(&queueDesc, IID_PPV_ARGS(&queue_));
     // コマンドキューの生成がうまくいかなかったので起動できない
     assert(SUCCEEDED(hr));
 
     // 初期値0でフェンスを作る
-    hr = device->Get()->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&fence_));
+    hr = pDevice->Get()->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&fence_));
     assert(SUCCEEDED(hr));
     fenceCounter_ = 0;
 
@@ -35,9 +35,9 @@ void DXCommandQueue::Initialize(DXDevice *device, D3D12_COMMAND_LIST_TYPE type)
     assert(fenceEvent_ != nullptr);
 }
 
-void DXCommandQueue::Execute(ID3D12CommandList *commandList)
+void DXCommandQueue::Execute(ID3D12CommandList *pCommandList)
 {
-    ID3D12CommandList *lists[] = {commandList};
+    ID3D12CommandList *lists[] = {pCommandList};
     queue_->ExecuteCommandLists(1, lists);
 }
 

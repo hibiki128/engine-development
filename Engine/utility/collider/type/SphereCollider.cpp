@@ -1,6 +1,5 @@
 #include "SphereCollider.h"
-#include "line/DrawLine3D.h"
-#include <numbers>
+#include "line/LineRenderer.h"
 
 namespace Hagine {
 void SphereCollider::UpdateWorldTransform()
@@ -16,37 +15,9 @@ void SphereCollider::DebugDraw(const ViewProjection &viewProjection)
         return;
     }
 
-    const uint32_t kSubdivision = 10;
-    const float kLonEvery = 2.0f * std::numbers::pi_v<float> / kSubdivision;
-    const float kLatEvery = std::numbers::pi_v<float> / kSubdivision;
-
-    for (uint32_t latIndex = 0; latIndex < kSubdivision; ++latIndex)
-    {
-        float lat = -std::numbers::pi_v<float> / 2.0f + kLatEvery * latIndex;
-
-        for (uint32_t lonIndex = 0; lonIndex < kSubdivision; ++lonIndex)
-        {
-            float lon = lonIndex * kLonEvery;
-
-            Vector3 start = {
-                cachedSphere_.center.x + cachedSphere_.radius * std::cosf(lat) * std::cosf(lon),
-                cachedSphere_.center.y + cachedSphere_.radius * std::sinf(lat),
-                cachedSphere_.center.z + cachedSphere_.radius * std::cosf(lat) * std::sinf(lon)};
-
-            Vector3 end1 = {
-                cachedSphere_.center.x + cachedSphere_.radius * std::cosf(lat) * std::cosf(lon + kLonEvery),
-                cachedSphere_.center.y + cachedSphere_.radius * std::sinf(lat),
-                cachedSphere_.center.z + cachedSphere_.radius * std::cosf(lat) * std::sinf(lon + kLonEvery)};
-
-            Vector3 end2 = {
-                cachedSphere_.center.x + cachedSphere_.radius * std::cosf(lat + kLatEvery) * std::cosf(lon),
-                cachedSphere_.center.y + cachedSphere_.radius * std::sinf(lat + kLatEvery),
-                cachedSphere_.center.z + cachedSphere_.radius * std::cosf(lat + kLatEvery) * std::sinf(lon)};
-
-            DrawLine3D::GetInstance()->SetPoints(start, end1, color_);
-            DrawLine3D::GetInstance()->SetPoints(start, end2, color_);
-        }
-    }
+    // 3つの大円で表現する（旧実装の緯度経度メッシュ200本に対して48本）。
+    // 視錐台カリングと三角関数テーブルは LineRenderer 側で行われる。
+    LineRenderer::GetInstance()->AddSphere(cachedSphere_.center, cachedSphere_.radius, color_, 16);
 }
 
 void SphereCollider::SaveToJson()

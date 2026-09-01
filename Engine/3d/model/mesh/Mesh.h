@@ -58,7 +58,7 @@ class Mesh
 
   private:
     /// ===================================================
-    /// private varians
+    /// private variables
     /// ===================================================
 
     DirectXCommon *pDxCommon_; // DirectX共通クラス

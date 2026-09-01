@@ -29,7 +29,7 @@ class ObjColor
     /// </summary>
     void SetGraphicCommand(UINT rootParameterIndex) const;
 
-    const Vector4 GetColor()
+    const Vector4 GetColor() const
     {
         return color_;
     }

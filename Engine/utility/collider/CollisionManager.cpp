@@ -1,7 +1,7 @@
 #include "collider/CollisionManager.h"
 #include "MyMath.h"
 #include <algorithm>
-#ifdef _DEBUG
+#ifdef USE_IMGUI
 #include <imgui.h>
 #include <string>
 #include <vector>
@@ -11,7 +11,7 @@
 
 namespace Hagine {
 
-#ifdef _DEBUG
+#ifdef USE_IMGUI
 namespace {
 /// <summary>コライダー種別を日本語名に変換する</summary>
 const char *ColliderTypeName(ColliderType type)
@@ -46,38 +46,38 @@ AABB CylinderToAABB(CylinderCollider *cyl)
 }
 
 /// <summary>メッシュと任意形状のヒット判定（円柱はAABB近似）</summary>
-bool MeshIntersectShape(MeshCollider *mesh, ColliderBase *other)
+bool MeshIntersectShape(MeshCollider *pMesh, ColliderBase *other)
 {
     switch (other->GetType())
     {
     case ColliderType::Sphere:
-        return mesh->Intersect(static_cast<SphereCollider *>(other)->GetSphere());
+        return pMesh->Intersect(static_cast<SphereCollider *>(other)->GetSphere());
     case ColliderType::OBB:
-        return mesh->Intersect(static_cast<OBBCollider *>(other)->GetOBB());
+        return pMesh->Intersect(static_cast<OBBCollider *>(other)->GetOBB());
     case ColliderType::AABB:
-        return mesh->Intersect(static_cast<AABBCollider *>(other)->GetAABB());
+        return pMesh->Intersect(static_cast<AABBCollider *>(other)->GetAABB());
     case ColliderType::Cylinder:
-        return mesh->Intersect(CylinderToAABB(static_cast<CylinderCollider *>(other)));
+        return pMesh->Intersect(CylinderToAABB(static_cast<CylinderCollider *>(other)));
     case ColliderType::Mesh:
-        return mesh->Intersect(*static_cast<MeshCollider *>(other));
+        return pMesh->Intersect(*static_cast<MeshCollider *>(other));
     default:
         return false;
     }
 }
 
 /// <summary>形状をメッシュから押し出すMTV（円柱はAABB近似）。MTVは形状側を押し出す向き</summary>
-bool DepenetrateShapeFromMesh(ColliderBase *shape, MeshCollider *mesh, Vector3 &outMTV)
+bool DepenetrateShapeFromMesh(ColliderBase *shape, MeshCollider *pMesh, Vector3 &outMTV)
 {
     switch (shape->GetType())
     {
     case ColliderType::Sphere:
-        return mesh->Depenetrate(static_cast<SphereCollider *>(shape)->GetSphere(), outMTV);
+        return pMesh->Depenetrate(static_cast<SphereCollider *>(shape)->GetSphere(), outMTV);
     case ColliderType::OBB:
-        return mesh->Depenetrate(static_cast<OBBCollider *>(shape)->GetOBB(), outMTV);
+        return pMesh->Depenetrate(static_cast<OBBCollider *>(shape)->GetOBB(), outMTV);
     case ColliderType::AABB:
-        return mesh->Depenetrate(static_cast<AABBCollider *>(shape)->GetAABB(), outMTV);
+        return pMesh->Depenetrate(static_cast<AABBCollider *>(shape)->GetAABB(), outMTV);
     case ColliderType::Cylinder:
-        return mesh->Depenetrate(CylinderToAABB(static_cast<CylinderCollider *>(shape)), outMTV);
+        return pMesh->Depenetrate(CylinderToAABB(static_cast<CylinderCollider *>(shape)), outMTV);
     default:
         return false;
     }
@@ -319,38 +319,38 @@ void CylinderToXZShape(CylinderCollider *cyl, Vector3 &center, float &xzR, float
     bot = center.y - halfH;
 }
 } // namespace
-void CollisionManager::Register(ColliderBase *collider)
+void CollisionManager::Register(ColliderBase *pCollider)
 {
-    if (!collider)
+    if (!pCollider)
         return;
 
     // 既に登録済みなら二重登録しない（同一コライダーが複数回 Register されても1つだけ保持する）
-    if (collider->isRegistered_)
+    if (pCollider->isRegistered_)
         return;
 
-    const std::string &tag = collider->GetTag();
-    collidersByTag_[tag].push_back(collider);
-    collider->isRegistered_ = true; // 登録フラグを設定
+    const std::string &tag = pCollider->GetTag();
+    collidersByTag_[tag].push_back(pCollider);
+    pCollider->isRegistered_ = true; // 登録フラグを設定
 }
 
-void CollisionManager::Unregister(ColliderBase *collider)
+void CollisionManager::Unregister(ColliderBase *pCollider)
 {
-    if (!collider)
+    if (!pCollider)
         return;
 
-    const std::string &tag = collider->GetTag();
+    const std::string &tag = pCollider->GetTag();
     auto it = collidersByTag_.find(tag);
     if (it != collidersByTag_.end())
     {
         auto &colliders = it->second;
         colliders.erase(
-            std::remove(colliders.begin(), colliders.end(), collider),
+            std::remove(colliders.begin(), colliders.end(), pCollider),
             colliders.end());
     }
 
     for (auto it = collisionStates_.begin(); it != collisionStates_.end();)
     {
-        if (it->first.a == collider || it->first.b == collider)
+        if (it->first.a == pCollider || it->first.b == pCollider)
         {
             it = collisionStates_.erase(it);
         }
@@ -360,12 +360,12 @@ void CollisionManager::Unregister(ColliderBase *collider)
         }
     }
 
-    collider->isRegistered_ = false; // 登録フラグを解除
+    pCollider->isRegistered_ = false; // 登録フラグを解除
 }
 
-void CollisionManager::UpdateColliderTag(ColliderBase *collider, const std::string &oldTag, const std::string &newTag)
+void CollisionManager::UpdateColliderTag(ColliderBase *pCollider, const std::string &oldTag, const std::string &newTag)
 {
-    if (!collider)
+    if (!pCollider)
         return;
 
     // 旧タグのリストから削除
@@ -374,7 +374,7 @@ void CollisionManager::UpdateColliderTag(ColliderBase *collider, const std::stri
     {
         auto &colliders = oldIt->second;
         colliders.erase(
-            std::remove(colliders.begin(), colliders.end(), collider),
+            std::remove(colliders.begin(), colliders.end(), pCollider),
             colliders.end());
 
         // リストが空になったら、マップから削除
@@ -385,7 +385,7 @@ void CollisionManager::UpdateColliderTag(ColliderBase *collider, const std::stri
     }
 
     // 新タグのリストに追加
-    collidersByTag_[newTag].push_back(collider);
+    collidersByTag_[newTag].push_back(pCollider);
 }
 
 void CollisionManager::Clear()
@@ -404,25 +404,25 @@ void CollisionManager::UpdateColliders()
 {
     for (auto &[tag, colliders] : collidersByTag_)
     {
-        for (auto *collider : colliders)
+        for (auto *pCollider : colliders)
         {
-            if (!collider->IsEnabled())
+            if (!pCollider->IsEnabled())
             {
                 continue;
             }
 
-            collider->UpdateWorldTransform();
+            pCollider->UpdateWorldTransform();
 
-            if (collider->IsCollidingInCurrentFrame())
+            if (pCollider->IsCollidingInCurrentFrame())
             {
-                collider->SetHitColor();
+                pCollider->SetHitColor();
             }
             else
             {
-                collider->SetDefaultColor();
+                pCollider->SetDefaultColor();
             }
 
-            collider->ResetCollisionFlag();
+            pCollider->ResetCollisionFlag();
         }
     }
 }
@@ -526,9 +526,9 @@ bool CollisionManager::TestCollision(ColliderBase *a, ColliderBase *b)
     if (typeA == ColliderType::Mesh || typeB == ColliderType::Mesh)
     {
         bool aIsMesh = (typeA == ColliderType::Mesh);
-        auto *mesh = static_cast<MeshCollider *>(aIsMesh ? a : b);
+        auto *pMesh = static_cast<MeshCollider *>(aIsMesh ? a : b);
         ColliderBase *other = aIsMesh ? b : a;
-        return MeshIntersectShape(mesh, other);
+        return MeshIntersectShape(pMesh, other);
     }
 
     // Sphere - Sphere
@@ -655,15 +655,15 @@ void CollisionManager::DebugDraw(const ViewProjection &viewProjection)
     {
         for (auto &[tag, colliders] : collidersByTag_)
         {
-            for (auto *collider : colliders)
+            for (auto *pCollider : colliders)
             {
-                collider->DebugDraw(viewProjection);
+                pCollider->DebugDraw(viewProjection);
             }
         }
     }
 }
 
-#ifdef _DEBUG
+#ifdef USE_IMGUI
 void CollisionManager::ImGuiColliderInspector()
 {
     // ── 全体操作 ──
@@ -860,13 +860,13 @@ void CollisionManager::ImGuiColliderInspector()
             break;
         }
         case ColliderType::Mesh: {
-            auto *mesh = static_cast<MeshCollider *>(c);
-            ReadOnlyRow("三角形数", "%d", static_cast<int>(mesh->GetTriangleCount()));
-            if (!mesh->GetSourceModelPath().empty())
-                ReadOnlyRow("ソース", "%s", mesh->GetSourceModelPath().c_str());
-            bool wire = mesh->IsWireframeVisible();
+            auto *pMesh = static_cast<MeshCollider *>(c);
+            ReadOnlyRow("三角形数", "%d", static_cast<int>(pMesh->GetTriangleCount()));
+            if (!pMesh->GetSourceModelPath().empty())
+                ReadOnlyRow("ソース", "%s", pMesh->GetSourceModelPath().c_str());
+            bool wire = pMesh->IsWireframeVisible();
             if (ImGui::Checkbox("ワイヤーフレーム表示", &wire))
-                mesh->SetWireframeVisible(wire);
+                pMesh->SetWireframeVisible(wire);
             break;
         }
         }

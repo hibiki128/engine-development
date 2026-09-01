@@ -79,11 +79,10 @@ class SrvManager
     /// <summary>
     /// SRV生成(RenderTexture用)
     /// </summary>
-    /// <param name="srvIndex"></param>
-    /// <param name="pResource"></param>
-    /// <param name="numElements"></param>
-    /// <param name="structureByteStride"></param>
-    void CreateSRVforRenderTexture(uint32_t srvIndex, ID3D12Resource *pResource);
+    /// <param name="srvIndex">SRV番号</param>
+    /// <param name="pResource">対象リソース</param>
+    /// <param name="format">SRVのフォーマット。UNKNOWNならリソース自身のフォーマットを使う</param>
+    void CreateSRVforRenderTexture(uint32_t srvIndex, ID3D12Resource *pResource, DXGI_FORMAT format = DXGI_FORMAT_UNKNOWN);
 
     /// <summary>
     /// SRV生成(Depth用)
@@ -102,6 +101,15 @@ class SrvManager
     /// <param name="numElements"></param>
     /// <param name="structureByteStride"></param>
     void CreateUAVStructuredBuffer(uint32_t srvIndex, ID3D12Resource *pResource, UINT numElements, UINT structureByteStride);
+
+    /// <summary>
+    /// 2Dテクスチャ用のUAVを作る（コンピュートシェーダーの書き込み先）
+    /// ※ sRGB フォーマットには UAV を作れないので、リソースは非sRGBで生成しておくこと
+    /// </summary>
+    /// <param name="srvIndex">デスクリプタの番号</param>
+    /// <param name="pResource">対象リソース</param>
+    /// <param name="format">ビューのフォーマット</param>
+    void CreateUAVforTexture2D(uint32_t srvIndex, ID3D12Resource *pResource, DXGI_FORMAT format);
 
     /// <summary>
     /// インデックス割り当て

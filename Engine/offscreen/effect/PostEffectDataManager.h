@@ -10,7 +10,7 @@ class PostEffectDataManager
 {
   public:
     /// @brief エフェクトチェーンとDirectXCommonへのポインタを受け取り初期化する
-    void Initialize(PostEffectChain *chain, DirectXCommon *dxCommon);
+    void Initialize(PostEffectChain *chain, DirectXCommon *pDxCommon);
 
     /// @brief 指定ファイル名でエフェクトチェーンの状態を保存する
     void SaveData(const std::string &fileName) const;

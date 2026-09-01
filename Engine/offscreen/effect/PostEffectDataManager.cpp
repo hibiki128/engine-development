@@ -4,10 +4,10 @@
 #include "../utility/debug/imgui/ImGuiNotification.h"
 
 namespace Hagine {
-void PostEffectDataManager::Initialize(PostEffectChain *chain, DirectXCommon *dxCommon)
+void PostEffectDataManager::Initialize(PostEffectChain *chain, DirectXCommon *pDxCommon)
 {
     pChain_ = chain;
-    pDxCommon_ = dxCommon;
+    pDxCommon_ = pDxCommon;
 }
 
 void PostEffectDataManager::SaveData(const std::string &fileName) const

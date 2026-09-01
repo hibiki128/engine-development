@@ -25,8 +25,8 @@ class DsvManager
     /// <summary>
     /// 初期化（DSV用デスクリプタヒープの生成）
     /// </summary>
-    /// <param name="device">デバイス</param>
-    void Initialize(DXDevice *device);
+    /// <param name="pDevice">デバイス</param>
+    void Initialize(DXDevice *pDevice);
 
     /// <summary>
     /// 終了処理

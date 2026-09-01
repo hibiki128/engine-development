@@ -7,6 +7,7 @@
 #include <debug/log/Logger.h>
 #include <string/StringUtility.h>
 #include <cstdio>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <vector>
@@ -86,6 +87,71 @@ void TextureManager::LoadTexture(const std::string &filePath)
 
     pSrvManager_->CreateSRVforTexture2D(textureData.srvIndex, textureData.resource.Get(), textureData.metadata, UINT(textureData.metadata.mipLevels));
     ImGuiNotification::Post("テクスチャを読み込みました: " + filePath, {0.2f, 0.8f, 0.8f, 1.0f});
+}
+
+D3D12_GPU_DESCRIPTOR_HANDLE TextureManager::UpdateDynamicTexture(const std::string &key, const uint8_t *rgba, int width, int height)
+{
+    if (rgba == nullptr || width <= 0 || height <= 0)
+    {
+        return D3D12_GPU_DESCRIPTOR_HANDLE{};
+    }
+
+    // キー初出時のみSRVインデックスを確保する（以降は同じインデックスへ書き直す）
+    auto it = dynamicTextures_.find(key);
+    if (it == dynamicTextures_.end())
+    {
+        assert(pSrvManager_->CanAllocate());
+        TextureData fresh{};
+        fresh.srvIndex = pSrvManager_->Allocate() + kSRVIndexTop;
+        fresh.srvHandleCPU = pSrvManager_->GetCPUDescriptorHandle(fresh.srvIndex);
+        fresh.srvHandleGPU = pSrvManager_->GetGPUDescriptorHandle(fresh.srvIndex);
+        it = dynamicTextures_.emplace(key, std::move(fresh)).first;
+    }
+    TextureData &data = it->second;
+
+    // 直前のリソースはGPUが参照中の可能性があるため、すぐには捨てず数世代保持する
+    if (data.resource)
+        retiredDynamicResources_.push_back(data.resource);
+    if (data.intermediateResource)
+        retiredDynamicResources_.push_back(data.intermediateResource);
+    constexpr size_t kMaxRetired = 8; // NumFramesInFlight より十分大きく取る
+    if (retiredDynamicResources_.size() > kMaxRetired)
+    {
+        retiredDynamicResources_.erase(
+            retiredDynamicResources_.begin(),
+            retiredDynamicResources_.end() - kMaxRetired);
+    }
+
+    // メタデータを手動で組み立てる。スプライトはWIC FORCE_SRGBで読み込まれるため、
+    // 見た目を一致させる目的でプレビューもSRGBとして扱う。
+    DirectX::TexMetadata metadata{};
+    metadata.width = static_cast<size_t>(width);
+    metadata.height = static_cast<size_t>(height);
+    metadata.depth = 1;
+    metadata.arraySize = 1;
+    metadata.mipLevels = 1;
+    metadata.format = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
+    metadata.dimension = DirectX::TEX_DIMENSION_TEXTURE2D;
+
+    DirectX::ScratchImage scratchImage{};
+    HRESULT hr = scratchImage.Initialize2D(metadata.format, metadata.width, metadata.height, 1, 1);
+    assert(SUCCEEDED(hr));
+
+    const DirectX::Image *img = scratchImage.GetImages();
+    for (int y = 0; y < height; ++y)
+    {
+        std::memcpy(
+            img->pixels + y * img->rowPitch,
+            rgba + static_cast<size_t>(y) * width * 4,
+            static_cast<size_t>(width) * 4);
+    }
+
+    data.metadata = metadata;
+    data.resource = pDxCommon_->CreateTextureResource(metadata);
+    data.intermediateResource = pDxCommon_->UploadTextureData(data.resource, scratchImage);
+    pSrvManager_->CreateSRVforTexture2D(data.srvIndex, data.resource.Get(), metadata, 1);
+
+    return data.srvHandleGPU;
 }
 
 void TextureManager::LoadFontTexture(const std::string &fontFilePath, float fontSize, int atlasWidth, int atlasHeight)
@@ -195,10 +261,10 @@ void TextureManager::LoadFontTexture(const std::string &fontFilePath, float font
     ImGuiNotification::Post("フォントテクスチャを読み込みました: " + fontFilePath, {0.2f, 0.8f, 0.8f, 1.0f});
 }
 
-void TextureManager::Initialize(SrvManager *srvManager)
+void TextureManager::Initialize(SrvManager *pSrvManager)
 {
     pDxCommon_ = DirectXCommon::GetInstance();
-    pSrvManager_ = srvManager;
+    pSrvManager_ = pSrvManager;
     // SRVの数と同数
     textureDatas_.reserve(SrvManager::kMaxSRVCount);
 }
@@ -218,6 +284,14 @@ void TextureManager::Finalize()
         pSrvManager_->Free(pair.second.srvIndex - kSRVIndexTop);
     }
     fontDatas_.clear();
+
+    // 動的テクスチャのSRVインデックスを解放する
+    for (auto &pair : dynamicTextures_)
+    {
+        pSrvManager_->Free(pair.second.srvIndex - kSRVIndexTop);
+    }
+    dynamicTextures_.clear();
+    retiredDynamicResources_.clear();
 }
 
 uint32_t TextureManager::GetTextureIndexByFilePath(const std::string &filePath)

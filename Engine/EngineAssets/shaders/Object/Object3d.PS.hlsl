@@ -108,7 +108,9 @@ float SampleShadowPCF(float2 shadowUV, float shadowDepth)
 PixelShaderOutput main(VertexShaderOutput input)
 {
     float4 transformedUV = mul(float4(input.texcoord, 0.0f, 1.0f), gMaterial.uvTransform);
-    float4 textureColor = gTexture.Sample(gSampler, transformedUV.xy);
+    // インスタンシング描画の個体色をテクスチャ色へ畳み込む（以降の gMaterial.color * textureColor が
+    // そのまま「マテリアル色 × 個体色 × テクスチャ色」になる）。通常描画は白なので従来と同じ。
+    float4 textureColor = gTexture.Sample(gSampler, transformedUV.xy) * input.instanceColor;
     PixelShaderOutput output;
 
     // ── 法線マッピング（幾何法線を摂動）──────────────────

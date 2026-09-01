@@ -14,7 +14,7 @@ class SkyBox
 {
   private:
     /// ===========================================
-    /// private methods
+    /// private method
     /// ===========================================
     SkyBox() = default;
     ~SkyBox() = default;
@@ -30,7 +30,7 @@ class SkyBox
 
   public:
     /// ============================================
-    /// public methods
+    /// public method
     /// ============================================
 
     void Initialize(std::string filePath);

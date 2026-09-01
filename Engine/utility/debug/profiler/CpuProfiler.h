@@ -99,7 +99,7 @@ struct CpuProfileScope
 // ---- スコープ計測マクロ（Release では無効化して完全ノーコスト）----
 #define HAGINE_CPU_CONCAT_INNER(a, b) a##b
 #define HAGINE_CPU_CONCAT(a, b) HAGINE_CPU_CONCAT_INNER(a, b)
-#ifdef _DEBUG
+#ifdef USE_IMGUI
 #define HAGINE_CPU_PROFILE(name) ::Hagine::CpuProfileScope HAGINE_CPU_CONCAT(hagineCpuScope_, __LINE__)(name)
 #else
 #define HAGINE_CPU_PROFILE(name) ((void)0)

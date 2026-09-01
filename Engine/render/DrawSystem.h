@@ -59,13 +59,13 @@ class DrawSystem
     /// <summary>
     /// 初期化
     /// </summary>
-    /// <param name="dxCommon">DirectX共通処理</param>
-    /// <param name="srvManager">SRVマネージャー</param>
-    /// <param name="offscreen">オフスクリーン</param>
+    /// <param name="pDxCommon">DirectX共通処理</param>
+    /// <param name="pSrvManager">SRVマネージャー</param>
+    /// <param name="pOffScreen">オフスクリーン</param>
     /// <param name="sceneManager">シーンマネージャー</param>
     /// <param name="collision">衝突マネージャー</param>
-    void Initialize(DirectXCommon *dxCommon, SrvManager *srvManager,
-                    OffScreen *offscreen, SceneManager *sceneManager,
+    void Initialize(DirectXCommon *pDxCommon, SrvManager *pSrvManager,
+                    OffScreen *pOffScreen, SceneManager *sceneManager,
                     CollisionManager *collision);
 
     /// ===================================================

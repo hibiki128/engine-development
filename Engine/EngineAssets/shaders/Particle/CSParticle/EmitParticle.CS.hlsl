@@ -21,7 +21,10 @@ RWStructuredBuffer<int>  gFreeListTailIndex : register(u8);
 //   描画用 renderCompact にも同じ idx で書き、今フレームから即描画する（1F遅延なし）。
 RWStructuredBuffer<uint>      gAliveList     : register(u9);  // out: 生存slot indexリスト
 RWStructuredBuffer<uint>      gAliveCounter  : register(u10); // out: リスト長(append位置のアトミックカウンタ)
-RWStructuredBuffer<PDrawCore> gRenderCompact : register(u11); // out: 描画データ(詰めた順)
+RWStructuredBuffer<PDrawCore> gRenderCompact : register(u11); // out: 描画データ(視錐台カリング後の詰めた順)
+// GPU駆動カリング: 描画リストは生存リストと別カウンタ・別順序になる。
+RWStructuredBuffer<uint>      gVisibleCounter : register(u12); // out: 描画リスト長(=instanceCount)
+RWStructuredBuffer<uint>      gRenderSlot     : register(u13); // out: 描画順 -> 実 slot index
 StructuredBuffer<TriangleInfo> gTriangles : register(t0);
 StructuredBuffer<float> gTriangleCDF : register(t1);
 StructuredBuffer<EdgeInfo> gEdges : register(t2);
@@ -468,9 +471,25 @@ void main(uint3 DTid : SV_DispatchThreadID)
 
     // 生存リスト間接ディスパッチ: 新規粒子を out リストへ append する。
     //   これにより次フレームの Update がこの粒子を sim 対象にする。
-    //   renderCompact にも同じ idx で書き、今フレームから即描画する（drawCount=out カウンタ）。
     uint emitDst;
     InterlockedAdd(gAliveCounter[0], 1, emitDst);
     gAliveList[emitDst] = particleIndex;
-    gRenderCompact[emitDst] = dc;
+
+    // GPU駆動カリング: 視錐台に入っている粒子だけを描画リストへ詰める（今フレームから即描画）。
+    //   生存リストとは別カウンタなので、カリングされても sim からは外れない。
+    float3 emitScale = UnpackScale3(dc.scaleXY, dc.scaleZ);
+    bool emitVisible = (gSettings.enableFrustumCull == 0) ||
+                       IsSphereInFrustum(gSettings.frustumPlanes, dc.translate,
+                                         ParticleCullRadius(emitScale, dc.velocity,
+                                                            gSettings.frustumRadiusScale,
+                                                            gSettings.frustumStretchFactor));
+    if (emitVisible)
+    {
+        uint visDst;
+        InterlockedAdd(gVisibleCounter[0], 1, visDst);
+        gRenderCompact[visDst] = dc;
+        // 実 slot は回転グループだけが必要（VS の enableRotation と同条件・定数分岐）。
+        if (gSettings.enableRandomRotation != 0 || gSettings.enableRandomAngularVelocity != 0)
+            gRenderSlot[visDst] = particleIndex;
+    }
 }

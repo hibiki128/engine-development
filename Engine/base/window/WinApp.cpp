@@ -11,13 +11,13 @@ namespace Hagine {
 // ウィンドウプロシージャ
 LRESULT CALLBACK WinApp::WindowProc(HWND hwnd_, UINT msg, WPARAM wparam, LPARAM lparam)
 {
-#ifdef _DEBUG
+#ifdef USE_IMGUI
     // ImGui用ウィンドウプロシージャ呼び出し
     if (ImGui_ImplWin32_WndProcHandler(hwnd_, msg, wparam, lparam))
     {
         return true;
     }
-#endif // _DEBUG
+#endif // USE_IMGUI
        // メッセージに応じてゲーム固有の処理を行う
     switch (msg)
     {
@@ -78,7 +78,7 @@ void WinApp::Initialize()
     // ウィンドウの生成
     hwnd_ = CreateWindow(
         wc_.lpszClassName,                               // 利用するクラス名
-        L"4202_先端ウォーズ", // タイトルバーの文字
+        L"LE4B_20_ハギワラ_ヒビキ_スパーキングファイト", // タイトルバーの文字
         WS_OVERLAPPEDWINDOW,                             // よく見るウィンドウスタイル
         CW_USEDEFAULT,                                   // 表示X座標
         CW_USEDEFAULT,                                   // 表示Y座標

@@ -3,6 +3,7 @@
 #include "graphics/pipeline/PipelineManager.h"
 #include "graphics/srv/SrvManager.h"
 #include "graphics/texture/TextureManager.h"
+#include <render/deferred/DeferredRenderer.h>
 #include <shadow/ShadowMap.h>
 #include <MyMath.h>
 
@@ -60,23 +61,28 @@ void SkyBox::Update(const ViewProjection &viewProjection)
 
 void SkyBox::Draw(const ViewProjection &viewProjection)
 {
-    if (ShadowMap::GetInstance()->IsShadowPassActive())
+    // 空はライティングを受けないのでG-Bufferには載せず、前方描画フェーズで描く
+    if (ShadowMap::GetInstance()->IsShadowPassActive() ||
+        DeferredRenderer::GetInstance()->IsGBufferPassActive())
         return;
     Update(viewProjection);
-    ID3D12GraphicsCommandList *commandList = pDxCommon_->GetCommandList().Get();
+    ID3D12GraphicsCommandList *pCommandList = pDxCommon_->GetCommandList().Get();
     pPsoManager_->DrawCommonSetting(PipelineType::Skybox);
 
-    commandList->IASetVertexBuffers(0, 1, &vertexBufferView_);
-    commandList->IASetIndexBuffer(&indexBufferView_);
+    pCommandList->IASetVertexBuffers(0, 1, &vertexBufferView_);
+    pCommandList->IASetIndexBuffer(&indexBufferView_);
 
-    // SkyBoxData（ワールド行列）をb0に設定
-    commandList->SetGraphicsRootConstantBufferView(0, skyBoxResource_->GetGPUVirtualAddress());
-    // CameraData（ビュープロジェクション行列とカメラ位置）をb1に設定
-    commandList->SetGraphicsRootConstantBufferView(1, cameraResource_->GetGPUVirtualAddress());
-    // テクスチャをt0に設定
-    commandList->SetGraphicsRootDescriptorTable(2, pSrvManager_->GetGPUDescriptorHandle(textureIndex_));
+    const ShaderRootSignature *rootSignature = pPsoManager_->GetReflectedRootSignature(PipelineType::Skybox);
+    assert(rootSignature && "スカイボックスのルートシグネチャが未生成です");
 
-    commandList->DrawIndexedInstanced(UINT(indices_.size()), 1, 0, 0, 0);
+    // SkyBoxData（ワールド行列）を b0 に設定
+    pCommandList->SetGraphicsRootConstantBufferView(rootSignature->GetCbvIndex(0), skyBoxResource_->GetGPUVirtualAddress());
+    // CameraData（ビュープロジェクション行列とカメラ位置）を b1 に設定
+    pCommandList->SetGraphicsRootConstantBufferView(rootSignature->GetCbvIndex(1), cameraResource_->GetGPUVirtualAddress());
+    // テクスチャを t0 に設定
+    pCommandList->SetGraphicsRootDescriptorTable(rootSignature->GetSrvIndex(0), pSrvManager_->GetGPUDescriptorHandle(textureIndex_));
+
+    pCommandList->DrawIndexedInstanced(UINT(indices_.size()), 1, 0, 0, 0);
 }
 
 void SkyBox::CreateShape()

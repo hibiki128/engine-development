@@ -4,10 +4,10 @@
 
 namespace Hagine {
 
-void RtvManager::Initialize(DXDevice *device)
+void RtvManager::Initialize(DXDevice *pDevice)
 {
-    assert(device);
-    pDevice_ = device;
+    assert(pDevice);
+    pDevice_ = pDevice;
 
     // デスクリプタ1つ分のサイズを取得
     descriptorSize_ = pDevice_->Get()->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);

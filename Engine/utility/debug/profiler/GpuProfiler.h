@@ -34,16 +34,16 @@ class GpuProfiler
     void BeginFrame();
 
     /// Compute キュー用スパン開始。戻り値はハンドル（Close に渡す）。-1=無効/上限超過。
-    int OpenCompute(ID3D12GraphicsCommandList *cl, const char *label);
+    int OpenCompute(ID3D12GraphicsCommandList *pCommandList, const char *label);
     /// Graphics キュー用スパン開始。
-    int OpenGraphics(ID3D12GraphicsCommandList *cl, const char *label);
+    int OpenGraphics(ID3D12GraphicsCommandList *pCommandList, const char *label);
     /// スパン終了。Open の戻り値ハンドルを渡す。
-    void Close(ID3D12GraphicsCommandList *cl, int handle);
+    void Close(ID3D12GraphicsCommandList *pCommandList, int handle);
 
     /// Compute リストが閉じる前（ExecuteComputeCommands 前）に呼ぶ。
-    void ResolveCompute(ID3D12GraphicsCommandList *cl);
+    void ResolveCompute(ID3D12GraphicsCommandList *pCommandList);
     /// Graphics リストが閉じる前（PostDraw 前）に呼ぶ。
-    void ResolveGraphics(ID3D12GraphicsCommandList *cl);
+    void ResolveGraphics(ID3D12GraphicsCommandList *pCommandList);
 
     /// ImGui 表示（ラベル別 ms とキュー合計）。
     void DrawImGui();
@@ -58,8 +58,8 @@ class GpuProfiler
     GpuProfiler &operator=(const GpuProfiler &) = delete;
 
     void EnsureInit();
-    int Open(ID3D12GraphicsCommandList *cl, const char *label, bool isCompute);
-    void Resolve(ID3D12GraphicsCommandList *cl, bool isCompute);
+    int Open(ID3D12GraphicsCommandList *pCommandList, const char *label, bool isCompute);
+    void Resolve(ID3D12GraphicsCommandList *pCommandList, bool isCompute);
 
     static constexpr uint32_t kRing = 3;                             // リングバッファ段数（in-flight 2F + 余裕1）
     static constexpr uint32_t kMaxPairsPerFrame = 64;                // 1フレームに記録できるスパン上限

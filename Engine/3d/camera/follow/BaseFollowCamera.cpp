@@ -1,14 +1,14 @@
 #include "BaseFollowCamera.h"
 #include <Input.h>
+#include <camera/CameraManager.h>
 #include <cmath>
 
 namespace Hagine {
-void BaseFollowCamera::Init()
+void BaseFollowCamera::Init(const std::string &cameraName)
 {
-    // 遠クリップ面の設定と初期化
-    viewProjection_.farZ_ = 1100;
-    viewProjection_.Initialize();
-    worldTransform_.Initialize();
+    // カメラ本体は CameraManager が所有する（名前で切り替えられるようにするため）
+    pCamera_ = CameraManager::GetInstance()->Create(cameraName);
+    pCamera_->SetClipRange(0.1f, 1100.0f);
 
     // 追従パラメータの初期化
     yaw_ = 0.0f;
@@ -19,40 +19,36 @@ void BaseFollowCamera::Init()
 void BaseFollowCamera::Update()
 {
     // 追従対象が存在する場合のみ処理
-    if (pTarget_)
+    if (!pCamera_ || !pTarget_)
     {
-        // ユーザー入力によるカメラ回転の更新
-        Move();
-
-        // ターゲットの位置に基づいて、極座標系からカメラの座標を計算
-        Vector3 targetPosition = pTarget_->translation_;
-        worldTransform_.translation_.x = targetPosition.x + std::sin(yaw_) * distanceFromTarget_;
-        worldTransform_.translation_.z = targetPosition.z + std::cos(yaw_) * distanceFromTarget_;
-        worldTransform_.translation_.y = targetPosition.y + heightOffset_;
-
-        // カメラがターゲットを向くための回転角度(Y軸)を算出
-        Vector3 lookAt = targetPosition - worldTransform_.translation_;
-        worldTransform_.quateRotation_.y = std::atan2(lookAt.x, lookAt.z);
-
-        // ワールド行列の再計算
-        worldTransform_.UpdateMatrix();
+        return;
     }
 
-    // 自身の変換状態をビュープロジェクションに反映
-    viewProjection_.translation_ = worldTransform_.translation_;
-    viewProjection_.quateRotation_ = worldTransform_.quateRotation_;
-    viewProjection_.matWorld_ = worldTransform_.matWorld_;
+    // ユーザー入力によるカメラ回転の更新
+    Move();
 
-    // ビュー行列の最終計算
-    viewProjection_.UpdateMatrix();
+    // ターゲットの位置に基づいて、極座標系からカメラの座標を計算
+    const Vector3 targetPosition = pTarget_->translation_;
+    Vector3 cameraPosition;
+    cameraPosition.x = targetPosition.x + std::sin(yaw_) * distanceFromTarget_;
+    cameraPosition.z = targetPosition.z + std::cos(yaw_) * distanceFromTarget_;
+    cameraPosition.y = targetPosition.y + heightOffset_;
+
+    // 位置を決めてターゲットを向く（行列の計算はカメラ側が行う）
+    pCamera_->SetPosition(cameraPosition);
+    pCamera_->SetTarget(targetPosition);
 }
 
-void BaseFollowCamera::imgui()
+void BaseFollowCamera::DrawImGui()
 {
 #ifdef USE_IMGUI
     ImGui::Begin("FollowCamera");
-    ImGui::DragFloat3("wt position", &worldTransform_.translation_.x, 0.1f);
-    ImGui::DragFloat3("vp position", &viewProjection_.translation_.x, 0.1f);
+    if (pCamera_)
+    {
+        pCamera_->DrawImGui();
+    }
+    ImGui::DragFloat("ターゲットからの距離##followdistance", &distanceFromTarget_, 0.1f);
+    ImGui::DragFloat("高さオフセット##followheight", &heightOffset_, 0.1f);
     ImGui::End();
 #endif
 }

@@ -22,6 +22,9 @@ RWStructuredBuffer<uint> gAliveCounter : register(u10);
 // 描画コンパクション（u11）: 描画データ(DrawCore=40B)を詰めた順(instanceId順)に書き出す。
 // 描画VSはこれを順次読みして散乱gatherを排除する。
 RWStructuredBuffer<PDrawCore> gRenderCompact : register(u11);
+// GPU駆動カリング: 描画リストは生存リストと別カウンタ・別順序になる。
+RWStructuredBuffer<uint> gVisibleCounter : register(u12); // 描画リスト長(=instanceCount)
+RWStructuredBuffer<uint> gRenderSlot     : register(u13); // 描画順 -> 実 slot index
 StructuredBuffer<ParticleField> gFields : register(t0);
 StructuredBuffer<ParticleFieldSettingsOverrideData> gFieldsOverride : register(t1);
 // 生存リスト間接ディスパッチ: 前フレームの out リスト = 今フレームの in（処理対象）。
@@ -361,11 +364,24 @@ void SpawnTrailParticles(inout Particle p, int particleIndex, float3 currentPosi
 
         // 生存リスト間接ディスパッチ: 生成したトレイル子も out リストへ append する。
         //   in リスト経由でしか sim しない設計のため、append しないと子が処理も描画もされない。
-        //   renderCompact にも同じ idx で書き、子を今フレームから即描画する。
         uint trailDst;
         InterlockedAdd(gAliveCounter[0], 1, trailDst);
         gAliveList[trailDst] = (uint) trailIndex;
-        gRenderCompact[trailDst] = cdc;
+
+        // GPU駆動カリング: 子も視錐台に入っていれば描画リストへ詰めて今フレームから描く。
+        bool trailVisible = (gSettings.enableFrustumCull == 0) ||
+                            IsSphereInFrustum(gSettings.frustumPlanes, spawnPosition,
+                                              ParticleCullRadius(childInitialScale, cdc.velocity,
+                                                                 gSettings.frustumRadiusScale,
+                                                                 gSettings.frustumStretchFactor));
+        if (trailVisible)
+        {
+            uint trailVisDst;
+            InterlockedAdd(gVisibleCounter[0], 1, trailVisDst);
+            gRenderCompact[trailVisDst] = cdc;
+            if (gSettings.enableRandomRotation != 0 || gSettings.enableRandomAngularVelocity != 0)
+                gRenderSlot[trailVisDst] = (uint) trailIndex;
+        }
     }
 
     // capped のときは移動区間を全消費して lastTrailPosition を currentPosition まで進め、
@@ -942,11 +958,41 @@ void main(uint3 DTid : SV_DispatchThreadID)
         waveBase = WaveReadLaneFirst(waveBase);
         if (alive)
         {
-            uint dst = waveBase + laneOffset;
-            gAliveList[dst] = (uint) particleIndex;
+            gAliveList[waveBase + laneOffset] = (uint) particleIndex;
+        }
+    }
+
+    // =============================================
+    // 描画コンパクション（GPU駆動の視錐台カリング）
+    //   生存かつ視錐台に入っている粒子だけを描画リストへ詰める。詰めた数が
+    //   ExecuteIndirect の instanceCount になるので、画面外の粒子は VS すら起動しない。
+    //   生存リストとは別カウンタ＝別順序になるため、回転グループ用に実 slot も並べて書く。
+    // =============================================
+    bool visible = alive &&
+                   ((gSettings.enableFrustumCull == 0) ||
+                    IsSphereInFrustum(gSettings.frustumPlanes, p.translate,
+                                      ParticleCullRadius(p.scale, p.velocity,
+                                                         gSettings.frustumRadiusScale,
+                                                         gSettings.frustumStretchFactor)));
+    uint visibleInWave = WaveActiveCountBits(visible);
+    if (visibleInWave > 0)
+    {
+        uint visLaneOffset = WavePrefixCountBits(visible);
+        uint visWaveBase = 0;
+        if (WaveIsFirstLane())
+        {
+            InterlockedAdd(gVisibleCounter[0], visibleInWave, visWaveBase);
+        }
+        visWaveBase = WaveReadLaneFirst(visWaveBase);
+        if (visible)
+        {
+            uint vdst = visWaveBase + visLaneOffset;
             // 描画データを詰めた順に書き出す（odc は上の DrawCore 書き戻しで構築済み）。
             // 描画VSは gRenderCompact[instanceId] を順次読みできる。
-            gRenderCompact[dst] = odc;
+            gRenderCompact[vdst] = odc;
+            // 実 slot は回転グループだけが必要（VS の enableRotation と同条件・定数分岐）。
+            if (useRotation)
+                gRenderSlot[vdst] = (uint) particleIndex;
         }
     }
 }

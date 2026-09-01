@@ -32,12 +32,12 @@ class PostEffectChain
     /// @brief エフェクトを追加する
     /// @param mode        シェーダーモード
     /// @param name        識別用の名前
-    /// @param dxCommon    GPUバッファ生成のためのDirectXCommon
+    /// @param pDxCommon    GPUバッファ生成のためのDirectXCommon
     /// @param slotIndex   追加先スロット番号(-1で空きスロットに自動配置)
     /// @return 実際に配置されたスロット番号。失敗時は-1
     int AddEffect(ShaderMode mode,
                   const std::string &name,
-                  DirectXCommon *dxCommon,
+                  DirectXCommon *pDxCommon,
                   int slotIndex = -1);
 
     /// @brief スロット番号を指定して削除する
@@ -53,7 +53,7 @@ class PostEffectChain
     int RemoveAllEffectsByName(const std::string &name);
 
     /// @brief 全スロットをクリアする
-    void Clear(DirectXCommon *dxCommon = nullptr);
+    void Clear(DirectXCommon *pDxCommon = nullptr);
 
     // -------------------------------------------------------
     //  スロット操作

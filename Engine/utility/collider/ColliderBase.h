@@ -86,31 +86,31 @@ class ColliderBase
     /// <summary>
     /// 衝突した瞬間のコールバックを実行
     /// </summary>
-    /// <param name="other">衝突した相手のコライダー</param>
-    void TriggerCollisionEnter(ColliderBase *other)
+    /// <param name="pOther">衝突した相手のコライダー</param>
+    void TriggerCollisionEnter(ColliderBase *pOther)
     {
         if (onCollisionEnter_)
-            onCollisionEnter_(other);
+            onCollisionEnter_(pOther);
     }
 
     /// <summary>
     /// 衝突継続中のコールバックを実行
     /// </summary>
-    /// <param name="other">衝突した相手のコライダー</param>
-    void TriggerCollision(ColliderBase *other)
+    /// <param name="pOther">衝突した相手のコライダー</param>
+    void TriggerCollision(ColliderBase *pOther)
     {
         if (onCollision_)
-            onCollision_(other);
+            onCollision_(pOther);
     }
 
     /// <summary>
     /// 衝突が離れた瞬間のコールバックを実行
     /// </summary>
-    /// <param name="other">衝突した相手のコライダー</param>
-    void TriggerCollisionExit(ColliderBase *other)
+    /// <param name="pOther">衝突した相手のコライダー</param>
+    void TriggerCollisionExit(ColliderBase *pOther)
     {
         if (onCollisionExit_)
-            onCollisionExit_(other);
+            onCollisionExit_(pOther);
     }
 
     /// <summary>
@@ -166,11 +166,11 @@ class ColliderBase
     /// <summary>
     /// 指定コライダーと衝突すべきか（タグがマスクに含まれるか）を判定
     /// </summary>
-    /// <param name="other">判定対象のコライダー</param>
+    /// <param name="pOther">判定対象のコライダー</param>
     /// <returns>bool: 衝突対象なら true</returns>
-    bool ShouldCollideWith(const ColliderBase *other) const
+    bool ShouldCollideWith(const ColliderBase *pOther) const
     {
-        return collisionMask_.find(other->GetTag()) != collisionMask_.end();
+        return collisionMask_.find(pOther->GetTag()) != collisionMask_.end();
     }
 
     /// <summary>
@@ -305,7 +305,7 @@ class ColliderBase
     void SetRotationGetter(std::function<Quaternion()> func) { getRotationFunc_ = func; }
 
     bool isRegistered_ = false; // 登録済みフラグ
-#ifdef _DEBUG
+#ifdef USE_IMGUI
     /// <summary>
     /// ImGuiでタグ設定UIを表示
     /// </summary>
@@ -314,7 +314,7 @@ class ColliderBase
 
   protected:
     /// ===================================================
-    /// protected variants
+    /// protected variables
     /// ===================================================
 
     std::string name_;                              // 名前

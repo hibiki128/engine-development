@@ -1,6 +1,7 @@
 #include "Material.h"
 
 #include "fstream"
+#include <cstring>
 #include <graphics/srv/SrvManager.h>
 #include <graphics/texture/TextureManager.h>
 
@@ -22,6 +23,36 @@ void Material::PrimitiveInitialize(const PrimitiveType &type) {
     materialData_.textureFilePath = "debug/uvChecker.png";
 }
 
+size_t Material::ComputeDrawSignature() const {
+    // Draw() が定数バッファへ書き込む値と、バインドするテクスチャを混ぜ込む。
+    // color / enableLighting は呼び出し側（色はインスタンスごと・ライティングはバッチキー）で
+    // 扱うのでここには含めない。environmentCoefficient も reflect フラグから決まるので除外。
+    size_t hash = 0;
+    auto mix = [&hash](size_t value) {
+        // boost::hash_combine と同じ混ぜ方
+        hash ^= value + 0x9e3779b9 + (hash << 6) + (hash >> 2);
+    };
+    auto mixFloat = [&mix](float value) {
+        uint32_t bits = 0;
+        std::memcpy(&bits, &value, sizeof(bits));
+        mix(static_cast<size_t>(bits));
+    };
+
+    mix(materialData_.textureIndex);
+    mix(GetNormalMapIndex());
+    mixFloat(materialData_.shininess);
+    mixFloat(materialData_.uvPosition.x);
+    mixFloat(materialData_.uvPosition.y);
+    mixFloat(materialData_.uvSize.x);
+    mixFloat(materialData_.uvSize.y);
+    mixFloat(materialData_.uvRotate);
+    mix(materialData_.enableNormalMap ? 1u : 0u);
+    mix(materialData_.enableProceduralNormal ? 1u : 0u);
+    mixFloat(materialData_.normalStrength);
+    mixFloat(materialData_.proceduralScale);
+    return hash;
+}
+
 void Material::Draw(const Vector4 color, bool lighting) {
     pMaterialDataGPU_->color = color;
     pMaterialDataGPU_->enableLighting = lighting ? 1 : 0;
@@ -37,10 +68,17 @@ void Material::Draw(const Vector4 color, bool lighting) {
     pMaterialDataGPU_->normalStrength = materialData_.normalStrength;
     pMaterialDataGPU_->proceduralScale = materialData_.proceduralScale;
 
-    ID3D12GraphicsCommandList *commandList = pDxCommon_->GetCommandList().Get();
-    commandList->SetGraphicsRootConstantBufferView(0, materialResource_->GetGPUVirtualAddress());
+    ID3D12GraphicsCommandList *pCommandList = pDxCommon_->GetCommandList().Get();
 
-    SrvManager::GetInstance()->SetGraphicsRootDescriptorTable(2, materialData_.textureIndex);
+    // 通常描画・スキニング・G-Buffer など複数のパイプラインから呼ばれるので、
+    // 今バインドされているルートシグネチャからレジスタ番号で引く
+    const ShaderRootSignature *rootSignature = PipelineManager::GetInstance()->GetCurrentRootSignature();
+    assert(rootSignature && "マテリアルを使うパイプラインのルートシグネチャが未生成です");
+
+    pCommandList->SetGraphicsRootConstantBufferView(
+        rootSignature->GetCbvIndex(0, D3D12_SHADER_VISIBILITY_PIXEL), materialResource_->GetGPUVirtualAddress());
+    SrvManager::GetInstance()->SetGraphicsRootDescriptorTable(
+        rootSignature->GetSrvIndex(0, D3D12_SHADER_VISIBILITY_PIXEL), materialData_.textureIndex);
 }
 
 void Material::SetTexture(const std::string &texturePath) {
@@ -140,8 +178,7 @@ void Material::ClearNormalMap() {
     materialData_.normalMapFilePath.clear();
     materialData_.normalMapIndex = 0;
     materialData_.hasNormalMapTexture = false;
-    // 画像が無い状態で有効のままだと albedo を法線として読んでしまうため切る
-    materialData_.enableNormalMap = false;
+    // enableNormalMap は落とさない。画像未指定のまま有効なら albedo を法線として流用する
     UpdateGPUData();
 }
 } // namespace Hagine

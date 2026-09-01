@@ -106,10 +106,10 @@ Model *ModelManager::FindModel(const std::string &filePath)
     return nullptr;
 }
 
-void ModelManager::Initialize(SrvManager *srvManager, ModelCommon *modelCommon)
+void ModelManager::Initialize(SrvManager *pSrvManager, ModelCommon *modelCommon)
 {
     pModelCommon_ = modelCommon;
-    pSrvManager_ = srvManager;
+    pSrvManager_ = pSrvManager;
 }
 
 void ModelManager::Finalize()

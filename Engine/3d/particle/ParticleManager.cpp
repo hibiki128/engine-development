@@ -6,10 +6,10 @@
 #include <random>
 
 namespace Hagine {
-void ParticleManager::Initialize(SrvManager *srvManager)
+void ParticleManager::Initialize(SrvManager *pSrvManager)
 {
     pParticleCommon_ = ParticleCommon::GetInstance();
-    pSrvManager_ = srvManager;
+    pSrvManager_ = pSrvManager;
     randomEngine_.seed(seedGenerator_());
 }
 
@@ -136,7 +136,7 @@ void ParticleManager::Update(const ViewProjection &viewProjection)
                 else
                 {
                     particle.transform.eulerRotation_ =
-                        (1.0f - t) * particle.startRote + t * particle.endRote;
+                        (1.0f - t) * particle.startRotate + t * particle.endRotate;
                 }
 
                 if (particleSetting.isAcceMultiply)
@@ -338,9 +338,20 @@ void ParticleManager::Draw()
             pParticleCommon_->GetDxCommon()->GetCommandList()->IASetVertexBuffers(0, 1, &vertexBufferView);
             if (particleGroup->GetParticleGroupData().instanceCount > 0)
             {
-                pParticleCommon_->GetDxCommon()->GetCommandList()->SetGraphicsRootConstantBufferView(0, particleGroup->GetmaterialResource()->GetGPUVirtualAddress());
-                pSrvManager_->SetGraphicsRootDescriptorTable(1, particleGroup->GetParticleGroupData().instancingSRVIndex);
-                pSrvManager_->SetGraphicsRootDescriptorTable(2, particleGroup->GetParticleGroupData().materials[meshIndex].textureIndex);
+                // t0 は頂点シェーダー（インスタンスデータ）とピクセルシェーダー（テクスチャ）で
+                // 同じ番号の別リソースなので、可視性まで指定して引く
+                const ShaderRootSignature *rootSignature =
+                    PipelineManager::GetInstance()->GetReflectedRootSignature(PipelineType::Particle);
+                assert(rootSignature && "CPUパーティクルのルートシグネチャが未生成です");
+
+                pParticleCommon_->GetDxCommon()->GetCommandList()->SetGraphicsRootConstantBufferView(
+                    rootSignature->GetCbvIndex(0), particleGroup->GetmaterialResource()->GetGPUVirtualAddress());
+                pSrvManager_->SetGraphicsRootDescriptorTable(
+                    rootSignature->GetSrvIndex(0, D3D12_SHADER_VISIBILITY_VERTEX),
+                    particleGroup->GetParticleGroupData().instancingSRVIndex);
+                pSrvManager_->SetGraphicsRootDescriptorTable(
+                    rootSignature->GetSrvIndex(0, D3D12_SHADER_VISIBILITY_PIXEL),
+                    particleGroup->GetParticleGroupData().materials[meshIndex].textureIndex);
                 pParticleCommon_->GetDxCommon()->GetCommandList()->DrawIndexedInstanced(
                     UINT(meshes[meshIndex].indices.size()),
                     particleGroup->GetParticleGroupData().instanceCount,
@@ -499,8 +510,8 @@ Particle ParticleManager::MakeNewParticle(std::mt19937 &randomEngine_, const Par
     }
     else
     {
-        particle.startRote = setting.startRote;
-        particle.endRote = setting.endRote;
+        particle.startRotate = setting.startRotate;
+        particle.endRotate = setting.endRotate;
     }
 
     if (setting.isRandomColor)

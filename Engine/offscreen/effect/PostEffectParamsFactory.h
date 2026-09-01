@@ -9,7 +9,7 @@ namespace Hagine {
 class PostEffectParamsFactory
 {
   public:
-    static std::unique_ptr<IPostEffectParams> Create(ShaderMode mode, DirectXCommon *dxCommon)
+    static std::unique_ptr<IPostEffectParams> Create(ShaderMode mode, DirectXCommon *pDxCommon)
     {
         std::unique_ptr<IPostEffectParams> params;
 
@@ -66,13 +66,16 @@ class PostEffectParamsFactory
         case ShaderMode::Monochrome:
             params = std::make_unique<MonochromeParams>();
             break;
+        case ShaderMode::DepthOfField:
+            params = std::make_unique<DepthOfFieldParams>();
+            break;
         default:
             assert(false && "未対応のShaderModeです。PostEffectParamsFactory::Createにcaseを追加してください。");
             params = std::make_unique<NoneParams>();
             break;
         }
 
-        params->Initialize(dxCommon);
+        params->Initialize(pDxCommon);
         return params;
     }
 };

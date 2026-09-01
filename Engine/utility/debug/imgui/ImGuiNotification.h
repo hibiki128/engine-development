@@ -1,9 +1,9 @@
 #pragma once
 #include <string>
 #include <vector>
-#ifdef _DEBUG
+#ifdef USE_IMGUI
 #include <imgui.h>
-#endif // _DEBUG
+#endif // USE_IMGUI
 #include "type/Vector4.h"
 
 /// @brief ImGuiによる通知システム

@@ -6,7 +6,9 @@
 #include <type/Vector4.h>
 #include <graphics/texture/TextureManager.h>
 #include <asset/AssetPath.h>
-#ifdef _DEBUG
+#include <algorithm>
+#include <cmath>
+#ifdef USE_IMGUI
 #include "imgui.h"
 #include "utility/debug/imgui/AssetDragDrop.h" // テクスチャのD&D設定（ドロップ先）
 #endif
@@ -17,17 +19,38 @@
 namespace Hagine {
 namespace PostEffectParamsHelper {
 template <typename T>
-static void CreateConstantBuffer(DirectXCommon *dxCommon,
+static void CreateConstantBuffer(DirectXCommon *pDxCommon,
                                  Microsoft::WRL::ComPtr<ID3D12Resource> &resource,
                                  T **mappedData)
 {
     const UINT64 size = (sizeof(T) + 255) & ~255;
-    resource = dxCommon->CreateBufferResource(size);
+    resource = pDxCommon->CreateBufferResource(size);
     resource->Map(0, nullptr, reinterpret_cast<void **>(mappedData));
 }
+
+// ------------------------------------------------------------
+//  分離フィルタ（横→縦の2パス）で共有する定数バッファ
+// ------------------------------------------------------------
+// GaussianBlur.CS.hlsl の GaussianParams と同じ並びにすること。
+// ガウスとボックスは「重みが違うだけ」で構造が同じなので、シェーダーごと共有している。
+namespace SeparableBlur {
+// カーネル半径の上限。GaussianBlur.CS.hlsl の kMaxRadius と一致させること
+constexpr int kMaxRadius = 7;
+// 横方向→縦方向の2パス
+constexpr int kPassCount = 2;
+
+struct ComputeData
+{
+    int radius = 2;                              // カーネル半径
+    int direction = 0;                           // 0=横, 1=縦
+    int textureSize[2] = {0, 0};                 // 解像度
+    float weights[(kMaxRadius + 1 + 3) / 4 * 4] = {}; // 正規化済みの重み（float4詰め）
+};
+} // namespace SeparableBlur
+
 } // namespace PostEffectParamsHelper
 
-#ifdef _DEBUG
+#ifdef USE_IMGUI
 namespace PostEffectParamsHelper {
 /// <summary>
 /// テクスチャ選択UI（サムネ表示＋アセットブラウザからのドラッグ&ドロップ受け）。
@@ -123,19 +146,19 @@ class MonochromeParams : public IPostEffectParams
         float pad[3] = {};
     };
 
-    void Initialize(DirectXCommon *dxCommon) override
+    void Initialize(DirectXCommon *pDxCommon) override
     {
-        PostEffectParamsHelper::CreateConstantBuffer(dxCommon, resource_, &pData_);
+        PostEffectParamsHelper::CreateConstantBuffer(pDxCommon, resource_, &pData_);
         *pData_ = Data{};
     }
     ShaderMode GetMode() const override { return ShaderMode::Monochrome; }
-    void Apply(ID3D12GraphicsCommandList *cmd, SrvManager *, DirectXCommon *) override
+    void Apply(ID3D12GraphicsCommandList *pCommandList, SrvManager *, DirectXCommon *) override
     {
-        cmd->SetGraphicsRootConstantBufferView(1, resource_->GetGPUVirtualAddress());
+        pCommandList->SetGraphicsRootConstantBufferView(1, resource_->GetGPUVirtualAddress());
     }
     void DrawUI() override
     {
-#ifdef _DEBUG
+#ifdef USE_IMGUI
         ImGui::DragFloat("白黒の閾値", &pData_->threshold, 0.01f, 0.0f, 1.0f);
 #endif
     }
@@ -171,21 +194,21 @@ class VignetteParams : public IPostEffectParams
         Vector2 center = {0.5f, 0.5f};
     };
 
-    void Initialize(DirectXCommon *dxCommon) override
+    void Initialize(DirectXCommon *pDxCommon) override
     {
-        PostEffectParamsHelper::CreateConstantBuffer(dxCommon, resource_, &pData_);
+        PostEffectParamsHelper::CreateConstantBuffer(pDxCommon, resource_, &pData_);
         *pData_ = Data{};
     }
     ShaderMode GetMode() const override { return ShaderMode::Vignette; }
 
-    void Apply(ID3D12GraphicsCommandList *cmd, SrvManager *, DirectXCommon *) override
+    void Apply(ID3D12GraphicsCommandList *pCommandList, SrvManager *, DirectXCommon *) override
     {
-        cmd->SetGraphicsRootConstantBufferView(1, resource_->GetGPUVirtualAddress());
+        pCommandList->SetGraphicsRootConstantBufferView(1, resource_->GetGPUVirtualAddress());
     }
 
     void DrawUI() override
     {
-#ifdef _DEBUG
+#ifdef USE_IMGUI
         // ビネットの各パラメータ調整（強度・形状・位置）
         ImGui::DragFloat("強度", &pData_->strength, 0.01f, 0.0f, 3.0f);
         ImGui::DragFloat("半径", &pData_->radius, 0.01f, 0.0f, 2.0f);
@@ -231,21 +254,53 @@ class SmoothParams : public IPostEffectParams
         int pad[3] = {};
     };
 
-    void Initialize(DirectXCommon *dxCommon) override
+    void Initialize(DirectXCommon *pDxCommon) override
     {
-        PostEffectParamsHelper::CreateConstantBuffer(dxCommon, resource_, &pData_);
+        PostEffectParamsHelper::CreateConstantBuffer(pDxCommon, resource_, &pData_);
         *pData_ = Data{};
+        // 定数バッファはパスごとに別で持つ（使い回すと両パスが同じ向きで実行される）
+        for (int pass = 0; pass < kComputePassCount; ++pass)
+        {
+            PostEffectParamsHelper::CreateConstantBuffer(pDxCommon, computeResources_[pass], &pComputeData_[pass]);
+            *pComputeData_[pass] = PostEffectParamsHelper::SeparableBlur::ComputeData{};
+        }
     }
     ShaderMode GetMode() const override { return ShaderMode::Smooth; }
-    void Apply(ID3D12GraphicsCommandList *cmd, SrvManager *, DirectXCommon *) override
+    void Apply(ID3D12GraphicsCommandList *pCommandList, SrvManager *, DirectXCommon *) override
     {
-        cmd->SetGraphicsRootConstantBufferView(1, resource_->GetGPUVirtualAddress());
+        pCommandList->SetGraphicsRootConstantBufferView(1, resource_->GetGPUVirtualAddress());
     }
+
+    // ---- コンピュートシェーダー版 ----
+    // ボックスフィルタは「重みが一様なだけ」でガウスと構造が同じなので、
+    // 分離2パスのシェーダーをそのまま使い回し、重みを 1/(2r+1) で埋める。
+    // 旧PS版は kIndex3x3[3][3] を x<=3 で回しており配列外まで読んでいた（このバグも解消される）。
+    std::string GetComputeShaderFile() const override { return "OffScreen/GaussianBlur.CS.hlsl"; }
+    int GetComputePassCount() const override { return kComputePassCount; }
+
+    void ApplyCompute(ID3D12GraphicsCommandList *pCommandList, UINT cbvRootIndex, int passIndex,
+                      uint32_t textureWidth, uint32_t textureHeight) override
+    {
+        if (cbvRootIndex == UINT_MAX || passIndex < 0 || passIndex >= kComputePassCount)
+        {
+            return;
+        }
+        UpdateComputeWeights();
+
+        PostEffectParamsHelper::SeparableBlur::ComputeData *data = pComputeData_[passIndex];
+        data->direction = passIndex;
+        data->textureSize[0] = static_cast<int>(textureWidth);
+        data->textureSize[1] = static_cast<int>(textureHeight);
+        pCommandList->SetComputeRootConstantBufferView(cbvRootIndex,
+                                                       computeResources_[passIndex]->GetGPUVirtualAddress());
+    }
+
     void DrawUI() override
     {
-#ifdef _DEBUG
+#ifdef USE_IMGUI
         // カーネルサイズは奇数のみ有効なのでステップを2に設定
-        ImGui::DragInt("カーネルサイズ", &pData_->kernelSize, 2, 3, 15);
+        ImGui::DragInt("カーネルサイズ", &pData_->kernelSize, 2, 3, PostEffectParamsHelper::SeparableBlur::kMaxRadius * 2 + 1);
+        ImGui::TextDisabled("コンピュートシェーダーで横→縦の2パス実行");
 #endif
     }
     void Save(DataHandler *h, const std::string &p) const override { h->Save<int>(p + "kernelSize", pData_->kernelSize); }
@@ -253,6 +308,46 @@ class SmoothParams : public IPostEffectParams
 
     Data *GetData() { return pData_; }
     const Data *GetData() const { return pData_; }
+
+  private:
+    static constexpr int kComputePassCount = 2;
+
+    /// 一様な重み（ボックスフィルタ）を定数バッファへ書き込む
+    void UpdateComputeWeights()
+    {
+        int kernelSize = (std::max)(3, pData_->kernelSize);
+        if (kernelSize % 2 == 0)
+        {
+            ++kernelSize;
+        }
+        const int radius = (std::min)(PostEffectParamsHelper::SeparableBlur::kMaxRadius, (kernelSize - 1) / 2);
+        if (radius == cachedRadius_)
+        {
+            return;
+        }
+        cachedRadius_ = radius;
+
+        // 1次元の一様重み。中心1個＋左右それぞれ radius 個で合計 2*radius+1 個。
+        const float weight = 1.0f / static_cast<float>(radius * 2 + 1);
+        for (int pass = 0; pass < kComputePassCount; ++pass)
+        {
+            pComputeData_[pass]->radius = radius;
+            for (int i = 0; i <= radius; ++i)
+            {
+                pComputeData_[pass]->weights[i] = weight;
+            }
+            for (int i = radius + 1; i <= PostEffectParamsHelper::SeparableBlur::kMaxRadius; ++i)
+            {
+                pComputeData_[pass]->weights[i] = 0.0f;
+            }
+        }
+    }
+
+    Microsoft::WRL::ComPtr<ID3D12Resource> computeResources_[kComputePassCount];
+    PostEffectParamsHelper::SeparableBlur::ComputeData *pComputeData_[kComputePassCount] = {};
+    int cachedRadius_ = -1;
+
+  public:
 
   private:
     Microsoft::WRL::ComPtr<ID3D12Resource> resource_;
@@ -265,28 +360,67 @@ class SmoothParams : public IPostEffectParams
 class GaussianParams : public IPostEffectParams
 {
   public:
+    // 定数バッファの形と上限はボックスフィルタ（SmoothParams）と共有している
+    using ComputeData = PostEffectParamsHelper::SeparableBlur::ComputeData;
+    static constexpr int kMaxRadius = PostEffectParamsHelper::SeparableBlur::kMaxRadius;
+    static constexpr int kComputePassCount = PostEffectParamsHelper::SeparableBlur::kPassCount;
+
     struct Data
     {
         int kernelSize = 5;
         float sigma = 1.0f;
     };
 
-    void Initialize(DirectXCommon *dxCommon) override
+    void Initialize(DirectXCommon *pDxCommon) override
     {
-        PostEffectParamsHelper::CreateConstantBuffer(dxCommon, resource_, &pData_);
+        PostEffectParamsHelper::CreateConstantBuffer(pDxCommon, resource_, &pData_);
         *pData_ = Data{};
+        // 定数バッファはパスごとに別で持つ。
+        // ディスパッチはコマンドリストへ積まれるだけで実行はあとなので、
+        // 1つのバッファを使い回すと、両方のパスが「最後に書いた値」を読んでしまい、
+        // 横方向のぼかしが縦方向として2回実行されてしまう。
+        for (int pass = 0; pass < kComputePassCount; ++pass)
+        {
+            PostEffectParamsHelper::CreateConstantBuffer(pDxCommon, computeResources_[pass], &pComputeData_[pass]);
+            *pComputeData_[pass] = ComputeData{};
+        }
     }
     ShaderMode GetMode() const override { return ShaderMode::Gauss; }
-    void Apply(ID3D12GraphicsCommandList *cmd, SrvManager *, DirectXCommon *) override
+    void Apply(ID3D12GraphicsCommandList *pCommandList, SrvManager *, DirectXCommon *) override
     {
-        cmd->SetGraphicsRootConstantBufferView(1, resource_->GetGPUVirtualAddress());
+        pCommandList->SetGraphicsRootConstantBufferView(1, resource_->GetGPUVirtualAddress());
     }
+
+    // ---- コンピュートシェーダー版 ----
+    // 横方向→縦方向の2パスに分けることで、7x7なら 49タップ → 14タップになる。
+    std::string GetComputeShaderFile() const override { return "OffScreen/GaussianBlur.CS.hlsl"; }
+    int GetComputePassCount() const override { return kComputePassCount; }
+
+    void ApplyCompute(ID3D12GraphicsCommandList *pCommandList, UINT cbvRootIndex, int passIndex,
+                      uint32_t textureWidth, uint32_t textureHeight) override
+    {
+        if (cbvRootIndex == UINT_MAX || passIndex < 0 || passIndex >= kComputePassCount)
+        {
+            return;
+        }
+        // 重みはCPUで1回だけ計算する。シェーダー側で exp() を回さないのが狙い。
+        UpdateComputeWeights();
+
+        ComputeData *data = pComputeData_[passIndex];
+        data->direction = passIndex; // 0パス目=横, 1パス目=縦
+        data->textureSize[0] = static_cast<int>(textureWidth);
+        data->textureSize[1] = static_cast<int>(textureHeight);
+        pCommandList->SetComputeRootConstantBufferView(cbvRootIndex,
+                                                       computeResources_[passIndex]->GetGPUVirtualAddress());
+    }
+
     void DrawUI() override
     {
-#ifdef _DEBUG
+#ifdef USE_IMGUI
         // カーネルサイズは奇数のみ有効なのでステップを2に設定
-        ImGui::DragInt("カーネルサイズ", &pData_->kernelSize, 2, 3, 15);
+        ImGui::DragInt("カーネルサイズ", &pData_->kernelSize, 2, 3, kMaxRadius * 2 + 1);
         ImGui::DragFloat("シグマ", &pData_->sigma, 0.01f, 0.1f, 10.0f);
+        ImGui::TextDisabled("コンピュートシェーダーで横→縦の2パス実行");
 #endif
     }
     void Save(DataHandler *h, const std::string &p) const override
@@ -304,8 +438,63 @@ class GaussianParams : public IPostEffectParams
     const Data *GetData() const { return pData_; }
 
   private:
+    /// <summary>
+    /// ガウス係数を計算して定数バッファへ書き込む。
+    /// カーネルサイズとシグマが変わったときだけ再計算する。
+    /// </summary>
+    void UpdateComputeWeights()
+    {
+        // カーネルサイズは奇数に丸め、半径の上限でクランプする
+        int kernelSize = (std::max)(3, pData_->kernelSize);
+        if (kernelSize % 2 == 0)
+        {
+            ++kernelSize;
+        }
+        const int radius = (std::min)(kMaxRadius, (kernelSize - 1) / 2);
+        const float sigma = (std::max)(0.01f, pData_->sigma);
+
+        if (radius == cachedRadius_ && sigma == cachedSigma_)
+        {
+            return; // 変化していなければ計算しない
+        }
+        cachedRadius_ = radius;
+        cachedSigma_ = sigma;
+        // 以降、全パスぶんの定数バッファへ同じ係数を書き込む
+
+        // 1次元のガウス関数。2次元ガウスは1次元の積に分解できるので、
+        // 横方向・縦方向で同じ重みを使い回せる。
+        float sum = 0.0f;
+        float weights[kMaxRadius + 1] = {};
+        const float denominator = 2.0f * sigma * sigma;
+        for (int i = 0; i <= radius; ++i)
+        {
+            weights[i] = std::exp(-static_cast<float>(i * i) / denominator);
+            // 中心以外は左右（上下）の2箇所で使うので、正規化の合計には2回ぶん数える
+            sum += (i == 0) ? weights[i] : weights[i] * 2.0f;
+        }
+
+        for (int pass = 0; pass < kComputePassCount; ++pass)
+        {
+            pComputeData_[pass]->radius = radius;
+            for (int i = 0; i <= radius; ++i)
+            {
+                pComputeData_[pass]->weights[i] = weights[i] / sum;
+            }
+            for (int i = radius + 1; i <= kMaxRadius; ++i)
+            {
+                pComputeData_[pass]->weights[i] = 0.0f;
+            }
+        }
+    }
+
     Microsoft::WRL::ComPtr<ID3D12Resource> resource_;
     Data *pData_ = nullptr;
+
+    // パスごとに別の定数バッファを持つ（使い回すと両パスが同じ値を読んでしまう）
+    Microsoft::WRL::ComPtr<ID3D12Resource> computeResources_[kComputePassCount];
+    ComputeData *pComputeData_[kComputePassCount] = {};
+    int cachedRadius_ = -1;    // 係数を計算したときの半径
+    float cachedSigma_ = -1.0f; // 係数を計算したときのシグマ
 };
 
 // ============================================================
@@ -320,19 +509,19 @@ class OutlineEdgeParams : public IPostEffectParams
         float pad[3] = {};
     };
 
-    void Initialize(DirectXCommon *dxCommon) override
+    void Initialize(DirectXCommon *pDxCommon) override
     {
-        PostEffectParamsHelper::CreateConstantBuffer(dxCommon, resource_, &pData_);
+        PostEffectParamsHelper::CreateConstantBuffer(pDxCommon, resource_, &pData_);
         *pData_ = Data{};
     }
     ShaderMode GetMode() const override { return ShaderMode::Outline; }
-    void Apply(ID3D12GraphicsCommandList *cmd, SrvManager *, DirectXCommon *) override
+    void Apply(ID3D12GraphicsCommandList *pCommandList, SrvManager *, DirectXCommon *) override
     {
-        cmd->SetGraphicsRootConstantBufferView(1, resource_->GetGPUVirtualAddress());
+        pCommandList->SetGraphicsRootConstantBufferView(1, resource_->GetGPUVirtualAddress());
     }
     void DrawUI() override
     {
-#ifdef _DEBUG
+#ifdef USE_IMGUI
         ImGui::DragFloat("エッジ強度", &pData_->edgeStrength, 0.01f, 0.0f, 5.0f);
 #endif
     }
@@ -360,28 +549,81 @@ class OutlineDepthParams : public IPostEffectParams
         float pad[3] = {};
     };
 
-    void Initialize(DirectXCommon *dxCommon) override
+    /// CS版に渡す定数バッファ。DepthOutline.CS.hlsl の OutlineParams と同じ並びにすること
+    struct ComputeData
     {
-        PostEffectParamsHelper::CreateConstantBuffer(dxCommon, resource_, &pData_);
+        Matrix4x4 projectionInverse;
+        Vector4 outlineColor = {0.0f, 0.0f, 0.0f, 1.0f}; // 輪郭の色と濃さ
+        float threshold = 0.02f;                        // 輪郭とみなす相対深度差
+        float thickness = 1.0f;                         // 輪郭の太さ（ピクセル）
+        int textureSize[2] = {0, 0};
+    };
+
+    void Initialize(DirectXCommon *pDxCommon) override
+    {
+        PostEffectParamsHelper::CreateConstantBuffer(pDxCommon, resource_, &pData_);
         *pData_ = Data{};
+        PostEffectParamsHelper::CreateConstantBuffer(pDxCommon, computeResource_, &pComputeData_);
+        *pComputeData_ = ComputeData{};
     }
     ShaderMode GetMode() const override { return ShaderMode::Depth; }
 
-    void SetProjectionInverse(const Matrix4x4 &mat) { pData_->projectionInverse = mat; }
-
-    void Apply(ID3D12GraphicsCommandList *cmd, SrvManager *, DirectXCommon *) override
+    void SetProjectionInverse(const Matrix4x4 &mat)
     {
-        cmd->SetGraphicsRootConstantBufferView(1, resource_->GetGPUVirtualAddress());
+        pData_->projectionInverse = mat;
+        pComputeData_->projectionInverse = mat;
     }
+
+    void Apply(ID3D12GraphicsCommandList *pCommandList, SrvManager *, DirectXCommon *) override
+    {
+        pCommandList->SetGraphicsRootConstantBufferView(1, resource_->GetGPUVirtualAddress());
+    }
+
+    // ---- コンピュートシェーダー版 ----
+    // 旧PS版は生のビュー空間ZにPrewittを掛けていたため、距離によって輪郭の出方が変わっていた。
+    // CS版は深度差を中心深度で割った相対値で判定する。
+    std::string GetComputeShaderFile() const override { return "OffScreen/DepthOutline.CS.hlsl"; }
+    std::vector<ComputeInput> GetComputeInputs() const override
+    {
+        return {ComputeInput::SourceColor, ComputeInput::SceneDepth};
+    }
+    void ApplyCompute(ID3D12GraphicsCommandList *pCommandList, UINT cbvRootIndex, int,
+                      uint32_t textureWidth, uint32_t textureHeight) override
+    {
+        if (cbvRootIndex == UINT_MAX)
+        {
+            return;
+        }
+        pComputeData_->textureSize[0] = static_cast<int>(textureWidth);
+        pComputeData_->textureSize[1] = static_cast<int>(textureHeight);
+        pCommandList->SetComputeRootConstantBufferView(cbvRootIndex, computeResource_->GetGPUVirtualAddress());
+    }
+
     void DrawUI() override
     {
-#ifdef _DEBUG
-        // カーネルサイズは奇数のみ有効なのでステップを2に設定
-        ImGui::DragInt("カーネルサイズ", &pData_->kernelSize, 2, 3, 9);
+#ifdef USE_IMGUI
+        ImGui::ColorEdit3("輪郭の色", &pComputeData_->outlineColor.x);
+        ImGui::DragFloat("輪郭の濃さ", &pComputeData_->outlineColor.w, 0.01f, 0.0f, 1.0f);
+        ImGui::DragFloat("しきい値", &pComputeData_->threshold, 0.001f, 0.001f, 0.5f, "%.3f");
+        ImGui::SetItemTooltip("小さくすると輪郭が増えます。深度差を中心の深度で割った相対値なので、\n"
+                              "カメラからの距離が変わっても同じ設定で使えます");
+        ImGui::DragFloat("太さ(px)", &pComputeData_->thickness, 0.1f, 1.0f, 8.0f, "%.0f");
 #endif
     }
-    void Save(DataHandler *h, const std::string &p) const override { h->Save<int>(p + "kernelSize", pData_->kernelSize); }
-    void Load(DataHandler *h, const std::string &p) override { pData_->kernelSize = h->Load<int>(p + "kernelSize", 3); }
+    void Save(DataHandler *h, const std::string &p) const override
+    {
+        h->Save<int>(p + "kernelSize", pData_->kernelSize);
+        h->Save<Vector4>(p + "outlineColor", pComputeData_->outlineColor);
+        h->Save<float>(p + "threshold", pComputeData_->threshold);
+        h->Save<float>(p + "thickness", pComputeData_->thickness);
+    }
+    void Load(DataHandler *h, const std::string &p) override
+    {
+        pData_->kernelSize = h->Load<int>(p + "kernelSize", 3);
+        pComputeData_->outlineColor = h->Load<Vector4>(p + "outlineColor", Vector4(0.0f, 0.0f, 0.0f, 1.0f));
+        pComputeData_->threshold = h->Load<float>(p + "threshold", 0.02f);
+        pComputeData_->thickness = h->Load<float>(p + "thickness", 1.0f);
+    }
 
     Data *GetData() { return pData_; }
     const Data *GetData() const { return pData_; }
@@ -389,6 +631,94 @@ class OutlineDepthParams : public IPostEffectParams
   private:
     Microsoft::WRL::ComPtr<ID3D12Resource> resource_;
     Data *pData_ = nullptr;
+
+    Microsoft::WRL::ComPtr<ID3D12Resource> computeResource_;
+    ComputeData *pComputeData_ = nullptr;
+};
+
+// ============================================================
+//  Depth of Field（被写界深度）
+// ============================================================
+// ピント面から外れた場所ほどボカす。コンピュートシェーダー専用。
+class DepthOfFieldParams : public IPostEffectParams
+{
+  public:
+    /// DepthOfField.CS.hlsl の DofParams と同じ並びにすること
+    struct ComputeData
+    {
+        Matrix4x4 projectionInverse;
+        float focusDistance = 20.0f;  // ピントの合う距離
+        float focusRange = 8.0f;      // ピントが合っているとみなす前後の幅
+        float maxBlurRadius = 12.0f;  // 最大のボケ半径（ピクセル）
+        float falloff = 30.0f;        // ピント面から外れたときのボケの立ち上がり方
+        int textureSize[2] = {0, 0};
+        float padding[2] = {};
+    };
+
+    void Initialize(DirectXCommon *pDxCommon) override
+    {
+        PostEffectParamsHelper::CreateConstantBuffer(pDxCommon, computeResource_, &pComputeData_);
+        *pComputeData_ = ComputeData{};
+    }
+    ShaderMode GetMode() const override { return ShaderMode::DepthOfField; }
+
+    /// 深度をビュー空間へ戻すために射影行列の逆行列が要る。
+    /// カメラが変わるたびに設定すること（OutlineDepthParams と同じ扱い）。
+    void SetProjectionInverse(const Matrix4x4 &mat) { pComputeData_->projectionInverse = mat; }
+
+    // PS版は持たない（素通しのパイプラインがフォールバックとして割り当てられている）
+    void Apply(ID3D12GraphicsCommandList *, SrvManager *, DirectXCommon *) override {}
+
+    std::string GetComputeShaderFile() const override { return "OffScreen/DepthOfField.CS.hlsl"; }
+    std::vector<ComputeInput> GetComputeInputs() const override
+    {
+        return {ComputeInput::SourceColor, ComputeInput::SceneDepth};
+    }
+    void ApplyCompute(ID3D12GraphicsCommandList *pCommandList, UINT cbvRootIndex, int,
+                      uint32_t textureWidth, uint32_t textureHeight) override
+    {
+        if (cbvRootIndex == UINT_MAX)
+        {
+            return;
+        }
+        pComputeData_->textureSize[0] = static_cast<int>(textureWidth);
+        pComputeData_->textureSize[1] = static_cast<int>(textureHeight);
+        pCommandList->SetComputeRootConstantBufferView(cbvRootIndex, computeResource_->GetGPUVirtualAddress());
+    }
+
+    void DrawUI() override
+    {
+#ifdef USE_IMGUI
+        ImGui::DragFloat("ピント距離", &pComputeData_->focusDistance, 0.5f, 0.1f, 500.0f);
+        ImGui::SetItemTooltip("カメラからこの距離にある物にピントが合います");
+        ImGui::DragFloat("ピントの幅", &pComputeData_->focusRange, 0.5f, 0.0f, 200.0f);
+        ImGui::SetItemTooltip("この幅のあいだは完全にピントが合ったままになります");
+        ImGui::DragFloat("ボケの立ち上がり", &pComputeData_->falloff, 0.5f, 1.0f, 500.0f);
+        ImGui::SetItemTooltip("小さいほどピント面を外れた途端に強くボケます");
+        ImGui::DragFloat("最大ボケ半径(px)", &pComputeData_->maxBlurRadius, 0.5f, 1.0f, 40.0f);
+#endif
+    }
+    void Save(DataHandler *h, const std::string &p) const override
+    {
+        h->Save<float>(p + "focusDistance", pComputeData_->focusDistance);
+        h->Save<float>(p + "focusRange", pComputeData_->focusRange);
+        h->Save<float>(p + "maxBlurRadius", pComputeData_->maxBlurRadius);
+        h->Save<float>(p + "falloff", pComputeData_->falloff);
+    }
+    void Load(DataHandler *h, const std::string &p) override
+    {
+        pComputeData_->focusDistance = h->Load<float>(p + "focusDistance", 20.0f);
+        pComputeData_->focusRange = h->Load<float>(p + "focusRange", 8.0f);
+        pComputeData_->maxBlurRadius = h->Load<float>(p + "maxBlurRadius", 12.0f);
+        pComputeData_->falloff = h->Load<float>(p + "falloff", 30.0f);
+    }
+
+    ComputeData *GetData() { return pComputeData_; }
+    const ComputeData *GetData() const { return pComputeData_; }
+
+  private:
+    Microsoft::WRL::ComPtr<ID3D12Resource> computeResource_;
+    ComputeData *pComputeData_ = nullptr;
 };
 
 // ============================================================
@@ -404,19 +734,19 @@ class RadialBlurParams : public IPostEffectParams
         float pad = 0.0f;
     };
 
-    void Initialize(DirectXCommon *dxCommon) override
+    void Initialize(DirectXCommon *pDxCommon) override
     {
-        PostEffectParamsHelper::CreateConstantBuffer(dxCommon, resource_, &pData_);
+        PostEffectParamsHelper::CreateConstantBuffer(pDxCommon, resource_, &pData_);
         *pData_ = Data{};
     }
     ShaderMode GetMode() const override { return ShaderMode::Blur; }
-    void Apply(ID3D12GraphicsCommandList *cmd, SrvManager *, DirectXCommon *) override
+    void Apply(ID3D12GraphicsCommandList *pCommandList, SrvManager *, DirectXCommon *) override
     {
-        cmd->SetGraphicsRootConstantBufferView(1, resource_->GetGPUVirtualAddress());
+        pCommandList->SetGraphicsRootConstantBufferView(1, resource_->GetGPUVirtualAddress());
     }
     void DrawUI() override
     {
-#ifdef _DEBUG
+#ifdef USE_IMGUI
         // 中心座標はUV空間（0-1）、ブラー幅は視覚的に有効な範囲に制限
         ImGui::DragFloat2("中心", &pData_->center.x, 0.01f, 0.0f, 1.0f);
         ImGui::DragFloat("ブラー幅", &pData_->blurWidth, 0.001f, 0.0f, 0.2f);
@@ -458,19 +788,19 @@ class CinematicParams : public IPostEffectParams
         float pad[3] = {};
     };
 
-    void Initialize(DirectXCommon *dxCommon) override
+    void Initialize(DirectXCommon *pDxCommon) override
     {
-        PostEffectParamsHelper::CreateConstantBuffer(dxCommon, resource_, &pData_);
+        PostEffectParamsHelper::CreateConstantBuffer(pDxCommon, resource_, &pData_);
         *pData_ = Data{};
     }
     ShaderMode GetMode() const override { return ShaderMode::Cinematic; }
-    void Apply(ID3D12GraphicsCommandList *cmd, SrvManager *, DirectXCommon *) override
+    void Apply(ID3D12GraphicsCommandList *pCommandList, SrvManager *, DirectXCommon *) override
     {
-        cmd->SetGraphicsRootConstantBufferView(1, resource_->GetGPUVirtualAddress());
+        pCommandList->SetGraphicsRootConstantBufferView(1, resource_->GetGPUVirtualAddress());
     }
     void DrawUI() override
     {
-#ifdef _DEBUG
+#ifdef USE_IMGUI
         ImGui::DragFloat("コントラスト", &pData_->contrast, 0.01f, 0.0f, 3.0f);
         ImGui::DragFloat("彩度", &pData_->saturation, 0.01f, 0.0f, 3.0f);
         ImGui::DragFloat("明度", &pData_->brightness, 0.01f, 0.0f, 3.0f);
@@ -514,17 +844,17 @@ class DissolveParams : public IPostEffectParams
         float pad3[3] = {};
     };
 
-    void Initialize(DirectXCommon *dxCommon) override
+    void Initialize(DirectXCommon *pDxCommon) override
     {
-        PostEffectParamsHelper::CreateConstantBuffer(dxCommon, resource_, &pData_);
+        PostEffectParamsHelper::CreateConstantBuffer(pDxCommon, resource_, &pData_);
         *pData_ = Data{};
         // ノイズ(マスク)テクスチャを読み込んでおく（未指定なら既定のノイズ画像）
         TextureManager::GetInstance()->LoadTexture(maskTexturePath_);
     }
     ShaderMode GetMode() const override { return ShaderMode::Dissolve; }
-    void Apply(ID3D12GraphicsCommandList *cmd, SrvManager *srv, DirectXCommon *dxCommon) override
+    void Apply(ID3D12GraphicsCommandList *pCommandList, SrvManager *srv, DirectXCommon *pDxCommon) override
     {
-        cmd->SetGraphicsRootConstantBufferView(1, resource_->GetGPUVirtualAddress());
+        pCommandList->SetGraphicsRootConstantBufferView(1, resource_->GetGPUVirtualAddress());
         // t1: ノイズ(マスク)テクスチャをバインドする。
         // ルートシグネチャは t0=画面 / b0=パラメータ / t1=マスク の3パラメータ構成。
         if (srv)
@@ -536,7 +866,7 @@ class DissolveParams : public IPostEffectParams
     }
     void DrawUI() override
     {
-#ifdef _DEBUG
+#ifdef USE_IMGUI
         ImGui::DragFloat("閾値", &pData_->threshold, 0.01f, 0.0f, 1.0f);
         ImGui::DragFloat("エッジ幅", &pData_->edgeWidth, 0.001f, 0.0f, 0.5f);
         ImGui::ColorEdit3("エッジカラー", &pData_->edgeColor.x);
@@ -598,16 +928,16 @@ class RandomParams : public IPostEffectParams
         float pad[3] = {};
     };
 
-    void Initialize(DirectXCommon *dxCommon) override
+    void Initialize(DirectXCommon *pDxCommon) override
     {
-        PostEffectParamsHelper::CreateConstantBuffer(dxCommon, resource_, &pData_);
+        PostEffectParamsHelper::CreateConstantBuffer(pDxCommon, resource_, &pData_);
         *pData_ = Data{};
     }
     ShaderMode GetMode() const override { return ShaderMode::Random; }
     void UpdateTime(float dt) override { pData_->time += dt; }
-    void Apply(ID3D12GraphicsCommandList *cmd, SrvManager *, DirectXCommon *) override
+    void Apply(ID3D12GraphicsCommandList *pCommandList, SrvManager *, DirectXCommon *) override
     {
-        cmd->SetGraphicsRootConstantBufferView(1, resource_->GetGPUVirtualAddress());
+        pCommandList->SetGraphicsRootConstantBufferView(1, resource_->GetGPUVirtualAddress());
     }
     void DrawUI() override {}
     void Save(DataHandler *, const std::string &) const override {}
@@ -640,20 +970,20 @@ class FocusLineParams : public IPostEffectParams
         Vector4 lineColor = {0.0f, 0.0f, 0.0f, 1.0f};
     };
 
-    void Initialize(DirectXCommon *dxCommon) override
+    void Initialize(DirectXCommon *pDxCommon) override
     {
-        PostEffectParamsHelper::CreateConstantBuffer(dxCommon, resource_, &pData_);
+        PostEffectParamsHelper::CreateConstantBuffer(pDxCommon, resource_, &pData_);
         *pData_ = Data{};
     }
     ShaderMode GetMode() const override { return ShaderMode::FocusLine; }
     void UpdateTime(float dt) override { pData_->time += dt; }
-    void Apply(ID3D12GraphicsCommandList *cmd, SrvManager *, DirectXCommon *) override
+    void Apply(ID3D12GraphicsCommandList *pCommandList, SrvManager *, DirectXCommon *) override
     {
-        cmd->SetGraphicsRootConstantBufferView(1, resource_->GetGPUVirtualAddress());
+        pCommandList->SetGraphicsRootConstantBufferView(1, resource_->GetGPUVirtualAddress());
     }
     void DrawUI() override
     {
-#ifdef _DEBUG
+#ifdef USE_IMGUI
         // 線の本数・形状パラメータ
         ImGui::DragFloat("線の数", &pData_->lines, 1.0f, 10.0f, 500.0f);
         ImGui::DragFloat("線幅", &pData_->width, 0.001f, 0.001f, 0.1f);
@@ -706,19 +1036,19 @@ class PixelateParams : public IPostEffectParams
         float pad = 0.0f;
     };
 
-    void Initialize(DirectXCommon *dxCommon) override
+    void Initialize(DirectXCommon *pDxCommon) override
     {
-        PostEffectParamsHelper::CreateConstantBuffer(dxCommon, resource_, &pData_);
+        PostEffectParamsHelper::CreateConstantBuffer(pDxCommon, resource_, &pData_);
         *pData_ = Data{};
     }
     ShaderMode GetMode() const override { return ShaderMode::Pixelate; }
-    void Apply(ID3D12GraphicsCommandList *cmd, SrvManager *, DirectXCommon *) override
+    void Apply(ID3D12GraphicsCommandList *pCommandList, SrvManager *, DirectXCommon *) override
     {
-        cmd->SetGraphicsRootConstantBufferView(1, resource_->GetGPUVirtualAddress());
+        pCommandList->SetGraphicsRootConstantBufferView(1, resource_->GetGPUVirtualAddress());
     }
     void DrawUI() override
     {
-#ifdef _DEBUG
+#ifdef USE_IMGUI
         // ブロックサイズはピクセル単位、中心座標はUV空間（0-1）
         ImGui::DragFloat("ブロックサイズ", &pData_->blockSize, 0.001f, 0.001f, 1.0f);
         ImGui::DragFloat("中心X", &pData_->centerX, 0.01f, 0.0f, 1.0f);
@@ -764,20 +1094,20 @@ class RetroParams : public IPostEffectParams
         float resolutionX = 1280.0f;
     };
 
-    void Initialize(DirectXCommon *dxCommon) override
+    void Initialize(DirectXCommon *pDxCommon) override
     {
-        PostEffectParamsHelper::CreateConstantBuffer(dxCommon, resource_, &pData_);
+        PostEffectParamsHelper::CreateConstantBuffer(pDxCommon, resource_, &pData_);
         *pData_ = Data{};
     }
     ShaderMode GetMode() const override { return ShaderMode::Retro; }
     void UpdateTime(float dt) override { pData_->time += dt; }
-    void Apply(ID3D12GraphicsCommandList *cmd, SrvManager *, DirectXCommon *) override
+    void Apply(ID3D12GraphicsCommandList *pCommandList, SrvManager *, DirectXCommon *) override
     {
-        cmd->SetGraphicsRootConstantBufferView(1, resource_->GetGPUVirtualAddress());
+        pCommandList->SetGraphicsRootConstantBufferView(1, resource_->GetGPUVirtualAddress());
     }
     void DrawUI() override
     {
-#ifdef _DEBUG
+#ifdef USE_IMGUI
         ImGui::SliderFloat("ピクセルサイズ", &pData_->pixelSize, 1.0f, 32.0f);
         ImGui::SliderFloat("減色レベル", &pData_->colorLevels, 2.0f, 32.0f);
         ImGui::SliderFloat("スキャンライン強度", &pData_->scanlineIntensity, 0.0f, 1.0f);
@@ -829,22 +1159,68 @@ class BloomParams : public IPostEffectParams
         Vector2 texelSize = {1.0f / 1280.0f, 1.0f / 720.0f};
     };
 
-    void Initialize(DirectXCommon *dxCommon) override
+    /// CS版に渡す定数バッファ。Bloom.CS.hlsl の BloomParams と同じ並びにすること
+    struct ComputeData
     {
-        PostEffectParamsHelper::CreateConstantBuffer(dxCommon, resource_, &pData_);
+        float threshold = 0.8f;
+        float intensity = 1.0f;
+        int direction = 0; // 0=横（明るい部分の抽出も行う）, 1=縦（元画像へ加算）
+        int padding = 0;
+        int textureSize[2] = {0, 0};
+        int padding2[2] = {};
+    };
+
+    void Initialize(DirectXCommon *pDxCommon) override
+    {
+        PostEffectParamsHelper::CreateConstantBuffer(pDxCommon, resource_, &pData_);
         *pData_ = Data{};
+        // 定数バッファはパスごとに別で持つ（使い回すと両パスが同じ向きで実行される）
+        for (int pass = 0; pass < kComputePassCount; ++pass)
+        {
+            PostEffectParamsHelper::CreateConstantBuffer(pDxCommon, computeResources_[pass], &pComputeData_[pass]);
+            *pComputeData_[pass] = ComputeData{};
+        }
     }
     ShaderMode GetMode() const override { return ShaderMode::Bloom; }
-    void Apply(ID3D12GraphicsCommandList *cmd, SrvManager *, DirectXCommon *) override
+    void Apply(ID3D12GraphicsCommandList *pCommandList, SrvManager *, DirectXCommon *) override
     {
-        cmd->SetGraphicsRootConstantBufferView(1, resource_->GetGPUVirtualAddress());
+        pCommandList->SetGraphicsRootConstantBufferView(1, resource_->GetGPUVirtualAddress());
     }
+
+    // ---- コンピュートシェーダー版 ----
+    // 横方向（明るい部分の抽出込み）→ 縦方向（元画像へ加算）の2パス。25タップ → 10タップ。
+    std::string GetComputeShaderFile() const override { return "OffScreen/Bloom.CS.hlsl"; }
+    int GetComputePassCount() const override { return kComputePassCount; }
+    std::vector<ComputeInput> GetComputeInputs() const override
+    {
+        // t0 = そのパスの入力、t1 = 元画像（2パス目で加算するため中間結果に差し替えない）
+        return {ComputeInput::SourceColor, ComputeInput::EffectInput};
+    }
+
+    void ApplyCompute(ID3D12GraphicsCommandList *pCommandList, UINT cbvRootIndex, int passIndex,
+                      uint32_t textureWidth, uint32_t textureHeight) override
+    {
+        if (cbvRootIndex == UINT_MAX || passIndex < 0 || passIndex >= kComputePassCount)
+        {
+            return;
+        }
+        ComputeData *data = pComputeData_[passIndex];
+        data->threshold = pData_->threshold;
+        data->intensity = pData_->intensity;
+        data->direction = passIndex;
+        data->textureSize[0] = static_cast<int>(textureWidth);
+        data->textureSize[1] = static_cast<int>(textureHeight);
+        pCommandList->SetComputeRootConstantBufferView(cbvRootIndex,
+                                                       computeResources_[passIndex]->GetGPUVirtualAddress());
+    }
+
     void DrawUI() override
     {
-#ifdef _DEBUG
+#ifdef USE_IMGUI
         // 閾値は輝度の下限カット（0-1）、強度はブルーム量
         ImGui::DragFloat("閾値", &pData_->threshold, 0.01f, 0.0f, 1.0f);
         ImGui::DragFloat("強度", &pData_->intensity, 0.01f, 0.0f, 5.0f);
+        ImGui::TextDisabled("コンピュートシェーダーで横→縦の2パス実行");
 #endif
     }
     void Save(DataHandler *h, const std::string &p) const override
@@ -862,8 +1238,14 @@ class BloomParams : public IPostEffectParams
     const Data *GetData() const { return pData_; }
 
   private:
+    static constexpr int kComputePassCount = 2;
+
     Microsoft::WRL::ComPtr<ID3D12Resource> resource_;
     Data *pData_ = nullptr;
+
+    // パスごとに別の定数バッファを持つ（使い回すと両パスが同じ値を読んでしまう）
+    Microsoft::WRL::ComPtr<ID3D12Resource> computeResources_[kComputePassCount];
+    ComputeData *pComputeData_[kComputePassCount] = {};
 };
 
 // ============================================================
@@ -883,9 +1265,9 @@ class ShockwaveParams : public IPostEffectParams
         float active = 0.0f;
     };
 
-    void Initialize(DirectXCommon *dxCommon) override
+    void Initialize(DirectXCommon *pDxCommon) override
     {
-        PostEffectParamsHelper::CreateConstantBuffer(dxCommon, resource_, &pData_);
+        PostEffectParamsHelper::CreateConstantBuffer(pDxCommon, resource_, &pData_);
         *pData_ = Data{};
         // フレアテクスチャ読み込み（既ロードなら内部でスキップ）
         TextureManager::GetInstance()->LoadTexture(kFlareTexPath_);
@@ -903,18 +1285,18 @@ class ShockwaveParams : public IPostEffectParams
             }
         }
     }
-    void Apply(ID3D12GraphicsCommandList *cmd, SrvManager *, DirectXCommon *) override
+    void Apply(ID3D12GraphicsCommandList *pCommandList, SrvManager *, DirectXCommon *) override
     {
         // 専用RootSig: [0]=srcRT(Renderer側で設定済), [1]=flareTex, [2]=cbuffer
         // GetSrvHandleGPU は内部 prepend しないのでフルパス(＝マップキー)で渡す
         const std::string fullPath = AssetPath::Image(kFlareTexPath_);
         auto flareGpu = TextureManager::GetInstance()->GetSrvHandleGPU(fullPath);
-        cmd->SetGraphicsRootDescriptorTable(1, flareGpu);
-        cmd->SetGraphicsRootConstantBufferView(2, resource_->GetGPUVirtualAddress());
+        pCommandList->SetGraphicsRootDescriptorTable(1, flareGpu);
+        pCommandList->SetGraphicsRootConstantBufferView(2, resource_->GetGPUVirtualAddress());
     }
     void DrawUI() override
     {
-#ifdef _DEBUG
+#ifdef USE_IMGUI
         ImGui::SliderFloat2("中心(UV)", &pData_->center.x, 0.0f, 1.0f);
         ImGui::SliderFloat("持続時間", &pData_->duration, 0.1f, 2.0f);
         ImGui::SliderFloat("フラッシュ強度", &pData_->amplitude, 0.0f, 8.0f, "%.2f");

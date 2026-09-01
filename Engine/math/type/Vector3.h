@@ -142,4 +142,15 @@ struct Vector3 final
             x * other.y - y * other.x);
     }
 };
+
+/// ===================================================
+/// よく使うベクトル定数
+/// 成分ごとに 0.0f / 1.0f の定数を作らず、意味のある単位で参照する
+/// ===================================================
+
+inline constexpr Vector3 kVector3Zero = {0.0f, 0.0f, 0.0f};  ///< ゼロベクトル
+inline constexpr Vector3 kVector3One = {1.0f, 1.0f, 1.0f};   ///< 全成分1のベクトル
+inline constexpr Vector3 kWorldRight = {1.0f, 0.0f, 0.0f};   ///< ワールドの右方向(+X)
+inline constexpr Vector3 kWorldUp = {0.0f, 1.0f, 0.0f};      ///< ワールドの上方向(+Y)
+inline constexpr Vector3 kWorldForward = {0.0f, 0.0f, 1.0f}; ///< ワールドの前方向(+Z)
 } // namespace Hagine

@@ -1,10 +1,10 @@
 #include "MotionEditor.h"
 #include "utility/debug/imgui/ImGuiNotification.h"
-#ifdef _DEBUG
+#ifdef USE_IMGUI
 #include "imgui.h"
-#endif // _DEBUG
+#endif // USE_IMGUI
 #include "MyMath.h"
-#include <line/DrawLine3D.h>
+#include <line/LineRenderer.h>
 
 namespace Hagine {
 const float MotionEditor::ATTACK_END_INTERVAL = 0.1f;
@@ -86,12 +86,12 @@ void MotionEditor::Finalize()
     attackEndIntervals_.clear();
 }
 
-void MotionEditor::Register(BaseObject *object)
+void MotionEditor::Register(BaseObject *pObject)
 {
-    if (!object)
+    if (!pObject)
         return;
 
-    std::string name = object->GetName();
+    std::string name = pObject->GetName();
 
     // 既に登録済みかチェック
     if (motions_.find(name) != motions_.end())
@@ -101,9 +101,39 @@ void MotionEditor::Register(BaseObject *object)
 
     // 新しくモーションを登録
     motions_[name] = Motion();
-    motions_[name].target = object;
+    motions_[name].pTarget = pObject;
     motions_[name].objectName = name;
     ImGuiNotification::Post("モーションエディタに登録しました: " + name, {0.4f, 0.8f, 1.0f, 1.0f});
+}
+
+void MotionEditor::Unregister(BaseObject *pObject)
+{
+    if (!pObject)
+        return;
+
+    // 名前ではなく実体で引く。改名されていても取り残しが出ないようにするため。
+    for (auto it = motions_.begin(); it != motions_.end();)
+    {
+        if (it->second.pTarget == pObject)
+        {
+            if (selectedName_ == it->first)
+            {
+                selectedName_.clear();
+                selectedControlPoint_ = -1;
+            }
+            it = motions_.erase(it);
+        }
+        else
+        {
+            ++it;
+        }
+    }
+
+    // 攻撃モーションの進行状態もオブジェクト単位で持っているので一緒に落とす
+    comboStartPositions_.erase(pObject);
+    comboStartRotations_.erase(pObject);
+    comboStartScales_.erase(pObject);
+    attackEndIntervals_.erase(pObject);
 }
 
 void MotionEditor::CleanupFinishedTemporaryMotions()
@@ -159,20 +189,20 @@ bool MotionEditor::IsFinished(const std::string &objectName)
     return GetMotionStatus(objectName) == MotionStatus::Finished;
 }
 
-std::string MotionEditor::GetTemporaryMotionName(BaseObject *target, const std::string &fileName)
+std::string MotionEditor::GetTemporaryMotionName(BaseObject *pTarget, const std::string &fileName)
 {
-    return "temp_" + target->GetName() + "_" + fileName;
+    return "temp_" + pTarget->GetName() + "_" + fileName;
 }
 
 void MotionEditor::ResetInitialPosition(const std::string &objectName)
 {
     auto it = motions_.find(objectName);
-    if (it != motions_.end() && it->second.target)
+    if (it != motions_.end() && it->second.pTarget)
     {
         Motion &motion = it->second;
-        motion.initialPos = motion.target->GetLocalPosition();
-        motion.initialRot = motion.target->GetLocalRotation().ToEulerAngles();
-        motion.initialScale = motion.target->GetLocalScale();
+        motion.initialPos = motion.pTarget->GetLocalPosition();
+        motion.initialRot = motion.pTarget->GetLocalRotation().ToEulerAngles();
+        motion.initialScale = motion.pTarget->GetLocalScale();
         motion.hasInitialTransform = true;
     }
 }
@@ -247,41 +277,41 @@ Vector3 MotionEditor::CatmullRomInterpolation(const std::vector<Vector3> &points
     return result;
 }
 
-Matrix4x4 MotionEditor::GetParentInverseWorldMatrix(BaseObject *object)
+Matrix4x4 MotionEditor::GetParentInverseWorldMatrix(BaseObject *pObject)
 {
-    if (!object || !object->GetParent())
+    if (!pObject || !pObject->GetParent())
     {
         return MakeIdentity4x4();
     }
 
     // 親のワールド変換行列の逆行列を返す
-    Matrix4x4 parentWorldMatrix = object->GetParent()->GetWorldTransform()->matWorld_;
+    Matrix4x4 parentWorldMatrix = pObject->GetParent()->GetWorldTransform()->matWorld_;
     return Inverse(parentWorldMatrix);
 }
 
-Vector3 MotionEditor::GetLocalControlPointPosition(BaseObject *object, const Vector3 &worldPos)
+Vector3 MotionEditor::GetLocalControlPointPosition(BaseObject *pObject, const Vector3 &worldPos)
 {
-    if (!object || !object->GetParent())
+    if (!pObject || !pObject->GetParent())
     {
         return worldPos;
     }
 
-    Matrix4x4 parentInverseMatrix = GetParentInverseWorldMatrix(object);
+    Matrix4x4 parentInverseMatrix = GetParentInverseWorldMatrix(pObject);
     Vector4 worldPos4 = {worldPos.x, worldPos.y, worldPos.z, 1.0f};
     Vector4 localPos4 = Transformation(worldPos4, parentInverseMatrix);
 
     return {localPos4.x, localPos4.y, localPos4.z};
 }
 
-Vector3 MotionEditor::TransformLocalControlPointToWorld(BaseObject *object, const Vector3 &localPos)
+Vector3 MotionEditor::TransformLocalControlPointToWorld(BaseObject *pObject, const Vector3 &localPos)
 {
-    if (!object || !object->GetParent())
+    if (!pObject || !pObject->GetParent())
     {
         return localPos;
     }
 
     // 親のワールド行列で変換
-    Matrix4x4 parentWorldMatrix = object->GetParent()->GetWorldTransform()->matWorld_;
+    Matrix4x4 parentWorldMatrix = pObject->GetParent()->GetWorldTransform()->matWorld_;
     Vector4 localPos4 = {localPos.x, localPos.y, localPos.z, 1.0f};
     Vector4 worldPos4 = Transformation(localPos4, parentWorldMatrix);
 
@@ -319,7 +349,7 @@ void MotionEditor::Update(float deltaTime)
     // モーションの更新
     for (auto &[name, motion] : motions_)
     {
-        if (!motion.target || motion.status != MotionStatus::Playing)
+        if (!motion.pTarget || motion.status != MotionStatus::Playing)
         {
             continue;
         }
@@ -327,9 +357,9 @@ void MotionEditor::Update(float deltaTime)
         // 初回のみ初期状態を記録
         if (!motion.hasInitialTransform)
         {
-            motion.initialPos = motion.target->GetLocalPosition();
-            motion.initialRot = motion.target->GetLocalRotation().ToEulerAngles();
-            motion.initialScale = motion.target->GetLocalScale();
+            motion.initialPos = motion.pTarget->GetLocalPosition();
+            motion.initialRot = motion.pTarget->GetLocalRotation().ToEulerAngles();
+            motion.initialScale = motion.pTarget->GetLocalScale();
             motion.hasInitialTransform = true;
         }
 
@@ -343,10 +373,10 @@ void MotionEditor::Update(float deltaTime)
 
             if (motion.isTemporary)
             {
-                SetAttackEndInterval(motion.target, ATTACK_END_INTERVAL);
+                SetAttackEndInterval(motion.pTarget, ATTACK_END_INTERVAL);
                 if (motion.returnToOriginal)
                 {
-                    ReturnToComboStart(motion.target);
+                    ReturnToComboStart(motion.pTarget);
                 }
             }
             continue;
@@ -357,24 +387,24 @@ void MotionEditor::Update(float deltaTime)
         if (motion.useCatmullRom && motion.controlPoints.size() >= 4)
         {
             Vector3 localOffset = CatmullRomInterpolation(motion.controlPoints, t);
-            motion.target->GetLocalPosition() = motion.basePos + localOffset;
+            motion.pTarget->GetLocalPosition() = motion.basePos + localOffset;
         }
         else
         {
             float easedT = ApplyMotionEasing(motion.easingType, t, 1.0f);
             Vector3 actualStartPos = motion.basePos + motion.startPosOffset;
             Vector3 actualEndPos = motion.basePos + motion.endPosOffset;
-            motion.target->GetLocalPosition() = Lerp(actualStartPos, actualEndPos, easedT);
+            motion.pTarget->GetLocalPosition() = Lerp(actualStartPos, actualEndPos, easedT);
         }
 
         float easedT = ApplyMotionEasing(motion.easingType, t, 1.0f);
         Quaternion interpolatedRot = Slerp(motion.actualStartRot, motion.actualEndRot, easedT);
-        motion.target->GetWorldTransform()->quateRotation_ = interpolatedRot;
-        motion.target->GetLocalScale() = Lerp(motion.actualStartScale, motion.actualEndScale, easedT);
+        motion.pTarget->GetWorldTransform()->quaternionRotation_ = interpolatedRot;
+        motion.pTarget->GetLocalScale() = Lerp(motion.actualStartScale, motion.actualEndScale, easedT);
 
         // コライダー制御
         bool enable = motion.currentTime >= motion.colliderOnTime && motion.currentTime <= motion.colliderOffTime;
-        auto &colliders = motion.target->GetColliders();
+        auto &colliders = motion.pTarget->GetColliders();
         for (auto &collider : colliders)
         {
             if (collider)
@@ -392,7 +422,7 @@ void MotionEditor::Update(float deltaTime)
 void MotionEditor::Play(const std::string &jsonName)
 {
     auto it = motions_.find(jsonName);
-    if (it == motions_.end() || !it->second.target)
+    if (it == motions_.end() || !it->second.pTarget)
     {
         return;
     }
@@ -400,15 +430,15 @@ void MotionEditor::Play(const std::string &jsonName)
     Motion &motion = it->second;
     if (!motion.hasInitialTransform)
     {
-        motion.initialPos = motion.target->GetLocalPosition();
-        motion.initialRot = motion.target->GetLocalRotation().ToEulerAngles();
-        motion.initialScale = motion.target->GetLocalScale();
+        motion.initialPos = motion.pTarget->GetLocalPosition();
+        motion.initialRot = motion.pTarget->GetLocalRotation().ToEulerAngles();
+        motion.initialScale = motion.pTarget->GetLocalScale();
         motion.hasInitialTransform = true;
     }
 
-    motion.basePos = motion.target->GetLocalPosition();
-    motion.baseRot = motion.target->GetLocalRotation().ToEulerAngles();
-    motion.baseScale = motion.target->GetLocalScale();
+    motion.basePos = motion.pTarget->GetLocalPosition();
+    motion.baseRot = motion.pTarget->GetLocalRotation().ToEulerAngles();
+    motion.baseScale = motion.pTarget->GetLocalScale();
 
     // 補間用の回転・スケール値を計算
     motion.actualStartRot = Quaternion::FromEulerAngles(motion.baseRot + motion.startRotOffset);
@@ -420,18 +450,18 @@ void MotionEditor::Play(const std::string &jsonName)
     motion.status = MotionStatus::Playing;
 }
 
-bool MotionEditor::PlayFromFile(BaseObject *target, const std::string &fileName, bool returnToOriginal)
+bool MotionEditor::PlayFromFile(BaseObject *pTarget, const std::string &fileName, bool returnToOriginal)
 {
-    if (!target)
+    if (!pTarget)
     {
         return false;
     }
 
-    std::string tempName = GetTemporaryMotionName(target, fileName);
+    std::string tempName = GetTemporaryMotionName(pTarget, fileName);
     DataHandler data("AttackData", fileName);
     Motion &motion = motions_[tempName];
 
-    motion.target = target;
+    motion.pTarget = pTarget;
     motion.objectName = tempName;
     motion.isTemporary = true;
     motion.returnToOriginal = returnToOriginal;
@@ -456,14 +486,14 @@ bool MotionEditor::PlayFromFile(BaseObject *target, const std::string &fileName,
         motion.controlPoints.push_back(point);
     }
 
-    motion.initialPos = target->GetLocalPosition();
-    motion.initialRot = target->GetLocalRotation().ToEulerAngles();
-    motion.initialScale = target->GetLocalScale();
+    motion.initialPos = pTarget->GetLocalPosition();
+    motion.initialRot = pTarget->GetLocalRotation().ToEulerAngles();
+    motion.initialScale = pTarget->GetLocalScale();
     motion.hasInitialTransform = true;
 
-    motion.basePos = target->GetLocalPosition();
-    motion.baseRot = target->GetLocalRotation().ToEulerAngles();
-    motion.baseScale = target->GetLocalScale();
+    motion.basePos = pTarget->GetLocalPosition();
+    motion.baseRot = pTarget->GetLocalRotation().ToEulerAngles();
+    motion.baseScale = pTarget->GetLocalScale();
 
     motion.actualStartRot = Quaternion::FromEulerAngles(motion.baseRot + motion.startRotOffset);
     motion.actualEndRot = Quaternion::FromEulerAngles(motion.baseRot + motion.endRotOffset);
@@ -476,45 +506,45 @@ bool MotionEditor::PlayFromFile(BaseObject *target, const std::string &fileName,
     return true;
 }
 
-void MotionEditor::SetComboStartPosition(BaseObject *target)
+void MotionEditor::SetComboStartPosition(BaseObject *pTarget)
 {
-    if (!target)
+    if (!pTarget)
         return;
 
     // コンボ開始位置・回転・スケールを保存
-    comboStartPositions_[target] = target->GetLocalPosition();
-    comboStartRotations_[target] = target->GetLocalRotation().ToEulerAngles();
-    comboStartScales_[target] = target->GetLocalScale();
+    comboStartPositions_[pTarget] = pTarget->GetLocalPosition();
+    comboStartRotations_[pTarget] = pTarget->GetLocalRotation().ToEulerAngles();
+    comboStartScales_[pTarget] = pTarget->GetLocalScale();
 }
 
-void MotionEditor::ReturnToComboStart(BaseObject *target)
+void MotionEditor::ReturnToComboStart(BaseObject *pTarget)
 {
-    if (!target)
+    if (!pTarget)
         return;
 
-    auto posIt = comboStartPositions_.find(target);
-    auto rotIt = comboStartRotations_.find(target);
-    auto scaleIt = comboStartScales_.find(target);
+    auto posIt = comboStartPositions_.find(pTarget);
+    auto rotIt = comboStartRotations_.find(pTarget);
+    auto scaleIt = comboStartScales_.find(pTarget);
 
     if (posIt != comboStartPositions_.end() &&
         rotIt != comboStartRotations_.end() &&
         scaleIt != comboStartScales_.end())
     {
 
-        target->GetLocalPosition() = posIt->second;
-        target->GetLocalRotation() = Quaternion::FromEulerAngles(rotIt->second);
-        target->GetLocalScale() = scaleIt->second;
+        pTarget->GetLocalPosition() = posIt->second;
+        pTarget->GetLocalRotation() = Quaternion::FromEulerAngles(rotIt->second);
+        pTarget->GetLocalScale() = scaleIt->second;
     }
 }
 
-void MotionEditor::ClearComboStartPosition(BaseObject *target)
+void MotionEditor::ClearComboStartPosition(BaseObject *pTarget)
 {
-    if (!target)
+    if (!pTarget)
         return;
 
-    comboStartPositions_.erase(target);
-    comboStartRotations_.erase(target);
-    comboStartScales_.erase(target);
+    comboStartPositions_.erase(pTarget);
+    comboStartRotations_.erase(pTarget);
+    comboStartScales_.erase(pTarget);
 }
 
 void MotionEditor::ClearAllComboStartPositions()
@@ -534,11 +564,11 @@ void MotionEditor::Stop(const std::string &objectName)
         motion.currentTime = 0.0f;
 
         // 初期状態に戻す
-        if (motion.hasInitialTransform && motion.target)
+        if (motion.hasInitialTransform && motion.pTarget)
         {
-            motion.target->GetLocalPosition() = motion.initialPos;
-            motion.target->GetLocalRotation() = Quaternion::FromEulerAngles(motion.initialRot);
-            motion.target->GetLocalScale() = motion.initialScale;
+            motion.pTarget->GetLocalPosition() = motion.initialPos;
+            motion.pTarget->GetLocalRotation() = Quaternion::FromEulerAngles(motion.initialRot);
+            motion.pTarget->GetLocalScale() = motion.initialScale;
         }
         if (motion.isTemporary)
         {
@@ -556,11 +586,11 @@ void MotionEditor::StopAll()
         motion.status = MotionStatus::Stopped;
         motion.currentTime = 0.0f;
 
-        if (motion.hasInitialTransform && motion.target)
+        if (motion.hasInitialTransform && motion.pTarget)
         {
-            motion.target->GetLocalPosition() = motion.initialPos;
-            motion.target->GetLocalRotation() = Quaternion::FromEulerAngles(motion.initialRot);
-            motion.target->GetLocalScale() = motion.initialScale;
+            motion.pTarget->GetLocalPosition() = motion.initialPos;
+            motion.pTarget->GetLocalRotation() = Quaternion::FromEulerAngles(motion.initialRot);
+            motion.pTarget->GetLocalScale() = motion.initialScale;
         }
 
         if (motion.isTemporary)
@@ -574,14 +604,14 @@ void MotionEditor::StopAll()
     }
 }
 
-bool MotionEditor::IsAttackFinished(BaseObject *target)
+bool MotionEditor::IsAttackFinished(BaseObject *pTarget)
 {
-    if (!target)
+    if (!pTarget)
         return false;
 
     for (const auto &[name, motion] : motions_)
     {
-        if (motion.target == target && motion.isTemporary)
+        if (motion.pTarget == pTarget && motion.isTemporary)
         {
             return motion.status == MotionStatus::Finished;
         }
@@ -589,17 +619,17 @@ bool MotionEditor::IsAttackFinished(BaseObject *target)
     return true;
 }
 
-bool MotionEditor::IsAttackFinishedWithInterval(BaseObject *target)
+bool MotionEditor::IsAttackFinishedWithInterval(BaseObject *pTarget)
 {
-    if (!target)
+    if (!pTarget)
         return false;
 
-    if (!IsAttackFinished(target))
+    if (!IsAttackFinished(pTarget))
     {
         return false;
     }
 
-    auto it = attackEndIntervals_.find(target);
+    auto it = attackEndIntervals_.find(pTarget);
     if (it != attackEndIntervals_.end())
     {
         return it->second <= 0.0f;
@@ -607,26 +637,26 @@ bool MotionEditor::IsAttackFinishedWithInterval(BaseObject *target)
     return true;
 }
 
-void MotionEditor::SetAttackEndInterval(BaseObject *target, float interval)
+void MotionEditor::SetAttackEndInterval(BaseObject *pTarget, float interval)
 {
-    if (!target)
+    if (!pTarget)
         return;
-    attackEndIntervals_[target] = interval;
+    attackEndIntervals_[pTarget] = interval;
 }
 
-void MotionEditor::ClearAttackEndInterval(BaseObject *target)
+void MotionEditor::ClearAttackEndInterval(BaseObject *pTarget)
 {
-    if (!target)
+    if (!pTarget)
         return;
-    attackEndIntervals_.erase(target);
+    attackEndIntervals_.erase(pTarget);
 }
 
-bool MotionEditor::IsTemporaryMotionFinished(BaseObject *target, const std::string &fileName)
+bool MotionEditor::IsTemporaryMotionFinished(BaseObject *pTarget, const std::string &fileName)
 {
-    if (!target)
+    if (!pTarget)
         return false;
 
-    std::string tempName = GetTemporaryMotionName(target, fileName);
+    std::string tempName = GetTemporaryMotionName(pTarget, fileName);
     auto it = motions_.find(tempName);
     if (it != motions_.end())
     {
@@ -641,18 +671,18 @@ void MotionEditor::DrawControlPoints()
         return;
 
     Motion &motion = motions_[selectedName_];
-    if (!motion.target || !motion.useCatmullRom || motion.controlPoints.empty())
+    if (!motion.pTarget || !motion.useCatmullRom || motion.controlPoints.empty())
         return;
 
-    DrawLine3D *drawLine = DrawLine3D::GetInstance();
+    LineRenderer *drawLine = LineRenderer::GetInstance();
     const float sphereSize = 0.4f;
 
-    Vector3 basePos = (motion.currentTime == 0.0f) ? motion.target->GetLocalPosition() : motion.basePos;
+    Vector3 basePos = (motion.currentTime == 0.0f) ? motion.pTarget->GetLocalPosition() : motion.basePos;
 
     for (size_t i = 0; i < motion.controlPoints.size(); ++i)
     {
         Vector3 localPos = basePos + motion.controlPoints[i];
-        Vector3 worldPos = TransformLocalControlPointToWorld(motion.target, localPos);
+        Vector3 worldPos = TransformLocalControlPointToWorld(motion.pTarget, localPos);
 
         Vector4 color = {1.0f, 0.0f, 0.0f, 1.0f};
         if (i == 0)
@@ -667,7 +697,7 @@ void MotionEditor::DrawControlPoints()
             color.z = std::min(color.z + 0.5f, 1.0f);
         }
 
-        drawLine->DrawSphere(worldPos, color, sphereSize, 8);
+        drawLine->AddSphere(worldPos, sphereSize, color, 8);
     }
 }
 
@@ -677,22 +707,22 @@ void MotionEditor::DrawCatmullRomCurve()
         return;
 
     Motion &motion = motions_[selectedName_];
-    if (!motion.target || !motion.useCatmullRom || motion.controlPoints.size() < 2)
+    if (!motion.pTarget || !motion.useCatmullRom || motion.controlPoints.size() < 2)
         return;
 
-    DrawLine3D *drawLine = DrawLine3D::GetInstance();
+    LineRenderer *drawLine = LineRenderer::GetInstance();
     const Vector4 curveColor = {1.0f, 0.5f, 0.0f, 1.0f};
     const int resolution = 100;
 
-    Vector3 basePos = (motion.currentTime == 0.0f) ? motion.target->GetLocalPosition() : motion.basePos;
+    Vector3 basePos = (motion.currentTime == 0.0f) ? motion.pTarget->GetLocalPosition() : motion.basePos;
 
-    Vector3 prevWorldPoint = TransformLocalControlPointToWorld(motion.target, basePos + CatmullRomInterpolation(motion.controlPoints, 0.0f));
+    Vector3 prevWorldPoint = TransformLocalControlPointToWorld(motion.pTarget, basePos + CatmullRomInterpolation(motion.controlPoints, 0.0f));
 
     for (int i = 1; i <= resolution; ++i)
     {
         float t = static_cast<float>(i) / resolution;
-        Vector3 currentWorldPoint = TransformLocalControlPointToWorld(motion.target, basePos + CatmullRomInterpolation(motion.controlPoints, t));
-        drawLine->SetPoints(prevWorldPoint, currentWorldPoint, curveColor);
+        Vector3 currentWorldPoint = TransformLocalControlPointToWorld(motion.pTarget, basePos + CatmullRomInterpolation(motion.controlPoints, t));
+        drawLine->AddLine(prevWorldPoint, currentWorldPoint, curveColor);
         prevWorldPoint = currentWorldPoint;
     }
 }

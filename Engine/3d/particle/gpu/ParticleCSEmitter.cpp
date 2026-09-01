@@ -3,11 +3,15 @@
 #include "ParticleCSFieldManager.h"
 #include "ParticleCSGroupManager.h"
 #include <graphics/pipeline/ComputePipelineManager.h>
+#include <graphics/pipeline/PipelineManager.h>
 #include <Frame.h>
-#include <line/DrawLine3D.h>
+#include <light/LightGroup.h>
+#include <line/LineRenderer.h>
+#include <render/deferred/DeferredRenderer.h>
 #include <shadow/ShadowMap.h>
 #include <particle/ParticleCommon.h>
 #include <debug/profiler/GpuProfiler.h>
+#include <algorithm>
 #include <random>
 #include "../utility/debug/imgui/ImGuizmoManager.h"
 #include "../utility/debug/imgui/ImGuiNotification.h"
@@ -41,8 +45,29 @@ Matrix4x4 ExtractRotation(const Matrix4x4 &world)
     return rot;
 }
 } // namespace
+
+std::vector<ParticleCSEmitter *> ParticleCSEmitter::liveEmitters_;
+
+ParticleCSEmitter::ParticleCSEmitter()
+{
+    liveEmitters_.push_back(this);
+}
+
 ParticleCSEmitter::~ParticleCSEmitter()
 {
+    liveEmitters_.erase(std::remove(liveEmitters_.begin(), liveEmitters_.end(), this), liveEmitters_.end());
+
+#ifdef USE_IMGUI
+    // ギズモには pEmitterMeshData_ の中身への生ポインタを渡しているので、
+    // 解除し忘れると破棄後のメモリを掴んだままになる。
+    // 同名で登録し直されている場合（テンプレートを開き直した等）は相手の登録を消さない。
+    if (gizmoRegistered_ && pEmitterMeshData_)
+    {
+        ImGuizmoManager::GetInstance()->RemoveTargetIfOwnedBy(name_, &pEmitterMeshData_->translate);
+    }
+    gizmoRegistered_ = false;
+#endif // USE_IMGUI
+
     // 保有していた独立グループを破棄せず再利用プールへ返却する。
     // これにより弾・ヒット等の高頻度スポーンでもバッファが累積しない。
     // 注意: group は Finalize 順序によっては既に破棄済みの場合がある。
@@ -67,7 +92,7 @@ void ParticleCSEmitter::Initialize(const std::string &name)
     name_ = name;
     CreateEmitterMeshResource();
     LoadSetting();
-#ifdef _DEBUG
+#ifdef USE_IMGUI
     // 実行時に量産されるインスタンス(registerGizmo_=false)は登録しない。
     // 登録するとエディタ上の同名テンプレートのギズモ対象を奪ってしまう。
     if (registerGizmo_ && pEmitterMeshData_)
@@ -78,6 +103,9 @@ void ParticleCSEmitter::Initialize(const std::string &name)
             nullptr, // 必要に応じて回転のVector3を追加
             &pEmitterMeshData_->scale,
             isGizmoSelectable_);
+        // 実際に登録したかを覚えておく（registerGizmo_ は後から変更されうるため、
+        // デストラクタでの解除判定にはこちらを使う）
+        gizmoRegistered_ = true;
     }
 #endif
 }
@@ -141,6 +169,144 @@ void ParticleCSEmitter::ResolveEmitterTransform(const ViewProjection &vp)
     pEmitterMeshData_->rotation = Quaternion::FromMatrix(resolved).Normalize();
 }
 
+void ParticleCSEmitter::SubmitEmissiveLight()
+{
+    // エディタの編集用エミッターはプレビュー窓にしか描かれないので、ゲームシーンは照らさない
+    if (previewOnly_)
+        return;
+    if (!lightEnabled_ || !isActive_ || !pEmitterMeshData_)
+        return;
+    if (lightIntensity_ <= 0.0f || lightRadius_ <= 0.0f)
+        return;
+
+    if (lightFollowParticles_)
+    {
+        // 撃ち終わった弾がその場で光り続けないよう、粒子が無くなったら消灯する。
+        // 生存数は readback ベースで1〜2フレーム遅延するが、消灯が数フレーム遅れる程度で害はない。
+        const bool emitting = (pEmitterMeshData_->emit != 0);
+        bool anyAlive = false;
+        for (const ParticleCSGroup *group : particleGroups_)
+        {
+            if (group->GetAliveDrawCount() > 0)
+            {
+                anyAlive = true;
+                break;
+            }
+        }
+        if (!emitting && !anyAlive)
+            return;
+    }
+
+    // オフセットはエミッターの向きに追従させる（親に付けた発光位置がずれないように）
+    LightGroup::DynamicPointLightDesc desc;
+    desc.position = pEmitterMeshData_->translate + RotateVector(lightOffset_, pEmitterMeshData_->rotation);
+    desc.color = lightColor_;
+    desc.intensity = lightIntensity_;
+    desc.radius = lightRadius_;
+    desc.decay = lightDecay_;
+    LightGroup::GetInstance()->AddDynamicPointLight(desc);
+}
+
+void ParticleCSEmitter::EnsureParticleLightResource()
+{
+    if (particleLightCBResource_ || !pDxCommon_)
+    {
+        return;
+    }
+    particleLightCBResource_ = pDxCommon_->CreateBufferResource(sizeof(ParticleLightGenConstants));
+    particleLightCBResource_->Map(0, nullptr, reinterpret_cast<void **>(&pParticleLightCBData_));
+    *pParticleLightCBData_ = {};
+}
+
+bool ParticleCSEmitter::SubmitParticleLights(const ViewProjection &vp, ID3D12GraphicsCommandList *pCommandList)
+{
+    // エディタの編集用エミッターはプレビュー窓にしか描かれないので、ゲームシーンは照らさない。
+    // 発生が止まっていても残っている粒子は光らせる（生存0なら下のループが自然に空振りする）。
+    if (previewOnly_ || !particleLightEnabled_ || !pCommandList)
+        return false;
+    if (particleGroups_.empty() || particleLightMaxCount_ == 0)
+        return false;
+    if (particleLightIntensity_ <= 0.0f || particleLightRadius_ <= 0.0f)
+        return false;
+
+    EnsureParticleLightResource();
+    if (!pParticleLightCBData_)
+        return false;
+
+    const uint32_t stride = (std::max)(1u, particleLightStride_);
+
+    // 生成パラメータは全グループで共通なので、CBは1本を使い回す
+    ParticleLightGenConstants &cb = *pParticleLightCBData_;
+    cb.particleStride = stride;
+    cb.maxLights = particleLightMaxCount_;
+    cb.bufferCapacity = LightGroup::kMaxBufferedPointLights;
+    cb.useParticleColor = particleLightUseParticleColor_ ? 1u : 0u;
+    cb.lightColor = {particleLightColor_.x, particleLightColor_.y, particleLightColor_.z};
+    cb.intensity = particleLightIntensity_;
+    cb.radius = particleLightRadius_;
+    cb.decay = particleLightDecay_;
+    cb.cullDistance = particleLightCullDistance_;
+    cb.alphaCutoff = 0.02f; // ほぼ消えている粒子は光源にしない
+    cb.cameraPosition = vp.translation_;
+
+    bool dispatched = false;
+    for (ParticleCSGroup *group : particleGroups_)
+    {
+        if (!group)
+            continue;
+        // 光源化は描画リスト(gRenderCompact)を読むので、長さも描画リスト長(可視カウンタ)を使う。
+        // ＝視錐台カリングが有効なら画面外の粒子は光源にならない（画面に効かない光源を省く）。
+        const D3D12_GPU_VIRTUAL_ADDRESS compactAddress = group->GetRenderCompactGpuAddress();
+        const D3D12_GPU_VIRTUAL_ADDRESS visibleCountAddress = group->GetVisibleCounterGpuAddress();
+        if (compactAddress == 0 || visibleCountAddress == 0)
+            continue;
+
+        // ディスパッチ数は前フレームに読み戻した生存数から決める（1〜2フレーム遅延）。
+        // 少なく見積もると光源が減るだけ、多く見積もってもシェーダ側が
+        // GPU上の生存数で弾くので、描画と同じくマージンを乗せておく。
+        uint32_t alive = group->GetAliveDrawCount();
+        alive = alive + (alive / 4) + 64;
+        const uint32_t maxCount = group->GetSettingsData()->maxParticleCount;
+        if (alive > maxCount)
+            alive = maxCount;
+        if (alive == 0)
+            continue;
+
+        uint32_t lightCount = (alive + stride - 1) / stride;
+        lightCount = (std::min)(lightCount, particleLightMaxCount_);
+        if (lightCount == 0)
+            continue;
+
+        ComputePipelineManager::GetInstance()->DrawCommonSetting(
+            ComputePipelineType::ParticleLightGen, BlendMode::Normal, ShaderMode::None, pCommandList);
+
+        LightGroup *lightGroup = LightGroup::GetInstance();
+        pCommandList->SetComputeRootConstantBufferView(0, particleLightCBResource_->GetGPUVirtualAddress());
+        pCommandList->SetComputeRootShaderResourceView(1, compactAddress);
+        pCommandList->SetComputeRootShaderResourceView(2, visibleCountAddress);
+        pCommandList->SetComputeRootUnorderedAccessView(3, lightGroup->GetPointLightUavAddress());
+        pCommandList->SetComputeRootUnorderedAccessView(4, lightGroup->GetLightCounterAddress());
+
+        constexpr uint32_t kThreadsPerGroup = 64; // ParticleLightGen.CS.hlsl の [numthreads] と一致必須
+        pCommandList->Dispatch((lightCount + kThreadsPerGroup - 1) / kThreadsPerGroup, 1, 1);
+        dispatched = true;
+    }
+    return dispatched;
+}
+
+bool ParticleCSEmitter::SubmitAllParticleLights(const ViewProjection &vp, ID3D12GraphicsCommandList *pCommandList)
+{
+    bool dispatched = false;
+    for (ParticleCSEmitter *pEmitter : liveEmitters_)
+    {
+        if (pEmitter && pEmitter->SubmitParticleLights(vp, pCommandList))
+        {
+            dispatched = true;
+        }
+    }
+    return dispatched;
+}
+
 Matrix4x4 ParticleCSEmitter::GetEffectSpaceMatrix(uint32_t effectSpace) const
 {
     switch (effectSpace)
@@ -162,6 +328,10 @@ void ParticleCSEmitter::DrawCompute(const ViewProjection &vp)
     // 発生源メッシュの位置・向き（親追従＝ビルボード）を Emit/Update のディスパッチより前に確定させる。
     // グループが空でもワイヤーフレーム表示のために解決しておく。
     ResolveEmitterTransform(vp);
+
+    // 位置が確定した直後に発光を登録する。DrawSystem がこの後
+    // CommitPointLights() を呼ぶので、同じフレームの描画へ反映される。
+    SubmitEmissiveLight();
 
     if (particleGroups_.empty())
         return;
@@ -221,6 +391,9 @@ void ParticleCSEmitter::DrawCompute(const ViewProjection &vp)
         // その粒子のトレイル状態（lastTrailPosition 等）が未初期化になる
         // （花火が偶にトレイル無しで打ち上がる不具合の原因）
         group->EnsureUpdateOptionalBuffers(fieldsActive);
+        // エディタの編集用エミッターはプレビュー窓（＝別カメラ）にしか描かないので、
+        // シーンカメラの視錐台でカリングすると編集中の粒子が消える。ここで抑止する。
+        group->SetFrustumCullSuppressed(previewOnly_);
         group->Update(vp);
         group->AdvanceAliveFrame();
         group->ResetAliveCounterDispatch(computeCmdList);
@@ -264,7 +437,9 @@ void ParticleCSEmitter::DrawCompute(const ViewProjection &vp)
 
 void ParticleCSEmitter::DrawGraphics(const ViewProjection &vp)
 {
-    if (ShadowMap::GetInstance()->IsShadowPassActive())
+    // パーティクルは半透明なのでG-Bufferには載せず、前方描画フェーズで描く
+    if (ShadowMap::GetInstance()->IsShadowPassActive() ||
+        DeferredRenderer::GetInstance()->IsGBufferPassActive())
         return;
     if (particleGroups_.empty())
         return;
@@ -276,23 +451,21 @@ void ParticleCSEmitter::DrawGraphics(const ViewProjection &vp)
     {
         // 旧 CountParticle 全Nディスパッチは廃止（生存数は aliveCounter に統合）
 
-        // 生存数を読み戻し、描画 instanceCount を決定する。
-        // VS 側で instanceId >= 実生存数 を確実にカリングするため、
-        // ここでは生存数概算＋マージンで instance を発行する。
+        // 生存数の読み戻しは統計・Update のディスパッチ本数見積り用（描画数の決定には使わない）。
+        // 描画は GPU 駆動（ExecuteIndirect）で、instanceCount は VRAM 上のカウンタから直接読む。
         group->FetchAliveDrawCount();
-        const uint32_t maxCount = group->GetSettingsData()->maxParticleCount;
-        uint32_t drawCount = group->GetAliveDrawCount();
-        drawCount = drawCount + (drawCount / 4) + 256; // 急増分のマージン
-        if (drawCount > maxCount)
+        // 引数バッファへ一度も書き込みが記録されていないなら描画しない（未初期化引数の実行防止）。
+        // 生成直後の1フレームだけで、そのとき粒子は0個なので見た目に影響はない。
+        if (!group->IsDrawArgsReady())
         {
-            drawCount = maxCount;
-        }
-        if (drawCount == 0)
-        {
-            continue; // 生存ゼロなら描画スキップ
+            continue;
         }
 
         pParticleCommon_->GPUDrawCommonSetting(group->GetParticleGroupData().blendMode);
+        // t0 は頂点シェーダー(描画リスト)とピクセルシェーダー(テクスチャ)で同番号の別リソース
+        const ShaderRootSignature *gpuParticleRS =
+            PipelineManager::GetInstance()->GetReflectedRootSignature(PipelineType::GPUParticle);
+        assert(gpuParticleRS && "GPUパーティクルのルートシグネチャが未生成です");
         const auto &meshes = group->GetModelData().meshes;
         for (size_t meshIndex = 0; meshIndex < meshes.size(); ++meshIndex)
         {
@@ -300,19 +473,32 @@ void ParticleCSEmitter::DrawGraphics(const ViewProjection &vp)
             D3D12_VERTEX_BUFFER_VIEW vertexBufferView = group->GetVertexBufferView();
             pCommandList_->IASetIndexBuffer(&indexBufferView);
             pCommandList_->IASetVertexBuffers(0, 1, &vertexBufferView);
-            pCommandList_->SetGraphicsRootConstantBufferView(0, group->GetPerViewResource()->GetGPUVirtualAddress());
+            pCommandList_->SetGraphicsRootConstantBufferView(gpuParticleRS->GetCbvIndex(0, D3D12_SHADER_VISIBILITY_VERTEX), group->GetPerViewResource()->GetGPUVirtualAddress());
             // 描画コンパクション: t0=詰めた描画バッファ(順次読み), t4=Rotation(回転グループのみscatter)
-            pSrvManager_->SetGraphicsRootDescriptorTable(1, group->GetRenderCompactSrvForVSIndex());
-            pSrvManager_->SetGraphicsRootDescriptorTable(2, TextureManager::GetInstance()->GetTextureIndexByFilePath(group->GetParticleGroupData().materials[meshIndex].textureFilePath));
-            pCommandList_->SetGraphicsRootConstantBufferView(3, group->GetMaterialResource()->GetGPUVirtualAddress());
-            // 生存コンパクション SRV (t2: aliveList, t3: aliveCount)
-            pSrvManager_->SetGraphicsRootDescriptorTable(4, group->GetAliveListSrvForVSIndex());
-            pSrvManager_->SetGraphicsRootDescriptorTable(5, group->GetAliveCounterSrvForVSIndex());
-            pSrvManager_->SetGraphicsRootDescriptorTable(6, group->GetRotationSrvForVSIndex());
-            pCommandList_->DrawIndexedInstanced(UINT(meshes[meshIndex].indices.size()), drawCount, 0, 0, 0);
+            pSrvManager_->SetGraphicsRootDescriptorTable(gpuParticleRS->GetSrvIndex(0, D3D12_SHADER_VISIBILITY_VERTEX), group->GetRenderCompactSrvForVSIndex());
+            pSrvManager_->SetGraphicsRootDescriptorTable(gpuParticleRS->GetSrvIndex(0, D3D12_SHADER_VISIBILITY_PIXEL), TextureManager::GetInstance()->GetTextureIndexByFilePath(group->GetParticleGroupData().materials[meshIndex].textureFilePath));
+            pCommandList_->SetGraphicsRootConstantBufferView(gpuParticleRS->GetCbvIndex(1, D3D12_SHADER_VISIBILITY_PIXEL), group->GetMaterialResource()->GetGPUVirtualAddress());
+            // 描画リスト SRV (t2: renderSlot=描画順->slot, t3: visibleCount=描画リスト長)
+            pSrvManager_->SetGraphicsRootDescriptorTable(gpuParticleRS->GetSrvIndex(2, D3D12_SHADER_VISIBILITY_VERTEX), group->GetRenderSlotSrvForVSIndex());
+            pSrvManager_->SetGraphicsRootDescriptorTable(gpuParticleRS->GetSrvIndex(3, D3D12_SHADER_VISIBILITY_VERTEX), group->GetVisibleCounterSrvForVSIndex());
+            pSrvManager_->SetGraphicsRootDescriptorTable(gpuParticleRS->GetSrvIndex(4, D3D12_SHADER_VISIBILITY_VERTEX), group->GetRotationSrvForVSIndex());
+            ExecuteIndirectDraw(group, meshIndex);
         }
     }
     GpuProfiler::GetInstance()->Close(pCommandList_, drawSpan);
+}
+
+void ParticleCSEmitter::ExecuteIndirectDraw(ParticleCSGroup *group, size_t meshIndex)
+{
+    // GPU版 DrawInstance: 「今何個描くか」は引数バッファ内の InstanceCount（Compute が
+    // GPU 上のカウンタからコピーした値）が決める。CPU は固定の描画命令を投げるだけ。
+    ID3D12CommandSignature *signature = pParticleCommon_->GetDrawIndexedCommandSignature();
+    if (!signature)
+    {
+        return;
+    }
+    const UINT64 argsOffset = static_cast<UINT64>(ParticleCSGroup::kDrawArgsStride) * meshIndex;
+    pCommandList_->ExecuteIndirect(signature, 1, group->GetDrawArgsResource(), argsOffset, nullptr, 0);
 }
 
 void ParticleCSEmitter::Draw(const ViewProjection &vp)
@@ -359,19 +545,16 @@ void ParticleCSEmitter::DrawGraphicsForPreview(D3D12_GPU_VIRTUAL_ADDRESS perView
             previewPerView->enableBillboard = gpv->enableBillboard;
         }
         group->FetchAliveDrawCount();
-        const uint32_t maxCount = group->GetSettingsData()->maxParticleCount;
-        uint32_t drawCount = group->GetAliveDrawCount();
-        drawCount = drawCount + (drawCount / 4) + 256; // 急増分のマージン
-        if (drawCount > maxCount)
+        if (!group->IsDrawArgsReady())
         {
-            drawCount = maxCount;
-        }
-        if (drawCount == 0)
-        {
-            continue;
+            continue; // 引数バッファ未初期化（生成直後の1フレーム）
         }
 
         pParticleCommon_->GPUDrawCommonSetting(group->GetParticleGroupData().blendMode);
+        // t0 は頂点シェーダー(描画リスト)とピクセルシェーダー(テクスチャ)で同番号の別リソース
+        const ShaderRootSignature *gpuParticleRS =
+            PipelineManager::GetInstance()->GetReflectedRootSignature(PipelineType::GPUParticle);
+        assert(gpuParticleRS && "GPUパーティクルのルートシグネチャが未生成です");
         const auto &meshes = group->GetModelData().meshes;
         for (size_t meshIndex = 0; meshIndex < meshes.size(); ++meshIndex)
         {
@@ -380,15 +563,15 @@ void ParticleCSEmitter::DrawGraphicsForPreview(D3D12_GPU_VIRTUAL_ADDRESS perView
             pCommandList_->IASetIndexBuffer(&indexBufferView);
             pCommandList_->IASetVertexBuffers(0, 1, &vertexBufferView);
             // root param 0 のみプレビュー専用 per-view CB に差し替える（共有グループの VP は不変）
-            pCommandList_->SetGraphicsRootConstantBufferView(0, perViewGpuAddress);
+            pCommandList_->SetGraphicsRootConstantBufferView(gpuParticleRS->GetCbvIndex(0, D3D12_SHADER_VISIBILITY_VERTEX), perViewGpuAddress);
             // 描画コンパクション: t0=詰めた描画バッファ, t4=Rotation(回転グループのみ)
-            pSrvManager_->SetGraphicsRootDescriptorTable(1, group->GetRenderCompactSrvForVSIndex());
-            pSrvManager_->SetGraphicsRootDescriptorTable(2, TextureManager::GetInstance()->GetTextureIndexByFilePath(group->GetParticleGroupData().materials[meshIndex].textureFilePath));
-            pCommandList_->SetGraphicsRootConstantBufferView(3, group->GetMaterialResource()->GetGPUVirtualAddress());
-            pSrvManager_->SetGraphicsRootDescriptorTable(4, group->GetAliveListSrvForVSIndex());
-            pSrvManager_->SetGraphicsRootDescriptorTable(5, group->GetAliveCounterSrvForVSIndex());
-            pSrvManager_->SetGraphicsRootDescriptorTable(6, group->GetRotationSrvForVSIndex());
-            pCommandList_->DrawIndexedInstanced(UINT(meshes[meshIndex].indices.size()), drawCount, 0, 0, 0);
+            pSrvManager_->SetGraphicsRootDescriptorTable(gpuParticleRS->GetSrvIndex(0, D3D12_SHADER_VISIBILITY_VERTEX), group->GetRenderCompactSrvForVSIndex());
+            pSrvManager_->SetGraphicsRootDescriptorTable(gpuParticleRS->GetSrvIndex(0, D3D12_SHADER_VISIBILITY_PIXEL), TextureManager::GetInstance()->GetTextureIndexByFilePath(group->GetParticleGroupData().materials[meshIndex].textureFilePath));
+            pCommandList_->SetGraphicsRootConstantBufferView(gpuParticleRS->GetCbvIndex(1, D3D12_SHADER_VISIBILITY_PIXEL), group->GetMaterialResource()->GetGPUVirtualAddress());
+            pSrvManager_->SetGraphicsRootDescriptorTable(gpuParticleRS->GetSrvIndex(2, D3D12_SHADER_VISIBILITY_VERTEX), group->GetRenderSlotSrvForVSIndex());
+            pSrvManager_->SetGraphicsRootDescriptorTable(gpuParticleRS->GetSrvIndex(3, D3D12_SHADER_VISIBILITY_VERTEX), group->GetVisibleCounterSrvForVSIndex());
+            pSrvManager_->SetGraphicsRootDescriptorTable(gpuParticleRS->GetSrvIndex(4, D3D12_SHADER_VISIBILITY_VERTEX), group->GetRotationSrvForVSIndex());
+            ExecuteIndirectDraw(group, meshIndex);
         }
     }
     GpuProfiler::GetInstance()->Close(pCommandList_, drawSpan);
@@ -469,7 +652,7 @@ void ParticleCSEmitter::DrawEmitter()
         {
             Vector3 v0 = Transformation(edge.v0, transformMatrix);
             Vector3 v1 = Transformation(edge.v1, transformMatrix);
-            DrawLine3D::GetInstance()->SetPoints(v0, v1);
+            LineRenderer::GetInstance()->AddLine(v0, v1, {1.0f, 1.0f, 1.0f, 1.0f});
         }
     }
     else if (!triangleInfoList_.empty())
@@ -481,9 +664,9 @@ void ParticleCSEmitter::DrawEmitter()
             Vector3 v1 = Transformation(tri.v1, transformMatrix);
             Vector3 v2 = Transformation(tri.v2, transformMatrix);
 
-            DrawLine3D::GetInstance()->SetPoints(v0, v1);
-            DrawLine3D::GetInstance()->SetPoints(v1, v2);
-            DrawLine3D::GetInstance()->SetPoints(v2, v0);
+            LineRenderer::GetInstance()->AddLine(v0, v1, {1.0f, 1.0f, 1.0f, 1.0f});
+            LineRenderer::GetInstance()->AddLine(v1, v2, {1.0f, 1.0f, 1.0f, 1.0f});
+            LineRenderer::GetInstance()->AddLine(v2, v0, {1.0f, 1.0f, 1.0f, 1.0f});
         }
     }
     else
@@ -491,7 +674,7 @@ void ParticleCSEmitter::DrawEmitter()
         Vector3 center = pEmitterMeshData_->translate;
         Vector4 color = {1.0f, 1.0f, 0.0f, 1.0f};
         float maxRadius = std::max(std::max(scale.x, scale.y), scale.z);
-        DrawLine3D::GetInstance()->DrawSphere(center, color, maxRadius, 16);
+        LineRenderer::GetInstance()->AddSphere(center, maxRadius, color, 16);
     }
 }
 
@@ -535,12 +718,12 @@ std::vector<ParticleCSEmitter::WireSegment> ParticleCSEmitter::GetWireframeSegme
         const Vector3 center = pEmitterMeshData_->translate;
         const Vector4 color = {1.0f, 1.0f, 0.0f, 1.0f}; // 黄: 球
         const float r = std::max(std::max(scale.x, scale.y), scale.z);
-        const int N = 24;
+        const int kCircleSegmentCount = 24;
         const float twoPi = 6.28318530718f;
-        for (int i = 0; i < N; ++i)
+        for (int i = 0; i < kCircleSegmentCount; ++i)
         {
-            float a0 = twoPi * static_cast<float>(i) / N;
-            float a1 = twoPi * static_cast<float>(i + 1) / N;
+            float a0 = twoPi * static_cast<float>(i) / kCircleSegmentCount;
+            float a1 = twoPi * static_cast<float>(i + 1) / kCircleSegmentCount;
             float c0 = std::cos(a0), s0 = std::sin(a0);
             float c1 = std::cos(a1), s1 = std::sin(a1);
             segs.push_back({{center.x + c0 * r, center.y + s0 * r, center.z},
@@ -644,13 +827,16 @@ void ParticleCSEmitter::CreateEmitterMeshResource()
     pEmitterMeshData_->emitCountOverride = 0;
 }
 
-void ParticleCSEmitter::EmitterDisPatch(ID3D12GraphicsCommandList *cmdList)
+void ParticleCSEmitter::EmitterDisPatch(ID3D12GraphicsCommandList *pCommandList)
 {
-    // cmdList が渡された場合はそちら（Compute Queue）を使う
-    ID3D12GraphicsCommandList *cl = cmdList ? cmdList : pCommandList_;
+    // 引数が省略された場合はエミッタ保持のコマンドリストを使う
+    if (pCommandList == nullptr)
+    {
+        pCommandList = pCommandList_;
+    }
     ComputePipelineManager::GetInstance()->DrawCommonSetting(
         ComputePipelineType::Emitter,
-        BlendMode::Normal, ShaderMode::None, cl);
+        BlendMode::Normal, ShaderMode::None, pCommandList);
 
     // フィールド接触Emitモードの発生数は「対象フィールドの今フレームのバースト数合計」。
     // 各フィールドの data.emitSpawnCount には ParticleCSFieldManager::Update() が
@@ -696,40 +882,43 @@ void ParticleCSEmitter::EmitterDisPatch(ID3D12GraphicsCommandList *cmdList)
         settings->vortexAxis = TransformNormal(settings->vortexAxisBase, space);
 
         // SoA UAV (u0-u5)
-        cl->SetComputeRootDescriptorTable(0, group->GetLifeUavGpu());
-        cl->SetComputeRootDescriptorTable(1, group->GetDrawCoreUavGpu());
-        cl->SetComputeRootDescriptorTable(2, group->GetSimCoreUavGpu());
-        cl->SetComputeRootDescriptorTable(3, group->GetTrailUavGpu());
-        cl->SetComputeRootDescriptorTable(4, group->GetRotationUavGpu());
-        cl->SetComputeRootDescriptorTable(5, group->GetOverrideUavGpu());
+        pCommandList->SetComputeRootDescriptorTable(0, group->GetLifeUavGpu());
+        pCommandList->SetComputeRootDescriptorTable(1, group->GetDrawCoreUavGpu());
+        pCommandList->SetComputeRootDescriptorTable(2, group->GetSimCoreUavGpu());
+        pCommandList->SetComputeRootDescriptorTable(3, group->GetTrailUavGpu());
+        pCommandList->SetComputeRootDescriptorTable(4, group->GetRotationUavGpu());
+        pCommandList->SetComputeRootDescriptorTable(5, group->GetOverrideUavGpu());
         // フリーリスト (u6-u8)
-        cl->SetComputeRootDescriptorTable(6, group->GetFreeListIndexSrvHandle().second);
-        cl->SetComputeRootDescriptorTable(7, group->GetFreeListSrvHandle().second);
-        cl->SetComputeRootDescriptorTable(8, group->GetFreeListTrailIndexSrvHandle().second);
+        pCommandList->SetComputeRootDescriptorTable(6, group->GetFreeListIndexSrvHandle().second);
+        pCommandList->SetComputeRootDescriptorTable(7, group->GetFreeListSrvHandle().second);
+        pCommandList->SetComputeRootDescriptorTable(8, group->GetFreeListTrailIndexSrvHandle().second);
         // 生存リスト間接ディスパッチ (u9-u11): out リスト/カウンタ + renderCompact。
         //   Emit は新規粒子をここへ append する。continue より前に常時バインドしておく。
-        cl->SetComputeRootDescriptorTable(17, group->GetAliveListUavHandle().second);
-        cl->SetComputeRootDescriptorTable(18, group->GetAliveCounterUavHandle().second);
-        cl->SetComputeRootDescriptorTable(19, group->GetRenderCompactUavGpu());
+        pCommandList->SetComputeRootDescriptorTable(17, group->GetAliveListUavHandle().second);
+        pCommandList->SetComputeRootDescriptorTable(18, group->GetAliveCounterUavHandle().second);
+        pCommandList->SetComputeRootDescriptorTable(19, group->GetRenderCompactUavGpu());
+        // 視錐台カリング後の描画リスト (u12:可視カウンタ / u13:描画順->slot index)
+        pCommandList->SetComputeRootDescriptorTable(20, group->GetVisibleCounterUavHandle().second);
+        pCommandList->SetComputeRootDescriptorTable(21, group->GetRenderSlotUavGpu());
         // CBV (b0-b2)。b3:FieldCB はフィールド有無で下の分岐が param 12 に設定する。
-        cl->SetComputeRootConstantBufferView(9, emitterMeshResource_->GetGPUVirtualAddress());
-        cl->SetComputeRootConstantBufferView(10, group->GetPerFrameResource()->GetGPUVirtualAddress());
-        cl->SetComputeRootConstantBufferView(11, group->GetSettingsResource()->GetGPUVirtualAddress());
+        pCommandList->SetComputeRootConstantBufferView(9, emitterMeshResource_->GetGPUVirtualAddress());
+        pCommandList->SetComputeRootConstantBufferView(10, group->GetPerFrameResource()->GetGPUVirtualAddress());
+        pCommandList->SetComputeRootConstantBufferView(11, group->GetSettingsResource()->GetGPUVirtualAddress());
 
         if (pEmitterMeshData_->triangleCount > 0 && triangleInfoResource_ && triangleCDFResource_)
         {
-            cl->SetComputeRootDescriptorTable(13, triangleInfoSrvHandle_.second);
-            cl->SetComputeRootDescriptorTable(14, triangleCDFSrvHandle_.second);
+            pCommandList->SetComputeRootDescriptorTable(13, triangleInfoSrvHandle_.second);
+            pCommandList->SetComputeRootDescriptorTable(14, triangleCDFSrvHandle_.second);
         }
 
         if (pEmitterMeshData_->edgeCount > 0 && edgeInfoResource_)
         {
-            cl->SetComputeRootDescriptorTable(15, edgeInfoSrvHandle_.second);
+            pCommandList->SetComputeRootDescriptorTable(15, edgeInfoSrvHandle_.second);
         }
 
         {
             auto *fieldManager = ParticleCSFieldManager::GetInstance();
-            cl->SetComputeRootDescriptorTable(16, fieldManager->GetFieldsSrvHandle().second);
+            pCommandList->SetComputeRootDescriptorTable(16, fieldManager->GetFieldsSrvHandle().second);
 
             if (emitOnlyOnFieldContact_ && receiveFields_)
             {
@@ -737,23 +926,23 @@ void ParticleCSEmitter::EmitterDisPatch(ID3D12GraphicsCommandList *cmdList)
                 // （対象フィールド不在・間隔待ちの両方をカバー）
                 if (fieldBurstTotal == 0)
                 {
-                    cl->SetComputeRootConstantBufferView(12, fieldManager->GetZeroFieldCountResource()->GetGPUVirtualAddress());
+                    pCommandList->SetComputeRootConstantBufferView(12, fieldManager->GetZeroFieldCountResource()->GetGPUVirtualAddress());
                     continue;
                 }
 
                 // 発生数は pEmitterMeshData_->emitCountOverride(=バースト合計) 経由でシェーダへ渡す。
                 // 各スレッドの担当フィールドはシェーダが emitSpawnCount の累積和で決める。
                 // 寿命は担当フィールドの emitSpawnLifeTime をシェーダ側が per-field で上書きする。
-                cl->SetComputeRootConstantBufferView(12, fieldManager->GetFieldCountResource()->GetGPUVirtualAddress());
+                pCommandList->SetComputeRootConstantBufferView(12, fieldManager->GetFieldCountResource()->GetGPUVirtualAddress());
 
                 int dispatchCount = (static_cast<int>(fieldBurstTotal) + threadGroupSize_ - 1) / threadGroupSize_;
-                cl->Dispatch(dispatchCount, 1, 1);
+                pCommandList->Dispatch(dispatchCount, 1, 1);
 
                 continue;
             }
             else
             {
-                cl->SetComputeRootConstantBufferView(12, fieldManager->GetZeroFieldCountResource()->GetGPUVirtualAddress());
+                pCommandList->SetComputeRootConstantBufferView(12, fieldManager->GetZeroFieldCountResource()->GetGPUVirtualAddress());
             }
         }
 
@@ -763,7 +952,7 @@ void ParticleCSEmitter::EmitterDisPatch(ID3D12GraphicsCommandList *cmdList)
         }
 
         int dispatchCount = (group->GetSettingsData()->emitCount + threadGroupSize_ - 1) / threadGroupSize_;
-        cl->Dispatch(dispatchCount, 1, 1);
+        pCommandList->Dispatch(dispatchCount, 1, 1);
     }
 }
 
@@ -1000,6 +1189,51 @@ size_t ParticleCSEmitter::GetTotalAliveParticles()
     return total;
 }
 
+size_t ParticleCSEmitter::GetSceneAliveParticleCount()
+{
+    // liveEmitters_ は生成/破棄で自動的に出入りするので、エディタ登録・Spawner 生成・
+    // ゲームクラス所有のどれでも漏れなく数えられる。
+    size_t total = 0;
+    for (ParticleCSEmitter *pEmitter : liveEmitters_)
+    {
+        if (!pEmitter || pEmitter->previewOnly_)
+            continue; // プレビュー窓専用はゲーム画面に出ていないので数えない
+        total += pEmitter->GetTotalAliveParticles();
+    }
+    return total;
+}
+
+size_t ParticleCSEmitter::GetAllAliveParticleCount()
+{
+    size_t total = 0;
+    for (ParticleCSEmitter *pEmitter : liveEmitters_)
+    {
+        if (!pEmitter)
+            continue;
+        total += pEmitter->GetTotalAliveParticles();
+    }
+    return total;
+}
+
+std::vector<ParticleCSEmitter::EmitterStatistics> ParticleCSEmitter::GetAllEmitterStatistics(bool includePreviewOnly)
+{
+    std::vector<EmitterStatistics> stats;
+    stats.reserve(liveEmitters_.size());
+    for (ParticleCSEmitter *pEmitter : liveEmitters_)
+    {
+        if (!pEmitter)
+            continue;
+        if (!includePreviewOnly && pEmitter->previewOnly_)
+            continue;
+        EmitterStatistics stat;
+        stat.emitterName = pEmitter->GetName();
+        stat.aliveCount = pEmitter->GetTotalAliveParticles();
+        stat.previewOnly = pEmitter->previewOnly_;
+        stats.push_back(std::move(stat));
+    }
+    return stats;
+}
+
 std::vector<ParticleCSEmitter::GroupStatistics> ParticleCSEmitter::GetGroupStatistics()
 {
     std::vector<GroupStatistics> stats;
@@ -1015,1081 +1249,4 @@ std::vector<ParticleCSEmitter::GroupStatistics> ParticleCSEmitter::GetGroupStati
     return stats;
 }
 
-void ParticleCSEmitter::SaveSetting()
-{
-    std::unique_ptr<DataHandler> data = std::make_unique<DataHandler>("ParticleCS", name_);
-
-    data->Save("isAuto", isAuto_);
-    data->Save("isVisible", isVisible_);
-    data->Save("isGizmoSelectable", isGizmoSelectable_);
-    data->Save("drawGroup", drawGroup_);
-    data->Save("frequency", pEmitterMeshData_->frequency);
-    data->Save("frequencyTime", pEmitterMeshData_->frequencyTime);
-    data->Save<Vector3>("translate", pEmitterMeshData_->translate);
-    // ビルボード合成前の回転を保存する（pEmitterMeshData_->rotation はカメラを含む解決済みの値）
-    data->Save<Quaternion>("rotation", baseRotation_);
-    data->Save("billboardEmitter", billboardEmitter_);
-    data->Save<Vector3>("scale", pEmitterMeshData_->scale);
-    data->Save("emitFromSurface", pEmitterMeshData_->emitFromSurface);
-    data->Save("modelPath", modelPath_);
-    data->Save("primitiveType", static_cast<int>(primitiveType_));
-    // プリミティブ形状パラメータ（リング等の分割数・半径）
-    data->Save("primitiveDivide", static_cast<int>(primitiveParams_.divide));
-    data->Save("primitiveHeightDivide", static_cast<int>(primitiveParams_.heightDivide));
-    data->Save("primitiveRingOuter", primitiveParams_.ringOuterRadius);
-    data->Save("primitiveRingInner", primitiveParams_.ringInnerRadius);
-
-    // フィールド影響設定
-    data->Save("receiveFields", receiveFields_);
-    data->Save("fieldGroupId", fieldGroupId_);
-    data->Save("emitOnlyOnFieldContact", emitOnlyOnFieldContact_);
-
-    data->Save("particleGroupCount", static_cast<int>(particleGroups_.size()));
-
-    for (int i = 0; i < particleGroups_.size(); i++)
-    {
-        auto &group = particleGroups_[i];
-        std::string prefix = "group_" + std::to_string(i) + "_";
-
-        data->Save(prefix + "name", group->GetGroupName());
-        data->Save(prefix + "minLifetime", group->GetSettingsData()->lifeTimeMin);
-        data->Save(prefix + "maxLifetime", group->GetSettingsData()->lifeTimeMax);
-        data->Save(prefix + "minScale", group->GetSettingsData()->scaleMin);
-        data->Save(prefix + "maxScale", group->GetSettingsData()->scaleMax);
-        data->Save(prefix + "minVelocity", group->GetSettingsData()->velocityMin);
-        data->Save(prefix + "maxVelocity", group->GetSettingsData()->velocityMax);
-        data->Save(prefix + "startColor", group->GetSettingsData()->startColor);
-        data->Save(prefix + "endColor", group->GetSettingsData()->endColor);
-        data->Save(prefix + "enableLifetimeScale", group->GetSettingsData()->enableLifetimeScale);
-        data->Save(prefix + "enableRandomColor", group->GetSettingsData()->enableRandomColor);
-        data->Save(prefix + "enableSinScale", group->GetSettingsData()->enableSinScale);
-        data->Save(prefix + "sinScaleFrequency", group->GetSettingsData()->sinScaleFrequency);
-        data->Save(prefix + "sinScaleAmplitude", group->GetSettingsData()->sinScaleAmplitude);
-        data->Save(prefix + "emitCount", group->GetSettingsData()->emitCount);
-        data->Save(prefix + "enableGravity", group->GetSettingsData()->enableGravity);
-        data->Save(prefix + "gravity", group->GetSettingsData()->gravity);
-        data->Save(prefix + "blendMode", static_cast<int>(group->GetParticleGroupData().blendMode));
-        // テクスチャ差し替えを永続化する（materials は settings とは別なので個別に保存）。
-        {
-            ParticleCSGroupData gd = group->GetParticleGroupData();
-            data->Save(prefix + "texture", gd.materials.empty() ? std::string("") : gd.materials[0].textureFilePath);
-        }
-
-        // ★ トレイル設定の保存
-        data->Save(prefix + "enableTrail", group->GetSettingsData()->enableTrail);
-        data->Save(prefix + "trailSpawnDistance", group->GetSettingsData()->trailSpawnDistance);
-        data->Save(prefix + "maxTrailPerParticle", group->GetSettingsData()->maxTrailPerParticle);
-        data->Save(prefix + "trailLifeTimeScale", group->GetSettingsData()->trailLifeTimeScale);
-        data->Save(prefix + "trailScaleMultiplier", group->GetSettingsData()->trailScaleMultiplier);
-        data->Save(prefix + "trailColorMultiplier", group->GetSettingsData()->trailColorMultiplier);
-        data->Save(prefix + "trailVelocityScale", group->GetSettingsData()->trailVelocityScale);
-        data->Save(prefix + "trailInheritVelocity", group->GetSettingsData()->trailInheritVelocity);
-        data->Save(prefix + "trailMinLifeTime", group->GetSettingsData()->trailMinLifeTime);
-
-        data->Save(prefix + "enableGather", group->GetSettingsData()->enableGather);
-        data->Save(prefix + "gatherStartRatio", group->GetSettingsData()->gatherStartRatio);
-        data->Save(prefix + "gatherStrength", group->GetSettingsData()->gatherStrength);
-        data->Save(prefix + "gatherTarget", group->GetSettingsData()->gatherTarget);
-        data->Save(prefix + "gatherTargetOffset", group->GetSettingsData()->gatherTargetOffset);
-        data->Save(prefix + "enableGatherForTrail", group->GetSettingsData()->enableGatherForTrail);
-        data->Save(prefix + "enableVortex", group->GetSettingsData()->enableVortex);
-        data->Save(prefix + "vortexTarget", group->GetSettingsData()->vortexTarget);
-        data->Save(prefix + "vortexTargetOffset", group->GetSettingsData()->vortexTargetOffset);
-        data->Save(prefix + "vortexStrength", group->GetSettingsData()->vortexStrength);
-        data->Save(prefix + "enableVortexForTrail", group->GetSettingsData()->enableVortexForTrail);
-        // 保存するのは基準空間での軸（vortexAxis は毎フレーム作られる解決済みワールド値）。
-        // キー名は従来どおりなので、旧データ・旧ビルドとそのまま行き来できる。
-        data->Save(prefix + "vortexAxis", group->GetSettingsData()->vortexAxisBase);
-        data->Save(prefix + "effectSpace", group->GetSettingsData()->effectSpace);
-
-        data->Save(prefix + "enableAcceleration", group->GetSettingsData()->enableAcceleration);
-        data->Save(prefix + "acceleration", group->GetSettingsData()->acceleration);
-        data->Save(prefix + "enableVelocityDamping", group->GetSettingsData()->enableVelocityDamping);
-        data->Save(prefix + "velocityDampingFactor", group->GetSettingsData()->velocityDampingFactor);
-        data->Save(prefix + "enableLifetimeVelocityDamping", group->GetSettingsData()->enableLifetimeVelocityDamping);
-        data->Save(prefix + "lifetimeVelocityDampingStart", group->GetSettingsData()->lifetimeVelocityDampingStart);
-        data->Save(prefix + "enableRadialVelocity", group->GetSettingsData()->enableRadialVelocity);
-        data->Save(prefix + "radialVelocityStrength", group->GetSettingsData()->radialVelocityStrength);
-        data->Save(prefix + "radialVelocityRandomness", group->GetSettingsData()->radialVelocityRandomness);
-        data->Save(prefix + "radialVelocityCenter", group->GetSettingsData()->radialVelocityCenter);
-
-        data->Save(prefix + "enableCurlNoise", group->GetSettingsData()->enableCurlNoise);
-        data->Save(prefix + "curlNoiseScale", group->GetSettingsData()->curlNoiseScale);
-        data->Save(prefix + "curlNoiseStrength", group->GetSettingsData()->curlNoiseStrength);
-        data->Save(prefix + "curlNoiseTimeScale", group->GetSettingsData()->curlNoiseTimeScale);
-        data->Save(prefix + "curlNoiseOctaves", group->GetSettingsData()->curlNoiseOctaves);
-        data->Save(prefix + "curlNoiseAttractStrength", group->GetSettingsData()->curlNoiseAttractStrength);
-        data->Save(prefix + "curlNoiseBlendMode", group->GetSettingsData()->curlNoiseBlendMode);
-        data->Save(prefix + "curlNoisePosRandomStrength", group->GetSettingsData()->curlNoisePosRandomStrength);
-        data->Save(prefix + "curlNoiseAttractCenter", group->GetSettingsData()->curlNoiseAttractCenter);
-
-        // ★ 終了スケール設定の保存
-        data->Save(prefix + "enableEndScale", group->GetSettingsData()->enableEndScale);
-        data->Save(prefix + "endScaleValue", group->GetSettingsData()->endScaleValue);
-
-        // ★ 回転設定の保存
-        data->Save(prefix + "enableRandomRotation", group->GetSettingsData()->enableRandomRotation);
-        data->Save<Vector3>(prefix + "rotationMin", group->GetSettingsData()->rotationMin);
-        data->Save<Vector3>(prefix + "rotationMax", group->GetSettingsData()->rotationMax);
-        data->Save(prefix + "enableRandomAngularVelocity", group->GetSettingsData()->enableRandomAngularVelocity);
-        data->Save<Vector3>(prefix + "angularVelocityMin", group->GetSettingsData()->angularVelocityMin);
-        data->Save<Vector3>(prefix + "angularVelocityMax", group->GetSettingsData()->angularVelocityMax);
-
-        data->Save(prefix + "enableBillboard", group->GetPerView()->enableBillboard);
-
-        // ★ 速度ストレッチ設定の保存
-        data->Save(prefix + "enableVelocityStretch", group->GetPerView()->enableVelocityStretch);
-        data->Save(prefix + "velocityStretchFactor", group->GetPerView()->velocityStretchFactor);
-
-        // ★ 描画カリング(overdraw対策)設定の保存
-        data->Save(prefix + "enableDistanceCull", group->GetPerView()->enableDistanceCull);
-        data->Save(prefix + "distanceCullStart", group->GetPerView()->distanceCullStart);
-        data->Save(prefix + "distanceCullEnd", group->GetPerView()->distanceCullEnd);
-        data->Save(prefix + "enableSizeClamp", group->GetPerView()->enableSizeClamp);
-        data->Save(prefix + "maxScreenHeight", group->GetPerView()->maxScreenHeight);
-        data->Save(prefix + "minScreenHeight", group->GetPerView()->minScreenHeight);
-
-        // ★ 中間カラー設定の保存
-        data->Save(prefix + "enableMidColor", group->GetSettingsData()->enableMidColor);
-        data->Save(prefix + "midColorRatio", group->GetSettingsData()->midColorRatio);
-        data->Save(prefix + "midColor", group->GetSettingsData()->midColor);
-
-        // ★ タービュランス設定の保存
-        data->Save(prefix + "enableTurbulence", group->GetSettingsData()->enableTurbulence);
-        data->Save(prefix + "turbulenceStrength", group->GetSettingsData()->turbulenceStrength);
-        data->Save(prefix + "turbulenceFrequency", group->GetSettingsData()->turbulenceFrequency);
-
-        // ★ 音声振動設定の保存（audioAmplitude は実行時注入のエンベロープなので保存しない）
-        data->Save(prefix + "enableAudioVibration", group->GetSettingsData()->enableAudioVibration);
-        data->Save(prefix + "audioVibrationStrength", group->GetSettingsData()->audioVibrationStrength);
-        data->Save(prefix + "audioVibrationSensitivity", group->GetSettingsData()->audioVibrationSensitivity);
-        data->Save(prefix + "audioVibrationFrequency", group->GetSettingsData()->audioVibrationFrequency);
-        data->Save(prefix + "audioAttackSharpness", group->GetSettingsData()->audioAttackSharpness);
-        data->Save(prefix + "audioReleaseRate", group->GetSettingsData()->audioReleaseRate);
-
-        // ★ 発生形状設定の保存
-        data->Save(prefix + "emitShape", group->GetSettingsData()->emitShape);
-        data->Save(prefix + "emitSphereRadius", group->GetSettingsData()->emitSphereRadius);
-        data->Save(prefix + "emitConeAngle", group->GetSettingsData()->emitConeAngle);
-
-        // ★ カラーグラデーション(N段)設定の保存（有効フラグ + ストップ列）
-        data->Save(prefix + "enableColorGradient", group->GetSettingsData()->enableColorGradient);
-        const auto &stops = group->GetColorStops();
-        data->Save(prefix + "colorStopCount", static_cast<int>(stops.size()));
-        for (size_t si = 0; si < stops.size(); ++si)
-        {
-            std::string sp = prefix + "colorStop_" + std::to_string(si) + "_";
-            data->Save<Vector4>(sp + "color", stops[si].color);
-            data->Save(sp + "pos", stops[si].pos);
-        }
-
-        // ★ 寿命カーブ(サイズ/アルファ)設定の保存（有効フラグ + 制御点列）
-        data->Save(prefix + "enableSizeCurve", group->GetSettingsData()->enableSizeCurve);
-        data->Save(prefix + "enableAlphaCurve", group->GetSettingsData()->enableAlphaCurve);
-        auto saveCurve = [&](const std::string &key, const std::vector<CurvePoint> &pts) {
-            data->Save(prefix + key + "Count", static_cast<int>(pts.size()));
-            for (size_t pi = 0; pi < pts.size(); ++pi)
-            {
-                std::string pp = prefix + key + "_" + std::to_string(pi) + "_";
-                data->Save(pp + "x", pts[pi].x);
-                data->Save(pp + "y", pts[pi].y);
-            }
-        };
-        saveCurve("sizeCurve", group->GetSizeCurvePoints());
-        saveCurve("alphaCurve", group->GetAlphaCurvePoints());
-    }
-    ImGuiNotification::Post("パーティクル設定を保存しました: " + name_, {0.2f, 0.8f, 0.2f, 1.0f});
-}
-
-void ParticleCSEmitter::LoadSetting()
-{
-    std::unique_ptr<DataHandler> data = std::make_unique<DataHandler>("ParticleCS", name_);
-
-    isAuto_ = data->Load("isAuto", false);
-    isVisible_ = data->Load("isVisible", true);
-    isGizmoSelectable_ = data->Load("isGizmoSelectable", true);
-    drawGroup_ = data->Load<std::string>("drawGroup", "3D");
-    if (drawGroup_ != "UI")
-    {
-        drawGroup_ = "3D"; // 旧データは3D扱いに正規化
-    }
-    pEmitterMeshData_->frequency = data->Load("frequency", 0.1f);
-    pEmitterMeshData_->frequencyTime = data->Load("frequencyTime", 0.0f);
-    pEmitterMeshData_->translate = data->Load<Vector3>("translate", Vector3(0.0f, 0.0f, 0.0f));
-    baseRotation_ = data->Load<Quaternion>("rotation", Quaternion::IdentityQuaternion());
-    billboardEmitter_ = data->Load("billboardEmitter", false);
-    pEmitterMeshData_->rotation = baseRotation_; // 次の DrawCompute でビルボードが合成される
-    pEmitterMeshData_->scale = data->Load<Vector3>("scale", Vector3(1.0f, 1.0f, 1.0f));
-    pEmitterMeshData_->emitFromSurface = data->Load<uint32_t>("emitFromSurface", 1);
-
-    modelPath_ = data->Load("modelPath", std::string(""));
-    primitiveType_ = static_cast<PrimitiveType>(data->Load("primitiveType", static_cast<int>(PrimitiveType::None)));
-    // プリミティブ形状パラメータ（LoadPrimitiveModel より前に復元しておくこと）
-    primitiveParams_.divide = static_cast<uint32_t>(data->Load("primitiveDivide", 32));
-    primitiveParams_.heightDivide = static_cast<uint32_t>(data->Load("primitiveHeightDivide", 1));
-    primitiveParams_.ringOuterRadius = data->Load("primitiveRingOuter", 1.0f);
-    primitiveParams_.ringInnerRadius = data->Load("primitiveRingInner", 0.5f);
-    // フィールド影響設定
-    receiveFields_ = data->Load("receiveFields", false);
-    fieldGroupId_ = data->Load("fieldGroupId", -1);
-    emitOnlyOnFieldContact_ = data->Load("emitOnlyOnFieldContact", false);
-    // 旧キー fieldContactEmitCount は廃止（発生数はフィールド側の接触Emit設定に一本化）
-
-    if (!modelPath_.empty())
-    {
-        LoadModel(modelPath_);
-        CreateModelTriangles();
-    }
-    else if (primitiveType_ != PrimitiveType::None)
-    {
-        LoadPrimitiveModel(primitiveType_);
-        CreateModelTriangles();
-        CreateModelEdges();
-    }
-
-    groupNum_ = data->Load("particleGroupCount", 0);
-    for (int i = 0; i < groupNum_; i++)
-    {
-        std::string prefix = "group_" + std::to_string(i) + "_";
-        std::string groupName = data->Load(prefix + "name", std::string(""));
-
-        auto group = ParticleCSGroupManager::GetInstance()->GetIndependentParticleGroup(groupName);
-        if (!group)
-            continue;
-
-        ParticleCSSettings settings;
-        settings.lifeTimeMin = data->Load(prefix + "minLifetime", 1.0f);
-        settings.lifeTimeMax = data->Load(prefix + "maxLifetime", 1.0f);
-        settings.scaleMin = data->Load(prefix + "minScale", 1.0f);
-        settings.scaleMax = data->Load(prefix + "maxScale", 1.0f);
-        settings.velocityMin = data->Load<Vector3>(prefix + "minVelocity", {0.0f, 0.0f, 0.0f});
-        settings.velocityMax = data->Load<Vector3>(prefix + "maxVelocity", {0.0f, 0.0f, 0.0f});
-        settings.startColor = data->Load(prefix + "startColor", Vector4(1.0f, 1.0f, 1.0f, 1.0f));
-        settings.endColor = data->Load(prefix + "endColor", Vector4(1.0f, 1.0f, 1.0f, 0.0f));
-        settings.enableLifetimeScale = data->Load<uint32_t>(prefix + "enableLifetimeScale", 0);
-        settings.enableRandomColor = data->Load<uint32_t>(prefix + "enableRandomColor", 0);
-        settings.enableSinScale = data->Load<uint32_t>(prefix + "enableSinScale", 0);
-        settings.sinScaleFrequency = data->Load(prefix + "sinScaleFrequency", 5.0f);
-        settings.sinScaleAmplitude = data->Load(prefix + "sinScaleAmplitude", 0.3f);
-        settings.emitCount = data->Load<uint32_t>(prefix + "emitCount", 10);
-        settings.enableGravity = data->Load<uint32_t>(prefix + "enableGravity", false);
-        settings.gravity = data->Load<Vector3>(prefix + "gravity", {0.0f, 0.0f, 0.0f});
-        settings.maxParticleCount = group->GetMaxParticleCount();
-
-        // ★ トレイル設定のロード
-        settings.enableTrail = data->Load<uint32_t>(prefix + "enableTrail", 0);
-        settings.trailSpawnDistance = data->Load(prefix + "trailSpawnDistance", 0.1f);
-        settings.maxTrailPerParticle = data->Load<uint32_t>(prefix + "maxTrailPerParticle", 5);
-        settings.trailLifeTimeScale = data->Load(prefix + "trailLifeTimeScale", 1.0f);
-        settings.trailScaleMultiplier = data->Load<Vector3>(prefix + "trailScaleMultiplier", {0.8f, 0.8f, 0.8f});
-        settings.trailColorMultiplier = data->Load(prefix + "trailColorMultiplier", Vector4(1.0f, 1.0f, 1.0f, 0.7f));
-        settings.trailVelocityScale = data->Load(prefix + "trailVelocityScale", 0.3f);
-        settings.trailInheritVelocity = data->Load<uint32_t>(prefix + "trailInheritVelocity", 1);
-        settings.trailMinLifeTime = data->Load(prefix + "trailMinLifeTime", 0.5f);
-
-        settings.enableGather = data->Load(prefix + "enableGather", 0);
-        settings.gatherStartRatio = data->Load(prefix + "gatherStartRatio", 0.5f);
-        settings.gatherStrength = data->Load(prefix + "gatherStrength", 1.0f);
-        settings.gatherTarget = data->Load<Vector3>(prefix + "gatherTarget", {0.0f, 0.0f, 0.0f});
-        settings.gatherTargetOffset = data->Load<Vector3>(prefix + "gatherTargetOffset", {0.0f, 0.0f, 0.0f});
-        settings.enableGatherForTrail = data->Load<uint32_t>(prefix + "enableGatherForTrail", 0);
-        settings.enableVortex = data->Load<uint32_t>(prefix + "enableVortex", 0);
-        settings.vortexTarget = data->Load<Vector3>(prefix + "vortexTarget", {0.0f, 0.0f, 0.0f});
-        settings.vortexTargetOffset = data->Load<Vector3>(prefix + "vortexTargetOffset", {0.0f, 0.0f, 0.0f});
-        settings.vortexStrength = data->Load(prefix + "vortexStrength", 1.0f);
-        settings.enableVortexForTrail = data->Load<uint32_t>(prefix + "enableVortexForTrail", 0);
-        // "vortexAxis" は基準空間での軸として読む（解決済みの settings.vortexAxis は毎フレーム作り直される）。
-        settings.vortexAxisBase = data->Load<Vector3>(prefix + "vortexAxis", {0.0f, 1.0f, 0.0f});
-        settings.vortexAxis = settings.vortexAxisBase;
-        settings.effectSpace = data->Load<uint32_t>(prefix + "effectSpace", 0);
-
-        settings.enableAcceleration = data->Load<uint32_t>(prefix + "enableAcceleration", 0);
-        settings.acceleration = data->Load<Vector3>(prefix + "acceleration", {0.0f, 0.0f, 0.0f});
-        settings.enableVelocityDamping = data->Load<uint32_t>(prefix + "enableVelocityDamping", 0);
-        settings.velocityDampingFactor = data->Load(prefix + "velocityDampingFactor", 0.0f);
-        settings.enableLifetimeVelocityDamping = data->Load<uint32_t>(prefix + "enableLifetimeVelocityDamping", 0);
-        settings.lifetimeVelocityDampingStart = data->Load(prefix + "lifetimeVelocityDampingStart", 0.0f);
-        settings.enableRadialVelocity = data->Load<uint32_t>(prefix + "enableRadialVelocity", 0);
-        settings.radialVelocityStrength = data->Load(prefix + "radialVelocityStrength", 0.0f);
-        settings.radialVelocityRandomness = data->Load(prefix + "radialVelocityRandomness", 0.0f);
-        settings.radialVelocityCenter = data->Load<Vector3>(prefix + "radialVelocityCenter", {0.0f, 0.0f, 0.0f});
-
-        settings.enableCurlNoise = data->Load<uint32_t>(prefix + "enableCurlNoise", 0);
-        settings.curlNoiseScale = data->Load(prefix + "curlNoiseScale", 1.0f);
-        settings.curlNoiseStrength = data->Load(prefix + "curlNoiseStrength", 1.0f);
-        settings.curlNoiseTimeScale = data->Load(prefix + "curlNoiseTimeScale", 1.0f);
-        settings.curlNoiseOctaves = data->Load<uint32_t>(prefix + "curlNoiseOctaves", 1);
-        settings.curlNoiseAttractStrength = data->Load(prefix + "curlNoiseAttractStrength", 0.0f);
-        settings.curlNoiseBlendMode = data->Load<uint32_t>(prefix + "curlNoiseBlendMode", 0);
-        settings.curlNoisePosRandomStrength = data->Load(prefix + "curlNoisePosRandomStrength", 0.0f);
-        settings.curlNoiseAttractCenter = data->Load<Vector3>(prefix + "curlNoiseAttractCenter", {0.0f, 0.0f, 0.0f});
-
-        // ★ 終了スケール設定のロード
-        settings.enableEndScale = data->Load<uint32_t>(prefix + "enableEndScale", 0);
-        settings.endScaleValue = data->Load<Vector3>(prefix + "endScaleValue", {0.0f, 0.0f, 0.0f});
-
-        // ★ 回転設定のロード
-        settings.enableRandomRotation = data->Load<uint32_t>(prefix + "enableRandomRotation", 0);
-        settings.rotationMin = data->Load<Vector3>(prefix + "rotationMin", {0.0f, 0.0f, 0.0f});
-        settings.rotationMax = data->Load<Vector3>(prefix + "rotationMax", {0.0f, 0.0f, 0.0f});
-        settings.enableRandomAngularVelocity = data->Load<uint32_t>(prefix + "enableRandomAngularVelocity", 0);
-        settings.angularVelocityMin = data->Load<Vector3>(prefix + "angularVelocityMin", {0.0f, 0.0f, 0.0f});
-        settings.angularVelocityMax = data->Load<Vector3>(prefix + "angularVelocityMax", {0.0f, 0.0f, 0.0f});
-
-        group->SetBillboard(data->Load(prefix + "enableBillboard", true));
-
-        // ★ 速度ストレッチ設定のロード
-        group->GetPerView()->enableVelocityStretch = data->Load<uint32_t>(prefix + "enableVelocityStretch", 0);
-        group->GetPerView()->velocityStretchFactor = data->Load(prefix + "velocityStretchFactor", 0.1f);
-
-        // ★ 描画カリング(overdraw対策)設定のロード
-        group->GetPerView()->enableDistanceCull = data->Load<uint32_t>(prefix + "enableDistanceCull", 0);
-        group->GetPerView()->distanceCullStart = data->Load(prefix + "distanceCullStart", 50.0f);
-        group->GetPerView()->distanceCullEnd = data->Load(prefix + "distanceCullEnd", 100.0f);
-        group->GetPerView()->enableSizeClamp = data->Load<uint32_t>(prefix + "enableSizeClamp", 0);
-        group->GetPerView()->maxScreenHeight = data->Load(prefix + "maxScreenHeight", 1.0f);
-        group->GetPerView()->minScreenHeight = data->Load(prefix + "minScreenHeight", 0.0f);
-
-        // ★ 中間カラー設定のロード
-        settings.enableMidColor = data->Load<uint32_t>(prefix + "enableMidColor", 0);
-        settings.midColorRatio = data->Load(prefix + "midColorRatio", 0.5f);
-        settings.midColor = data->Load(prefix + "midColor", Vector4(1.0f, 1.0f, 1.0f, 1.0f));
-
-        // ★ タービュランス設定のロード
-        settings.enableTurbulence = data->Load<uint32_t>(prefix + "enableTurbulence", 0);
-        settings.turbulenceStrength = data->Load(prefix + "turbulenceStrength", 1.0f);
-        settings.turbulenceFrequency = data->Load(prefix + "turbulenceFrequency", 2.0f);
-
-        // ★ 音声振動設定のロード（audioAmplitude は実行時注入のエンベロープなので既定のまま）
-        settings.enableAudioVibration = data->Load<uint32_t>(prefix + "enableAudioVibration", 0);
-        settings.audioVibrationStrength = data->Load(prefix + "audioVibrationStrength", 12.0f);
-        settings.audioVibrationSensitivity = data->Load(prefix + "audioVibrationSensitivity", 4.0f);
-        settings.audioVibrationFrequency = data->Load(prefix + "audioVibrationFrequency", 22.0f);
-        settings.audioAttackSharpness = data->Load(prefix + "audioAttackSharpness", 1.8f);
-        settings.audioReleaseRate = data->Load(prefix + "audioReleaseRate", 10.0f);
-
-        // ★ 発生形状設定のロード
-        settings.emitShape = data->Load<uint32_t>(prefix + "emitShape", 0);
-        settings.emitSphereRadius = data->Load(prefix + "emitSphereRadius", 1.0f);
-        settings.emitConeAngle = data->Load(prefix + "emitConeAngle", 0.5236f);
-
-        // ★ カラーグラデーション(N段)設定のロード（有効フラグは settings、ストップは group 側ストレージ）
-        settings.enableColorGradient = data->Load<uint32_t>(prefix + "enableColorGradient", 0);
-        // ★ 寿命カーブ(サイズ/アルファ)の有効フラグ（点は group 側ストレージ）
-        settings.enableSizeCurve = data->Load<uint32_t>(prefix + "enableSizeCurve", 0);
-        settings.enableAlphaCurve = data->Load<uint32_t>(prefix + "enableAlphaCurve", 0);
-
-        group->SetSettingData(settings);
-
-        {
-            int stopCount = data->Load(prefix + "colorStopCount", 0);
-            if (stopCount > 0)
-            {
-                auto &stops = group->GetColorStops();
-                stops.clear();
-                for (int si = 0; si < stopCount; ++si)
-                {
-                    std::string sp = prefix + "colorStop_" + std::to_string(si) + "_";
-                    GradientStop gs;
-                    gs.color = data->Load<Vector4>(sp + "color", Vector4(1.0f, 1.0f, 1.0f, 1.0f));
-                    gs.pos = data->Load(sp + "pos", 0.0f);
-                    stops.push_back(gs);
-                }
-                group->MarkColorStopsDirty();
-            }
-            // 寿命カーブの制御点をロード（サイズ/アルファ）。
-            auto loadCurve = [&](const std::string &key, std::vector<CurvePoint> &out) {
-                int cnt = data->Load(prefix + key + "Count", 0);
-                if (cnt <= 0)
-                    return;
-                out.clear();
-                for (int pi = 0; pi < cnt; ++pi)
-                {
-                    std::string pp = prefix + key + "_" + std::to_string(pi) + "_";
-                    CurvePoint cp;
-                    cp.x = data->Load(pp + "x", 0.0f);
-                    cp.y = data->Load(pp + "y", 1.0f);
-                    out.push_back(cp);
-                }
-            };
-            loadCurve("sizeCurve", group->GetSizeCurvePoints());
-            loadCurve("alphaCurve", group->GetAlphaCurvePoints());
-            group->MarkLifeCurvesDirty();
-        }
-        group->SetBlendMode(static_cast<BlendMode>(data->Load<int>(prefix + "blendMode", static_cast<int>(BlendMode::Add))));
-        // 保存済みテクスチャがあれば適用（無ければグループ定義のテクスチャを維持）。
-        // AddParticleGroup がこの group のテクスチャを描画対象の独立グループへ伝播する。
-        {
-            std::string tex = data->Load<std::string>(prefix + "texture", "");
-            if (!tex.empty())
-                group->SetTexture(tex);
-        }
-
-        AddParticleGroup(group);
-    }
-    ImGuiNotification::Post("パーティクル設定を読み込みました: " + name_, {0.2f, 0.8f, 0.8f, 1.0f});
-}
-
-void ParticleCSEmitter::DrawImGui()
-{
-#ifdef USE_IMGUI
-    if (ImGui::BeginTabBar("EmitterTabBar"))
-    {
-        if (ImGui::BeginTabItem(name_.c_str()))
-        {
-            ImGuiStyle &style = ImGui::GetStyle();
-            ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.13f, 0.14f, 0.15f, 1.00f));
-
-            ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0.34f, 0.26f, 0.26f, 0.55f));
-            ImGui::PushStyleColor(ImGuiCol_HeaderHovered, ImVec4(0.42f, 0.32f, 0.32f, 0.70f));
-            ImGui::PushStyleColor(ImGuiCol_HeaderActive, ImVec4(0.50f, 0.40f, 0.40f, 0.85f));
-
-            if (ImGui::CollapsingHeader("エミッターデータ##EmitterData"))
-            {
-                ImGui::PopStyleColor(3);
-
-                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.56f, 0.69f, 0.86f, 1.0f));
-                ImGui::Text("エミッター設定:");
-                ImGui::PopStyleColor();
-
-                ImGui::Separator();
-
-                ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.2f, 0.4f, 0.2f, 0.5f));
-
-                ImGui::DragFloat("発生間隔##Freq", &pEmitterMeshData_->frequency, 0.001f, 0.001f, 10.0f);
-                ImGui::DragFloat3("エミッタの座標##Translate", &pEmitterMeshData_->translate.x, 0.1f);
-
-                Vector3 currentEuler = baseRotation_.ToEulerDegrees();
-                ImGui::Text("現在の回転: %.1f° %.1f° %.1f°", currentEuler.x, currentEuler.y, currentEuler.z);
-
-                static Vector3 deltaRotation = {0.0f, 0.0f, 0.0f};
-                if (ImGui::DragFloat3("##EmitterRotation", &deltaRotation.x, 0.1f, -10.0f, 10.0f, "%.1f°"))
-                {
-                    Quaternion currentRotation = baseRotation_;
-                    Quaternion deltaQuatX = Quaternion::FromAxisAngle(Vector3(1, 0, 0), deltaRotation.x * std::numbers::pi_v<float> / 180.0f);
-                    Quaternion deltaQuatY = Quaternion::FromAxisAngle(Vector3(0, 1, 0), deltaRotation.y * std::numbers::pi_v<float> / 180.0f);
-                    Quaternion deltaQuatZ = Quaternion::FromAxisAngle(Vector3(0, 0, 1), deltaRotation.z * std::numbers::pi_v<float> / 180.0f);
-                    Quaternion deltaQuat = deltaQuatY * deltaQuatX * deltaQuatZ;
-                    Quaternion newRotation = currentRotation * deltaQuat;
-                    baseRotation_ = newRotation.Normalize();
-                    deltaRotation = {0.0f, 0.0f, 0.0f};
-                }
-
-                ImGui::SameLine();
-                if (ImGui::Button("リセット##EmitterRotation"))
-                {
-                    baseRotation_ = Quaternion::IdentityQuaternion();
-                    deltaRotation = {0.0f, 0.0f, 0.0f};
-                }
-
-                {
-                    bool bb = billboardEmitter_;
-                    if (ImGui::Checkbox("ビルボード（常にカメラへ正対）##EmitterBillboard", &bb))
-                        billboardEmitter_ = bb;
-                    if (ImGui::IsItemHovered())
-                        ImGui::SetTooltip("発生形状の向きを毎フレームカメラの回転で置き換える。\n"
-                                          "上の回転はカメラ空間でのオフセットとして残る。\n"
-                                          "渦などの「基準空間」を エミッター にしておくと、\n"
-                                          "発生形状と渦の軸が一緒にカメラへ追従して\n"
-                                          "どの角度から見ても同じ動きになる。");
-                    if (billboardEmitter_)
-                    {
-                        Vector3 resolved = pEmitterMeshData_->rotation.ToEulerDegrees();
-                        ImGui::TextDisabled("  解決後: %.1f° %.1f° %.1f°", resolved.x, resolved.y, resolved.z);
-                    }
-                }
-
-                ImGui::DragFloat3("エミッタの大きさ##Scale", &pEmitterMeshData_->scale.x, 0.1f);
-
-                ImGui::PopStyleColor();
-
-                ImGui::Spacing();
-                ImGui::Separator();
-
-                ImGui::Spacing();
-                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.56f, 0.69f, 0.86f, 1.0f));
-                ImGui::Text("アンカーポイント:");
-                ImGui::PopStyleColor();
-
-                ImGui::DragFloat3("基準点##AnchorPoint", &pEmitterMeshData_->anchorPoint.x, 0.01f, 0.0f, 1.0f, "%.2f");
-
-                ImGui::Spacing();
-                ImGui::Separator();
-
-                // 発生位置設定（ラジオボタンで3択）
-                if (pEmitterMeshData_->triangleCount > 0 || pEmitterMeshData_->edgeCount > 0)
-                {
-                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.56f, 0.69f, 0.86f, 1.0f));
-                    ImGui::Text("発生位置:");
-                    ImGui::PopStyleColor();
-
-                    ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.3f, 0.3f, 0.4f, 0.6f));
-                    ImGui::PushStyleColor(ImGuiCol_CheckMark, ImVec4(0.8f, 0.6f, 0.2f, 1.0f));
-
-                    int emitMode = static_cast<int>(pEmitterMeshData_->emitFromSurface);
-
-                    ImGui::RadioButton("内部から発生##EmitInternal", &emitMode, 0);
-                    ImGui::SameLine();
-                    ImGui::RadioButton("表面から発生##EmitSurface", &emitMode, 1);
-                    ImGui::SameLine();
-                    ImGui::RadioButton("線上から発生##EmitEdge", &emitMode, 2);
-
-                    pEmitterMeshData_->emitFromSurface = static_cast<uint32_t>(emitMode);
-
-                    ImGui::PopStyleColor(2);
-
-                    // ツールチップ
-                    if (ImGui::IsItemHovered())
-                    {
-                        const char *tooltip = "";
-                        if (emitMode == 0)
-                            tooltip = "メッシュの内側全体からパーティクルが発生します";
-                        else if (emitMode == 1)
-                            tooltip = "メッシュの表面からパーティクルが発生します";
-                        else if (emitMode == 2)
-                            tooltip = "メッシュのエッジ（線）上からパーティクルが発生します";
-                        ImGui::SetTooltip("%s", tooltip);
-                    }
-                }
-
-                ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.2f, 0.4f, 0.2f, 0.5f));
-
-                // モデル情報表示
-                if (pEmitterMeshData_->triangleCount > 0)
-                {
-                    ImGui::Spacing();
-                    ImGui::Text("三角形数: %d", pEmitterMeshData_->triangleCount);
-                    if (pEmitterMeshData_->edgeCount > 0)
-                    {
-                        ImGui::Text("エッジ数: %d", pEmitterMeshData_->edgeCount);
-                    }
-                    if (!modelPath_.empty())
-                    {
-                        ImGui::Text("モデル: %s", modelPath_.c_str());
-                    }
-                    else if (primitiveType_ != PrimitiveType::None)
-                    {
-                        ImGui::Text("プリミティブタイプ");
-
-                        // 円形プリミティブ(Ring/Sphere/Cylinder/Cone)は分割数・形状を調整できる。
-                        if (IsParametricPrimitive(primitiveType_))
-                        {
-                            ImGui::Spacing();
-                            ImGui::TextDisabled("形状パラメータ");
-                            bool rebuild = false;
-
-                            int divide = static_cast<int>(primitiveParams_.divide);
-                            ImGui::SetNextItemWidth(180.0f);
-                            if (ImGui::DragInt("分割数##primDivide", &divide, 0.5f, 3, 256))
-                            {
-                                primitiveParams_.divide = static_cast<uint32_t>(divide < 3 ? 3 : divide);
-                            }
-                            if (ImGui::IsItemDeactivatedAfterEdit())
-                                rebuild = true;
-                            if (ImGui::IsItemHovered())
-                                ImGui::SetTooltip("円周方向の分割数。多いほど滑らか（頂点・三角形が増えます）");
-
-                            // Cylinder は高さ方向の分割数（格子の横リング本数）を調整できる。
-                            if (primitiveType_ == PrimitiveType::Cylinder)
-                            {
-                                int heightDivide = static_cast<int>(primitiveParams_.heightDivide);
-                                ImGui::SetNextItemWidth(180.0f);
-                                if (ImGui::DragInt("高さ分割##primHeightDivide", &heightDivide, 0.5f, 1, 256))
-                                {
-                                    primitiveParams_.heightDivide = static_cast<uint32_t>(heightDivide < 1 ? 1 : heightDivide);
-                                }
-                                if (ImGui::IsItemDeactivatedAfterEdit())
-                                    rebuild = true;
-                                if (ImGui::IsItemHovered())
-                                    ImGui::SetTooltip("高さ方向の分割数。線上発生モードで横リングの本数が増え格子状になります（横リング = 高さ分割 + 1 本）");
-                            }
-
-                            // リングは外半径・内半径（円の幅 = 外 - 内）を調整できる。
-                            if (primitiveType_ == PrimitiveType::Ring)
-                            {
-                                ImGui::SetNextItemWidth(180.0f);
-                                ImGui::DragFloat("外半径##primOuter", &primitiveParams_.ringOuterRadius, 0.01f, 0.01f, 100.0f, "%.3f");
-                                if (ImGui::IsItemDeactivatedAfterEdit())
-                                    rebuild = true;
-                                ImGui::SetNextItemWidth(180.0f);
-                                ImGui::DragFloat("内半径##primInner", &primitiveParams_.ringInnerRadius, 0.01f, 0.0f, 100.0f, "%.3f");
-                                if (ImGui::IsItemDeactivatedAfterEdit())
-                                    rebuild = true;
-                                if (ImGui::IsItemHovered())
-                                    ImGui::SetTooltip("円の幅 = 外半径 - 内半径");
-                            }
-
-                            if (rebuild)
-                            {
-                                // 内半径が外半径を超えないようクランプしてから作り直す。
-                                if (primitiveParams_.ringInnerRadius > primitiveParams_.ringOuterRadius)
-                                    primitiveParams_.ringInnerRadius = primitiveParams_.ringOuterRadius;
-                                RebuildPrimitiveModel();
-                            }
-                        }
-                    }
-                }
-
-                ImGui::PopStyleColor();
-
-                ImGui::PushStyleColor(ImGuiCol_CheckMark, ImVec4(0.2f, 0.8f, 0.2f, 1.0f));
-                ImGui::Checkbox("自動更新##Auto", &isAuto_);
-                ImGui::SameLine();
-                {
-                    bool noGroups = particleGroups_.empty();
-                    bool disabled = isAuto_ || noGroups;
-                    uint32_t cnt = noGroups ? 0u : particleGroups_[0]->GetSettingsData()->emitCount;
-                    std::string btnLabel = "一回発生 (x" + std::to_string(cnt) + ")##EmitOnce";
-                    if (disabled)
-                        ImGui::BeginDisabled();
-                    if (ImGui::Button(btnLabel.c_str()))
-                    {
-                        EmitOnce();
-                        ImGuiNotification::Post("パーティクルを " + std::to_string(cnt) + " 個発生しました", {0.3f, 1.0f, 0.5f, 1.0f});
-                    }
-                    if (disabled)
-                        ImGui::EndDisabled();
-                    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
-                    {
-                        if (isAuto_)
-                            ImGui::SetTooltip("自動更新がONのため使用できません\n（自動更新をOFFにしてください）");
-                        else if (noGroups)
-                            ImGui::SetTooltip("パーティクルグループが未設定です\n（グループを追加してください）");
-                        else if (cnt == 0)
-                            ImGui::SetTooltip("発生数が0のため効果がありません\n（発生数設定を確認してください）");
-                    }
-                }
-                if (ImGui::Checkbox("ギズモ選択", &isGizmoSelectable_))
-                {
-                    ImGuizmoManager::GetInstance()->SetSelectable(name_, isGizmoSelectable_);
-                }
-                ImGui::Checkbox("エミッター表示##Visible", &isVisible_);
-                ImGui::PopStyleColor();
-            }
-            else
-            {
-                ImGui::PopStyleColor(3);
-            }
-
-            ImGui::Separator();
-            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.56f, 0.69f, 0.86f, 1.0f));
-            ImGui::TextUnformatted("フィールド影響設定");
-            ImGui::PopStyleColor();
-            bool rf = receiveFields_;
-            if (ImGui::Checkbox("フィールドの影響を受ける", &rf))
-            {
-                receiveFields_ = rf;
-            }
-            if (ImGui::IsItemHovered())
-            {
-                ImGui::SetTooltip("オフにするとParticleFieldManagerのフィールドが\nこのエミッターに作用しなくなります");
-            }
-
-            if (receiveFields_)
-            {
-                ImGui::Indent();
-                ImGui::PushItemWidth(120.0f);
-                int fgid = fieldGroupId_;
-                if (ImGui::DragInt("フィールドグループID##fgid", &fgid, 1, -1, 255))
-                {
-                    fieldGroupId_ = std::max(-1, fgid);
-                }
-                ImGui::PopItemWidth();
-                ImGui::SameLine();
-                ImGui::TextDisabled("(?)");
-                if (ImGui::IsItemHovered())
-                    ImGui::SetTooltip(
-                        "-1 = 全フィールドから影響を受ける（デフォルト）\n"
-                        "0以上 = 同じIDのフィールドのみから影響を受ける");
-                if (fieldGroupId_ == -1)
-                {
-                    ImGui::TextDisabled("  全フィールド対象");
-                }
-                else
-                {
-                    ImGui::Text("  ID: %d のフィールドのみ対象", fieldGroupId_);
-                }
-
-                ImGui::Spacing();
-                bool eofc = emitOnlyOnFieldContact_;
-                if (ImGui::Checkbox("フィールド接触部分にのみ発生##EmitOnFieldContact", &eofc))
-                {
-                    emitOnlyOnFieldContact_ = eofc;
-                }
-                if (ImGui::IsItemHovered())
-                {
-                    ImGui::SetTooltip(
-                        "ON : 「接触Emit」が有効なフィールドと接触している\n"
-                        "     エミッター表面にのみパーティクルを発生させます\n"
-                        "OFF: 通常通りエミッター全体からランダムEmitします");
-                }
-
-                if (emitOnlyOnFieldContact_)
-                {
-                    ImGui::Indent();
-
-                    // 発生数・間隔・寿命はフィールド側に一本化されている。
-                    // ここでは対象フィールドの状態を読み取り専用で表示し、迷子を防ぐ。
-                    ImGui::TextDisabled("発生数・間隔・寿命はフィールド側の「接触Emit」で設定します");
-
-                    int matchCount = 0;
-                    for (const auto &field : ParticleCSFieldManager::GetInstance()->GetFields())
-                    {
-                        if (!field.enabled || !field.data.enableEmitSpawn)
-                            continue;
-                        bool groupMatch = (field.data.groupId == -1) ||
-                                          (fieldGroupId_ == -1) ||
-                                          (field.data.groupId == fieldGroupId_);
-                        if (!groupMatch)
-                            continue;
-                        ++matchCount;
-                        if (field.emitSpawnInterval > 0.0f)
-                        {
-                            ImGui::Text("  %s : %u個 / %.2fs間隔",
-                                        field.name.c_str(), field.emitSpawnCount, field.emitSpawnInterval);
-                        }
-                        else
-                        {
-                            ImGui::Text("  %s : %u個 / 毎フレーム",
-                                        field.name.c_str(), field.emitSpawnCount);
-                        }
-                    }
-                    if (matchCount == 0)
-                    {
-                        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.9f, 0.6f, 0.3f, 1.0f));
-                        ImGui::TextUnformatted("  対象フィールドがありません（発生しません）");
-                        ImGui::PopStyleColor();
-                        if (ImGui::IsItemHovered())
-                            ImGui::SetTooltip(
-                                "パーティクルフィールド管理ウィンドウで\n"
-                                "「接触Emit」を有効にしたフィールドを用意し、\n"
-                                "グループIDをこのエミッターと合わせてください。");
-                    }
-
-                    ImGui::Unindent();
-                }
-
-                ImGui::Unindent();
-            }
-
-            ImGui::Spacing();
-
-            // パーティクルグループ設定セクション（既存のコードと同じ）
-            if (!particleGroups_.empty())
-            {
-                static int selectedGroupIndex = 0;
-                if (selectedGroupIndex >= static_cast<int>(particleGroups_.size()))
-                {
-                    selectedGroupIndex = 0;
-                }
-
-                std::vector<std::string> groupNames;
-                for (const auto &group : particleGroups_)
-                {
-                    groupNames.push_back(group->GetGroupName());
-                }
-
-                std::vector<const char *> groupNameCStrs;
-                for (auto &n : groupNames)
-                    groupNameCStrs.push_back(n.c_str());
-
-                ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.16f, 0.18f, 0.22f, 0.85f));
-                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.22f, 0.34f, 0.48f, 0.85f));
-                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.30f, 0.44f, 0.60f, 0.95f));
-
-                ImGui::SetNextItemWidth(200.0f);
-                ImGui::Combo("選択中のグループ##GroupCombo", &selectedGroupIndex, groupNameCStrs.data(), static_cast<int>(groupNameCStrs.size()));
-
-                ImGui::PopStyleColor(3);
-
-                if (selectedGroupIndex >= 0 && selectedGroupIndex < static_cast<int>(particleGroups_.size()))
-                {
-                    ImGui::Separator();
-                    particleGroups_[selectedGroupIndex]->SetFrequency(pEmitterMeshData_->frequency);
-                    particleGroups_[selectedGroupIndex]->DrawImGui();
-                }
-            }
-            else
-            {
-                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.8f, 0.6f, 0.6f, 1.0f));
-                ImGui::Text("GPUパーティクルグループがありません");
-                ImGui::PopStyleColor();
-            }
-
-            ImGui::Spacing();
-            ImGui::Separator();
-            ImGui::Spacing();
-
-            // グループ管理セクション
-            ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0.28f, 0.32f, 0.40f, 0.55f));
-            ImGui::PushStyleColor(ImGuiCol_HeaderHovered, ImVec4(0.34f, 0.40f, 0.50f, 0.70f));
-            ImGui::PushStyleColor(ImGuiCol_HeaderActive, ImVec4(0.42f, 0.48f, 0.58f, 0.85f));
-
-            if (ImGui::CollapsingHeader("GPUグループ管理##GPUGroupManagement"))
-            {
-                ImGui::PopStyleColor(3);
-
-                ImGui::Spacing();
-
-                // 遅延生成対応: 実体(GPUバッファ)未確保のグループも選べるよう、
-                // ロード済みテンプレートではなく登録簿の全グループ名から一覧を作る。
-                auto allGroupNames = ParticleCSGroupManager::GetInstance()->GetAllGroupNames();
-
-                std::vector<std::string> availableNames;
-                std::vector<std::string> attachedNames;
-
-                for (const auto &name : allGroupNames)
-                {
-                    if (particleGroupNames_.contains(name))
-                    {
-                        attachedNames.push_back(name);
-                    }
-                    else
-                    {
-                        availableNames.push_back(name);
-                    }
-                }
-
-                static std::vector<int> leftSelected;
-                static std::vector<int> rightSelected;
-
-                std::vector<const char *> availableItems;
-                for (auto &name : availableNames)
-                    availableItems.push_back(name.c_str());
-
-                std::vector<const char *> attachedItems;
-                for (auto &name : attachedNames)
-                    attachedItems.push_back(name.c_str());
-
-                leftSelected.erase(std::remove_if(leftSelected.begin(), leftSelected.end(),
-                                                  [&](int i) { return i >= static_cast<int>(availableNames.size()); }),
-                                   leftSelected.end());
-                rightSelected.erase(std::remove_if(rightSelected.begin(), rightSelected.end(),
-                                                   [&](int i) { return i >= static_cast<int>(attachedNames.size()); }),
-                                    rightSelected.end());
-
-                float width = ImGui::GetContentRegionAvail().x;
-                float halfWidth = width * 0.45f;
-
-                // ヘッダーテキストのスタイル
-                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.56f, 0.69f, 0.86f, 1.0f));
-                ImGui::Text("利用可能なGPUグループ");
-                ImGui::SameLine(width - halfWidth - 50);
-                ImGui::Text("アタッチ済みGPUグループ");
-                ImGui::PopStyleColor();
-
-                ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8, 4));
-
-                // 左リスト用のスタイル設定
-                ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.1f, 0.15f, 0.2f, 0.8f));
-                ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.3f, 0.4f, 0.5f, 0.8f));
-
-                ImGui::BeginChild("gpu_available_groups##GPUAvailableGroups", ImVec2(halfWidth, 200), true);
-
-                ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0.28f, 0.34f, 0.42f, 0.55f));
-                ImGui::PushStyleColor(ImGuiCol_HeaderHovered, ImVec4(0.34f, 0.42f, 0.52f, 0.70f));
-                ImGui::PushStyleColor(ImGuiCol_HeaderActive, ImVec4(0.40f, 0.50f, 0.60f, 0.85f));
-
-                if (availableItems.empty())
-                {
-                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.6f, 0.6f, 0.6f, 1.0f));
-                    ImGui::Text("利用可能なGPUグループがありません");
-                    ImGui::PopStyleColor();
-                }
-                else
-                {
-                    for (int i = 0; i < availableItems.size(); ++i)
-                    {
-                        bool selected = std::find(leftSelected.begin(), leftSelected.end(), i) != leftSelected.end();
-                        std::string selectableId = std::string(availableItems[i]) + "##GPUAvailable" + std::to_string(i);
-                        if (ImGui::Selectable(selectableId.c_str(), selected, ImGuiSelectableFlags_AllowDoubleClick))
-                        {
-                            if (!ImGui::GetIO().KeyCtrl)
-                                leftSelected.clear();
-
-                            auto it = std::find(leftSelected.begin(), leftSelected.end(), i);
-                            if (it != leftSelected.end())
-                                leftSelected.erase(it);
-                            else
-                                leftSelected.push_back(i);
-
-                            if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0))
-                            {
-                                auto group = ParticleCSGroupManager::GetInstance()->GetParticleCSGroup(availableNames[i]);
-                                AddParticleGroup(group);
-                                leftSelected.clear();
-                            }
-                        }
-                    }
-                }
-
-                ImGui::PopStyleColor(3);
-                ImGui::EndChild();
-
-                ImGui::SameLine();
-
-                // 中央のボタン群
-                ImGui::BeginGroup();
-                ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 12));
-
-                // ボタンのスタイル設定
-                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.22f, 0.40f, 0.30f, 0.85f));
-                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.28f, 0.50f, 0.38f, 0.95f));
-                ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.32f, 0.58f, 0.44f, 1.0f));
-
-                bool canMoveRight = !leftSelected.empty();
-                if (!canMoveRight)
-                {
-                    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.3f, 0.3f, 0.3f, 0.5f));
-                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.3f, 0.3f, 0.3f, 0.5f));
-                    ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.3f, 0.3f, 0.3f, 0.5f));
-                }
-
-                if (ImGui::Button("追加 >>##GPUAddButton", ImVec2(80, 35)) && canMoveRight)
-                {
-                    for (int idx : leftSelected)
-                    {
-                        auto group = ParticleCSGroupManager::GetInstance()->GetParticleCSGroup(availableNames[idx]);
-                        AddParticleGroup(group);
-                    }
-                    leftSelected.clear();
-                }
-
-                if (!canMoveRight)
-                {
-                    ImGui::PopStyleColor(3);
-                }
-
-                bool canMoveLeft = !rightSelected.empty();
-                if (!canMoveLeft)
-                {
-                    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.3f, 0.3f, 0.3f, 0.5f));
-                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.3f, 0.3f, 0.3f, 0.5f));
-                    ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.3f, 0.3f, 0.3f, 0.5f));
-                }
-
-                if (ImGui::Button("<< 削除##GPURemoveButton", ImVec2(80, 35)) && canMoveLeft)
-                {
-                    for (int idx : rightSelected)
-                    {
-                        RemoveParticleGroup(attachedNames[idx]);
-                    }
-                    rightSelected.clear();
-                }
-
-                if (!canMoveLeft)
-                {
-                    ImGui::PopStyleColor(3);
-                }
-
-                ImGui::PopStyleColor(3); // Button colors
-                ImGui::PopStyleVar();
-                ImGui::EndGroup();
-
-                ImGui::SameLine();
-
-                ImGui::BeginChild("gpu_attached_groups##GPUAttachedGroups", ImVec2(halfWidth, 200), true);
-
-                ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0.44f, 0.36f, 0.26f, 0.55f));
-                ImGui::PushStyleColor(ImGuiCol_HeaderHovered, ImVec4(0.52f, 0.42f, 0.30f, 0.70f));
-                ImGui::PushStyleColor(ImGuiCol_HeaderActive, ImVec4(0.58f, 0.48f, 0.36f, 0.85f));
-
-                if (attachedItems.empty())
-                {
-                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.6f, 0.6f, 0.6f, 1.0f));
-                    ImGui::Text("アタッチされたGPUグループがありません");
-                    ImGui::PopStyleColor();
-                }
-                else
-                {
-                    for (int i = 0; i < attachedItems.size(); ++i)
-                    {
-                        bool selected = std::find(rightSelected.begin(), rightSelected.end(), i) != rightSelected.end();
-                        std::string selectableId = std::string(attachedItems[i]) + "##GPUAttached" + std::to_string(i);
-                        if (ImGui::Selectable(selectableId.c_str(), selected, ImGuiSelectableFlags_AllowDoubleClick))
-                        {
-                            if (!ImGui::GetIO().KeyCtrl)
-                                rightSelected.clear();
-
-                            auto it = std::find(rightSelected.begin(), rightSelected.end(), i);
-                            if (it != rightSelected.end())
-                                rightSelected.erase(it);
-                            else
-                                rightSelected.push_back(i);
-
-                            if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0))
-                            {
-                                RemoveParticleGroup(attachedNames[i]);
-                                rightSelected.clear();
-                            }
-                        }
-                    }
-                }
-
-                ImGui::PopStyleColor(3);
-                ImGui::EndChild();
-
-                ImGui::PopStyleColor(2);
-                ImGui::PopStyleVar();
-
-                ImGui::Spacing();
-
-                // 操作説明
-                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.7f, 0.7f, 0.7f, 1.0f));
-                ImGui::Text("操作: Ctrlキー + クリックで複数選択, ダブルクリックで追加/削除");
-                ImGui::PopStyleColor();
-            }
-            else
-            {
-                ImGui::PopStyleColor(3);
-            }
-
-            ImGui::Spacing();
-            ImGui::Separator();
-            ImGui::Spacing();
-
-            // ファイル操作セクション
-            ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0.38f, 0.32f, 0.26f, 0.55f));
-            ImGui::PushStyleColor(ImGuiCol_HeaderHovered, ImVec4(0.46f, 0.38f, 0.30f, 0.70f));
-            ImGui::PushStyleColor(ImGuiCol_HeaderActive, ImVec4(0.52f, 0.44f, 0.36f, 0.85f));
-
-            if (ImGui::CollapsingHeader("GPUファイル操作##GPUFileOperations"))
-            {
-                ImGui::PopStyleColor(3);
-
-                ImGui::Spacing();
-
-                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.22f, 0.34f, 0.48f, 0.85f));
-                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.30f, 0.44f, 0.60f, 0.95f));
-                ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.36f, 0.52f, 0.70f, 1.0f));
-
-                if (ImGui::Button("GPU設定を保存##GPUSaveButton", ImVec2(120, 35)))
-                {
-                    SaveSetting();
-                    std::unique_ptr<DataHandler> data = std::make_unique<DataHandler>("ParticleCS", name_);
-                    data->Flush();
-                    ImGuiNotification::Post("パーティクル設定を保存しました", {0.2f, 0.8f, 0.2f, 1.0f});
-                }
-                ImGui::PopStyleColor(3);
-
-                if (ImGui::IsItemHovered())
-                {
-                    ImGui::SetTooltip("現在のGPUパーティクル設定をファイルに保存します");
-                }
-
-                ImGui::Spacing();
-            }
-            else
-            {
-                ImGui::PopStyleColor(3);
-            }
-
-            // メインウィンドウの背景色をポップ
-            ImGui::PopStyleColor();
-            ImGui::EndTabItem();
-        }
-        ImGui::EndTabBar();
-    }
-#endif // USE_IMGUI
-}
 } // namespace Hagine

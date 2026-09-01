@@ -39,8 +39,8 @@ class Skin
     /// <summary>
     /// スキニング実行
     /// </summary>
-    /// <param name="commandList">コマンドリスト</param>
-    void ExecuteSkinning(ID3D12GraphicsCommandList *commandList);
+    /// <param name="pCommandList">コマンドリスト</param>
+    void ExecuteSkinning(ID3D12GraphicsCommandList *pCommandList);
 
     /// <summary>
     /// メッシュの頂点オフセットを取得
@@ -119,7 +119,7 @@ class Skin
 
   private:
     /// ===================================================
-    /// private varians
+    /// private variables
     /// ===================================================
 
     SkinCluster skinCluster_;                      // スキンクラスター

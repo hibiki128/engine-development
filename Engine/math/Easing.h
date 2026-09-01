@@ -5,6 +5,12 @@
 namespace Hagine {
 
 /// <summary>
+/// 正規化済みイージング進捗の上限。
+/// 進捗を 0.0〜1.0 で扱う場合のクランプ値、および ApplyEasing の totalX に渡す値として使う
+/// </summary>
+inline constexpr float kEasingProgressMax = 1.0f;
+
+/// <summary>
 /// イージングの種類
 /// </summary>
 enum class EasingType

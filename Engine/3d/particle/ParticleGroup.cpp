@@ -19,8 +19,8 @@ ParticleGroupData ParticleGroup::CreateParticleGroup(const std::string &groupNam
     particleGroupData_.groupName = groupName;
     modelFilePath_ = filename;
     ModelManager::GetInstance()->LoadModel(filename);
-    model_ = ModelManager::GetInstance()->FindModel(filename);
-    modelData_ = model_->GetModelData();
+    pModel_ = ModelManager::GetInstance()->FindModel(filename);
+    modelData_ = pModel_->GetModelData();
     CreateVertexData();
     CreateIndexResource();
     // マテリアルが複数ある場合は最初のものを使う
@@ -64,9 +64,9 @@ ParticleGroupData ParticleGroup::CreatePrimitiveParticleGroup(const std::string 
 {
     particleGroupData_.groupName = groupName;
     type_ = type;
-    model_ = ModelManager::GetInstance()->FindModel(ModelManager::GetInstance()->CreatePrimitiveModel(type, texturePath));
+    pModel_ = ModelManager::GetInstance()->FindModel(ModelManager::GetInstance()->CreatePrimitiveModel(type, texturePath));
     TextureManager::GetInstance()->LoadTexture(texturePath);
-    modelData_ = model_->GetModelData();
+    modelData_ = pModel_->GetModelData();
     CreateVertexData();
     CreateIndexResource();
     // マテリアルが複数ある場合は最初のものを使う

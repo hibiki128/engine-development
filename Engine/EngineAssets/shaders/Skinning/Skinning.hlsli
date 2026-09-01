@@ -29,4 +29,7 @@ struct VertexShaderOutput
     float3 normal        : NORMAL0;
     float3 worldPosition : POSITION0;
     float4 shadowCoord   : POSITION1;
+    // ピクセルシェーダ（Object3d.PS / GBuffer.PS）が要求するのでスキニングでも出力する。
+    // スキニングはインスタンシングしないので常に白。Object3d.hlsli と並びを揃えること。
+    float4 instanceColor : COLOR0;
 };

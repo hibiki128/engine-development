@@ -1,22 +1,29 @@
 #include "DebugCamera.h"
 #include <DirectXCommon.h>
 #include <Input.h>
+#include <camera/CameraManager.h>
 #include <Mymath.h>
-#ifdef _DEBUG
+#ifdef USE_IMGUI
 #include <imgui.h>
 #include <implot.h>
+#include <utility/debug/imgui/ImGuizmoManager.h>
 #endif
 #include <utility/debug/imgui/DebugUIHelper.h>
 #include <algorithm>
 
 namespace Hagine {
-void DebugCamera::Initialize(ViewProjection *pViewProjection)
+void DebugCamera::Initialize()
 {
-    pViewProjection_ = pViewProjection;
-    translation_ = pViewProjection->translation_;
-    isUseQuaternion_ = pViewProjection->isUseQuaternion_;
-    eulerRotation_ = pViewProjection->eulerRotation_;
-    quateRotation_ = pViewProjection->quateRotation_;
+    // デバッグ専用のカメラを1台登録しておく。有効化されたときだけこのカメラへ切り替える。
+    CameraManager *cameraManager = CameraManager::GetInstance();
+    pCamera_ = cameraManager->Create("デバッグカメラ");
+    pPreviousCamera_ = nullptr;
+    wasActive_ = false;
+
+    translation_ = pCamera_->GetPosition();
+    eulerRotation_ = pCamera_->GetRotation();
+    quaternionRotation_ = pCamera_->GetQuaternion();
+    isUseQuaternion_ = false;
     matRot_ = MakeIdentity4x4();
     isActive_ = false;
     lockCamera_ = false;
@@ -27,6 +34,36 @@ void DebugCamera::Initialize(ViewProjection *pViewProjection)
 
 void DebugCamera::Update()
 {
+    if (!pCamera_)
+    {
+        return; // Initialize 前
+    }
+    CameraManager *cameraManager = CameraManager::GetInstance();
+
+    // 有効/無効が切り替わった瞬間だけカメラを差し替える
+    if (isActive_ != wasActive_)
+    {
+        if (isActive_)
+        {
+            // 直前のカメラを覚えておき、その構図から操作を始める（切り替えた瞬間に視点が飛ばない）
+            pPreviousCamera_ = cameraManager->GetActive();
+            if (pPreviousCamera_ && pPreviousCamera_ != pCamera_)
+            {
+                pCamera_->CopyStateFrom(*pPreviousCamera_);
+                translation_ = pCamera_->GetPosition();
+                eulerRotation_ = pCamera_->GetRotation();
+                quaternionRotation_ = pCamera_->GetQuaternion();
+            }
+            cameraManager->SetActive(pCamera_);
+        }
+        else if (pPreviousCamera_)
+        {
+            cameraManager->SetActive(pPreviousCamera_); // 元のカメラへ戻す
+            pPreviousCamera_ = nullptr;
+        }
+        wasActive_ = isActive_;
+    }
+
     // アクティブ時のみデバッグ操作を適用
     if (isActive_)
     {
@@ -36,42 +73,32 @@ void DebugCamera::Update()
             CameraMove(eulerRotation_, translation_, mouse_);
         }
 
-        Matrix4x4 cameraMatrix;
+#ifdef USE_IMGUI
+        // ギズモ側の F キー（選択オブジェクトへ寄る）要求を処理する。
+        // 向きは変えず、対象が画面に収まる距離まで前後させるだけにして視点が飛ばないようにする。
+        Vector3 focusTarget{};
+        float focusRadius = 1.0f;
+        if (ImGuizmoManager::GetInstance()->ConsumeFocusRequest(focusTarget, focusRadius))
+        {
+            Matrix4x4 matRot = isUseQuaternion_
+                                   ? QuaternionToMatrix4x4(quaternionRotation_)
+                                   : MakeRotateXMatrix(eulerRotation_.x) * MakeRotateYMatrix(eulerRotation_.y);
+            // CameraMove の forward は {0,0,-2} 方向なので、視線方向はその反対になる
+            Vector3 viewDirection = TransformNormal({0.0f, 0.0f, 1.0f}, matRot).Normalize();
+            translation_ = focusTarget - viewDirection * (focusRadius * 3.0f + 2.0f);
+        }
+#endif // USE_IMGUI
 
-        // 回転の定義形式に応じて行列を生成
+        // 操作結果をカメラへ反映する（行列の生成はカメラ側が行う）
+        pCamera_->SetPosition(translation_);
         if (isUseQuaternion_)
         {
-            cameraMatrix = MakeAffineMatrix(
-                {1.0f, 1.0f, 1.0f},
-                quateRotation_,
-                translation_);
+            pCamera_->SetQuaternion(quaternionRotation_);
         }
         else
         {
-            cameraMatrix = MakeAffineMatrix(
-                {1.0f, 1.0f, 1.0f},
-                eulerRotation_,
-                translation_);
+            pCamera_->SetRotation(eulerRotation_);
         }
-
-        // ビュープロジェクションの状態を更新
-        pViewProjection_->matWorld_ = cameraMatrix;
-        pViewProjection_->matView_ = Inverse(cameraMatrix);
-        pViewProjection_->translation_ = translation_;
-        pViewProjection_->eulerRotation_ = eulerRotation_;
-        pViewProjection_->quateRotation_ = quateRotation_;
-        pViewProjection_->isUseQuaternion_ = isUseQuaternion_;
-
-        // 投影行列の再計算
-        pViewProjection_->matProjection_ = MakePerspectiveFovMatrix(
-            45.0f * std::numbers::pi_v<float> / 180.0f,
-            float(WinApp::GetVirtualWidth()) / float(WinApp::GetVirtualHeight()),
-            0.1f, 1000.0f);
-    }
-    else
-    {
-        // 非アクティブ時は通常更新
-        pViewProjection_->UpdateMatrix();
     }
 }
 
@@ -81,7 +108,7 @@ void DebugCamera::CameraMove(Vector3 &cameraRotate, Vector3 &cameraTranslate, Ve
     Matrix4x4 matRot;
     if (isUseQuaternion_)
     {
-        matRot = QuaternionToMatrix4x4(quateRotation_);
+        matRot = QuaternionToMatrix4x4(quaternionRotation_);
     }
     else
     {
@@ -158,11 +185,11 @@ void DebugCamera::CameraMove(Vector3 &cameraRotate, Vector3 &cameraTranslate, Ve
             Quaternion yawRotation = Quaternion::FromAxisAngle({0, 1, 0}, deltaX * mouseSensitivity_);
             Quaternion pitchRotation = Quaternion::FromAxisAngle({1, 0, 0}, deltaY * mouseSensitivity_);
 
-            quateRotation_ = yawRotation * pitchRotation * quateRotation_;
-            quateRotation_ = quateRotation_.Normalize();
+            quaternionRotation_ = yawRotation * pitchRotation * quaternionRotation_;
+            quaternionRotation_ = quaternionRotation_.Normalize();
 
             // 参考用にオイラー角も更新
-            eulerRotation_ = quateRotation_.ToEulerAngles();
+            eulerRotation_ = quaternionRotation_.ToEulerAngles();
         }
         else
         {
@@ -175,7 +202,7 @@ void DebugCamera::CameraMove(Vector3 &cameraRotate, Vector3 &cameraTranslate, Ve
             cameraRotate.x = std::clamp(cameraRotate.x, -pi_2, pi_2);
 
             // 参考用にクォータニオンも更新
-            quateRotation_ = Quaternion::FromEulerAngles(eulerRotation_);
+            quaternionRotation_ = Quaternion::FromEulerAngles(eulerRotation_);
         }
 
         clickPosition = currentMousePos;
@@ -186,9 +213,9 @@ void DebugCamera::CameraMove(Vector3 &cameraRotate, Vector3 &cameraTranslate, Ve
     }
 }
 
-void DebugCamera::imgui()
+void DebugCamera::DrawImGui()
 {
-#ifdef _DEBUG
+#ifdef USE_IMGUI
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(6, 3));
     ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(5, 3));
     ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 4.0f);
@@ -219,11 +246,7 @@ void DebugCamera::imgui()
     // ====================================================
     // [1] Position / Rotation
     // ====================================================
-    ImGui::PushStyleColor(ImGuiCol_Header, DebugTheme::kHeaderBlue);
-    ImGui::PushStyleColor(ImGuiCol_HeaderHovered, {0.45f, 0.60f, 0.78f, 0.35f});
-    bool posOpen = ImGui::CollapsingHeader("位置 / 回転##campr",
-                                           ImGuiTreeNodeFlags_DefaultOpen);
-    ImGui::PopStyleColor(2);
+    const bool posOpen = ThemedHeader("位置 / 回転##campr", DebugTheme::kAccentBlue, true);
 
     if (posOpen)
     {
@@ -238,9 +261,7 @@ void DebugCamera::imgui()
                      DebugTheme::kBgBlue);
 
         // 位置履歴グラフ
-        ImGui::PushStyleColor(ImGuiCol_Header, DebugTheme::kBgBlue);
-        ImGui::PushStyleColor(ImGuiCol_HeaderHovered, {0.45f, 0.60f, 0.78f, 0.20f});
-        if (ImGui::CollapsingHeader("位置履歴 (グラフ)##camhist"))
+        if (ThemedHeader("位置履歴 (グラフ)##camhist", DebugTheme::kAccentBlue))
         {
             constexpr int kN = 100;
             static float hx[kN]{}, hy[kN]{}, hz[kN]{};
@@ -283,7 +304,6 @@ void DebugCamera::imgui()
             }
             ImPlot::PopStyleColor();
         }
-        ImGui::PopStyleColor(2);
 
         ImGui::Spacing();
 
@@ -303,7 +323,7 @@ void DebugCamera::imgui()
             ImGui::PopStyleColor();
             ImGui::SetNextItemWidth(-1);
             ImGui::PushStyleColor(ImGuiCol_FrameBg, {0.42f, 0.66f, 0.68f, 0.12f});
-            ImGui::DragFloat4("##camquat", &quateRotation_.x, 0.01f, -1.f, 1.f, "%.3f");
+            ImGui::DragFloat4("##camquat", &quaternionRotation_.x, 0.01f, -1.f, 1.f, "%.3f");
             ImGui::PopStyleColor();
 
             ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kTextDim);
@@ -331,8 +351,8 @@ void DebugCamera::imgui()
 
             ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kTextDim);
             ImGui::Text("  Quat (ref)  %.3f  %.3f  %.3f  %.3f",
-                        quateRotation_.x, quateRotation_.y,
-                        quateRotation_.z, quateRotation_.w);
+                        quaternionRotation_.x, quaternionRotation_.y,
+                        quaternionRotation_.z, quaternionRotation_.w);
             ImGui::PopStyleColor();
         }
 
@@ -343,7 +363,7 @@ void DebugCamera::imgui()
         if (ImGui::SmallButton("回転リセット##crrst"))
         {
             eulerRotation_ = {};
-            quateRotation_ = Quaternion::IdentityQuaternion();
+            quaternionRotation_ = Quaternion::IdentityQuaternion();
         }
 
         ImGui::Unindent(6.0f);
@@ -353,11 +373,7 @@ void DebugCamera::imgui()
     // ====================================================
     // [2] Move Speed
     // ====================================================
-    ImGui::PushStyleColor(ImGuiCol_Header, DebugTheme::kHeaderOrange);
-    ImGui::PushStyleColor(ImGuiCol_HeaderHovered, {0.82f, 0.58f, 0.36f, 0.35f});
-    bool moveOpen = ImGui::CollapsingHeader("移動速度##cammv",
-                                            ImGuiTreeNodeFlags_DefaultOpen);
-    ImGui::PopStyleColor(2);
+    const bool moveOpen = ThemedHeader("移動速度##cammv", DebugTheme::kAccentOrange, true);
 
     if (moveOpen)
     {
@@ -396,11 +412,7 @@ void DebugCamera::imgui()
     // ====================================================
     // [3] Input / Control
     // ====================================================
-    ImGui::PushStyleColor(ImGuiCol_Header, DebugTheme::kHeaderPurple);
-    ImGui::PushStyleColor(ImGuiCol_HeaderHovered, {0.62f, 0.50f, 0.74f, 0.35f});
-    bool ctrlOpen = ImGui::CollapsingHeader("入力 / 操作##camctl",
-                                            ImGuiTreeNodeFlags_DefaultOpen);
-    ImGui::PopStyleColor(2);
+    const bool ctrlOpen = ThemedHeader("入力 / 操作##camctl", DebugTheme::kAccentPurple, true);
 
     if (ctrlOpen)
     {
@@ -451,10 +463,7 @@ void DebugCamera::imgui()
     // ====================================================
     // [4] Status (compact read-only table)
     // ====================================================
-    ImGui::PushStyleColor(ImGuiCol_Header, DebugTheme::kBgGreen);
-    ImGui::PushStyleColor(ImGuiCol_HeaderHovered, {0.45f, 0.68f, 0.52f, 0.20f});
-    bool stOpen = ImGui::CollapsingHeader("ステータス##camst");
-    ImGui::PopStyleColor(2);
+    const bool stOpen = ThemedHeader("ステータス##camst", DebugTheme::kAccentGreen);
 
     if (stOpen)
     {
@@ -470,6 +479,6 @@ void DebugCamera::imgui()
 
     ImGui::EndChild();
     ImGui::PopStyleVar(3);
-#endif // _DEBUG
+#endif // USE_IMGUI
 }
 } // namespace Hagine
