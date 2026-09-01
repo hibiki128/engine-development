@@ -78,7 +78,7 @@ void WinApp::Initialize()
     // ウィンドウの生成
     hwnd_ = CreateWindow(
         wc_.lpszClassName,                               // 利用するクラス名
-        L"LE4B_20_ハギワラ_ヒビキ_スパーキングファイト", // タイトルバーの文字
+        L"4027_タイトル", // タイトルバーの文字
         WS_OVERLAPPEDWINDOW,                             // よく見るウィンドウスタイル
         CW_USEDEFAULT,                                   // 表示X座標
         CW_USEDEFAULT,                                   // 表示Y座標
