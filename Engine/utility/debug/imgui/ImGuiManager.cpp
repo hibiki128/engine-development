@@ -22,6 +22,7 @@
 #include <algorithm>
 #include <asset/AssetPath.h>
 #include <data/DataHandler.h>
+#include <debug/log/Logger.h>
 #include <debug/param/GameParamHub.h>
 #include <debug/profiler/CpuProfiler.h>
 #include <debug/profiler/GpuProfiler.h>
@@ -102,7 +103,24 @@ void ImGuiManager::Initialize(WinApp *winApp, ImGuizmoManager *imguizmoManager) 
 
     float fontSize = 16.0f;
 
-    io.Fonts->AddFontFromFileTTF(AssetPath::Font("PixelMplus12-Regular.ttf").c_str(), 14.0f, nullptr, io.Fonts->GetGlyphRangesJapanese());
+    // フォント読み込み。ファイルが見つからないと ImGui は assert で強制終了してしまうため、
+    // ImFontFlags_NoLoadError を立てて戻り値で成否を判定し、失敗はログに残して起動を続行する。
+    auto loadFont = [](const std::string &path, float sizePixels, ImFontConfig config, const ImWchar *ranges) -> ImFont * {
+        config.Flags |= ImFontFlags_NoLoadError;
+        ImFont *font = ImGui::GetIO().Fonts->AddFontFromFileTTF(path.c_str(), sizePixels, &config, ranges);
+        if (font == nullptr)
+        {
+            Logger::Error("フォントの読み込みに失敗しました: " + path);
+        }
+        return font;
+    };
+
+    // 日本語対応の基本フォント。読み込めなければ ImGui 内蔵フォントで代替する
+    // (この後のアイコンフォントはマージ指定なので、土台になるフォントが必ず要る)。
+    if (loadFont(AssetPath::Font("PixelMplus12-Regular.ttf"), 14.0f, ImFontConfig(), io.Fonts->GetGlyphRangesJapanese()) == nullptr)
+    {
+        io.Fonts->AddFontDefault();
+    }
 
     // アイコンフォント読み込み（FontAwesomeなど）
     // FontAwesomeの設定
@@ -111,7 +129,7 @@ void ImGuiManager::Initialize(WinApp *winApp, ImGuizmoManager *imguizmoManager) 
     icons_config.MergeMode = true;
     icons_config.PixelSnapH = true;
     icons_config.GlyphMinAdvanceX = fontSize;
-    io.Fonts->AddFontFromFileTTF(AssetPath::Font("fa-solid-900.ttf").c_str(), fontSize, &icons_config, icon_ranges);
+    loadFont(AssetPath::Font("fa-solid-900.ttf"), fontSize, icons_config, icon_ranges);
 
     // ImGui 1.92 の新DX12バックエンド（ImGui_ImplDX12_InitInfo）は
     // ImGuiBackendFlags_RendererHasTextures を立て、フォントアトラスを動的管理する。
