@@ -69,6 +69,8 @@ class Object3d
     std::map<std::string, bool> animationLoopFlags_;
 
     std::string modelFilePath_;
+    // 動的モデル（メタボールなど）を作ったときの ModelManager 上のキー
+    std::string dynamicModelKey_;
     std::unique_ptr<Object3dCommon> objectCommon_;
     BlendMode blendMode_ = BlendMode::None;
     bool useDeferred_ = true; // ディファードのG-Bufferに載せてよいか
@@ -91,6 +93,23 @@ class Object3d
     void CreateModel(const std::string &filePath);
 
     void CreatePrimitiveModel(const PrimitiveType &type, std::string texPath);
+
+    /// <summary>
+    /// 動的メッシュのモデルを作る（メタボールなど、オブジェクトごとに形が変わるもの用）。
+    /// 中身は RebuildDynamicMesh() で入れるまで空。
+    /// </summary>
+    /// <param name="texPath">貼るテクスチャのパス</param>
+    void CreateDynamicModel(std::string texPath);
+
+    /// <summary>
+    /// 動的メッシュの中身を差し替える。1 フレームに 1 回まで。
+    /// </summary>
+    void RebuildDynamicMesh(MeshData &&data);
+
+    /// <summary>
+    /// 動的モデルのキー（ModelManager から破棄するのに使う）
+    /// </summary>
+    const std::string &GetDynamicModelKey() const { return dynamicModelKey_; }
 
     /// <summary>
     /// 更新

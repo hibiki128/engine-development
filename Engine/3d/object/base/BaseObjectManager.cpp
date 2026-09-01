@@ -1,6 +1,7 @@
 #include "BaseObjectManager.h"
 #include "SpriteManager.h"
 #include <2d/ui/UIAnimator.h>
+#include <metaball/MetaBallObject.h>
 #include <asset/AssetPath.h>
 #include <utility/debug/imgui/ImGuiNotification.h>
 #ifdef USE_IMGUI
@@ -195,20 +196,28 @@ void BaseObjectManager::LoadAll(std::string sceneName)
         // JSONファイル名から拡張子を除去してオブジェクト名とする
         std::string objectName = jsonFile.substr(0, jsonFile.find_last_of('.'));
 
+        // モデル名を先に見て、どのクラスとして作り直すかを決める
+        std::unique_ptr<DataHandler> ObjectDatas = std::make_unique<DataHandler>(objectDataFolder, objectName);
+        const std::string modelPath = ObjectDatas->Load<std::string>("modelName", "");
+        const bool isMetaBall = (modelPath == kMetaBallModelTag);
+
         // 新しいオブジェクトを作成
-        std::unique_ptr<BaseObject> newObject = std::make_unique<BaseObject>();
+        std::unique_ptr<BaseObject> newObject =
+            isMetaBall ? std::unique_ptr<BaseObject>(std::make_unique<MetaBallObject>())
+                       : std::make_unique<BaseObject>();
         // フォルダパスを設定
         newObject->SetFolderPath(objectDataFolder);
-        std::unique_ptr<DataHandler> ObjectDatas = std::make_unique<DataHandler>(objectDataFolder, objectName);
         // オブジェクト名でInit
         newObject->Init(objectName);
         newObject->SetIsScene(true);
 
-        // 読み込んだデータからモデルとテクスチャのパスを取得
-        std::string modelPath = ObjectDatas->Load<std::string>("modelName", "");
-
         // モデルとテクスチャを設定
-        if (!modelPath.empty())
+        if (isMetaBall)
+        {
+            // MetaBallObject::Init が動的モデルを作り済み。要素リストだけ戻す
+            static_cast<MetaBallObject *>(newObject.get())->LoadMetaBallFromJson();
+        }
+        else if (!modelPath.empty())
         {
             newObject->CreateModel(modelPath);
         }
@@ -291,6 +300,22 @@ BaseObject *BaseObjectManager::CreatePrimitiveObject(PrimitiveType type, const s
     newObject->SetPrimitive(true);
     newObject->Init(name);
     newObject->CreatePrimitiveModel(type);
+#ifdef USE_IMGUI
+    // 原点ではなく今見ている場所の前に出す
+    newObject->GetLocalPosition() = ImGuizmoManager::GetInstance()->GetSpawnPosition();
+#endif // USE_IMGUI
+
+    this->AddObject(std::move(newObject));
+    return GetObjectByName(name);
+}
+
+BaseObject *BaseObjectManager::CreateMetaBallObject(const std::string &baseName)
+{
+    const std::string name = MakeUniqueObjectName(baseName);
+
+    // MetaBallObject::Init が動的モデルの生成と初期要素の配置まで済ませる
+    std::unique_ptr<MetaBallObject> newObject = std::make_unique<MetaBallObject>();
+    newObject->Init(name);
 #ifdef USE_IMGUI
     // 原点ではなく今見ている場所の前に出す
     newObject->GetLocalPosition() = ImGuizmoManager::GetInstance()->GetSpawnPosition();

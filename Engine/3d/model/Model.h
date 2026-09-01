@@ -60,6 +60,20 @@ class Model
     void CreatePrimitiveModel(const PrimitiveType &type, std::string texPath, const PrimitiveParams &params);
 
     /// <summary>
+    /// 動的メッシュのモデルを作る。
+    /// メタボールのように毎回頂点数が変わるもの用で、中身は RebuildDynamicMesh() で入れる。
+    /// </summary>
+    /// <param name="vertexCapacity">最初に確保する頂点数</param>
+    /// <param name="indexCapacity">最初に確保するインデックス数</param>
+    void CreateDynamicModel(uint32_t vertexCapacity = 4096, uint32_t indexCapacity = 8192);
+
+    /// <summary>
+    /// 動的メッシュの中身を差し替える。バッファを切り替えるので 1 フレームに 1 回まで。
+    /// </summary>
+    /// <param name="data">新しいメッシュデータ（ムーブされる）</param>
+    void RebuildDynamicMesh(MeshData &&data);
+
+    /// <summary>
     /// 更新処理
     /// </summary>
     void Update();

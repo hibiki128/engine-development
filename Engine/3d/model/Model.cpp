@@ -77,15 +77,47 @@ void Model::CreatePrimitiveModel(const PrimitiveType &type, std::string texPath,
     CalcLocalBounds();
 }
 
+void Model::CreateDynamicModel(uint32_t vertexCapacity, uint32_t indexCapacity)
+{
+    // 動的メッシュは単一メッシュ・単一マテリアル
+    meshes_.resize(1);
+    modelData_.meshes.resize(1);
+
+    meshes_[0] = std::make_unique<Mesh>();
+    meshes_[0]->InitializeDynamic(vertexCapacity, indexCapacity);
+
+    // 動的メッシュの頂点は Mesh 側が持つ。ここは materialIndex を伝えるためだけに使う
+    modelData_.meshes[0] = MeshData{};
+    modelData_.meshes[0].materialIndex = 0;
+
+    CalcLocalBounds();
+}
+
+void Model::RebuildDynamicMesh(MeshData &&data)
+{
+    if (meshes_.empty() || !meshes_[0] || !meshes_[0]->IsDynamic())
+    {
+        return;
+    }
+    meshes_[0]->Rebuild(std::move(data));
+    // 生成後の実サイズでレイ判定用の AABB を取り直す
+    CalcLocalBounds();
+}
+
 void Model::CalcLocalBounds()
 {
     bool hasVertex = false;
     Vector3 minPoint = {0.0f, 0.0f, 0.0f};
     Vector3 maxPoint = {0.0f, 0.0f, 0.0f};
 
-    for (const MeshData &mesh : modelData_.meshes)
+    // 動的メッシュでは modelData_ 側に頂点を持たないので、Mesh が持つ実データを見る
+    for (const std::unique_ptr<Mesh> &meshPtr : meshes_)
     {
-        for (const VertexData &vertex : mesh.vertices)
+        if (!meshPtr)
+        {
+            continue;
+        }
+        for (const VertexData &vertex : meshPtr->GetMeshData().vertices)
         {
             const Vector3 position = {vertex.position.x, vertex.position.y, vertex.position.z};
             if (!hasVertex)
@@ -241,7 +273,7 @@ void Model::Draw(const std::vector<std::unique_ptr<Material>> &materials, std::v
 
         // 描画コール（instanceCount>1 なら同じモデルをまとめて描くインスタンシング描画）
         pCommandList->DrawIndexedInstanced(
-            UINT(modelData_.meshes[meshIndex].indices.size()), instanceCount, 0, vertexOffset, 0);
+            currentMesh->GetIndexCount(), instanceCount, 0, vertexOffset, 0);
     }
 }
 
@@ -271,7 +303,7 @@ void Model::DrawShadow(uint32_t instanceCount)
         }
 
         pCommandList->DrawIndexedInstanced(
-            UINT(modelData_.meshes[meshIndex].indices.size()), instanceCount, 0, vertexOffset, 0);
+            currentMesh->GetIndexCount(), instanceCount, 0, vertexOffset, 0);
     }
 }
 

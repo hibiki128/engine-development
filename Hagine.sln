@@ -17,26 +17,26 @@ EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
-		Profile|x64 = Profile|x64
+		Develop|x64 = Develop|x64
 		Release|x64 = Release|x64
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
 		{556E1B34-4EDC-4F08-88C5-93AE6AA769DE}.Debug|x64.ActiveCfg = Debug|x64
 		{556E1B34-4EDC-4F08-88C5-93AE6AA769DE}.Debug|x64.Build.0 = Debug|x64
-		{556E1B34-4EDC-4F08-88C5-93AE6AA769DE}.Profile|x64.ActiveCfg = Release|x64
-		{556E1B34-4EDC-4F08-88C5-93AE6AA769DE}.Profile|x64.Build.0 = Release|x64
+		{556E1B34-4EDC-4F08-88C5-93AE6AA769DE}.Develop|x64.ActiveCfg = Develop|x64
+		{556E1B34-4EDC-4F08-88C5-93AE6AA769DE}.Develop|x64.Build.0 = Develop|x64
 		{556E1B34-4EDC-4F08-88C5-93AE6AA769DE}.Release|x64.ActiveCfg = Release|x64
 		{556E1B34-4EDC-4F08-88C5-93AE6AA769DE}.Release|x64.Build.0 = Release|x64
 		{371B9FA9-4C90-4AC6-A123-ACED756D6C77}.Debug|x64.ActiveCfg = Debug|x64
 		{371B9FA9-4C90-4AC6-A123-ACED756D6C77}.Debug|x64.Build.0 = Debug|x64
-		{371B9FA9-4C90-4AC6-A123-ACED756D6C77}.Profile|x64.ActiveCfg = Profile|x64
-		{371B9FA9-4C90-4AC6-A123-ACED756D6C77}.Profile|x64.Build.0 = Profile|x64
+		{371B9FA9-4C90-4AC6-A123-ACED756D6C77}.Develop|x64.ActiveCfg = Release|x64
+		{371B9FA9-4C90-4AC6-A123-ACED756D6C77}.Develop|x64.Build.0 = Release|x64
 		{371B9FA9-4C90-4AC6-A123-ACED756D6C77}.Release|x64.ActiveCfg = Release|x64
 		{371B9FA9-4C90-4AC6-A123-ACED756D6C77}.Release|x64.Build.0 = Release|x64
 		{BE1B472E-0BDB-4498-9428-4AAE04BD3B14}.Debug|x64.ActiveCfg = Debug|x64
 		{BE1B472E-0BDB-4498-9428-4AAE04BD3B14}.Debug|x64.Build.0 = Debug|x64
-		{BE1B472E-0BDB-4498-9428-4AAE04BD3B14}.Profile|x64.ActiveCfg = Debug|x64
-		{BE1B472E-0BDB-4498-9428-4AAE04BD3B14}.Profile|x64.Build.0 = Debug|x64
+		{BE1B472E-0BDB-4498-9428-4AAE04BD3B14}.Develop|x64.ActiveCfg = Release|x64
+		{BE1B472E-0BDB-4498-9428-4AAE04BD3B14}.Develop|x64.Build.0 = Release|x64
 		{BE1B472E-0BDB-4498-9428-4AAE04BD3B14}.Release|x64.ActiveCfg = Release|x64
 		{BE1B472E-0BDB-4498-9428-4AAE04BD3B14}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
