@@ -109,11 +109,13 @@ copy "$(WindowsSdkDIr)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="Engine\2d\ui\UIAnimator.cpp" />
     <ClCompile Include="Engine\3d\camera\Camera.cpp" />
     <ClCompile Include="Engine\3d\camera\CameraManager.cpp" />
     <ClCompile Include="Engine\3d\camera\debug\DebugCamera.cpp" />
     <ClCompile Include="Engine\3d\camera\follow\BaseFollowCamera.cpp" />
     <ClCompile Include="Engine\3d\camera\projection\ViewProjection.cpp" />
+    <ClCompile Include="Engine\3d\line\LineRenderer.cpp" />
     <ClCompile Include="Engine\3d\particle\gpu\ParticleCSEditor.cpp" />
     <ClCompile Include="Engine\3d\particle\gpu\ParticleCSEmitter.cpp" />
     <ClCompile Include="Engine\3d\particle\gpu\ParticleCSFieldManager.cpp" />
@@ -230,6 +232,29 @@ copy "$(WindowsSdkDIr)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClCompile Include="Engine\OffScreen\RendererBuffer.cpp" />
     <ClCompile Include="Engine\2d\SpriteManager.cpp" />
     <ClCompile Include="Engine\2d\Text\TextRenderer.cpp" />
+    <ClCompile Include="Engine\3d\object\base\BaseObjectCollider.cpp" />
+    <ClCompile Include="Engine\3d\object\base\BaseObjectImGui.cpp" />
+    <ClCompile Include="Engine\3d\object\base\BaseObjectImGuiCollider.cpp" />
+    <ClCompile Include="Engine\3d\object\base\BaseObjectSerialize.cpp" />
+    <ClCompile Include="Engine\3d\object\Object3dInstancing.cpp" />
+    <ClCompile Include="Engine\3d\Particle\gpu\ParticleCSEmitterImGui.cpp" />
+    <ClCompile Include="Engine\3d\Particle\gpu\ParticleCSEmitterSerialize.cpp" />
+    <ClCompile Include="Engine\3d\Particle\gpu\ParticleCSGroupImGui.cpp" />
+    <ClCompile Include="Engine\render\deferred\DeferredRenderer.cpp" />
+    <ClCompile Include="Engine\Utility\debug\imgui\GizmoTarget.cpp" />
+    <ClCompile Include="Engine\Utility\debug\imgui\ImGuizmoManagerDraw.cpp" />
+    <ClCompile Include="Engine\Utility\debug\imgui\ImGuizmoManagerEdit.cpp" />
+    <ClCompile Include="Engine\Utility\debug\imgui\ImGuizmoManagerSelection.cpp" />
+    <ClCompile Include="Engine\Utility\debug\imgui\ImGuizmoManagerUI.cpp" />
+    <ClCompile Include="Engine\Utility\edit\play\PlayModeManager.cpp" />
+    <ClCompile Include="Engine\Utility\graphics\pipeline\ComputeEffectPipeline.cpp" />
+    <ClCompile Include="Engine\Utility\graphics\pipeline\PipelineManagerDeferred.cpp" />
+    <ClCompile Include="Engine\Utility\graphics\pipeline\PipelineManagerObject3d.cpp" />
+    <ClCompile Include="Engine\Utility\graphics\pipeline\PipelineManagerParticle.cpp" />
+    <ClCompile Include="Engine\Utility\graphics\pipeline\PipelineManagerPostEffect.cpp" />
+    <ClCompile Include="Engine\Utility\graphics\pipeline\PipelineManagerShadowSky.cpp" />
+    <ClCompile Include="Engine\Utility\graphics\pipeline\PipelineManagerSprite.cpp" />
+    <ClCompile Include="Engine\Utility\graphics\pipeline\ShaderRootSignature.cpp" />
   </ItemGroup>
   <ItemGroup>
     <None Include=".clang-format" />
@@ -246,16 +271,17 @@ copy "$(WindowsSdkDIr)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <None Include="Engine\EngineAssets\shaders\Skybox\Skybox.hlsli" />
     <None Include="Engine\EngineAssets\shaders\Sprite\Sprite.hlsli" />
     <None Include="exclusion.dic" />
-    <None Include="Hagine.aps" />
     <None Include="Hagine.vcxproj.user" />
     <None Include="README.md" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="Engine\2d\ui\UIAnimator.h" />
     <ClInclude Include="Engine\3d\camera\Camera.h" />
     <ClInclude Include="Engine\3d\camera\CameraManager.h" />
     <ClInclude Include="Engine\3d\camera\debug\DebugCamera.h" />
     <ClInclude Include="Engine\3d\camera\follow\BaseFollowCamera.h" />
     <ClInclude Include="Engine\3d\camera\projection\ViewProjection.h" />
+    <ClInclude Include="Engine\3d\line\LineRenderer.h" />
     <ClInclude Include="Engine\3d\particle\gpu\ParticleCSEditor.h" />
     <ClInclude Include="Engine\3d\particle\gpu\ParticleCSEmitter.h" />
     <ClInclude Include="Engine\3d\particle\gpu\ParticleCSFieldManager.h" />
@@ -383,6 +409,11 @@ copy "$(WindowsSdkDIr)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClInclude Include="resource.h" />
     <ClInclude Include="Engine\2d\SpriteManager.h" />
     <ClInclude Include="Engine\2d\Text\TextRenderer.h" />
+    <ClInclude Include="Engine\3d\object\Object3dInstancing.h" />
+    <ClInclude Include="Engine\render\deferred\DeferredRenderer.h" />
+    <ClInclude Include="Engine\Utility\edit\play\PlayModeManager.h" />
+    <ClInclude Include="Engine\Utility\graphics\pipeline\ComputeEffectPipeline.h" />
+    <ClInclude Include="Engine\Utility\graphics\pipeline\ShaderRootSignature.h" />
   </ItemGroup>
   <ItemGroup>
     <Text Include="externals\imgui\LICENSE.txt" />
@@ -399,6 +430,7 @@ copy "$(WindowsSdkDIr)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <Font Include="Engine\EngineAssets\fonts\fa-solid-900.ttf" />
     <Font Include="Engine\EngineAssets\fonts\NotoSansJP-Medium.ttf" />
     <Font Include="Engine\EngineAssets\fonts\PixelMplus12-Regular.ttf" />
+    <Font Include="Engine\EngineAssets\fonts\YDWyadewanoji.ttf" />
   </ItemGroup>
   <ItemGroup>
     <None Include="Engine\EngineAssets\shaders\Line\Line3d.PS.hlsl" />
@@ -439,6 +471,18 @@ copy "$(WindowsSdkDIr)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <None Include="Engine\EngineAssets\shaders\Skybox\Skybox.VS.hlsl" />
     <None Include="Engine\EngineAssets\shaders\Sprite\Sprite.PS.hlsl" />
     <None Include="Engine\EngineAssets\shaders\Sprite\Sprite.VS.hlsl" />
+    <None Include="Engine\EngineAssets\shaders\Deferred\Deferred.hlsli" />
+    <None Include="Engine\EngineAssets\shaders\Deferred\DeferredLighting.PS.hlsl" />
+    <None Include="Engine\EngineAssets\shaders\Deferred\GBuffer.PS.hlsl" />
+    <None Include="Engine\EngineAssets\shaders\Deferred\LightCulling.CS.hlsl" />
+    <None Include="Engine\EngineAssets\shaders\Deferred\ParticleLightGen.CS.hlsl" />
+    <None Include="Engine\EngineAssets\shaders\Object\Object3dInstanced.VS.hlsl" />
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Bloom.CS.hlsl" />
+    <None Include="Engine\EngineAssets\shaders\OffScreen\DepthOfField.CS.hlsl" />
+    <None Include="Engine\EngineAssets\shaders\OffScreen\DepthOutline.CS.hlsl" />
+    <None Include="Engine\EngineAssets\shaders\OffScreen\GaussianBlur.CS.hlsl" />
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Monochrome.PS.hlsl" />
+    <None Include="Engine\EngineAssets\shaders\Shadow\ShadowMapInstanced.VS.hlsl" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

@@ -4,6 +4,7 @@
 
 #include <Windows.h>
 #include <filesystem>
+#include <initializer_list>
 #include <system_error>
 
 namespace Hagine {
@@ -65,19 +66,22 @@ std::string ToUtf8RootString(const std::filesystem::path &path)
 
 /// <summary>
 /// アセットルートを解決する。
-/// exe と同じ場所に bundledDirName フォルダがあれば配布構成とみなし、
-/// カレントディレクトリを exe の場所へ移したうえでフォルダ名だけの相対パスを返す。
-/// 無ければ sourceTreeFallback (開発時) を返す。
+/// 1) exe と同じ場所に bundledDirName フォルダがあれば配布構成とみなし、
+///    カレントディレクトリを exe の場所へ移したうえでフォルダ名だけの相対パスを返す。
+/// 2) 無ければ開発時とみなし、sourceTreeCandidates を先頭から順に存在チェックして
+///    最初に見つかったものを返す (リポジトリごとのフォルダ構成の違いを吸収する)。
+/// 3) どれも見つからなければ先頭の候補を返す (呼び出し側で読み込み失敗として扱われる)。
 ///
 /// 絶対パスを返さないのは、配布先フォルダ名に日本語が含まれていると起動できなくなるため。
 /// エンジンの narrow (char) 文字列は UTF-8 だが、std::ifstream や Assimp (fopen) は
 /// パスを ANSI (CP932) として解釈するので、UTF-8 の絶対パスは開けずに落ちる。
 /// 相対パスなら ASCII のみで済み、日本語部分の解決は
-/// ワイド版の SetCurrentDirectoryW が受け持つので文字コードの問題が起きない。
+/// ワイド版の SetCurrentDirectoryW とカレントディレクトリが受け持つので
+/// 文字コードの問題が起きない (候補は必ず ASCII のみで書くこと)。
 /// </summary>
 /// <param name="bundledDirName">exe 隣に置く配布用フォルダ名 (例: L"EngineAssets")</param>
-/// <param name="sourceTreeFallback">開発時に使うソースツリー相対パス (末尾スラッシュ付き)</param>
-std::string ResolveRoot(const wchar_t *bundledDirName, const char *sourceTreeFallback)
+/// <param name="sourceTreeCandidates">開発時に使うソースツリー相対パスの候補 (末尾スラッシュ付き / ASCII のみ)</param>
+std::string ResolveRoot(const wchar_t *bundledDirName, std::initializer_list<const char *> sourceTreeCandidates)
 {
     const std::filesystem::path &exeDir = CachedExecutableDir();
     if (!exeDir.empty())
@@ -92,22 +96,50 @@ std::string ResolveRoot(const wchar_t *bundledDirName, const char *sourceTreeFal
             return ToUtf8RootString(std::filesystem::path(bundledDirName));
         }
     }
-    return std::string(sourceTreeFallback);
+
+    // 開発時: カレントディレクトリ (Visual Studio のデバッグ実行では vcxproj のあるフォルダ)
+    // から見える候補を順に探す。
+    for (const char *candidate : sourceTreeCandidates)
+    {
+        std::error_code ec;
+        if (std::filesystem::exists(std::filesystem::path(candidate), ec))
+        {
+            return std::string(candidate);
+        }
+    }
+
+    return std::string(*sourceTreeCandidates.begin());
 }
 
 } // namespace
 
 const std::string &EngineRoot()
 {
-    // 配布時: EngineAssets/ (カレント = exe の場所) ／ 開発時: Engine/EngineAssets/
-    static const std::string kRoot = ResolveRoot(L"EngineAssets", "Engine/EngineAssets/");
+    // 配布時: EngineAssets/ (カレント = exe の場所)
+    // 開発時: 以下の候補をカレントディレクトリから順に探す
+    //   Engine/EngineAssets/                  : エンジン単体のリポジトリを開いている場合
+    //   ../module/Hagine/Engine/EngineAssets/ : アプリ側リポジトリ (カレント = app/)
+    //   module/Hagine/Engine/EngineAssets/    : アプリ側リポジトリのルートがカレントの場合
+    //   EngineAssets/                         : カレント直下へコピー済みの場合
+    static const std::string kRoot = ResolveRoot(L"EngineAssets",
+                                                 {"Engine/EngineAssets/",
+                                                  "../module/Hagine/Engine/EngineAssets/",
+                                                  "module/Hagine/Engine/EngineAssets/",
+                                                  "EngineAssets/"});
     return kRoot;
 }
 
 const std::string &AppRoot()
 {
-    // 配布時: Assets/ (カレント = exe の場所) ／ 開発時: Application/Assets/
-    static const std::string kRoot = ResolveRoot(L"Assets", "Application/Assets/");
+    // 配布時: Assets/ (カレント = exe の場所)
+    // 開発時: 以下の候補をカレントディレクトリから順に探す
+    //   Assets/             : アプリ側リポジトリ (カレント = app/)
+    //   Application/Assets/ : アセットを Application/ 配下に置く構成
+    //   app/Assets/         : アプリ側リポジトリのルートがカレントの場合
+    static const std::string kRoot = ResolveRoot(L"Assets",
+                                                 {"Assets/",
+                                                  "Application/Assets/",
+                                                  "app/Assets/"});
     return kRoot;
 }
 

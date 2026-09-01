@@ -18,16 +18,18 @@ namespace AssetPath {
 
 /// <summary>エンジンアセットのルート (末尾スラッシュ付き)。
 /// exe と同じ場所に "EngineAssets/" があれば配布構成とみなし、カレントディレクトリを
-/// exe の場所へ移したうえで "EngineAssets/" を返す。無ければソースツリーの
-/// "Engine/EngineAssets/" を使う (開発時)。
+/// exe の場所へ移したうえで "EngineAssets/" を返す。無ければ開発時とみなし、
+/// ソースツリー相対の候補 ("Engine/EngineAssets/"、"../module/Hagine/Engine/EngineAssets/" 等) を
+/// カレントディレクトリから順に探す。
 /// いずれも ASCII のみの相対パスで、配布先フォルダ名に日本語が入っても壊れない。
 /// 実装は AssetPath.cpp。切り替え先のパスもそこに記述している。</summary>
 const std::string &EngineRoot();
 
 /// <summary>アプリケーションアセットのルート (末尾スラッシュ付き)。
 /// exe と同じ場所に "Assets/" があれば配布構成とみなし、カレントディレクトリを
-/// exe の場所へ移したうえで "Assets/" を返す。無ければソースツリーの
-/// "Application/Assets/" を使う (開発時)。
+/// exe の場所へ移したうえで "Assets/" を返す。無ければ開発時とみなし、
+/// ソースツリー相対の候補 ("Assets/"、"Application/Assets/" 等) を
+/// カレントディレクトリから順に探す。
 /// 実装は AssetPath.cpp。切り替え先のパスもそこに記述している。</summary>
 const std::string &AppRoot();
 
