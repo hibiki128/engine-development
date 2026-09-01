@@ -33,7 +33,7 @@ class ParticleCSGroup
     static constexpr uint32_t kFullUpdateThreadsPerGroup = 256;
 
     /// ===================================
-    /// public methods
+    /// public method
     /// ===================================
 
     /// <summary>
@@ -52,7 +52,7 @@ class ParticleCSGroup
         Microsoft::WRL::ComPtr<ID3D12Resource> fieldCountResource,
         std::pair<D3D12_CPU_DESCRIPTOR_HANDLE, D3D12_GPU_DESCRIPTOR_HANDLE> overrideSrvHandle,
         bool fieldsActive,
-        ID3D12GraphicsCommandList *cmdList = nullptr);
+        ID3D12GraphicsCommandList *pCommandList = nullptr);
 
     // 軽量 Update バリアントを使えるグループか判定する。
     // 重い演出(curl/vortex/gather/turbulence/trail/rotation)が全 OFF かつ
@@ -74,6 +74,25 @@ class ParticleCSGroup
     // 描画コンパクション: Update が u11 に書く UAV / 描画VS が t0 で読む SRV
     D3D12_GPU_DESCRIPTOR_HANDLE GetRenderCompactUavGpu() const { return soaRenderCompact_.uavHandle.second; }
     uint32_t GetRenderCompactSrvForVSIndex() const { return soaRenderCompact_.srvForVSIndex; }
+    // 可視カウンタ (u12): 視錐台カリングを通った粒子の数＝ExecuteIndirect の instanceCount
+    std::pair<D3D12_CPU_DESCRIPTOR_HANDLE, D3D12_GPU_DESCRIPTOR_HANDLE> GetVisibleCounterUavHandle() const { return visibleCounterUavHandle_; }
+    uint32_t GetVisibleCounterSrvForVSIndex() const { return visibleCounterSrvForVSIndex_; }
+    D3D12_GPU_VIRTUAL_ADDRESS GetVisibleCounterGpuAddress() const
+    {
+        return visibleCounterResource_ ? visibleCounterResource_->GetGPUVirtualAddress() : 0;
+    }
+    // 描画リストの slot index (u13 / VS t2): 回転グループが gRotation を引くために使う
+    D3D12_GPU_DESCRIPTOR_HANDLE GetRenderSlotUavGpu() const { return soaRenderSlot_.uavHandle.second; }
+    uint32_t GetRenderSlotSrvForVSIndex() const { return soaRenderSlot_.srvForVSIndex; }
+    // 粒子光源生成CSがルートSRVで直接読むためのGPUアドレス（詰めた描画データ／生存数）
+    D3D12_GPU_VIRTUAL_ADDRESS GetRenderCompactGpuAddress() const
+    {
+        return soaRenderCompact_.resource ? soaRenderCompact_.resource->GetGPUVirtualAddress() : 0;
+    }
+    D3D12_GPU_VIRTUAL_ADDRESS GetAliveCounterGpuAddress() const
+    {
+        return aliveCounterResource_[alivePhase_] ? aliveCounterResource_[alivePhase_]->GetGPUVirtualAddress() : 0;
+    }
     // SoA: 描画VS が回転グループのみ読む SRV インデックス（t4:Rotation）
     uint32_t GetRotationSrvForVSIndex() const { return soaRotation_.srvForVSIndex; }
     // 生存コンパクション用ハンドル/インデックス（out フェーズ＝今フレームの書込先を返す）
@@ -86,10 +105,25 @@ class ParticleCSGroup
     uint32_t GetAliveDrawCount() const { return aliveDrawCount_; }
     // 生存リスト ping-pong のフェーズを反転する（毎フレーム先頭で呼び、out/in を入れ替える）。
     void AdvanceAliveFrame() { alivePhase_ ^= 1u; }
-    // 生存コンパクションカウンタを 0 にリセットする 1スレッドパス
-    void ResetAliveCounterDispatch(ID3D12GraphicsCommandList *cmdList);
+    // 生存コンパクションカウンタ／可視カウンタを 0 にリセットする 1スレッドパス
+    void ResetAliveCounterDispatch(ID3D12GraphicsCommandList *pCommandList);
+    // 視錐台カリングを一時的に無効化する（プレビュー窓は別カメラで描くのでカリングできない）。
+    // Update(vp) が定数バッファへ書き込む enableFrustumCull に効く。
+    void SetFrustumCullSuppressed(bool suppressed) { frustumCullSuppressed_ = suppressed; }
+    // 視錐台カリングのグループ設定（ImGui / セーブロード用）
+    bool IsFrustumCullEnabled() const { return frustumCullEnabled_; }
+    void SetFrustumCullEnabled(bool enabled) { frustumCullEnabled_ = enabled; }
     // 生存数を readback バッファへコピーする（compute キュー上で記録すること）
+    // 併せて GPU駆動描画(ExecuteIndirect)の引数バッファへ生存数を書き込む。
     void RecordAliveCountReadback(ID3D12GraphicsCommandList *computeCmdList);
+    // ===== GPU駆動描画 (DrawInstanceIndirect) =====
+    // 「今何個描くか」を CPU 読み戻しではなく VRAM 上のカウンタで決めるための引数バッファ。
+    // 1メッシュにつき D3D12_DRAW_INDEXED_ARGUMENTS 1件を並べる。
+    static constexpr uint32_t kDrawArgsStride = 5 * sizeof(uint32_t); // sizeof(D3D12_DRAW_INDEXED_ARGUMENTS)
+    ID3D12Resource *GetDrawArgsResource() const { return drawArgsResource_.Get(); }
+    // 引数バッファに一度でも値が書かれたか（未初期化のままの ExecuteIndirect を防ぐガード）
+    bool IsDrawArgsReady() const { return drawArgsReady_; }
+    uint32_t GetDrawArgsCount() const { return drawArgsCount_; }
     // readback 済みの生存数を CPU へ取り込む（aliveDrawCount_ を更新）
     void FetchAliveDrawCount();
     std::pair<D3D12_CPU_DESCRIPTOR_HANDLE, D3D12_GPU_DESCRIPTOR_HANDLE> GetFreeListIndexSrvHandle() const { return freeListIndexSrvHandle_; }
@@ -101,7 +135,8 @@ class ParticleCSGroup
     Microsoft::WRL::ComPtr<ID3D12Resource> GetSettingsResource() const { return settingsResource_; }
     D3D12_INDEX_BUFFER_VIEW GetIndexBufferView() const { return indexBufferView_; }
     D3D12_VERTEX_BUFFER_VIEW GetVertexBufferView() const { return vertexBufferView_; }
-    ModelData GetModelData() const { return modelData_; }
+    // ModelData は頂点配列を抱えるので値返しにしない（参照するたびにフルコピーが走る）
+    const ModelData &GetModelData() const { return modelData_; }
     PerFrame *GetPerFrameData() const { return pPerFrameData_; }
     uint32_t GetMaxParticleCount() const { return pSettingsData_->maxParticleCount; }
     ParticleCSSettings *GetSettingsData() const { return pSettingsData_; }
@@ -167,7 +202,7 @@ class ParticleCSGroup
     };
 
     /// ===================================
-    /// private methods
+    /// private method
     /// ===================================
     void Initialize(uint32_t maxParticleCount = 10000);
     void InitParticle();
@@ -188,6 +223,10 @@ class ParticleCSGroup
     void CreateSettingsResource();
     void CreateAliveCountResource();
     void CreateAliveListResources();
+    // GPU駆動描画の引数バッファを作る（頂点/インデックスバッファ確定後に呼ぶこと）
+    void CreateDrawArgsResources();
+    // viewProjection から視錐台6平面(left/right/bottom/top/near/far)を抽出して正規化する
+    static void ExtractFrustumPlanes(const Matrix4x4 &viewProjection, Vector4 outPlanes[6]);
     // colorStops_ を位置でソートし 256段 RGBA8 LUT を pSettingsData_->colorLUT へベイクする。
     // enableColorGradient 有効時、Update(vp) が colorStopsDirty_ のとき呼ぶ。
     void BakeColorLUT();
@@ -196,7 +235,7 @@ class ParticleCSGroup
 
   private:
     /// ===================================
-    /// private variaus
+    /// private variables
     /// ===================================
     // ===== GPUパーティクル SoA バッファ（旧 outputParticleResource_ を機能別に分割） =====
     // 各バッファは Compute(Emit/Update) 用 UAV を持つ。描画VSが読む DrawCore/Rotation のみ
@@ -210,6 +249,9 @@ class ParticleCSGroup
     // 描画コンパクション: Update が生存パーティクルの描画データ(DrawCore形式)を
     // 詰めた順(instanceId順)に書き出す。描画VSはこれを順次読みして散乱gatherを排除する。
     SoABuffer soaRenderCompact_; // CSParticleDrawCore (詰めた描画データ)
+    // 描画リストの slot index。視錐台カリングで描画リストが生存リストと別順序になるため、
+    // 回転グループが gRotation[slot] を引くのに使う（回転を使うグループだけ本確保）。
+    SoABuffer soaRenderSlot_; // uint (描画順 -> 実 slot index)
     // 条件付き確保で本確保へ作り直したときの旧リソース退避先。
     // in-flight のコマンドリストが旧リソース/旧ディスクリプタを参照中でも安全なように、
     // 即解放せずグループ破棄まで生かす（要素1個のダミーなので極小）。
@@ -283,20 +325,45 @@ class ParticleCSGroup
     uint32_t alivePhase_ = 0; // out インデックス。AdvanceAliveFrame で毎フレーム反転
     uint32_t aliveDrawCount_ = 0;
 
+    // ===== 描画リスト（視錐台カリング後）のカウンタ =====
+    // 生存リストと違い ping-pong しない（毎フレーム作り直して当フレームの描画だけに使う）。
+    // Emit/Update が u12 へ append し、描画VS が t3 で読み、ExecuteIndirect の
+    // instanceCount へコピーされる。CPU は読み戻さない（＝GPU駆動）。
+    Microsoft::WRL::ComPtr<ID3D12Resource> visibleCounterResource_{};
+    std::pair<D3D12_CPU_DESCRIPTOR_HANDLE, D3D12_GPU_DESCRIPTOR_HANDLE> visibleCounterUavHandle_{};
+    uint32_t visibleCounterUavIndex_ = 0;
+    uint32_t visibleCounterSrvForVSIndex_ = 0;
+    bool frustumCullSuppressed_ = false; // プレビュー窓など別カメラで描く間は true
+    bool frustumCullEnabled_ = true;     // グループ設定(ImGui/Json)。false で視錐台カリングを切る
+    // 粒子モデルのローカル境界半径（頂点の最大距離）。粒子半径 = max(scale)×これ。
+    float modelLocalRadius_ = 1.0f;
+
+    // ===== GPU駆動描画 (ExecuteIndirect) の引数バッファ =====
+    // drawArgsResource_ は状態遷移を明示せず COMMON のままにする（バッファは COMMON から
+    // 任意の状態へ暗黙昇格し、ExecuteCommandLists 完了で COMMON へ減衰する）。
+    //   compute キュー: COPY_DEST へ昇格して InstanceCount を書き込み
+    //   direct  キュー: INDIRECT_ARGUMENT へ昇格して ExecuteIndirect が読む
+    Microsoft::WRL::ComPtr<ID3D12Resource> drawArgsResource_{};
+    // IndexCountPerInstance など CPU が決める固定部の種（初回に1回だけコピーする）
+    Microsoft::WRL::ComPtr<ID3D12Resource> drawArgsUploadResource_{};
+    uint32_t drawArgsCount_ = 0;             // メッシュ数（引数の件数）
+    bool drawArgsStaticUploaded_ = false;    // 固定部のコピーを記録済みか
+    bool drawArgsReady_ = false;             // 一度でも引数を書いたか（未初期化描画の防止）
+
     Microsoft::WRL::ComPtr<ID3D12Resource> aliveCountResource_{};
     Microsoft::WRL::ComPtr<ID3D12Resource> aliveCountReadbackResource_{};
     std::pair<D3D12_CPU_DESCRIPTOR_HANDLE, D3D12_GPU_DESCRIPTOR_HANDLE> aliveCountSrvHandle_{};
     uint32_t aliveCountSrvIndex_ = 0;
     uint32_t cachedAliveCount_ = 0;
 
-    ID3D12GraphicsCommandList *commandList_{};
+    ID3D12GraphicsCommandList *pCommandList_{};
     ID3D12GraphicsCommandList *computeCommandList_{};
 
     ParticleCommon *particleCommon_{};
     DirectXCommon *pDxCommon_{};
-    SrvManager *srvManager_{};
-    TextureManager *texManager_{};
-    Model *model_{};
+    SrvManager *pSrvManager_{};
+    TextureManager *pTextureManager_{};
+    Model *pModel_{};
     ModelData modelData_{};
     std::string modelFilePath_{};
 

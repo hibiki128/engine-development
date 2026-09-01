@@ -23,7 +23,7 @@ class WorldTransform
     // ローカル回転（オイラー角用）
     Vector3 eulerRotation_ = {0.0f, 0.0f, 0.0f};
     // ローカル回転（クォータニオン）
-    Quaternion quateRotation_ = Quaternion::IdentityQuaternion();
+    Quaternion quaternionRotation_ = Quaternion::IdentityQuaternion();
     // ローカル座標
     Vector3 translation_ = {0.0f, 0.0f, 0.0f};
 
@@ -31,6 +31,13 @@ class WorldTransform
     Matrix4x4 matWorld_;
     // 親となるワールド変換へのポインタ
     const WorldTransform *pParent_ = nullptr;
+
+    // 親のトランスフォームを成分ごとに継承するか（親子付けの挙動を細かく制御する）。
+    // 3つとも true（既定）なら従来どおり親のワールド行列をそのまま掛ける。
+    // いずれかを false にすると、その成分だけ親に追従しなくなる（例: 位置だけ親に付いていく等）。
+    bool inheritTranslation_ = true; // 親の位置を継承する
+    bool inheritRotation_ = true;    // 親の回転を継承する
+    bool inheritScale_ = true;       // 親のスケールを継承する
 
     WorldTransform();
     ~WorldTransform();
@@ -88,7 +95,7 @@ class WorldTransform
 
     // ローカル座標の取得
     Vector3 GetLocalPosition() const { return translation_; }
-    Quaternion GetLocalRotation() const { return quateRotation_; }
+    Quaternion GetLocalRotation() const { return quaternionRotation_; }
     Vector3 GetLocalScale() const { return scale_; }
 
     // ワールド座標の取得（位置、回転、スケール）

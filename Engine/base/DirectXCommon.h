@@ -102,11 +102,29 @@ class DirectXCommon
     void TransitionSRVBarrier();
 
     /// <summary>
+    /// 深度バッファをシェーダーから読むときの状態。
+    /// ピクセルシェーダーとコンピュートシェーダーの両方から読むため、読み取り状態を両方立てている
+    /// （NON_PIXEL を落とすと、CS版ポストエフェクトが深度を読んだ時点で状態違反になる）。
+    /// </summary>
+    static constexpr D3D12_RESOURCE_STATES kDepthReadState =
+        D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
+
+    /// <summary>
     /// シェーダーをコンパイルする
     /// </summary>
     /// <param name="filePath">CompilerするShaderファイルへのパス</param>
     /// <param name="profile">Compilerに使用するProfile</param>
     IDxcBlob *CompileShader(const std::wstring &filePath, const wchar_t *profile);
+
+    /// <summary>
+    /// シェーダーをコンパイルし、リフレクション情報も取得する
+    /// ルートシグネチャをシェーダーの宣言から自動生成したい場合に使う
+    /// </summary>
+    /// <param name="filePath">CompilerするShaderファイルへのパス</param>
+    /// <param name="profile">Compilerに使用するProfile</param>
+    /// <param name="ppReflection">リフレクションの受け取り先（呼び出し側が Release すること）</param>
+    IDxcBlob *CompileShaderWithReflection(const std::wstring &filePath, const wchar_t *profile,
+                                          ID3D12ShaderReflection **ppReflection);
 
     // Resourceの作成
     Microsoft::WRL::ComPtr<ID3D12Resource> CreateBufferResource(size_t sizeInBytes, bool isUAV = false);
@@ -114,7 +132,7 @@ class DirectXCommon
     // DirectX12のTextureResourceを作る
     Microsoft::WRL::ComPtr<ID3D12Resource> CreateTextureResource(const DirectX::TexMetadata &metadata);
 
-    Microsoft::WRL::ComPtr<ID3D12Resource> CreateRenderTextureResource(uint32_t width, uint32_t height, DXGI_FORMAT format, D3D12_CLEAR_VALUE color);
+    Microsoft::WRL::ComPtr<ID3D12Resource> CreateRenderTextureResource(uint32_t width, uint32_t height, DXGI_FORMAT format, D3D12_CLEAR_VALUE color, bool allowUAV = false);
 
     // メイン深度以外の追加深度ステンシルリソースを生成する（プレビュー窓など）。DEPTH_WRITE 状態で返る。
     Microsoft::WRL::ComPtr<ID3D12Resource> CreateAdditionalDepthResource(int32_t width, int32_t height);
@@ -204,6 +222,8 @@ class DirectXCommon
     const D3D12_VIEWPORT &GetRenderViewport() const { return viewport_; }
     const D3D12_RECT &GetRenderScissorRect() const { return scissorRect_; }
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> GetRTVDescriptorHeap() { return rtvManager_->GetHeap(); }
+    /// 深度ステンシルリソースを取得（ディファードのライトカリング／ライティングが読むため）
+    ID3D12Resource *GetDepthStencilResource() { return depthStencilResource_.Get(); }
 
     // ---- 非同期コンピュートキュー API ----
     /// コンピュートコマンドリストを取得

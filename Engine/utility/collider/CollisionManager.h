@@ -36,14 +36,14 @@ class CollisionManager
     /// <summary>
     /// コライダーを登録
     /// </summary>
-    /// <param name="collider">登録するコライダー</param>
-    void Register(ColliderBase *collider);
+    /// <param name="pCollider">登録するコライダー</param>
+    void Register(ColliderBase *pCollider);
 
     /// <summary>
     /// コライダーの登録を解除
     /// </summary>
-    /// <param name="collider">解除するコライダー</param>
-    void Unregister(ColliderBase *collider);
+    /// <param name="pCollider">解除するコライダー</param>
+    void Unregister(ColliderBase *pCollider);
 
     /// <summary>
     /// 登録済みコライダーを全てクリア
@@ -53,10 +53,10 @@ class CollisionManager
     /// <summary>
     /// コライダーのタグ変更に追従してグループを更新
     /// </summary>
-    /// <param name="collider">対象のコライダー</param>
+    /// <param name="pCollider">対象のコライダー</param>
     /// <param name="oldTag">変更前のタグ</param>
     /// <param name="newTag">変更後のタグ</param>
-    void UpdateColliderTag(ColliderBase *collider, const std::string &oldTag, const std::string &newTag);
+    void UpdateColliderTag(ColliderBase *pCollider, const std::string &oldTag, const std::string &newTag);
 
     /// <summary>
     /// 更新処理（ワールド変換更新と衝突判定）
@@ -121,7 +121,7 @@ class CollisionManager
     /// <returns>bool: めり込みがあれば true</returns>
     bool CalculateDepenetrationOBBCylinder(OBBCollider *obb, CylinderCollider *cylinder, Vector3 &outMTV);
 
-#ifdef _DEBUG
+#ifdef USE_IMGUI
     /// <summary>
     /// タグの追加・削除UI（タグ管理タブ）
     /// </summary>
@@ -232,7 +232,7 @@ class CollisionManager
 
     bool isVisible_ = false; // コライダーのデバッグ表示フラグ（全体）
 
-#ifdef _DEBUG
+#ifdef USE_IMGUI
     ColliderBase *pInspectorSelected_ = nullptr; // インスペクタで選択中のコライダー
 #endif
 };

@@ -1,5 +1,5 @@
 #pragma once
-#ifdef _DEBUG
+#ifdef USE_IMGUI
 #include "UndoRedoManager.h"
 #include <functional>
 #include <imgui.h>
@@ -90,4 +90,4 @@ class ImGuiUndoTracker
 };
 
 } // namespace Hagine
-#endif // _DEBUG
+#endif // USE_IMGUI

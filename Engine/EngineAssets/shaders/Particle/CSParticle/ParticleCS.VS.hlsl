@@ -7,13 +7,13 @@ struct VertexShaderInput
     float3 normal : NORMAL0;
 };
 
-// 描画コンパクション: Update が instanceId 順に詰めた描画データ(DrawCore=40B)を順次読みする。
-// 旧 gDrawCore[slot] の散乱gatherを排除。
+// 描画コンパクション: Emit/Update が instanceId 順に詰めた描画データ(DrawCore=36B)を順次読みする。
+// 旧 gDrawCore[slot] の散乱gatherを排除。視錐台カリングを通った粒子だけが並んでいる。
 StructuredBuffer<PDrawCore> gRenderCompact : register(t0);
 // 回転グループのみ: instanceId -> 実 slot index（gRotation の散乱参照に使用）
-StructuredBuffer<uint> gAliveList : register(t2);
-// 生存コンパクション: 当該フレームの生存数（これを超える instanceId は破棄）
-StructuredBuffer<uint> gAliveCount : register(t3);
+StructuredBuffer<uint> gRenderSlot : register(t2);
+// 描画リスト長（＝ExecuteIndirect の instanceCount と同じ値）。念のための境界ガードに使う。
+StructuredBuffer<uint> gVisibleCount : register(t3);
 // 回転は回転グループのみ参照（enableRotation==0 なら gather しない）
 StructuredBuffer<PRotation> gRotation : register(t4);
 ConstantBuffer<PerView> gPerView : register(b0);
@@ -22,9 +22,9 @@ VertexShaderOutput main(VertexShaderInput input, uint instanceId : SV_InstanceID
 {
     VertexShaderOutput output;
 
-    // instanceCount は生存数の概算(CPU側の1〜2F遅延値+マージン)で発行されるため、
-    // 実際の生存数を超える instanceId はここで確実に破棄する。
-    if (instanceId >= gAliveCount[0])
+    // instanceCount は GPU 上の描画リスト長(ExecuteIndirect)なので通常は超えないが、
+    // 引数バッファと描画リストの整合が崩れた場合に備えて境界を確認する。
+    if (instanceId >= gVisibleCount[0])
     {
         output.position = float4(0.0f, 0.0f, 0.0f, 0.0f); // クリップされる縮退頂点
         output.texcoord = float2(0.0f, 0.0f);
@@ -87,10 +87,10 @@ VertexShaderOutput main(VertexShaderInput input, uint instanceId : SV_InstanceID
             pScale *= (cappedHalf / curHalf);
         }
     }
-    // 回転は回転グループのみ gather（aliveList経由で実slotを引く。非回転グループは触れない）
+    // 回転は回転グループのみ gather（描画リストの slot 列経由で実slotを引く。非回転グループは触れない）
     float3 pRotation = float3(0.0f, 0.0f, 0.0f);
     if (gPerView.enableRotation != 0)
-        pRotation = gRotation[gAliveList[instanceId]].rotation;
+        pRotation = gRotation[gRenderSlot[instanceId]].rotation;
 
     // --- スケール → XYZ回転 → ビルボード → 平行移動 ---
     float4x4 worldMatrix;

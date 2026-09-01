@@ -4,7 +4,7 @@
 //  ImGui 1.92.4 + ImGuizmo + ImPlot
 //  * ASCII only  -- no environment-dependent characters
 // ============================================================
-#ifdef _DEBUG
+#ifdef USE_IMGUI
 
 // 回転ノブ（imgui-knobs）。imgui.h を使うため、本ヘッダは imgui.h の後に include する前提。
 #include <imgui-knobs.h>
@@ -36,6 +36,34 @@ constexpr ImVec4 kHeaderYellow = {0.80f, 0.72f, 0.42f, 0.22f};
 
 constexpr ImVec4 kTextDim = {0.55f, 0.55f, 0.60f, 1.0f};
 constexpr ImVec4 kTextReadOnly = {0.70f, 0.75f, 0.80f, 1.0f};
+// セクション内の小見出し（「発生」「寿命」など、値の並びの上に置く短いラベル）
+constexpr ImVec4 kTextCaption = {0.56f, 0.69f, 0.86f, 1.0f};
+
+// ボタンの「役割」色。地・ホバーの2色を1組で持つ（押下色はホバーと同じで足りている）。
+// 個々の画面で色を選ばず、意味で選ぶ:
+//   Primary = 主操作 / Confirm = 追加・確定 / Danger = 削除 / Neutral = リセットなどの地味な操作
+constexpr ImVec4 kButtonPrimary = {0.22f, 0.38f, 0.54f, 0.85f};
+constexpr ImVec4 kButtonPrimaryHover = {0.28f, 0.48f, 0.66f, 0.95f};
+constexpr ImVec4 kButtonConfirm = {0.21f, 0.44f, 0.35f, 0.85f};
+constexpr ImVec4 kButtonConfirmHover = {0.27f, 0.55f, 0.44f, 0.95f};
+constexpr ImVec4 kButtonDanger = {0.46f, 0.24f, 0.24f, 0.85f};
+constexpr ImVec4 kButtonDangerHover = {0.58f, 0.30f, 0.30f, 0.95f};
+constexpr ImVec4 kButtonNeutral = {0.25f, 0.25f, 0.30f, 1.0f};
+constexpr ImVec4 kButtonNeutralHover = {0.35f, 0.35f, 0.45f, 1.0f};
+// 地を持たないボタン（パンくずリストなど、文字に見えるが押せるもの）
+constexpr ImVec4 kButtonGhost = {0.0f, 0.0f, 0.0f, 0.0f};
+constexpr ImVec4 kButtonGhostHover = {0.30f, 0.30f, 0.35f, 0.50f};
+
+/// <summary>
+/// アクセント色から入力欄（DragFloat 等）の背景色を作る。
+/// セクションごとに色を直書きしていると濃さがばらつくので、必ずここを通す。
+/// </summary>
+/// <param name="accent">そのセクションのアクセント色（kAccentXxx）</param>
+/// <returns>ImVec4: ImGuiCol_FrameBg に渡す色</returns>
+constexpr ImVec4 FrameBg(const ImVec4 &accent)
+{
+    return {accent.x * 0.42f, accent.y * 0.42f, accent.z * 0.42f, 0.50f};
+}
 } // namespace DebugTheme
 
 // ------------------------------------------------------------
@@ -77,20 +105,27 @@ static void ReadOnlyRow(const char *label, const char *fmt, ...)
 // ------------------------------------------------------------
 static void StatusBadge(const char *text, ImVec4 color)
 {
-    ImVec2 p = ImGui::GetCursorScreenPos();
-    ImVec2 ts = ImGui::CalcTextSize(text);
-    float pad = 4.0f;
-    ImVec2 br = {p.x + ts.x + pad * 2.f, p.y + ts.y + pad};
+    // 以前は枠の高さを「文字高 + 4px」しか取らず、さらに ImGui::TextUnformatted で
+    // 文字を描いていたため、行のベースライン調整が入ると文字が枠から下へはみ出していた。
+    // ここでは上下に同じだけ余白を取り、文字は描画リストへ直接置いてズレを無くしている。
+    const ImVec2 textSize = ImGui::CalcTextSize(text);
+    const float padX = 6.0f;
+    const float padY = 3.0f;
+    const ImVec2 badgeSize = {textSize.x + padX * 2.0f, textSize.y + padY * 2.0f};
+
+    const ImVec2 pos = ImGui::GetCursorScreenPos();
+    const ImVec2 bottomRight = {pos.x + badgeSize.x, pos.y + badgeSize.y};
+
     ImDrawList *dl = ImGui::GetWindowDrawList();
     ImVec4 bg = color;
     bg.w = 0.20f;
-    dl->AddRectFilled(p, br, ImGui::ColorConvertFloat4ToU32(bg), 3.0f);
-    dl->AddRect(p, br, ImGui::ColorConvertFloat4ToU32(color), 3.0f, 0, 1.0f);
-    ImGui::SetCursorScreenPos({p.x + pad, p.y + pad * 0.5f});
-    ImGui::PushStyleColor(ImGuiCol_Text, color);
-    ImGui::TextUnformatted(text);
-    ImGui::PopStyleColor();
-    ImGui::SetCursorScreenPos({p.x, br.y + 2.0f});
+    dl->AddRectFilled(pos, bottomRight, ImGui::ColorConvertFloat4ToU32(bg), 3.0f);
+    dl->AddRect(pos, bottomRight, ImGui::ColorConvertFloat4ToU32(color), 3.0f, 0, 1.0f);
+    dl->AddText({pos.x + padX, pos.y + padY}, ImGui::ColorConvertFloat4ToU32(color), text);
+
+    // カーソルを手で動かさず、バッジの大きさをレイアウトへ申告する。
+    // こうすると SameLine や折り返しが他のウィジェットと同じように効く。
+    ImGui::Dummy(badgeSize);
 }
 
 // ------------------------------------------------------------
@@ -176,5 +211,132 @@ static bool ThemedKnob(const char *label, float *v,
     ImGui::PopStyleColor(3);
     return changed;
 }
+
+// ------------------------------------------------------------
+// 役割で選ぶボタン
+//   色を各画面で決めずここに集約する。テーマを変えるときはこの4組だけ触ればよい。
+// ------------------------------------------------------------
+
+/// <summary>地色とホバー色を指定してボタンを描く（役割ボタンの実装本体）</summary>
+/// <param name="label">ラベル（## でID付与可）</param>
+/// <param name="base">地色</param>
+/// <param name="hover">ホバー色。押下時もこの色を使う</param>
+/// <param name="size">大きさ。x&lt;0 で全幅、{0,0} で内容に合わせる</param>
+/// <returns>bool: 押されたら true</returns>
+inline bool RoleButton(const char *label, ImVec4 base, ImVec4 hover, const ImVec2 &size = {0.0f, 0.0f})
+{
+    ImGui::PushStyleColor(ImGuiCol_Button, base);
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, hover);
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive, hover);
+    const bool hit = ImGui::Button(label, size);
+    ImGui::PopStyleColor(3);
+    return hit;
+}
+
+/// <summary>主操作のボタン（適用・実行など）</summary>
+inline bool PrimaryButton(const char *label, const ImVec2 &size = {0.0f, 0.0f})
+{
+    return RoleButton(label, DebugTheme::kButtonPrimary, DebugTheme::kButtonPrimaryHover, size);
+}
+
+/// <summary>追加・確定のボタン（新規作成・保存など）</summary>
+inline bool ConfirmButton(const char *label, const ImVec2 &size = {0.0f, 0.0f})
+{
+    return RoleButton(label, DebugTheme::kButtonConfirm, DebugTheme::kButtonConfirmHover, size);
+}
+
+/// <summary>破壊的操作のボタン（削除・全消しなど）</summary>
+inline bool DangerButton(const char *label, const ImVec2 &size = {0.0f, 0.0f})
+{
+    return RoleButton(label, DebugTheme::kButtonDanger, DebugTheme::kButtonDangerHover, size);
+}
+
+/// <summary>目立たせたくない操作のボタン（キャンセル・リセットなど）</summary>
+inline bool NeutralButton(const char *label, const ImVec2 &size = {0.0f, 0.0f})
+{
+    return RoleButton(label, DebugTheme::kButtonNeutral, DebugTheme::kButtonNeutralHover, size);
+}
+
+/// <summary>
+/// 役割色をボタン系ウィジェットへ適用するスコープ。
+/// SmallButton や ArrowButton など、上のヘルパーで包めないものに使う。
+/// </summary>
+struct ScopedButtonColors
+{
+    ScopedButtonColors(ImVec4 base, ImVec4 hover)
+    {
+        ImGui::PushStyleColor(ImGuiCol_Button, base);
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, hover);
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, hover);
+    }
+    ~ScopedButtonColors() { ImGui::PopStyleColor(3); }
+    ScopedButtonColors(const ScopedButtonColors &) = delete;
+    ScopedButtonColors &operator=(const ScopedButtonColors &) = delete;
+};
+
+/// <summary>アクセント色から地・ホバーを自動で作るボタン（分類色に合わせたいとき用）</summary>
+/// <param name="label">ラベル</param>
+/// <param name="accent">基準となるアクセント色（DebugTheme::kAccentXxx）</param>
+/// <param name="width">横幅。&lt;0 で全幅</param>
+inline bool AccentButton(const char *label, ImVec4 accent, float width = -1.0f)
+{
+    const ImVec4 base = {accent.x * 0.55f, accent.y * 0.55f, accent.z * 0.55f, 0.85f};
+    const ImVec4 hover = {accent.x * 0.72f, accent.y * 0.72f, accent.z * 0.72f, 0.95f};
+    return RoleButton(label, base, hover, ImVec2(width, 0.0f));
+}
+
+// ------------------------------------------------------------
+// テーマ配色のウィジェット
+// ------------------------------------------------------------
+
+/// <summary>アクセント色から3状態の色を作り、折りたたみヘッダーを描く</summary>
+/// <param name="label">ヘッダーラベル（## でID付与可）</param>
+/// <param name="accent">基準となるアクセント色</param>
+/// <param name="defaultOpen">初期状態で開くか</param>
+/// <returns>bool: 開いていれば true</returns>
+inline bool ThemedHeader(const char *label, ImVec4 accent, bool defaultOpen = false)
+{
+    ImVec4 base = accent;
+    base.w = 0.22f;
+    ImVec4 hov = accent;
+    hov.w = 0.38f;
+    ImVec4 act = accent;
+    act.w = 0.50f;
+    ImGui::PushStyleColor(ImGuiCol_Header, base);
+    ImGui::PushStyleColor(ImGuiCol_HeaderHovered, hov);
+    ImGui::PushStyleColor(ImGuiCol_HeaderActive, act);
+    const bool open = ImGui::CollapsingHeader(label, defaultOpen ? ImGuiTreeNodeFlags_DefaultOpen : 0);
+    ImGui::PopStyleColor(3);
+    return open;
+}
+
+/// <summary>チェックマーク色だけアクセント色にしたチェックボックス</summary>
+inline bool AccentCheckbox(const char *label, bool *v, ImVec4 accent)
+{
+    ImGui::PushStyleColor(ImGuiCol_CheckMark, accent);
+    const bool changed = ImGui::Checkbox(label, v);
+    ImGui::PopStyleColor();
+    return changed;
+}
+
+// ------------------------------------------------------------
+// テーマ配色のテキスト
+// ------------------------------------------------------------
+
+/// <summary>セクション内の小見出しを描く</summary>
+inline void CaptionText(const char *text)
+{
+    ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kTextCaption);
+    ImGui::TextUnformatted(text);
+    ImGui::PopStyleColor();
+}
+
+/// <summary>補足説明など、控えめに見せたい文字を描く</summary>
+inline void DimText(const char *text)
+{
+    ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kTextDim);
+    ImGui::TextUnformatted(text);
+    ImGui::PopStyleColor();
+}
 } // namespace Hagine
-#endif // _DEBUG
+#endif // USE_IMGUI

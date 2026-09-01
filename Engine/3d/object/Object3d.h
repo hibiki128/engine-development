@@ -49,6 +49,9 @@ class Object3d
     std::map<std::string, std::shared_ptr<ModelAnimation>> modelAnimations_;
     std::vector<std::unique_ptr<Material>> materials_;
     std::vector<ObjColor> color_;
+    // インスタンシング描画でマテリアル色を白に固定するための使い回しバッファ
+    // （個体色はインスタンスバッファ側で乗算するので、ここで二重に掛けない）
+    std::vector<ObjColor> instanceWhiteColors_;
     ModelCommon *pModelCommon_ = nullptr;
     LightGroup *pLightGroup_ = nullptr;
 
@@ -68,6 +71,7 @@ class Object3d
     std::string modelFilePath_;
     std::unique_ptr<Object3dCommon> objectCommon_;
     BlendMode blendMode_ = BlendMode::None;
+    bool useDeferred_ = true; // ディファードのG-Bufferに載せてよいか
 
     float animationSpeed_ = 1.0f;
     float blendDuration_ = 0.5f;
@@ -141,6 +145,78 @@ class Object3d
 
     void DrawWireframe(const WorldTransform &worldTransform, const ViewProjection &viewProjection, bool isRainbow = false);
 
+    /// ===================================
+    /// インスタンシング描画（Object3dInstancing から使う）
+    /// ===================================
+
+    /// <summary>
+    /// 同じモデルを参照する他のオブジェクトとまとめて描けるかを返す。
+    /// スキニング（アニメーション付き）は頂点バッファがモデル共有なのでまとめられない。
+    /// </summary>
+    /// <returns>bool: インスタンシング描画の対象にしてよいか</returns>
+    bool CanBatchInstanced() const;
+
+    /// <summary>
+    /// 今のパス（影 / G-Buffer / 前方描画）で描かれる対象かを返す。
+    /// Draw() の冒頭にあるディファードの振り分けと同じ判定。
+    /// </summary>
+    /// <param name="lighting">ライティング有効フラグ</param>
+    /// <returns>bool: このパスで描くなら true</returns>
+    bool ShouldDrawInCurrentPass(bool lighting) const;
+
+    /// <summary>
+    /// 同一バッチにまとめてよいかを表すシグネチャを計算する。
+    /// モデル・全マテリアル・ライティング/反射/ブレンド設定が一致するもの同士だけが同じ値になる。
+    /// </summary>
+    /// <param name="reflect">反射有効フラグ</param>
+    /// <param name="lighting">ライティング有効フラグ</param>
+    /// <returns>size_t: バッチキー</returns>
+    size_t ComputeBatchSignature(bool reflect, bool lighting) const;
+
+    /// <summary>
+    /// ワールド変換からインスタンス1個ぶんの行列を計算する（定数バッファには書かない）。
+    /// </summary>
+    /// <param name="worldTransform">ワールド変換</param>
+    /// <param name="viewProjection">ビュープロジェクション</param>
+    /// <param name="outWVP">WVP行列の書き込み先</param>
+    /// <param name="outWorld">ワールド行列の書き込み先</param>
+    /// <param name="outWorldInverseTranspose">ワールド逆転置行列の書き込み先</param>
+    /// <param name="outLightWVP">ライト空間WVP行列の書き込み先</param>
+    void BuildInstanceMatrices(const WorldTransform &worldTransform, const ViewProjection &viewProjection,
+                               Matrix4x4 &outWVP, Matrix4x4 &outWorld,
+                               Matrix4x4 &outWorldInverseTranspose, Matrix4x4 &outLightWVP) const;
+
+    /// <summary>
+    /// インスタンシングでまとめた1バッチぶんを描画する。
+    /// 変換行列はインスタンスバッファから引くので、このオブジェクトの定数バッファは使わない。
+    /// マテリアル色は白で送り、個体ごとの色はインスタンスバッファ側で乗算させる。
+    /// </summary>
+    /// <param name="instanceBufferAddress">このバッチの先頭インスタンスのGPUアドレス</param>
+    /// <param name="instanceCount">インスタンス数</param>
+    /// <param name="viewProjection">ビュープロジェクション（ライト更新用）</param>
+    /// <param name="reflect">反射有効フラグ</param>
+    /// <param name="lighting">ライティング有効フラグ</param>
+    void DrawInstancedBatch(D3D12_GPU_VIRTUAL_ADDRESS instanceBufferAddress, uint32_t instanceCount,
+                            const ViewProjection &viewProjection, bool reflect, bool lighting);
+
+    /// <summary>
+    /// インスタンシングでまとめた1バッチぶんをシャドウマップへ描画する
+    /// </summary>
+    /// <param name="instanceBufferAddress">このバッチの先頭インスタンスのGPUアドレス</param>
+    /// <param name="instanceCount">インスタンス数</param>
+    void DrawShadowInstancedBatch(D3D12_GPU_VIRTUAL_ADDRESS instanceBufferAddress, uint32_t instanceCount);
+
+    /// <summary>ブレンドモードを取得（バッチキーに使う）</summary>
+    BlendMode GetBlendMode() const { return blendMode_; }
+
+    /// <summary>
+    /// 個体色をインスタンスバッファ経由で渡せるか。
+    /// 頂点シェーダーの instanceColor は「個体単位」でマテリアル単位ではないため、
+    /// マテリアルが1つのときだけ使える（複数マテリアルなら色もバッチキーに含めて一致させる）。
+    /// </summary>
+    /// <returns>bool: インスタンスごとに色を変えられるか</returns>
+    bool UsesInstanceColor() const { return materials_.size() == 1; }
+
     /// <summary>
     /// シャドウマップパスへの描画（深度のみ）
     /// </summary>
@@ -205,6 +281,14 @@ class Object3d
     void SetSize(const Vector3 &size_) { this->size_ = size_; }
     void SetModel(const std::string &filePath);
     void SetBlendMode(BlendMode blendMode) { blendMode_ = blendMode; }
+
+    /// <summary>
+    /// ディファードのG-Bufferに載せてよいか。既定true。
+    /// 半透明として見せたいオブジェクト（ブレンドはNormalのままアルファを下げて
+    /// 透かしているものなど）は false にして前方描画へ逃がす。
+    /// </summary>
+    void SetUseDeferred(bool use) { useDeferred_ = use; }
+    bool GetUseDeferred() const { return useDeferred_; }
     void SetColor(Vector4 color, int index = 0) { color_[index].SetColor(color); }
 
     // マルチマテリアル用のsetter

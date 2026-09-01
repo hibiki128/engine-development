@@ -1,5 +1,5 @@
 #pragma once
-#include <camera/projection/ViewProjection.h>
+#include <camera/Camera.h>
 #include <type/Matrix4x4.h>
 #include <type/Vector2.h>
 #include <type/Vector3.h>
@@ -17,10 +17,10 @@ class DebugCamera
     // ===================================================
 
     /// <summary>
-    /// 初期化
+    /// 初期化。デバッグ用のカメラを CameraManager へ登録する。
+    /// 有効にするとそのカメラへ切り替わり、無効に戻すと元のカメラへ戻る。
     /// </summary>
-    /// <param name="pViewProjection">対象 of ビュープロジェクション</param>
-    void Initialize(ViewProjection *pViewProjection);
+    void Initialize();
 
     /// <summary>
     /// 更新処理
@@ -30,12 +30,20 @@ class DebugCamera
     /// <summary>
     /// ImGuiによるデバッグ表示
     /// </summary>
-    void imgui();
+    void DrawImGui();
 
     /// <summary>
     /// カメラのアクティブ状態を取得
     /// </summary>
     bool GetActive() { return isActive_; }
+
+    /// <summary>
+    /// カメラのアクティブ状態を設定する
+    /// 有効にするとデバッグカメラへ、無効に戻すと元のカメラへ切り替わる
+    /// （実際の切り替えは Update で行われる）
+    /// </summary>
+    /// <param name="active">有効にするか</param>
+    void SetActive(bool active) { isActive_ = active; }
 
   public:
     // ===================================================
@@ -64,10 +72,12 @@ class DebugCamera
     // メンバ変数
     // ===================================================
 
-    ViewProjection *pViewProjection_{};                            // 対象のビュープロジェクション
+    Camera *pCamera_ = nullptr;         // デバッグ操作を反映するカメラ（CameraManager が所有）
+    Camera *pPreviousCamera_ = nullptr; // 有効化する直前までアクティブだったカメラ（戻る先）
+    bool wasActive_ = false;            // 前フレームのアクティブ状態（切り替わりの検出用）
     Vector2 mouse_{};                                             // 現在のマウス座標
     Vector3 eulerRotation_ = {0.0f, 0.0f, 0.0f};                  // オイラー角による回転
-    Quaternion quateRotation_ = Quaternion::IdentityQuaternion(); // クォータニオンによる回転
+    Quaternion quaternionRotation_ = Quaternion::IdentityQuaternion(); // クォータニオンによる回転
     Matrix4x4 rotateXYZMatrix_{};                                 // XYZ回転行列
     Matrix4x4 matRotDelta_{};                                     // 回転差分行列
     float mouseSensitivity_ = 0.003f;                             // マウスの感度

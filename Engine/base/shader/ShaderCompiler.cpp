@@ -45,6 +45,17 @@ void ShaderCompiler::Finalize()
 
 IDxcBlob *ShaderCompiler::Compile(const std::wstring &filePath, const wchar_t *profile)
 {
+    return CompileWithReflection(filePath, profile, nullptr);
+}
+
+IDxcBlob *ShaderCompiler::CompileWithReflection(const std::wstring &filePath, const wchar_t *profile,
+                                                ID3D12ShaderReflection **ppReflection)
+{
+    if (ppReflection)
+    {
+        *ppReflection = nullptr;
+    }
+
     // これからシェーダーをコンパイルする旨をログに出す
     Log(ConvertString(std::format(L"Begin CompileShader, path:{}, profile:{}\n", filePath, profile)));
     // hlslファイルを読む
@@ -58,12 +69,21 @@ IDxcBlob *ShaderCompiler::Compile(const std::wstring &filePath, const wchar_t *p
     shaderSourceBuffer.Size = shaderSource->GetBufferSize();
     shaderSourceBuffer.Encoding = DXC_CP_UTF8; // UTF8の文字コードであることを通知
 
+    // 最適化の指定。
+    // Debug ビルドではシェーダーデバッガで追えるように -Od（最適化なし）のままにし、
+    // それ以外では -O3 を掛ける。ポストエフェクトのような重いループでは差が大きい。
+#ifdef _DEBUG
+    const wchar_t *optimizeOption = L"-Od";
+#else
+    const wchar_t *optimizeOption = L"-O3";
+#endif
+
     LPCWSTR arguments[] = {
         filePath.c_str(),         // コンパイル対象のhlslファイル名
         L"-E", L"main",           // エントリーポイントの指定。基本的にmain以外にはしない
         L"-T", profile,           // ShaderProfileの設定
         L"-Zi", L"-Qembed_debug", // デバッグ用の情報を埋め込む
-        L"-Od",                   // 最適化を外しておく
+        optimizeOption,           // 最適化レベル
         L"-Zpr",                  // メモリレイアウトは行優先
     };
     // 実際にShaderをコンパイルする
@@ -91,9 +111,32 @@ IDxcBlob *ShaderCompiler::Compile(const std::wstring &filePath, const wchar_t *p
     IDxcBlob *shaderBlob = nullptr;
     hr = shaderResult->GetOutput(DXC_OUT_OBJECT, IID_PPV_ARGS(&shaderBlob), nullptr);
     assert(SUCCEEDED(hr));
+
+    // リフレクション（シェーダーが宣言しているリソース一覧）を取り出す。
+    // これを使ってルートシグネチャを自動生成する。
+    if (ppReflection)
+    {
+        IDxcBlob *reflectionBlob = nullptr;
+        hr = shaderResult->GetOutput(DXC_OUT_REFLECTION, IID_PPV_ARGS(&reflectionBlob), nullptr);
+        if (SUCCEEDED(hr) && reflectionBlob)
+        {
+            DxcBuffer reflectionBuffer{};
+            reflectionBuffer.Ptr = reflectionBlob->GetBufferPointer();
+            reflectionBuffer.Size = reflectionBlob->GetBufferSize();
+            reflectionBuffer.Encoding = DXC_CP_ACP;
+            hr = pDxcUtils_->CreateReflection(&reflectionBuffer, IID_PPV_ARGS(ppReflection));
+            assert(SUCCEEDED(hr) && "シェーダーリフレクションの生成に失敗");
+            reflectionBlob->Release();
+        }
+    }
+
     // 成功したログを出す
     Log(ConvertString(std::format(L"Compile Succeeded, path:{}, profile:{}\n", filePath, profile)));
     // もう使わないリソースを解放
+    if (shaderError)
+    {
+        shaderError->Release();
+    }
     shaderSource->Release();
     shaderResult->Release();
     // 実行用のバイナリを返却

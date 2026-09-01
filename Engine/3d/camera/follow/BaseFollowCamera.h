@@ -1,10 +1,12 @@
 #pragma once
-#include <camera/projection/ViewProjection.h>
+#include <camera/Camera.h>
+#include <string>
 #include <transform/WorldTransform.h>
 
 /// <summary>
 /// 基本追従カメラクラス
 /// ターゲットを追従するカメラの基底機能を提供する
+/// カメラ本体（位置・向き・行列）は Camera が持ち、このクラスは追従のしかただけを決める
 /// </summary>
 namespace Hagine {
 class BaseFollowCamera
@@ -15,9 +17,10 @@ class BaseFollowCamera
     // ===================================================
 
     /// <summary>
-    /// 初期化
+    /// 初期化（カメラを CameraManager へ登録する）
     /// </summary>
-    void Init();
+    /// <param name="cameraName">登録するカメラ名</param>
+    void Init(const std::string &cameraName = "追従カメラ");
 
     /// <summary>
     /// 更新処理
@@ -27,7 +30,7 @@ class BaseFollowCamera
     /// <summary>
     /// ImGuiによるデバッグ表示
     /// </summary>
-    void imgui();
+    void DrawImGui();
 
     /// <summary>
     /// ヨー角を取得
@@ -35,9 +38,14 @@ class BaseFollowCamera
     float GetYaw() { return yaw_; }
 
     /// <summary>
-    /// ビュープロジェクションを取得
+    /// カメラを取得（所有は CameraManager）
     /// </summary>
-    ViewProjection &GetViewProjection() { return viewProjection_; }
+    Camera *GetCamera() const { return pCamera_; }
+
+    /// <summary>
+    /// 描画へ渡すビュープロジェクションを取得
+    /// </summary>
+    ViewProjection &GetViewProjection() { return pCamera_->GetViewProjection(); }
 
     /// <summary>
     /// 追従対象を設定
@@ -59,11 +67,10 @@ class BaseFollowCamera
     // メンバ変数
     // ===================================================
 
-    ViewProjection viewProjection_;          // ビュープロジェクション
-    WorldTransform worldTransform_;          // ワールド変換
+    Camera *pCamera_ = nullptr;               // カメラ本体（所有は CameraManager）
     const WorldTransform *pTarget_ = nullptr; // 追従対象のワールド変換
-    float yaw_ = 0.0f;                       // ヨー角(左右回転)
-    float distanceFromTarget_ = 10.0f;       // ターゲットからの距離
-    float heightOffset_ = 2.0f;              // 高さのオフセット
+    float yaw_ = 0.0f;                        // ヨー角(左右回転)
+    float distanceFromTarget_ = 10.0f;        // ターゲットからの距離
+    float heightOffset_ = 2.0f;               // 高さのオフセット
 };
 } // namespace Hagine

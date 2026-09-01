@@ -26,9 +26,12 @@ void ShowTextureFile(std::string &selectedTexturePath, const char *uiId = "defau
 
 /// <summary>
 /// モデルファイルの選択UIを表示
+/// 一覧の各項目はシーンウィンドウへのドラッグ&ドロップ配置に対応している
 /// </summary>
 /// <param name="selectedModelPath">選択されたモデルパス（出力）</param>
-void ShowModelFile(std::string &selectedModelPath);
+/// <param name="uiId">UIインスタンス識別子。アセットブラウザと生成モーダルなど、
+/// 複数箇所に並べる場合に閲覧中フォルダなどの状態とウィジェットIDを分離するために使う</param>
+void ShowModelFile(std::string &selectedModelPath, const char *uiId = "default");
 
 /// <summary>
 /// Jsonファイルの選択UIを表示
@@ -43,5 +46,4 @@ void ShowJsonFile(std::string &selectedJsonPath, std::string &startPath);
 /// <param name="selectedGltfPath">選択されたglTFパス（出力）</param>
 void ShowGltfFile(std::string &selectedGltfPath);
 
-static std::unordered_map<std::string, TextureCache> textureCache; // テクスチャプレビューのキャッシュ
 } // namespace Hagine

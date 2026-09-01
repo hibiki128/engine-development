@@ -3,7 +3,7 @@
 #include "ParticleManager.h"
 #include "transform/WorldTransform.h"
 #include <string>
-#ifdef _DEBUG
+#ifdef USE_IMGUI
 #include "imgui.h"
 #endif
 
@@ -30,6 +30,12 @@ class ParticleEmitter
     /// コンストラクタ（メンバ変数を初期化）
     /// </summary>
     ParticleEmitter();
+
+    /// <summary>
+    /// デストラクタ
+    /// ImGuizmo には transform_ への生ポインタを渡しているため、破棄時に必ず登録を解除する
+    /// </summary>
+    ~ParticleEmitter();
 
     /// <summary>
     /// 初期化
@@ -81,7 +87,7 @@ class ParticleEmitter
     /// <param name="name">削除するグループ名</param>
     void RemoveParticleGroup(const std::string &name)
     {
-        Manager_->RemoveParticleGroup(name);
+        particleManager_->RemoveParticleGroup(name);
     }
 
     int selectedGroupIndex_ = 0; // ImGuiで選択中のグループインデックス
@@ -123,7 +129,7 @@ class ParticleEmitter
     }
 
     // SetStartScale / SetEndScale:
-    //   particleSettings_ への書き込みと同時に Manager_ にも即時反映する
+    //   particleSettings_ への書き込みと同時に particleManager_ にも即時反映する
     //   （transform の dirty 判定とは独立して動作する）
     void SetStartScale(const std::string &groupName, const Vector3 &scale)
     {
@@ -148,12 +154,12 @@ class ParticleEmitter
     }
     void SetStartRotate(const std::string &groupName, const Vector3 &startRotate)
     {
-        particleSettings_[groupName].startRote = startRotate;
+        particleSettings_[groupName].startRotate = startRotate;
         FlushSetting(groupName);
     }
     void SetEndRotate(const std::string &groupName, const Vector3 &endRotate)
     {
-        particleSettings_[groupName].endRote = endRotate;
+        particleSettings_[groupName].endRotate = endRotate;
         FlushSetting(groupName);
     }
     void SetActive(bool isActive) { isActive_ = isActive; }
@@ -181,7 +187,7 @@ class ParticleEmitter
     }
 
     // SetScaleAll / SetStartAcce 系:
-    //   全グループへの一括書き込みも Manager_ に即時反映する
+    //   全グループへの一括書き込みも particleManager_ に即時反映する
     void SetScaleAll(const Vector3 &scale)
     {
         for (auto &[groupName, setting] : particleSettings_)
@@ -232,10 +238,10 @@ class ParticleEmitter
 
     size_t GetActiveParticleCount() const
     {
-        return Manager_ ? Manager_->GetActiveParticleCount() : 0;
+        return particleManager_ ? particleManager_->GetActiveParticleCount() : 0;
     }
 
-#ifdef _DEBUG
+#ifdef USE_IMGUI
     /// <summary>
     /// Undo用: エミッターの編集可能状態（トランスフォーム・フラグ・全グループ設定）をJSON化する
     /// </summary>
@@ -247,12 +253,12 @@ class ParticleEmitter
     /// </summary>
     /// <param name="state">適用する状態JSON</param>
     void RestoreUndoState(const nlohmann::json &state);
-#endif // _DEBUG
+#endif // USE_IMGUI
 
     // パーティクルマネージャーへのアクセス（デバッグ用）
     ParticleManager *GetParticleManager() const
     {
-        return Manager_.get();
+        return particleManager_.get();
     }
 
   private:
@@ -276,21 +282,21 @@ class ParticleEmitter
     void EmitInternal();
 
     /// <summary>
-    /// 指定グループの設定を Manager_ に即時反映する
+    /// 指定グループの設定を particleManager_ に即時反映する
     /// </summary>
     /// <param name="groupName">対象グループ名</param>
     void FlushSetting(const std::string &groupName)
     {
-        if (!Manager_)
+        if (!particleManager_)
             return;
         auto it = particleSettings_.find(groupName);
         if (it == particleSettings_.end())
             return;
         // transform 系は常に現在の transform_ を優先して上書き
         it->second.translate = transform_.translation_;
-        it->second.rotation = transform_.quateRotation_.ToEulerAngles();
+        it->second.rotation = transform_.quaternionRotation_.ToEulerAngles();
         it->second.scale = transform_.scale_;
-        Manager_->SetParticleSetting(groupName, it->second);
+        particleManager_->SetParticleSetting(groupName, it->second);
     }
 
     /// <summary>設定をJsonへ保存</summary>
@@ -326,6 +332,7 @@ class ParticleEmitter
     bool isActive_ = false;         // アクティブフラグ
     bool isAuto_ = false;           // 自動発生フラグ
     bool isGizmoSelectable_ = true; // ギズモ選択可能フラグ
+    bool gizmoRegistered_ = false;  // ImGuizmo へ登録済みか（デストラクタでの解除判定に使う）
 
     std::string name_;             // パーティクルの名前
     std::string drawGroup_ = "3D"; // 描画グループ＝描画ステージ（既定は3D）
@@ -333,7 +340,7 @@ class ParticleEmitter
 
     std::unordered_map<std::string, ParticleSetting> particleSettings_; // グループごとの設定
 
-    std::unique_ptr<ParticleManager> Manager_;    // パーティクル管理
+    std::unique_ptr<ParticleManager> particleManager_;    // パーティクル管理
     std::unique_ptr<DataHandler> datas_;          // データ管理
     std::vector<std::string> particleGroupNames_; // パーティクルグループ名一覧
 

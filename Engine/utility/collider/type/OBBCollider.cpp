@@ -1,8 +1,6 @@
 #include "OBBCollider.h"
-#include "line/DrawLine3D.h"
+#include "line/LineRenderer.h"
 #include "MyMath.h"
-#include <array>
-#include <numbers>
 
 namespace Hagine {
 void OBBCollider::UpdateWorldTransform()
@@ -46,73 +44,47 @@ void OBBCollider::DebugDraw(const ViewProjection &viewProjection)
         return;
     }
 
-    std::array<Vector3, 8> vertices;
-    Vector3 halfSize = cachedOBB_.size;
+    LineRenderer *pLine = LineRenderer::GetInstance();
 
+    // 画面外なら線を積まない
+    const Vector3 halfSize = cachedOBB_.size;
+    const float boundingRadius = halfSize.Length() + (cachedOBB_.scaleCenter - cachedOBB_.rotationCenter).Length();
+    if (!pLine->IsSphereVisible(cachedOBB_.rotationCenter, boundingRadius))
+    {
+        return;
+    }
+
+    // AddBoxCorners は 0-3 が手前面、4-7 が対応する奥面という並びを期待するので、
+    // ビット順（x:1, y:2, z:4）で作った頂点をその並びへ差し替える
+    Vector3 bits[8];
+    const Vector3 scaleOffset = cachedOBB_.scaleCenter - cachedOBB_.rotationCenter;
     for (int i = 0; i < 8; i++)
     {
-        Vector3 localPosition = Vector3(
+        const Vector3 localPosition = Vector3(
             (i & 1) ? halfSize.x : -halfSize.x,
             (i & 2) ? halfSize.y : -halfSize.y,
             (i & 4) ? halfSize.z : -halfSize.z);
 
-        Vector3 scaledPosition = localPosition + (cachedOBB_.scaleCenter - cachedOBB_.rotationCenter);
+        const Vector3 scaledPosition = localPosition + scaleOffset;
 
-        Vector3 rotatedPosition =
+        const Vector3 rotatedPosition =
             cachedOBB_.orientations[0] * scaledPosition.x +
             cachedOBB_.orientations[1] * scaledPosition.y +
             cachedOBB_.orientations[2] * scaledPosition.z;
 
-        vertices[i] = cachedOBB_.rotationCenter + rotatedPosition;
+        bits[i] = cachedOBB_.rotationCenter + rotatedPosition;
     }
 
-    const std::array<std::pair<int, int>, 12> edges = {
-        std::make_pair(0, 1), std::make_pair(1, 3), std::make_pair(3, 2), std::make_pair(2, 0),
-        std::make_pair(4, 5), std::make_pair(5, 7), std::make_pair(7, 6), std::make_pair(6, 4),
-        std::make_pair(0, 4), std::make_pair(1, 5), std::make_pair(2, 6), std::make_pair(3, 7)};
-
-    for (const auto &edge : edges)
-    {
-        DrawLine3D::GetInstance()->SetPoints(vertices[edge.first], vertices[edge.second], color_);
-    }
+    const Vector3 corners[8] = {bits[0], bits[1], bits[3], bits[2], bits[4], bits[5], bits[7], bits[6]};
+    pLine->AddBoxCorners(corners, color_);
 
     DrawRotationCenter(viewProjection);
 }
 
 void OBBCollider::DrawRotationCenter(const ViewProjection &viewProjection)
 {
-    float radius = 0.1f;
-    const uint32_t kSubdivision = 10;
-    const float kLonEvery = 2.0f * std::numbers::pi_v<float> / kSubdivision;
-    const float kLatEvery = std::numbers::pi_v<float> / kSubdivision;
-
-    for (uint32_t latIndex = 0; latIndex < kSubdivision; ++latIndex)
-    {
-        float lat = -std::numbers::pi_v<float> / 2.0f + kLatEvery * latIndex;
-
-        for (uint32_t lonIndex = 0; lonIndex < kSubdivision; ++lonIndex)
-        {
-            float lon = lonIndex * kLonEvery;
-
-            Vector3 start = {
-                cachedOBB_.rotationCenter.x + radius * std::cosf(lat) * std::cosf(lon),
-                cachedOBB_.rotationCenter.y + radius * std::sinf(lat),
-                cachedOBB_.rotationCenter.z + radius * std::cosf(lat) * std::sinf(lon)};
-
-            Vector3 end1 = {
-                cachedOBB_.rotationCenter.x + radius * std::cosf(lat) * std::cosf(lon + kLonEvery),
-                cachedOBB_.rotationCenter.y + radius * std::sinf(lat),
-                cachedOBB_.rotationCenter.z + radius * std::cosf(lat) * std::sinf(lon + kLonEvery)};
-
-            Vector3 end2 = {
-                cachedOBB_.rotationCenter.x + radius * std::cosf(lat + kLatEvery) * std::cosf(lon),
-                cachedOBB_.rotationCenter.y + radius * std::sinf(lat + kLatEvery),
-                cachedOBB_.rotationCenter.z + radius * std::cosf(lat + kLatEvery) * std::sinf(lon)};
-
-            DrawLine3D::GetInstance()->SetPoints(start, end1, color_);
-            DrawLine3D::GetInstance()->SetPoints(start, end2, color_);
-        }
-    }
+    // 回転中心の目印。3つの大円で描くので旧実装（緯度経度メッシュ200本）より大幅に軽い
+    LineRenderer::GetInstance()->AddSphere(cachedOBB_.rotationCenter, 0.1f, color_, 12);
 }
 
 void OBBCollider::SaveToJson()

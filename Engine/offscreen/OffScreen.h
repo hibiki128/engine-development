@@ -175,7 +175,7 @@ class OffScreen
     PostEffectDataManager dataManager_; // エフェクト設定の保存/読み込み
 
     DirectXCommon *pDxCommon_ = nullptr; // DirectX共通処理
-    Matrix4x4 projectionMatrix_;        // 投影行列
+    Matrix4x4 projectionInverse_;       // 射影行列の逆行列（深度をビュー空間へ戻すのに使う）
 
     // セーブ/ロード結果メッセージとその表示タイマー
     std::string saveMessage_;  // 保存結果メッセージ

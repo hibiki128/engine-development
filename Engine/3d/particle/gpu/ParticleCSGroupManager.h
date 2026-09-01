@@ -18,7 +18,7 @@ class ParticleCSGroupManager
 {
   private:
     /// ===================================================
-    /// private methods
+    /// private method
     /// ===================================================
 
     /// <summary>
@@ -35,7 +35,7 @@ class ParticleCSGroupManager
 
   public:
     /// ===================================================
-    /// public methods
+    /// public method
     /// ===================================================
 
     /// <summary>
@@ -254,7 +254,7 @@ class ParticleCSGroupManager
 
   private:
     /// ===================================================
-    /// private methods
+    /// private method
     /// ===================================================
 
     // JSON から読み出したグループ生成用メタデータ。
@@ -274,7 +274,7 @@ class ParticleCSGroupManager
     ParticleCSGroup *LoadGroupFromDesc(const GroupDesc &desc);
 
     /// ===================================================
-    /// private variaus
+    /// private variables
     /// ===================================================
 
     std::vector<std::unique_ptr<ParticleCSGroup>> particleGroups_;

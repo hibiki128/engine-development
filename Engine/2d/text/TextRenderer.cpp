@@ -7,9 +7,9 @@
 #include <string/StringUtility.h>
 #include <DirectXTex/DirectXTex.h>
 #include <imgui/imstb_truetype.h>
-#ifdef _DEBUG
+#ifdef USE_IMGUI
 #include <imgui.h>
-#endif // _DEBUG
+#endif // USE_IMGUI
 #include <string/StringUtility.h>
 #include <algorithm>
 #include <cassert>
@@ -149,7 +149,7 @@ void TextRenderer::CreateCharacterAtlasSprite(
 
 void TextRenderer::UpdateImGui()
 {
-#ifdef _DEBUG
+#ifdef USE_IMGUI
     if (!ImGui::Begin("テキストレンダラー (TextRenderer)", nullptr, ImGuiWindowFlags_NoFocusOnAppearing))
     {
         ImGui::End();
@@ -221,6 +221,11 @@ void TextRenderer::UpdateImGui()
             ImGui::ColorEdit4("アウトライン色", imguiOutlineColor_);
             ImGui::EndDisabled();
         }
+
+        // 入力欄の下にプレビューを表示する
+        DrawPreview(0, fontKeys.empty() ? std::string() : fontKeys[imguiFontIndex_]);
+
+        ImGui::Separator();
 
         const bool canCreate = (imguiSpriteName_[0] != '\0') &&
                                (imguiText_[0] != '\0') &&
@@ -320,6 +325,11 @@ void TextRenderer::UpdateImGui()
             ImGui::EndDisabled();
         }
 
+        // 入力欄の下にプレビューを表示する
+        DrawPreview(1, fontKeys.empty() ? std::string() : fontKeys[imguiAtlasFontIndex_]);
+
+        ImGui::Separator();
+
         const bool canCreate = (imguiAtlasSpriteName_[0] != '\0') &&
                                (imguiAtlasChars_[0] != '\0') &&
                                !fontKeys.empty();
@@ -349,30 +359,167 @@ void TextRenderer::UpdateImGui()
     }
 
     ImGui::End();
-#endif // _DEBUG
+#endif // USE_IMGUI
 }
 
 // --------------------------------------------------------------------------
 // 非公開メソッド
 // --------------------------------------------------------------------------
 
-std::string TextRenderer::RenderTextToFile(
-    const std::string &spriteName,
+#ifdef USE_IMGUI
+void TextRenderer::DrawPreview(int mode, const std::string &fontKey)
+{
+    // 文字色をプレビューへ焼き込む（実際の描画はスプライトの色乗算に相当するため見た目が一致する）
+    auto applyTint = [](std::vector<uint8_t> &rgba, const float col[4]) {
+        const float r = std::clamp(col[0], 0.0f, 1.0f);
+        const float g = std::clamp(col[1], 0.0f, 1.0f);
+        const float b = std::clamp(col[2], 0.0f, 1.0f);
+        const float a = std::clamp(col[3], 0.0f, 1.0f);
+        for (size_t i = 0; i + 3 < rgba.size(); i += 4)
+        {
+            rgba[i + 0] = static_cast<uint8_t>(rgba[i + 0] * r);
+            rgba[i + 1] = static_cast<uint8_t>(rgba[i + 1] * g);
+            rgba[i + 2] = static_cast<uint8_t>(rgba[i + 2] * b);
+            rgba[i + 3] = static_cast<uint8_t>(rgba[i + 3] * a);
+        }
+    };
+
+    // 画像をウィンドウ幅・一定高さに収めて等比表示する
+    auto drawImage = [](D3D12_GPU_DESCRIPTOR_HANDLE handle, int w, int h) {
+        if (handle.ptr == 0 || w <= 0 || h <= 0)
+        {
+            ImGui::TextDisabled("（テキストを入力するとプレビューされます）");
+            return;
+        }
+        const float avail = ImGui::GetContentRegionAvail().x;
+        const float maxW = (avail > 16.0f) ? avail : static_cast<float>(w);
+        const float maxH = 160.0f;
+        float dispW = static_cast<float>(w);
+        float dispH = static_cast<float>(h);
+        const float sx = dispW > maxW ? maxW / dispW : 1.0f;
+        const float sy = dispH > maxH ? maxH / dispH : 1.0f;
+        const float s = std::min(sx, sy);
+        dispW *= s;
+        dispH *= s;
+        // 透明部分が分かるよう枠付きで表示する
+        ImGui::Image(static_cast<ImTextureID>(handle.ptr), ImVec2(dispW, dispH),
+                     ImVec2(0, 0), ImVec2(1, 1));
+        ImGui::GetWindowDrawList()->AddRect(
+            ImGui::GetItemRectMin(), ImGui::GetItemRectMax(),
+            ImGui::GetColorU32(ImVec4(0.4f, 0.4f, 0.45f, 0.8f)));
+    };
+
+    ImGui::SeparatorText("プレビュー");
+
+    if (mode == 0)
+    {
+        // 入力シグネチャ（テキスト・フォント・色・アウトライン設定）が変わったときだけ再生成する
+        std::string sig = std::string(imguiText_) + "|" + fontKey + "|" +
+                          std::to_string(imguiColor_[0]) + "," + std::to_string(imguiColor_[1]) + "," +
+                          std::to_string(imguiColor_[2]) + "," + std::to_string(imguiColor_[3]) + "|" +
+                          (imguiOutlineEnabled_ ? "1" : "0") + "," + std::to_string(imguiOutlineThickness_) + "," +
+                          std::to_string(imguiOutlineColor_[0]) + "," + std::to_string(imguiOutlineColor_[1]) + "," +
+                          std::to_string(imguiOutlineColor_[2]) + "," + std::to_string(imguiOutlineColor_[3]);
+
+        if (imguiText_[0] == '\0' || fontKey.empty())
+        {
+            textPreviewHandle_.ptr = 0;
+            textPreviewSig_.clear();
+        }
+        else if (sig != textPreviewSig_)
+        {
+            textPreviewSig_ = sig;
+            int w = 0, h = 0;
+            std::vector<uint8_t> rgba = BuildTextRGBA(
+                imguiText_, fontKey, imguiOutlineEnabled_, imguiOutlineThickness_,
+                {imguiOutlineColor_[0], imguiOutlineColor_[1], imguiOutlineColor_[2], imguiOutlineColor_[3]}, w, h);
+            if (!rgba.empty())
+            {
+                applyTint(rgba, imguiColor_);
+                textPreviewHandle_ = TextureManager::GetInstance()->UpdateDynamicTexture("__text_preview__", rgba.data(), w, h);
+                textPreviewWidth_ = w;
+                textPreviewHeight_ = h;
+            }
+            else
+            {
+                textPreviewHandle_.ptr = 0;
+            }
+        }
+
+        drawImage(textPreviewHandle_, textPreviewWidth_, textPreviewHeight_);
+        if (textPreviewHandle_.ptr != 0)
+        {
+            ImGui::TextDisabled("生成サイズ: %d x %d px", textPreviewWidth_, textPreviewHeight_);
+        }
+    }
+    else
+    {
+        std::string sig = std::string(imguiAtlasChars_) + "|" + fontKey + "|" +
+                          std::to_string(imguiAtlasCellWidth_) + "x" + std::to_string(imguiAtlasCellHeight_) + "|" +
+                          std::to_string(imguiAtlasColor_[0]) + "," + std::to_string(imguiAtlasColor_[1]) + "," +
+                          std::to_string(imguiAtlasColor_[2]) + "," + std::to_string(imguiAtlasColor_[3]) + "|" +
+                          (imguiAtlasOutlineEnabled_ ? "1" : "0") + "," + std::to_string(imguiAtlasOutlineThickness_) + "," +
+                          std::to_string(imguiAtlasOutlineColor_[0]) + "," + std::to_string(imguiAtlasOutlineColor_[1]) + "," +
+                          std::to_string(imguiAtlasOutlineColor_[2]) + "," + std::to_string(imguiAtlasOutlineColor_[3]);
+
+        if (imguiAtlasChars_[0] == '\0' || fontKey.empty())
+        {
+            atlasPreviewHandle_.ptr = 0;
+            atlasPreviewSig_.clear();
+        }
+        else if (sig != atlasPreviewSig_)
+        {
+            atlasPreviewSig_ = sig;
+            int w = 0, h = 0;
+            std::vector<uint8_t> rgba = BuildCharacterAtlasRGBA(
+                Utf8ToCodepoints(imguiAtlasChars_), fontKey, imguiAtlasCellWidth_, imguiAtlasCellHeight_,
+                imguiAtlasOutlineEnabled_, imguiAtlasOutlineThickness_,
+                {imguiAtlasOutlineColor_[0], imguiAtlasOutlineColor_[1], imguiAtlasOutlineColor_[2], imguiAtlasOutlineColor_[3]}, w, h);
+            if (!rgba.empty())
+            {
+                applyTint(rgba, imguiAtlasColor_);
+                atlasPreviewHandle_ = TextureManager::GetInstance()->UpdateDynamicTexture("__atlas_preview__", rgba.data(), w, h);
+                atlasPreviewWidth_ = w;
+                atlasPreviewHeight_ = h;
+            }
+            else
+            {
+                atlasPreviewHandle_.ptr = 0;
+            }
+        }
+
+        drawImage(atlasPreviewHandle_, atlasPreviewWidth_, atlasPreviewHeight_);
+        if (atlasPreviewHandle_.ptr != 0)
+        {
+            ImGui::TextDisabled("生成サイズ: %d x %d px", atlasPreviewWidth_, atlasPreviewHeight_);
+        }
+    }
+}
+#endif // USE_IMGUI
+
+std::vector<uint8_t> TextRenderer::BuildTextRGBA(
     const std::string &text,
     const std::string &fontKey,
     bool outlineEnabled,
     float outlineThickness,
-    Vector4 outlineColor)
+    Vector4 outlineColor,
+    int &outWidth,
+    int &outHeight)
 {
+    outWidth = 0;
+    outHeight = 0;
+
     const TextureManager::FontData *fontData = TextureManager::GetInstance()->GetFontData(fontKey);
-    assert(fontData != nullptr);
-    assert(fontData->ttfBuffer != nullptr);
+    if (fontData == nullptr || fontData->ttfBuffer == nullptr)
+    {
+        return {};
+    }
 
     // stb_truetypeの初期化
     stbtt_fontinfo fontInfo;
     if (!stbtt_InitFont(&fontInfo, fontData->ttfBuffer->data(), 0))
     {
-        assert(0 && "Failed to init font");
+        return {};
     }
 
     float scale = stbtt_ScaleForPixelHeight(&fontInfo, fontData->fontSize);
@@ -555,6 +702,24 @@ std::string TextRenderer::RenderTextToFile(
         }
     }
 
+    outWidth = texWidth;
+    outHeight = texHeight;
+    return pixels;
+}
+
+std::string TextRenderer::RenderTextToFile(
+    const std::string &spriteName,
+    const std::string &text,
+    const std::string &fontKey,
+    bool outlineEnabled,
+    float outlineThickness,
+    Vector4 outlineColor)
+{
+    int texWidth = 0;
+    int texHeight = 0;
+    std::vector<uint8_t> pixels = BuildTextRGBA(text, fontKey, outlineEnabled, outlineThickness, outlineColor, texWidth, texHeight);
+    assert(!pixels.empty());
+
     // DirectXTex による PNG 保存処理
     EnsureOutputDirectory();
 
@@ -589,25 +754,36 @@ std::string TextRenderer::RenderTextToFile(
     return loadPath;
 }
 
-std::string TextRenderer::RenderCharacterAtlasToFile(
-    const std::string &spriteName,
+std::vector<uint8_t> TextRenderer::BuildCharacterAtlasRGBA(
     const std::vector<uint32_t> &codepoints,
     const std::string &fontKey,
     int cellWidth,
     int cellHeight,
     bool outlineEnabled,
     float outlineThickness,
-    Vector4 outlineColor)
+    Vector4 outlineColor,
+    int &outWidth,
+    int &outHeight)
 {
+    outWidth = 0;
+    outHeight = 0;
+
+    if (codepoints.empty() || cellWidth <= 0 || cellHeight <= 0)
+    {
+        return {};
+    }
+
     const TextureManager::FontData *fontData = TextureManager::GetInstance()->GetFontData(fontKey);
-    assert(fontData != nullptr);
-    assert(fontData->ttfBuffer != nullptr);
+    if (fontData == nullptr || fontData->ttfBuffer == nullptr)
+    {
+        return {};
+    }
 
     // stb_truetypeの初期化
     stbtt_fontinfo fontInfo;
     if (!stbtt_InitFont(&fontInfo, fontData->ttfBuffer->data(), 0))
     {
-        assert(0 && "Failed to init font");
+        return {};
     }
 
     const float scale = stbtt_ScaleForPixelHeight(&fontInfo, fontData->fontSize);
@@ -772,6 +948,28 @@ std::string TextRenderer::RenderCharacterAtlasToFile(
             }
         }
     }
+
+    outWidth = atlasWidth;
+    outHeight = atlasHeight;
+    return atlasPixels;
+}
+
+std::string TextRenderer::RenderCharacterAtlasToFile(
+    const std::string &spriteName,
+    const std::vector<uint32_t> &codepoints,
+    const std::string &fontKey,
+    int cellWidth,
+    int cellHeight,
+    bool outlineEnabled,
+    float outlineThickness,
+    Vector4 outlineColor)
+{
+    int atlasWidth = 0;
+    int atlasHeight = 0;
+    std::vector<uint8_t> atlasPixels = BuildCharacterAtlasRGBA(
+        codepoints, fontKey, cellWidth, cellHeight,
+        outlineEnabled, outlineThickness, outlineColor, atlasWidth, atlasHeight);
+    assert(!atlasPixels.empty());
 
     // DirectXTex による PNG 保存処理
     EnsureOutputDirectory();

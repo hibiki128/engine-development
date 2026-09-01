@@ -8,7 +8,7 @@
 namespace Hagine {
 int PostEffectChain::AddEffect(ShaderMode mode,
                                const std::string &name,
-                               DirectXCommon *dxCommon,
+                               DirectXCommon *pDxCommon,
                                int slotIndex)
 {
     // スロット番号の決定
@@ -34,7 +34,7 @@ int PostEffectChain::AddEffect(ShaderMode mode,
     slot.occupied = true;
     slot.enabled = true;
     slot.name = name.empty() ? ("Effect_" + std::to_string(slotIndex)) : name;
-    slot.params = PostEffectParamsFactory::Create(mode, dxCommon);
+    slot.params = PostEffectParamsFactory::Create(mode, pDxCommon);
 
     return slotIndex;
 }
@@ -55,7 +55,7 @@ bool PostEffectChain::RemoveEffect(int slotIndex)
     return true;
 }
 
-void PostEffectChain::Clear(DirectXCommon * /*dxCommon*/)
+void PostEffectChain::Clear(DirectXCommon * /*pDxCommon*/)
 {
     for (auto &slot : slots_)
     {

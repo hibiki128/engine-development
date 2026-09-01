@@ -8,6 +8,7 @@
 
 #ifdef USE_IMGUI
 #include <imgui.h>
+#include "utility/debug/imgui/DebugUIHelper.h"
 #endif
 
 #pragma pack(push, 1)
@@ -472,7 +473,7 @@ void ParticleCSFieldManager::DrawImGui()
     ImGui::PopStyleColor();
 
     // ヘッダー情報
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.56f, 0.69f, 0.86f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kTextCaption);
     ImGui::Text("フィールド数: %d / %d", static_cast<int>(fields_.size()), kMaxFields);
     ImGui::PopStyleColor();
     ImGui::Separator();
@@ -583,7 +584,7 @@ void ParticleCSFieldManager::DrawImGui()
             ImGui::Separator();
 
             // フィールドタイプ選択
-            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.56f, 0.69f, 0.86f, 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kTextCaption);
             ImGui::TextUnformatted("フィールド種類");
             ImGui::PopStyleColor();
 
@@ -598,7 +599,7 @@ void ParticleCSFieldManager::DrawImGui()
             ImGui::Separator();
 
             // 位置・範囲
-            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.56f, 0.69f, 0.86f, 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kTextCaption);
             ImGui::TextUnformatted("位置・影響範囲");
             ImGui::PopStyleColor();
 
@@ -612,7 +613,7 @@ void ParticleCSFieldManager::DrawImGui()
             ImGui::Separator();
 
             // タイプ別パラメータ
-            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.56f, 0.69f, 0.86f, 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kTextCaption);
             ImGui::TextUnformatted("フィールドパラメータ");
             ImGui::PopStyleColor();
 
@@ -638,7 +639,7 @@ void ParticleCSFieldManager::DrawImGui()
             // -----------------------------------------------
             // 寿命ドレイン
             // -----------------------------------------------
-            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.56f, 0.69f, 0.86f, 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kTextCaption);
             ImGui::TextUnformatted("寿命ドレイン");
             ImGui::PopStyleColor();
 
@@ -661,7 +662,7 @@ void ParticleCSFieldManager::DrawImGui()
             // -----------------------------------------------
             // トレイル強制生成
             // -----------------------------------------------
-            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.56f, 0.69f, 0.86f, 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kTextCaption);
             ImGui::TextUnformatted("トレイル強制生成");
             ImGui::PopStyleColor();
 
@@ -684,7 +685,7 @@ void ParticleCSFieldManager::DrawImGui()
             // -----------------------------------------------
             // カラー乗算
             // -----------------------------------------------
-            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.56f, 0.69f, 0.86f, 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kTextCaption);
             ImGui::TextUnformatted("カラー乗算");
             ImGui::PopStyleColor();
 
@@ -708,7 +709,7 @@ void ParticleCSFieldManager::DrawImGui()
             // -----------------------------------------------
             // 一度きり設定上書き
             // -----------------------------------------------
-            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.56f, 0.69f, 0.86f, 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kTextCaption);
             ImGui::TextUnformatted("一度きり設定上書き");
             ImGui::PopStyleColor();
             ImGui::SameLine();
@@ -730,7 +731,7 @@ void ParticleCSFieldManager::DrawImGui()
             ImGui::Separator();
 
             // --- 接触Emit ---
-            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.56f, 0.69f, 0.86f, 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kTextCaption);
             ImGui::TextUnformatted("接触Emit");
             ImGui::PopStyleColor();
             ImGui::SameLine();
@@ -797,7 +798,7 @@ void ParticleCSFieldManager::DrawImGui()
             ImGui::Separator();
 
             // --- グループID ---
-            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.56f, 0.69f, 0.86f, 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kTextCaption);
             ImGui::TextUnformatted("グループID");
             ImGui::PopStyleColor();
             ImGui::SameLine();
@@ -841,7 +842,7 @@ void ParticleCSFieldManager::DrawImGui()
     // -----------------------------------------------
     ImGui::Spacing();
     ImGui::Separator();
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.56f, 0.69f, 0.86f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kTextCaption);
     ImGui::TextUnformatted("デバッグ表示");
     ImGui::PopStyleColor();
     ImGui::Checkbox("ギズモ表示##gizmo", &showGizmos_);
@@ -1065,7 +1066,7 @@ void ParticleCSFieldManager::DrawFieldGizmos()
 // --- 影響範囲球 ---
 void ParticleCSFieldManager::DrawFieldSphere(const ParticleField &field, const Vector4 &color)
 {
-    DrawLine3D::GetInstance()->DrawSphere(field.data.position, color, field.data.radius, 16);
+    LineRenderer::GetInstance()->AddSphere(field.data.position, field.data.radius, color, 16);
 }
 
 // --- Wind：球内に等間隔で方向矢印を描く ---
@@ -1109,7 +1110,7 @@ void ParticleCSFieldManager::DrawWindArrows(const ParticleField &field, const Ve
 
                 Vector3 from = {center.x + offset.x, center.y + offset.y, center.z + offset.z};
                 Vector3 to = {from.x + dir.x * arrowLen, from.y + dir.y * arrowLen, from.z + dir.z * arrowLen};
-                DrawLine3D::GetInstance()->SetPoints(from, to, color);
+                LineRenderer::GetInstance()->AddLine(from, to, color);
 
                 // 矢頭：dirに垂直な軸で小さな V 字を描く
                 // dir に直交するベクトルを求める
@@ -1132,8 +1133,8 @@ void ParticleCSFieldManager::DrawWindArrows(const ParticleField &field, const Ve
                 Vector3 headBase = {to.x - dir.x * headLen, to.y - dir.y * headLen, to.z - dir.z * headLen};
                 Vector3 h1 = {headBase.x + side.x * headLen * 0.5f, headBase.y + side.y * headLen * 0.5f, headBase.z + side.z * headLen * 0.5f};
                 Vector3 h2 = {headBase.x - side.x * headLen * 0.5f, headBase.y - side.y * headLen * 0.5f, headBase.z - side.z * headLen * 0.5f};
-                DrawLine3D::GetInstance()->SetPoints(to, h1, color);
-                DrawLine3D::GetInstance()->SetPoints(to, h2, color);
+                LineRenderer::GetInstance()->AddLine(to, h1, color);
+                LineRenderer::GetInstance()->AddLine(to, h2, color);
             }
         }
     }
@@ -1151,13 +1152,13 @@ void ParticleCSFieldManager::DrawRadialLines(const ParticleField &field, const V
     // 正二十面体の頂点方向（12方向）を均一配置の代わりに球面上を均等サンプル
     const int stacks = 4;
     const int slices = 8;
-    const float PI = 3.1415926535f;
+    const float kPi = 3.1415926535f;
     for (int si = 0; si < stacks; ++si)
     {
-        float theta = PI * (si + 0.5f) / stacks; // 0 〜 π
+        float theta = kPi * (si + 0.5f) / stacks; // 0 〜 π
         for (int sj = 0; sj < slices; ++sj)
         {
-            float phi = 2.0f * PI * sj / slices;
+            float phi = 2.0f * kPi * sj / slices;
             Vector3 dir = {
                 std::sin(theta) * std::cos(phi),
                 std::cos(theta),
@@ -1173,12 +1174,12 @@ void ParticleCSFieldManager::DrawRadialLines(const ParticleField &field, const V
             if (inward)
             {
                 // 球面 → 中心方向へ（Attract）
-                DrawLine3D::GetInstance()->SetPoints(surface, inner, color);
+                LineRenderer::GetInstance()->AddLine(surface, inner, color);
             }
             else
             {
                 // 中心 → 球面方向へ（Repel）
-                DrawLine3D::GetInstance()->SetPoints(inner, surface, color);
+                LineRenderer::GetInstance()->AddLine(inner, surface, color);
             }
         }
     }
@@ -1227,7 +1228,7 @@ void ParticleCSFieldManager::DrawVortexArcs(const ParticleField &field, const Ve
     // 高さ方向の異なる3段に円弧を描く
     const int arcLayers = 3;
     const int arcSegments = 24;
-    const float PI = 3.1415926535f;
+    const float kPi = 3.1415926535f;
     for (int layer = 0; layer < arcLayers; ++layer)
     {
         // 各段を軸方向にオフセット（-r*0.5 〜 r*0.5）
@@ -1238,12 +1239,12 @@ void ParticleCSFieldManager::DrawVortexArcs(const ParticleField &field, const Ve
             center.z + axis.z * heightOffset,
         };
         // 段ごとに半径を変えて円錐状に見せる
-        float layerRadius = r * (0.5f + 0.5f * std::sin(PI * layer / (arcLayers - 1)));
+        float layerRadius = r * (0.5f + 0.5f * std::sin(kPi * layer / (arcLayers - 1)));
 
         for (int seg = 0; seg < arcSegments; ++seg)
         {
-            float t1 = sign * 2.0f * PI * turns * seg / arcSegments;
-            float t2 = sign * 2.0f * PI * turns * (seg + 1) / arcSegments;
+            float t1 = sign * 2.0f * kPi * turns * seg / arcSegments;
+            float t2 = sign * 2.0f * kPi * turns * (seg + 1) / arcSegments;
 
             Vector3 p1 = {
                 layerCenter.x + layerRadius * (right.x * std::cos(t1) + forward.x * std::sin(t1)),
@@ -1255,13 +1256,13 @@ void ParticleCSFieldManager::DrawVortexArcs(const ParticleField &field, const Ve
                 layerCenter.y + layerRadius * (right.y * std::cos(t2) + forward.y * std::sin(t2)),
                 layerCenter.z + layerRadius * (right.z * std::cos(t2) + forward.z * std::sin(t2)),
             };
-            DrawLine3D::GetInstance()->SetPoints(p1, p2, color);
+            LineRenderer::GetInstance()->AddLine(p1, p2, color);
         }
     }
 
     // 回転軸そのものを細い線で表示（軸の方向が分かるように）
     Vector3 axisTop = {center.x + axis.x * r * 0.6f, center.y + axis.y * r * 0.6f, center.z + axis.z * r * 0.6f};
     Vector3 axisBot = {center.x - axis.x * r * 0.6f, center.y - axis.y * r * 0.6f, center.z - axis.z * r * 0.6f};
-    DrawLine3D::GetInstance()->SetPoints(axisBot, axisTop, color);
+    LineRenderer::GetInstance()->AddLine(axisBot, axisTop, color);
 }
 } // namespace Hagine

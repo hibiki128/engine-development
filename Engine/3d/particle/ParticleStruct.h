@@ -410,6 +410,21 @@ struct ParticleCSSettings
     float audioReleaseRate = 10.0f;         // エンベロープ減衰速度[1/s]（大きいほど早く落ち着く）
     float audioPad0 = 0.0f;                 // 16B境界パディング
 
+    // ---- GPU駆動の視錐台カリング ----
+    // Compute(Emit/Update) が「カメラの視錐台に入っているか」を粒子ごとに判定し、
+    // 入っているものだけを描画リスト(gRenderCompact)へ詰める。画面外の粒子は
+    // ExecuteIndirect の instanceCount に載らない＝頂点シェーダすら起動しない。
+    // ※ シミュレーション（生存リスト）からは外さないので、画面外で時間が止まることはない。
+    // ※ 判定は PerView.viewProjection から抽出した平面で行うので、描画に使う行列と完全に一致する。
+    // HLSL ParticleCSSettings 末尾と一致させること。
+    uint32_t enableFrustumCull = 1;      // 1=視錐台カリング（プレビュー描画中は CPU が 0 を入れる）
+    float frustumRadiusScale = 1.5f;     // 粒子半径 = max(scale)×この係数（モデル頂点の広がり）
+    float frustumStretchFactor = 0.0f;   // 速度ストレッチ係数（0=無効。半径を速度で膨らませる）
+    float frustumPad0 = 0.0f;
+    // ax+by+cz+d=0 の (a,b,c,d)。法線は視錐台の内側向き（内側で dot(n,p)+d が正）。
+    // 並びは left/right/bottom/top/near/far。
+    Vector4 frustumPlanes[6] = {};
+
     // ---- 演出の基準空間（ここから下は CPU 専用。HLSL 側には対応メンバが無い）----
     // 「渦の回転軸」「渦/集束の目標オフセット」をどの空間の値として解釈するか。
     // GPU へ渡るのは解決済みのワールド値（vortexAxis / vortexTarget / gatherTarget）だけなので、
@@ -422,6 +437,10 @@ struct ParticleCSSettings
     uint32_t effectSpace = 0;
     Vector3 vortexAxisBase = {0.0f, 1.0f, 0.0f}; // 基準空間での回転軸（ImGui/Json が読み書きする元の値）
 };
+// HLSL 側 ParticleCSSettings（Particle.hlsli）とのオフセット契約。
+// dxc の -Fc が出す cbuffer レイアウトと一致していること（ずれると視錐台カリングが誤動作する）。
+static_assert(offsetof(ParticleCSSettings, enableFrustumCull) == 3680, "enableFrustumCull のオフセットずれ。HLSL ParticleCSSettings と要整合");
+static_assert(offsetof(ParticleCSSettings, frustumPlanes) == 3696, "frustumPlanes のオフセットずれ。HLSL ParticleCSSettings と要整合");
 
 /// =====================================================================
 /// フィールドがパーティクルに適用する「一度きりの設定上書き」データ
@@ -576,8 +595,8 @@ struct ParticleSetting
     Vector3 particleEndScale{};
     Vector3 startAcce{};
     Vector3 endAcce{};
-    Vector3 startRote{};
-    Vector3 endRote{};
+    Vector3 startRotate{};
+    Vector3 endRotate{};
     Vector3 rotateVelocityMin{};
     Vector3 rotateVelocityMax{};
     Vector3 allScaleMax{};
@@ -648,8 +667,8 @@ struct Particle
     Vector3 endScale{};
     Vector3 startAcce{};
     Vector3 endAcce{};
-    Vector3 startRote{};
-    Vector3 endRote{};
+    Vector3 startRotate{};
+    Vector3 endRotate{};
     Vector3 rotateVelocity{};
     Vector3 fixedDirection{};
     Vector4 color{};     // 色

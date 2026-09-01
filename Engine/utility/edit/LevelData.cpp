@@ -248,12 +248,15 @@ std::unique_ptr<BaseObject> LevelData::CreateBaseObject(const ObjectData &object
         // センター（スケールオフセット）を設定
         obbCollider->SetPositionOffSet(objectData.collider.center);
 
-        // タグを設定（必要に応じて）
+        // タグを設定（レベルに配置される静的な地形・障害物なので Environment 固定）
         obbCollider->SetTag("Environment");
 
-        // 衝突マスクを設定（必要に応じて）
-        obbCollider->AddCollisionMask("Player");
-        obbCollider->AddCollisionMask("Enemy");
+        // 衝突マスクはゲーム側が ColliderTagManager に設定したものを使う
+        // （エンジンが "Player" 等のゲーム固有タグを直接知らないようにするため）
+        for (const std::string &mask : ColliderTagManager::GetInstance()->GetDefaultCollisionMasks())
+        {
+            obbCollider->AddCollisionMask(mask);
+        }
     }
 
     return baseObject;

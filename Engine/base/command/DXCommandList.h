@@ -24,9 +24,9 @@ class DXCommandList
     /// <summary>
     /// 初期化（アロケータをフレーム数分生成し、記録状態のリストを作る）
     /// </summary>
-    /// <param name="device">デバイス</param>
+    /// <param name="pDevice">デバイス</param>
     /// <param name="type">リストの種類（DIRECT / COMPUTE）</param>
-    void Initialize(DXDevice *device, D3D12_COMMAND_LIST_TYPE type);
+    void Initialize(DXDevice *pDevice, D3D12_COMMAND_LIST_TYPE type);
 
     /// <summary>
     /// 記録を確定する

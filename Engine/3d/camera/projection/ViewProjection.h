@@ -98,7 +98,7 @@ class ViewProjection
     // ===================================================
 
     bool isUseQuaternion_ = false;                                                  // 回転モード(true:クォータニオン, false:オイラー角)
-    Quaternion quateRotation_ = Quaternion::IdentityQuaternion();                   // クォータニオンによる回転
+    Quaternion quaternionRotation_ = Quaternion::IdentityQuaternion();                   // クォータニオンによる回転
     Vector3 eulerRotation_ = {0.0f, 0.0f, 0.0f};                                    // オイラー角による回転(ラジアン)
     Vector3 translation_ = {0.0f, 0.0f, -10.0f};                                    // カメラ座標
     float fovAngleY_ = 45.0f * std::numbers::pi_v<float> / 180.0f;                  // 垂直方向視野角(ラジアン)

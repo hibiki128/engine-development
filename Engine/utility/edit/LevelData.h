@@ -37,7 +37,7 @@ class LevelData
     using json = nlohmann::json;
 
     /// ===================================================
-    /// private structs
+    /// private struct
     /// ===================================================
 
     struct Transform
@@ -65,7 +65,7 @@ class LevelData
     };
 
     /// ===================================================
-    /// private methods
+    /// private method
     /// ===================================================
 
     /// <summary>

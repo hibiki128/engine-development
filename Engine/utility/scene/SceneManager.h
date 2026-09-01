@@ -3,6 +3,7 @@
 #include "SceneTransition.h"
 #include <OffScreen.h>
 #include <render/DrawSystem.h>
+#include <functional>
 #include <memory>
 #include <string>
 
@@ -77,6 +78,19 @@ class SceneManager
     /// </summary>
     void SceneChange();
 
+#ifdef USE_IMGUI
+    /// <summary>
+    /// 今のシーンを同じ名前で作り直すよう予約する（Play モードの停止で使う）。
+    ///
+    /// 作り直しは「シーンを破棄 → 生成 → Initialize」なので、シーン自身の Update や
+    /// ImGui の描画中に実行すると、実行中の関数の this ごと消えることになる。
+    /// そのため実際の作り直しは次フレームの Update 先頭まで遅らせる。
+    /// </summary>
+    /// <param name="onRebuilt">作り直した直後に呼ぶ処理（未保存の編集を戻す用）</param>
+    /// <returns>bool: 予約できたら true。シーンが無い・未登録名で作り直せない場合は false</returns>
+    bool RequestSceneRebuild(std::function<void()> onRebuilt = {});
+#endif // USE_IMGUI
+
     float GetClearTime() const { return clearTime_; }
     float GetHP() const { return hp_; }
     bool GetIsGameOver() const { return isGameOver_; }
@@ -88,7 +102,7 @@ class SceneManager
     void SetHP(float hp) { hp_ = hp; }
     void SetIsGameOver(bool flag) { isGameOver_ = flag; }
 
-    void SetOffScreen(OffScreen *offscreen) { pOffscreen_ = offscreen; }
+    void SetOffScreen(OffScreen *pOffScreen) { pOffscreen_ = pOffScreen; }
 
     /// <summary>
     /// メインのオフスクリーン（ステージ0）を取得する。
@@ -105,6 +119,13 @@ class SceneManager
     SceneTransition *GetSceneTransition() const { return pTransition_; }
 
   private:
+#ifdef USE_IMGUI
+    /// <summary>
+    /// 予約された作り直しを実行する（今のシーンと同名のシーンを生成し直す）
+    /// </summary>
+    void RebuildCurrentScene();
+#endif // USE_IMGUI
+
     OffScreen *pOffscreen_ = nullptr;
     DrawSystem *pDrawSystem_ = nullptr;
     WinApp *pWinApp_ = nullptr;
@@ -118,6 +139,11 @@ class SceneManager
 
     bool transitionEnd_ = false;
     bool firstChange_ = false;
+
+#ifdef USE_IMGUI
+    bool rebuildRequested_ = false;         // 次フレーム先頭でシーンを作り直すか
+    std::function<void()> onSceneRebuilt_;  // 作り直した直後に呼ぶ処理
+#endif // USE_IMGUI
 
     float clearTime_ = 0.0f;
     float hp_ = 0.0f;

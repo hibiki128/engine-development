@@ -2,7 +2,7 @@
 #include "DirectXCommon.h"
 #include <Frame.h>
 #include <format>
-#ifdef _DEBUG
+#ifdef USE_IMGUI
 #include "imgui.h"
 #include "utility/debug/imgui/ImGuiNotification.h"
 #include "utility/debug/imgui/DebugUIHelper.h"
@@ -12,10 +12,10 @@ namespace Hagine {
 void OffScreen::Initialize()
 {
     pDxCommon_ = DirectXCommon::GetInstance();
-    SrvManager *srvManager = SrvManager::GetInstance();
+    SrvManager *pSrvManager = SrvManager::GetInstance();
     PipelineManager *psoManager = PipelineManager::GetInstance();
 
-    renderer_.Initialize(pDxCommon_, srvManager, psoManager);
+    renderer_.Initialize(pDxCommon_, pSrvManager, psoManager);
 
     // エフェクトチェーンとDirectXCommonのポインタを渡して初期化
     dataManager_.Initialize(&effectChain_, pDxCommon_);
@@ -50,7 +50,11 @@ void OffScreen::BlitToOffScreen(uint32_t prevFinalResultSrvIndex)
 
 void OffScreen::SetProjection(Matrix4x4 projectionMatrix)
 {
-    projectionMatrix_ = projectionMatrix;
+    // ここで受け取るのは射影行列そのもの。
+    // 深度をビュー空間へ戻すのに要るのは「その逆行列」なので、ここで1回だけ求めておく。
+    // （以前は射影行列をそのまま SetProjectionInverse に渡していたため、
+    //   深度が正しく復元できず、深度ベースのアウトラインが出ない状態だった）
+    projectionInverse_ = Inverse(projectionMatrix);
 
     // 深度ベースアウトライン等、射影逆行列が必要なエフェクトに反映
     const auto &slots = effectChain_.GetSlots();
@@ -62,7 +66,11 @@ void OffScreen::SetProjection(Matrix4x4 projectionMatrix)
         }
         if (auto *p = effectChain_.GetParams<OutlineDepthParams>(i))
         {
-            p->SetProjectionInverse(projectionMatrix);
+            p->SetProjectionInverse(projectionInverse_);
+        }
+        if (auto *p = effectChain_.GetParams<DepthOfFieldParams>(i))
+        {
+            p->SetProjectionInverse(projectionInverse_);
         }
     }
 }
@@ -90,7 +98,11 @@ int OffScreen::AddEffect(ShaderMode mode, const std::string &name, int slotIndex
     {
         if (auto *p = effectChain_.GetParams<OutlineDepthParams>(result))
         {
-            p->SetProjectionInverse(projectionMatrix_);
+            p->SetProjectionInverse(projectionInverse_);
+        }
+        if (auto *p = effectChain_.GetParams<DepthOfFieldParams>(result))
+        {
+            p->SetProjectionInverse(projectionInverse_);
         }
     }
     return result;
@@ -137,11 +149,12 @@ void OffScreen::LoadData(const std::string &fileName)
 
 void OffScreen::Setting()
 {
-#ifdef _DEBUG
+#ifdef USE_IMGUI
     const char *shaderModeItems[] = {
         "なし", "グレイ", "ビネット", "スムース", "ガウス",
         "アウトライン(エッジ検出)", "アウトライン(深度ベース)",
-        "ブラー", "シネマティック", "ディゾルブ", "ランダム", "集中線", "ピクセル化", "ブルーム", "レトロ", "衝撃波", "白黒(二値)"};
+        "ブラー", "シネマティック", "ディゾルブ", "ランダム", "集中線", "ピクセル化", "ブルーム", "レトロ", "衝撃波", "白黒(二値)",
+        "被写界深度(DoF)"};
 
     // 各エフェクトが何をするかの一言説明（shaderModeItems と同じ並び＝ShaderMode順）。
     // 「効果の中身が分からない」対策として追加/選択UIに表示する。
@@ -163,6 +176,7 @@ void OffScreen::Setting()
         "レトロ風（走査線など）に加工する",
         "衝撃波のように画面を歪ませる",
         "完全な白黒（明度で白か黒に二値化）",
+        "ピント面から外れた場所をぼかす（被写界深度）",
     };
     static_assert(IM_ARRAYSIZE(shaderModeItems) == static_cast<int>(ShaderMode::Count),
                   "shaderModeItems は ShaderMode::Count と同数にすること");

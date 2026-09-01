@@ -14,6 +14,8 @@ enum class ComputePipelineType {
     UpdateEmitter,
     UpdateEmitterLite, // 演出なし専用の軽量 Update（root sig は UpdateEmitter と共有）
     ResetArgs,
+    LightCulling,      // ディファードのタイルベースライトカリング
+    ParticleLightGen,  // GPUパーティクルの粒子から動的ポイントライトを生成する
     Count,
 };
 
@@ -39,7 +41,7 @@ class ComputePipelineManager {
     /// <summary>
     /// 初期化
     /// </summary>
-    void Initialize(DirectXCommon *dxCommon);
+    void Initialize(DirectXCommon *pDxCommon);
 
     /// <summary>
     /// パイプラインの取得
@@ -53,11 +55,11 @@ class ComputePipelineManager {
 
     /// <summary>
     /// 描画に必要な共通設定を行う
-    /// cmdList が nullptr の場合は Direct Queue のコマンドリストを使用する
+    /// pCommandList が nullptr の場合は Direct Queue のコマンドリストを使用する
     /// </summary>
     void DrawCommonSetting(ComputePipelineType type, BlendMode blendMode = BlendMode::Normal,
                            ShaderMode shaderMode = ShaderMode::None,
-                           ID3D12GraphicsCommandList *cmdList = nullptr);
+                           ID3D12GraphicsCommandList *pCommandList = nullptr);
 
   private:
     // 内部パイプライン作成メソッド
@@ -94,6 +96,16 @@ class ComputePipelineManager {
     void CreateResetArgsPipelines();
     Microsoft::WRL::ComPtr<ID3D12RootSignature> CreateResetArgsRootSignature();
     Microsoft::WRL::ComPtr<ID3D12PipelineState> CreateResetArgsGraphicsPipeline(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature);
+
+    // ディファードのライトカリング
+    void CreateLightCullingPipelines();
+    Microsoft::WRL::ComPtr<ID3D12RootSignature> CreateLightCullingRootSignature();
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> CreateLightCullingGraphicsPipeline(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature);
+
+    // 粒子から動的ポイントライトを生成する
+    void CreateParticleLightGenPipelines();
+    Microsoft::WRL::ComPtr<ID3D12RootSignature> CreateParticleLightGenRootSignature();
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> CreateParticleLightGenGraphicsPipeline(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature);
 
   private:
     DirectXCommon *pDxCommon_;

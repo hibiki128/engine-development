@@ -2,8 +2,10 @@
 #include "ParticleCSEditor.h"
 #include <asset/AssetPath.h>
 #include "../utility/debug/imgui/ImGuizmoManager.h"
+// DebugUIHelper.h は ImGui:: を使うので imgui.h（ImGuizmoManager.h 経由）の後に include する
+#include "../utility/debug/imgui/DebugUIHelper.h"
 #include <camera/projection/ViewProjection.h>
-#include <line/DrawLine3D.h>
+#include <line/LineRenderer.h>
 #include <particle/ParticleEditor.h>
 #include <utility/debug/imgui/ImGuiNotification.h>
 #include <browser/ShowFolder.h>
@@ -33,8 +35,8 @@ void ParticleCSEditor::InitializePreview()
     {
         return;
     }
-    DirectXCommon *dxCommon = ParticleCommon::GetInstance()->GetDxCommon();
-    SrvManager *srvManager = SrvManager::GetInstance();
+    DirectXCommon *pDxCommon = ParticleCommon::GetInstance()->GetDxCommon();
+    SrvManager *pSrvManager = SrvManager::GetInstance();
 
     // 暗い背景色（Effekseer 風）でクリアされる色RTを生成
     D3D12_CLEAR_VALUE clearValue{};
@@ -44,41 +46,41 @@ void ParticleCSEditor::InitializePreview()
     clearValue.Color[2] = 0.03f;
     clearValue.Color[3] = 1.0f;
 
-    previewColorResource_ = dxCommon->CreateRenderTextureResource(
+    previewColorResource_ = pDxCommon->CreateRenderTextureResource(
         kPreviewMaxWidth_, kPreviewMaxHeight_, clearValue.Format, clearValue);
     previewColorState_ = D3D12_RESOURCE_STATE_GENERIC_READ; // CreateRenderTextureResource の初期状態
 
     // ImGui 表示用 SRV
-    previewColorSrvIndex_ = srvManager->Allocate() + 1;
-    srvManager->CreateSRVforRenderTexture(previewColorSrvIndex_, previewColorResource_.Get());
+    previewColorSrvIndex_ = pSrvManager->Allocate() + 1;
+    pSrvManager->CreateSRVforRenderTexture(previewColorSrvIndex_, previewColorResource_.Get());
 
     // RTV（拡張した RTV ヒープの slot 6 を使用）
-    D3D12_CPU_DESCRIPTOR_HANDLE rtvStart = dxCommon->GetRTVDescriptorHeap()->GetCPUDescriptorHandleForHeapStart();
-    UINT rtvSize = dxCommon->GetDevice()->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
+    D3D12_CPU_DESCRIPTOR_HANDLE rtvStart = pDxCommon->GetRTVDescriptorHeap()->GetCPUDescriptorHandleForHeapStart();
+    UINT rtvSize = pDxCommon->GetDevice()->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
     previewRtvHandle_.ptr = rtvStart.ptr + (6 * rtvSize);
 
     D3D12_RENDER_TARGET_VIEW_DESC rtvDesc{};
     rtvDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
     rtvDesc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D;
-    dxCommon->GetDevice()->CreateRenderTargetView(previewColorResource_.Get(), &rtvDesc, previewRtvHandle_);
+    pDxCommon->GetDevice()->CreateRenderTargetView(previewColorResource_.Get(), &rtvDesc, previewRtvHandle_);
 
     // 専用深度バッファ＋DSV（拡張した DSV ヒープの slot1）。kLine3d/パーティクル PSO は D24_UNORM_S8_UINT を要求する。
-    previewDepthResource_ = dxCommon->CreateAdditionalDepthResource(kPreviewMaxWidth_, kPreviewMaxHeight_);
-    previewDsvHandle_ = dxCommon->GetDSVCPUDescriptorHandle(1);
+    previewDepthResource_ = pDxCommon->CreateAdditionalDepthResource(kPreviewMaxWidth_, kPreviewMaxHeight_);
+    previewDsvHandle_ = pDxCommon->GetDSVCPUDescriptorHandle(1);
     D3D12_DEPTH_STENCIL_VIEW_DESC dsvDesc{};
     dsvDesc.Format = DXGI_FORMAT_D24_UNORM_S8_UINT;
     dsvDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
-    dxCommon->GetDevice()->CreateDepthStencilView(previewDepthResource_.Get(), &dsvDesc, previewDsvHandle_);
+    pDxCommon->GetDevice()->CreateDepthStencilView(previewDepthResource_.Get(), &dsvDesc, previewDsvHandle_);
 
     // 白グリッドの頂点バッファと、カメラ viewProject 用の定数バッファを構築。
     BuildPreviewGrid();
     BuildPreviewWireBuffer();
-    previewLineCB_ = dxCommon->CreateBufferResource(sizeof(Matrix4x4));
+    previewLineCB_ = pDxCommon->CreateBufferResource(sizeof(Matrix4x4));
     previewLineCB_->Map(0, nullptr, reinterpret_cast<void **>(&pPreviewLineCBData_));
     *pPreviewLineCBData_ = MakeIdentity4x4();
 
     // 選択エミッタ隔離描画用の per-view CB。共有グループの per-view を汚さないため専用に持つ。
-    previewPerViewCB_ = dxCommon->CreateBufferResource(sizeof(PerView));
+    previewPerViewCB_ = pDxCommon->CreateBufferResource(sizeof(PerView));
     previewPerViewCB_->Map(0, nullptr, reinterpret_cast<void **>(&pPreviewPerViewData_));
     pPreviewPerViewData_->viewProjection = MakeIdentity4x4();
     pPreviewPerViewData_->billboardMatrix = MakeIdentity4x4();
@@ -93,16 +95,16 @@ void ParticleCSEditor::InitializePreview()
 // グリッド線VBを最大容量で確保し永続マップする。内容は RebuildPreviewGridContents で書き込む。
 void ParticleCSEditor::BuildPreviewGrid()
 {
-    DirectXCommon *dxCommon = ParticleCommon::GetInstance()->GetDxCommon();
+    DirectXCommon *pDxCommon = ParticleCommon::GetInstance()->GetDxCommon();
 
     // 分割数の上限ぶん（XZ各 (div+1) 本 × 2頂点）を確保。
     const UINT maxVerts = static_cast<UINT>((kPreviewGridMaxDivision_ + 1) * 4);
-    const UINT vbSize = static_cast<UINT>(sizeof(PreviewLineVertex) * maxVerts);
-    previewGridVB_ = dxCommon->CreateBufferResource(vbSize);
+    const UINT vbSize = static_cast<UINT>(sizeof(LineVertex) * maxVerts);
+    previewGridVB_ = pDxCommon->CreateBufferResource(vbSize);
     previewGridVB_->Map(0, nullptr, reinterpret_cast<void **>(&pPreviewGridMapped_));
 
     previewGridVBView_.BufferLocation = previewGridVB_->GetGPUVirtualAddress();
-    previewGridVBView_.StrideInBytes = sizeof(PreviewLineVertex);
+    previewGridVBView_.StrideInBytes = sizeof(LineVertex);
     previewGridVBView_.SizeInBytes = vbSize;
 
     RebuildPreviewGridContents();
@@ -111,20 +113,20 @@ void ParticleCSEditor::BuildPreviewGrid()
 // ワイヤーフレーム用VBを最大容量で確保し永続マップする。内容は RenderPreview で毎フレーム書き込む。
 void ParticleCSEditor::BuildPreviewWireBuffer()
 {
-    DirectXCommon *dxCommon = ParticleCommon::GetInstance()->GetDxCommon();
-    const UINT vbSize = static_cast<UINT>(sizeof(PreviewLineVertex) * kPreviewWireMaxVerts_);
-    previewWireVB_ = dxCommon->CreateBufferResource(vbSize);
+    DirectXCommon *pDxCommon = ParticleCommon::GetInstance()->GetDxCommon();
+    const UINT vbSize = static_cast<UINT>(sizeof(LineVertex) * kPreviewWireMaxVerts_);
+    previewWireVB_ = pDxCommon->CreateBufferResource(vbSize);
     previewWireVB_->Map(0, nullptr, reinterpret_cast<void **>(&pPreviewWireMapped_));
 
     previewWireVBView_.BufferLocation = previewWireVB_->GetGPUVirtualAddress();
-    previewWireVBView_.StrideInBytes = sizeof(PreviewLineVertex);
+    previewWireVBView_.StrideInBytes = sizeof(LineVertex);
     previewWireVBView_.SizeInBytes = vbSize;
     previewWireVertexCount_ = 0;
 }
 
 // 現在のグリッド設定をマップ済みVBへ書き込み、描画頂点数を更新する。
 // カメラ注視点を中心に追従し、線間隔にスナップすることで「ほぼ無限」のグリッドに見せる。
-// 毎フレーム呼ばれる（DrawLine3D と同じ毎フレーム書き換えパターン）。
+// 毎フレーム呼ばれる（LineRenderer と同じ毎フレーム書き換えパターン）。
 void ParticleCSEditor::RebuildPreviewGridContents()
 {
     if (!pPreviewGridMapped_)
@@ -152,12 +154,12 @@ void ParticleCSEditor::RebuildPreviewGridContents()
         float worldX = centerX + offset;
         // X方向の線（Z=worldZ 固定）。ワールド原点(z=0)を通る線を軸色に。
         const Vector4 &cX = (std::fabs(worldZ) < axisEps) ? axisColorX : gridColor;
-        pPreviewGridMapped_[v++] = {{centerX - halfSize, 0.0f, worldZ}, cX};
-        pPreviewGridMapped_[v++] = {{centerX + halfSize, 0.0f, worldZ}, cX};
+        pPreviewGridMapped_[v++] = {{centerX - halfSize, 0.0f, worldZ}, PackLineColor(cX)};
+        pPreviewGridMapped_[v++] = {{centerX + halfSize, 0.0f, worldZ}, PackLineColor(cX)};
         // Z方向の線（X=worldX 固定）。ワールド原点(x=0)を通る線を軸色に。
         const Vector4 &cZ = (std::fabs(worldX) < axisEps) ? axisColorZ : gridColor;
-        pPreviewGridMapped_[v++] = {{worldX, 0.0f, centerZ - halfSize}, cZ};
-        pPreviewGridMapped_[v++] = {{worldX, 0.0f, centerZ + halfSize}, cZ};
+        pPreviewGridMapped_[v++] = {{worldX, 0.0f, centerZ - halfSize}, PackLineColor(cZ)};
+        pPreviewGridMapped_[v++] = {{worldX, 0.0f, centerZ + halfSize}, PackLineColor(cZ)};
     }
     previewGridVertexCount_ = v;
 }
@@ -202,8 +204,8 @@ void ParticleCSEditor::RenderPreview()
     {
         return;
     }
-    DirectXCommon *dxCommon = ParticleCommon::GetInstance()->GetDxCommon();
-    ID3D12GraphicsCommandList *cl = dxCommon->GetCommandList().Get();
+    DirectXCommon *pDxCommon = ParticleCommon::GetInstance()->GetDxCommon();
+    ID3D12GraphicsCommandList *pCommandList = pDxCommon->GetCommandList().Get();
 
     // 色RT を RENDER_TARGET へ遷移
     D3D12_RESOURCE_BARRIER toRT{};
@@ -212,7 +214,7 @@ void ParticleCSEditor::RenderPreview()
     toRT.Transition.StateBefore = previewColorState_;
     toRT.Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;
     toRT.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
-    cl->ResourceBarrier(1, &toRT);
+    pCommandList->ResourceBarrier(1, &toRT);
     previewColorState_ = D3D12_RESOURCE_STATE_RENDER_TARGET;
 
     // グリッドはカメラ注視点に追従させるため毎フレーム再構築する（内容のみ書き換え）。
@@ -220,9 +222,9 @@ void ParticleCSEditor::RenderPreview()
     previewGridDirty_ = false;
 
     // プレビューRT＋専用深度を束ねて背景色でクリア
-    cl->OMSetRenderTargets(1, &previewRtvHandle_, false, &previewDsvHandle_);
-    cl->ClearRenderTargetView(previewRtvHandle_, previewBgColor_, 0, nullptr);
-    cl->ClearDepthStencilView(previewDsvHandle_, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
+    pCommandList->OMSetRenderTargets(1, &previewRtvHandle_, false, &previewDsvHandle_);
+    pCommandList->ClearRenderTargetView(previewRtvHandle_, previewBgColor_, 0, nullptr);
+    pCommandList->ClearDepthStencilView(previewDsvHandle_, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
 
     // 実描画サイズ（ImGuiウィンドウ依存）でビューポート/シザーを設定。RTの左上部分のみに描く。
     // 後続ステージは PreRenderTexture で全画面へ復元される。
@@ -231,11 +233,11 @@ void ParticleCSEditor::RenderPreview()
     viewport.Height = static_cast<float>(previewRenderHeight_);
     viewport.MinDepth = 0.0f;
     viewport.MaxDepth = 1.0f;
-    cl->RSSetViewports(1, &viewport);
+    pCommandList->RSSetViewports(1, &viewport);
     D3D12_RECT scissor{};
     scissor.right = static_cast<LONG>(previewRenderWidth_);
     scissor.bottom = static_cast<LONG>(previewRenderHeight_);
-    cl->RSSetScissorRects(1, &scissor);
+    pCommandList->RSSetScissorRects(1, &scissor);
 
     // プレビューカメラ行列を計算（グリッド用 viewProject と、パーティクル用 per-view を構築）
     Matrix4x4 view{}, viewProj{};
@@ -243,18 +245,22 @@ void ParticleCSEditor::RenderPreview()
     float previewProjScaleY = 1.0f;
     ComputePreviewMatrices(view, viewProj, previewEye, previewProjScaleY);
 
-    // 白グリッドを描画（共有 DrawLine3D の頂点バッファとは衝突しない専用VB＋kLine3d PSO）
+    // 白グリッドを描画（共有 LineRenderer の頂点バッファとは衝突しない専用VB＋Line3d PSO）
     if (previewShowGrid_ && previewGridVertexCount_ > 0)
     {
         *pPreviewLineCBData_ = viewProj;
         PipelineManager::GetInstance()->DrawCommonSetting(PipelineType::Line3d);
-        cl->IASetVertexBuffers(0, 1, &previewGridVBView_);
-        cl->SetGraphicsRootConstantBufferView(0, previewLineCB_->GetGPUVirtualAddress());
-        cl->DrawInstanced(previewGridVertexCount_, 1, 0, 0);
+        pCommandList->IASetVertexBuffers(0, 1, &previewGridVBView_);
+        const ShaderRootSignature *lineRS =
+            PipelineManager::GetInstance()->GetReflectedRootSignature(PipelineType::Line3d);
+        assert(lineRS && "3Dラインのルートシグネチャが未生成です");
+        pCommandList->SetGraphicsRootConstantBufferView(lineRS->GetCbvIndex(0), previewLineCB_->GetGPUVirtualAddress());
+        LineRenderer::SetDrawConstants(pCommandList, MakeIdentity4x4(), {1.0f, 1.0f, 1.0f, 1.0f});
+        pCommandList->DrawInstanced(previewGridVertexCount_, 1, 0, 0);
     }
 
-    // 選択中エミッタのワイヤーフレームをプレビューVPで描画（共有 DrawLine3D は使わず専用VB＋kLine3d PSO）。
-    // DrawEmitter は共有 DrawLine3D に積みシーン側VPで描かれてしまうため、ここで隔離描画する。
+    // 選択中エミッタのワイヤーフレームをプレビューVPで描画（共有 LineRenderer は使わず専用VB＋Line3d PSO）。
+    // DrawEmitter は共有 LineRenderer に積みシーン側VPで描かれてしまうため、ここで隔離描画する。
     if (previewShowEmitterWire_ && !selectedEmitterName_.empty() && pPreviewWireMapped_)
     {
         auto itWire = emitters_.find(selectedEmitterName_);
@@ -268,28 +274,32 @@ void ParticleCSEditor::RenderPreview()
                 {
                     break; // 上限超過分は切り捨て（プレビューのオーバーレイなので許容）
                 }
-                pPreviewWireMapped_[v++] = {s.a, s.color};
-                pPreviewWireMapped_[v++] = {s.b, s.color};
+                pPreviewWireMapped_[v++] = {s.a, PackLineColor(s.color)};
+                pPreviewWireMapped_[v++] = {s.b, PackLineColor(s.color)};
             }
             previewWireVertexCount_ = v;
             if (v > 0)
             {
                 *pPreviewLineCBData_ = viewProj;
                 PipelineManager::GetInstance()->DrawCommonSetting(PipelineType::Line3d);
-                cl->IASetVertexBuffers(0, 1, &previewWireVBView_);
-                cl->SetGraphicsRootConstantBufferView(0, previewLineCB_->GetGPUVirtualAddress());
-                cl->DrawInstanced(v, 1, 0, 0);
+                pCommandList->IASetVertexBuffers(0, 1, &previewWireVBView_);
+                const ShaderRootSignature *lineRS =
+                    PipelineManager::GetInstance()->GetReflectedRootSignature(PipelineType::Line3d);
+                assert(lineRS && "3Dラインのルートシグネチャが未生成です");
+                pCommandList->SetGraphicsRootConstantBufferView(lineRS->GetCbvIndex(0), previewLineCB_->GetGPUVirtualAddress());
+                LineRenderer::SetDrawConstants(pCommandList, MakeIdentity4x4(), {1.0f, 1.0f, 1.0f, 1.0f});
+                pCommandList->DrawInstanced(v, 1, 0, 0);
             }
         }
     }
 
-    // フィールド枠・ギャザー/ボルテックス点など、Update フェーズ(ImGui)で共有 DrawLine3D に
+    // フィールド枠・ギャザー/ボルテックス点など、Update フェーズ(ImGui)で共有 LineRenderer に
     // 積まれたデバッグ線をプレビューVPでも再描画する。この RenderPreview はシーンの
-    // DrawLine3D::Draw(sceneVP)+Reset より前に呼ばれるため、線バッファはまだ生きている。
-    // Reset しないので後段のシーン描画（シーンVP）にも同じ線がそのまま出る。
+    // LineRenderer::Render(sceneVP) より前に呼ばれるため、線バッファはまだ生きている。
+    // リセットしないので後段のシーン描画（シーンVP）にも同じ線がそのまま出る。
     {
         *pPreviewLineCBData_ = viewProj;
-        DrawLine3D::GetInstance()->DrawWithExternalCB(cl, previewLineCB_->GetGPUVirtualAddress());
+        LineRenderer::GetInstance()->RenderWithExternalCamera(pCommandList, previewLineCB_->GetGPUVirtualAddress());
     }
 
     // 選択中エミッタのパーティクルを隔離描画（Compute 済みバッファをプレビューVPで再描画）
@@ -314,9 +324,9 @@ void ParticleCSEditor::RenderPreview()
             // パーティクル PSO は SRV ディスクリプタテーブルを使うのでヒープを束ねる
             SrvManager::GetInstance()->SetDescriptorHeap();
             // RT/DSV/Viewport は上で束ね済み（ヒープ設定で解除されないが念のため再設定）
-            cl->OMSetRenderTargets(1, &previewRtvHandle_, false, &previewDsvHandle_);
-            cl->RSSetViewports(1, &viewport);
-            cl->RSSetScissorRects(1, &scissor);
+            pCommandList->OMSetRenderTargets(1, &previewRtvHandle_, false, &previewDsvHandle_);
+            pCommandList->RSSetViewports(1, &viewport);
+            pCommandList->RSSetScissorRects(1, &scissor);
             // 描画カリング(距離/サイズ)をプレビューでも効かせるため、プレビューカメラ位置・射影と
             // 各グループのカリング設定を per-view へ流し込む（DrawGraphicsForPreview 内でグループ毎に反映）。
             it->second->DrawGraphicsForPreview(previewPerViewCB_->GetGPUVirtualAddress(),
@@ -330,12 +340,14 @@ void ParticleCSEditor::RenderPreview()
         // CPU パーティクルPSOは SRV ディスクリプタテーブルを使うのでヒープを束ね直し、
         // RT/DSV/Viewport も（GPU側で未設定のケースに備え）念のため再設定する。
         SrvManager::GetInstance()->SetDescriptorHeap();
-        cl->OMSetRenderTargets(1, &previewRtvHandle_, false, &previewDsvHandle_);
-        cl->RSSetViewports(1, &viewport);
-        cl->RSSetScissorRects(1, &scissor);
+        pCommandList->OMSetRenderTargets(1, &previewRtvHandle_, false, &previewDsvHandle_);
+        pCommandList->RSSetViewports(1, &viewport);
+        pCommandList->RSSetScissorRects(1, &scissor);
 
         // プレビューカメラの view / projection から CPU 用 ViewProjection を組む
         // （matView_ でビルボード、matView_×matProjection_ で WVP が決まる）。
+        // ここは「行列を描画APIへ渡すだけの入れ物」でカメラ状態は持たない（定数バッファも作らない）。
+        // カメラとして扱うものは Camera クラスが持つ。
         ViewProjection cpuVP;
         cpuVP.matView_ = view;
         const float fovY = 45.0f * 3.14159265358979323846f / 180.0f;
@@ -352,7 +364,7 @@ void ParticleCSEditor::RenderPreview()
     toSRV.Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
     toSRV.Transition.StateAfter = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
     toSRV.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
-    cl->ResourceBarrier(1, &toSRV);
+    pCommandList->ResourceBarrier(1, &toSRV);
     previewColorState_ = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
 }
 
@@ -555,6 +567,7 @@ void ParticleCSEditor::AddParticleEmitter(const std::string &name)
 {
     // Create standard sphere emitter
     auto emitter = std::make_unique<ParticleCSEmitter>();
+    emitter->SetPreviewOnly(true); // 編集用インスタンス。プレビュー窓にしか描かないのでシーンを照らさない
     emitter->Initialize(name);
     emitters_[name] = std::move(emitter);
     DrawGroupManager::GetInstance()->RegisterGroup(emitters_[name]->GetDrawGroup()); // 所属グループを登録
@@ -565,6 +578,7 @@ void ParticleCSEditor::AddParticleEmitter(const std::string &name, const std::st
 {
     // Create model-based emitter
     auto emitter = std::make_unique<ParticleCSEmitter>();
+    emitter->SetPreviewOnly(true); // 編集用インスタンス。プレビュー窓にしか描かないのでシーンを照らさない
     emitter->Initialize(name, modelPath);
     emitters_[name] = std::move(emitter);
     DrawGroupManager::GetInstance()->RegisterGroup(emitters_[name]->GetDrawGroup()); // 所属グループを登録
@@ -575,6 +589,7 @@ void ParticleCSEditor::AddParticleEmitter(const std::string &name, PrimitiveType
 {
     // Create primitive model-based emitter
     auto emitter = std::make_unique<ParticleCSEmitter>();
+    emitter->SetPreviewOnly(true); // 編集用インスタンス。プレビュー窓にしか描かないのでシーンを照らさない
     emitter->Initialize(name, primitiveType);
     emitters_[name] = std::move(emitter);
     DrawGroupManager::GetInstance()->RegisterGroup(emitters_[name]->GetDrawGroup()); // 所属グループを登録
@@ -762,33 +777,45 @@ void ParticleCSEditor::ShowGPUParticleStatistics()
 #ifdef USE_IMGUI
     if (ImGui::CollapsingHeader("GPUパーティクル統計"))
     {
+        // 生存中の全エミッター（エディタ登録・Spawner 生成・ゲームクラス所有）が対象。
+        // エディタのプレビュー専用エミッターはゲーム画面に出ていないので別枠で表示する。
+        const auto allStats = ParticleCSEmitter::GetAllEmitterStatistics(true);
 
-        // エミッター名ごとに集計
-        std::map<std::string, size_t> emitterStats;
-        size_t grandTotal = 0;
-
-        for (const auto &[name, emitter] : emitters_)
+        // エミッター名ごとに合算（同じテンプレートを複数出したときは1行にまとめる）
+        std::map<std::string, size_t> sceneStats;
+        size_t sceneTotal = 0;
+        size_t previewTotal = 0;
+        size_t sceneEmitterCount = 0;
+        for (const auto &stat : allStats)
         {
-            if (!emitter)
+            if (stat.previewOnly)
+            {
+                previewTotal += stat.aliveCount;
                 continue;
-
-            size_t emitterTotal = emitter->GetTotalAliveParticles();
-
-            emitterStats[name] = emitterTotal;
-            grandTotal += emitterTotal;
+            }
+            sceneStats[stat.emitterName] += stat.aliveCount;
+            sceneTotal += stat.aliveCount;
+            ++sceneEmitterCount;
         }
 
-        // ヘッダー情報
-        ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.0f, 1.0f), "合計: %zu個", grandTotal);
+        // ヘッダー情報（シーンに出ている数）
+        ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.0f, 1.0f), "シーン合計: %zu個", sceneTotal);
         ImGui::SameLine();
-        ImGui::TextColored(ImVec4(0.8f, 0.8f, 0.8f, 1.0f), "(%zu種類)", emitterStats.size());
+        ImGui::TextColored(ImVec4(0.8f, 0.8f, 0.8f, 1.0f), "(エミッター %zu 個)", sceneEmitterCount);
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Spawn で実行時に出したものも含めた、今シーンに出ている総数です\n"
+                              "（GPUからの読み戻しなので1〜2フレーム遅延します）");
+        if (previewTotal > 0)
+        {
+            ImGui::TextColored(DebugTheme::kTextDim, "プレビュー窓: %zu個（画面には出ていない）", previewTotal);
+        }
 
-        if (!emitterStats.empty())
+        if (!sceneStats.empty())
         {
             ImGui::Separator();
 
             // エミッターごとに表示
-            for (const auto &[emitterName, count] : emitterStats)
+            for (const auto &[emitterName, count] : sceneStats)
             {
                 ImGui::Bullet();
                 ImGui::SameLine();
@@ -1209,9 +1236,9 @@ void ParticleCSEditor::ShowImGuiEditor()
                     // グループ用テクスチャ選択セクション (緑色)
                     if (ColoredCollapsingHeader("テクスチャ選択##GroupModel", 3))
                     {
-#ifdef _DEBUG
+#ifdef USE_IMGUI
                         ShowTextureFile(localTexturePath_);
-#endif // _DEBUG
+#endif // USE_IMGUI
                     }
 
                     if (localMaxParticleCount_ == 0)
@@ -1255,9 +1282,9 @@ void ParticleCSEditor::ShowImGuiEditor()
                     // グループ用テクスチャ選択セクション (オレンジ色)
                     if (ColoredCollapsingHeader("テクスチャ選択##GroupPrimitive", 5))
                     {
-#ifdef _DEBUG
+#ifdef USE_IMGUI
                         ShowTextureFile(localTexturePath_);
-#endif // _DEBUG
+#endif // USE_IMGUI
                     }
 
                     if (localMaxParticleCount_ == 0)

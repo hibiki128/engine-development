@@ -95,6 +95,14 @@ class Material {
         return materialData_.hasNormalMapTexture ? materialData_.normalMapIndex : materialData_.textureIndex;
     }
 
+    /// <summary>
+    /// インスタンシング描画のバッチ判定用シグネチャを計算する。
+    /// 「1本のマテリアル定数バッファ＋同じテクスチャで描いても結果が変わらないか」を表す。
+    /// 色だけはインスタンスごとに渡せる（頂点シェーダーの instanceColor）ため含めない。
+    /// </summary>
+    /// <returns>size_t: 同じ値なら同一バッチにまとめてよい</returns>
+    size_t ComputeDrawSignature() const;
+
   private:
     /// ===================================================
     /// private method
@@ -120,7 +128,7 @@ class Material {
 
   private:
     /// ===================================================
-    /// private varians
+    /// private variables
     /// ===================================================
 
     DirectXCommon *pDxCommon_ = nullptr;                      // DirectX共通クラス

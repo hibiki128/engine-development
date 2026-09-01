@@ -19,17 +19,17 @@ class PostEffectParameters
     /// <summary>
     /// 初期化（各エフェクトの定数バッファを生成）
     /// </summary>
-    /// <param name="dxCommon">DirectX共通処理</param>
-    void Initialize(DirectXCommon *dxCommon);
+    /// <param name="pDxCommon">DirectX共通処理</param>
+    void Initialize(DirectXCommon *pDxCommon);
 
     /// <summary>
     /// 指定エフェクトのパラメータをシェーダーへ設定
     /// </summary>
     /// <param name="mode">シェーダーモード</param>
-    /// <param name="commandList">コマンドリスト</param>
-    /// <param name="srvManager">SRVマネージャー</param>
-    /// <param name="dxCommon">DirectX共通処理</param>
-    void SetShaderParameters(ShaderMode mode, ID3D12GraphicsCommandList *commandList, SrvManager *srvManager, DirectXCommon *dxCommon);
+    /// <param name="pCommandList">コマンドリスト</param>
+    /// <param name="pSrvManager">SRVマネージャー</param>
+    /// <param name="pDxCommon">DirectX共通処理</param>
+    void SetShaderParameters(ShaderMode mode, ID3D12GraphicsCommandList *pCommandList, SrvManager *pSrvManager, DirectXCommon *pDxCommon);
 
     /// <summary>
     /// 時間依存パラメータを更新

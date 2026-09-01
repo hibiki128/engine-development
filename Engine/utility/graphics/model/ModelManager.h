@@ -18,9 +18,9 @@ class ModelManager
     /// <summary>
     /// 初期化
     /// </summary>
-    /// <param name="srvManager">SRVマネージャー</param>
+    /// <param name="pSrvManager">SRVマネージャー</param>
     /// <param name="modelCommon">モデル共通部（Framework が所有・注入する）</param>
-    void Initialize(SrvManager *srvManager, ModelCommon *modelCommon);
+    void Initialize(SrvManager *pSrvManager, ModelCommon *modelCommon);
 
     /// <summary>
     /// 終了

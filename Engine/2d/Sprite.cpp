@@ -1,6 +1,8 @@
 #define NOMINMAX
 #include "Sprite.h"
 #include "SpriteCommon.h"
+#include <cassert>
+#include <graphics/pipeline/PipelineManager.h>
 #include <graphics/texture/TextureManager.h>
 #include <MyMath.h>
 
@@ -144,10 +146,17 @@ void Sprite::Draw(bool isBackMost)
 
     pSpriteCommon_->GetDxCommon()->GetCommandList()->IASetVertexBuffers(0, 1, &vertexBufferView_);
     pSpriteCommon_->GetDxCommon()->GetCommandList()->IASetIndexBuffer(&indexBufferView_);
-    pSpriteCommon_->GetDxCommon()->GetCommandList()->SetGraphicsRootConstantBufferView(0, materialResource_->GetGPUVirtualAddress());
 
-    pSrvManager_->SetGraphicsRootDescriptorTable(1, transformationMatrixSrvIndex_);
-    pSrvManager_->SetGraphicsRootDescriptorTable(2, TextureManager::GetInstance()->GetTextureIndexByFilePath(fullpath_));
+    const ShaderRootSignature *rootSignature =
+        PipelineManager::GetInstance()->GetReflectedRootSignature(PipelineType::Sprite);
+    assert(rootSignature && "スプライトのルートシグネチャが未生成です");
+
+    pSpriteCommon_->GetDxCommon()->GetCommandList()->SetGraphicsRootConstantBufferView(
+        rootSignature->GetCbvIndex(0), materialResource_->GetGPUVirtualAddress());
+
+    pSrvManager_->SetGraphicsRootDescriptorTable(rootSignature->GetSrvIndex(0), transformationMatrixSrvIndex_);
+    pSrvManager_->SetGraphicsRootDescriptorTable(rootSignature->GetSrvIndex(1),
+                                                 TextureManager::GetInstance()->GetTextureIndexByFilePath(fullpath_));
 
     // インデックス描画を実行する
     pSpriteCommon_->GetDxCommon()->GetCommandList()->DrawIndexedInstanced(6, instanceCount_, 0, 0, 0);

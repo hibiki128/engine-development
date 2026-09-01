@@ -1,11 +1,15 @@
 #include "BaseObjectManager.h"
+#include "SpriteManager.h"
+#include <2d/ui/UIAnimator.h>
 #include <asset/AssetPath.h>
 #include <utility/debug/imgui/ImGuiNotification.h>
-#ifdef _DEBUG
+#ifdef USE_IMGUI
 #include "debug/imgui/ImGuizmoManager.h"
 #include "ImGuizmo.h"
-#endif // _DEBUG
+#include "utility/debug/imgui/DebugUIHelper.h"
+#endif // USE_IMGUI
 #include "edit/motion/MotionEditor.h"
+#include "object/Object3dInstancing.h"
 #include <debug/log/Logger.h>
 #include <browser/ShowFolder.h>
 #include "render/DrawGroupManager.h"
@@ -14,42 +18,55 @@ namespace Hagine {
 void BaseObjectManager::Finalize()
 {
     RemoveAllObjects();
+
+    // 外部登録（シーンが unique_ptr を持つゲームエンティティ）の参照も落とす。
+    // 実体を破棄するのはシーン側なので、ここでは参照を切るだけにする。
+    for (auto &[name, obj] : objects_)
+    {
+        DetachRegistrations(obj, name);
+    }
+    objects_.clear();
 }
 
 void BaseObjectManager::RemoveAllObjects()
 {
-    // 親子関係をすべてクリア
-    for (auto &[name, obj] : objects_)
+    // 消すのは「このマネージャが所有しているオブジェクト」だけ。
+    // RegisterExternal で登録された、シーンが所有するゲームエンティティ（Player 等）まで
+    // 消してしまうと更新・描画の対象から外れてしまう。
+    //
+    // 以前はここで objects_ を丸ごと clear し、さらに ImGuizmoManager::DeleteTarget()
+    // （＝全操作対象を消す）を呼んでいたため、「オブジェクト全削除」やシーン読み込みのたびに
+    // スプライト・ライト・パーティクルのギズモ登録まで巻き添えで消えていた。
+    std::vector<std::string> ownedNames;
+    ownedNames.reserve(ownedObjects_.size());
+    for (const auto &[name, owned] : ownedObjects_)
     {
-        if (obj)
-        {
-            obj->SetParent(nullptr);
-        }
+        ownedNames.push_back(name);
     }
 
-    objects_.clear();
-    ownedObjects_.clear();
-
-#ifdef _DEBUG
-    ImGuizmoManager::GetInstance()->DeleteTarget();
-#endif
+    // RemoveObject が親子関係の解除・各マネージャからの登録解除まで面倒を見る
+    for (const std::string &name : ownedNames)
+    {
+        RemoveObject(name);
+    }
 }
 
 void BaseObjectManager::RemoveObjectByName(const std::string &name)
 {
-    auto it = objects_.find(name);
-    if (it != objects_.end())
+    // 削除処理の本体は RemoveObject に一本化する
+    // （以前は親子関係の解除を行わない別実装になっていて、解放済みの親を掴んだ子が残っていた）
+    if (objects_.find(name) == objects_.end())
     {
-        ImGuiNotification::Post("オブジェクトを削除しました: " + name, {0.9f, 0.7f, 0.2f, 1.0f});
-        objects_.erase(it);
-        ownedObjects_.erase(name);
+        return;
     }
+    RemoveObject(name);
+    ImGuiNotification::Post("オブジェクトを削除しました: " + name, {0.9f, 0.7f, 0.2f, 1.0f});
 }
 
 void BaseObjectManager::RegisterExternal(BaseObject *obj)
 {
     const std::string &name = obj->GetName();
-#ifdef _DEBUG
+#ifdef USE_IMGUI
     ImGuizmoManager::GetInstance()->AddTarget(name, obj);
 #endif
     MotionEditor::GetInstance()->Register(obj);
@@ -59,7 +76,27 @@ void BaseObjectManager::RegisterExternal(BaseObject *obj)
 
 void BaseObjectManager::UnregisterExternal(BaseObject *obj)
 {
+    if (!obj)
+    {
+        return;
+    }
+    DetachRegistrations(obj, obj->GetName());
     objects_.erase(obj->GetName());
+}
+
+// 破棄・登録解除の直前に、他マネージャが持つこのオブジェクトへの参照を全て落とす。
+// これを忘れると解放済みポインタが編集UI側に残り、次にそれを触った時に落ちる。
+void BaseObjectManager::DetachRegistrations(BaseObject *obj, const std::string &name)
+{
+#ifdef USE_IMGUI
+    ImGuizmoManager::GetInstance()->RemoveTarget(name);
+#else
+    (void)name;
+#endif
+    if (obj)
+    {
+        MotionEditor::GetInstance()->Unregister(obj);
+    }
 }
 
 void BaseObjectManager::AddObject(std::unique_ptr<BaseObject> baseObject)
@@ -81,15 +118,21 @@ void BaseObjectManager::Update()
 
 void BaseObjectManager::Draw(const ViewProjection &viewProjection)
 {
+    // 同じモデルを参照するオブジェクトを1回の描画にまとめる。
+    // ここで囲んだ範囲の BaseObject::Draw がバッチャへ積み、Flush でまとめて描く。
+    // 積めなかったもの（スキニング・半透明・ワイヤーフレーム等）はその場で従来どおり描かれる。
+    Object3dInstancing *instancing = Object3dInstancing::GetInstance();
+    instancing->Begin();
     for (auto &[name, obj] : objects_)
     {
         obj->Draw(viewProjection);
     }
+    instancing->Flush(viewProjection);
 }
 
 void BaseObjectManager::UpdateImGui()
 {
-#ifdef _DEBUG
+#ifdef USE_IMGUI
     // オブジェクトへの編集ジェスチャ（ImGuiウィジェット・ギズモドラッグ）をUndo履歴として追跡する
     undoTracker_.Begin([this] { return CaptureUndoState(); });
 
@@ -103,7 +146,7 @@ void BaseObjectManager::UpdateImGui()
         [this] { return CaptureUndoState(); },
         [](const nlohmann::json &s) { BaseObjectManager::GetInstance()->RestoreUndoState(s); },
         ImGuizmo::IsUsing());
-#endif // _DEBUG
+#endif // USE_IMGUI
 }
 
 void BaseObjectManager::SaveAll()
@@ -183,8 +226,28 @@ void BaseObjectManager::LoadAll(std::string sceneName)
     ImGuiNotification::Post("シーンを読み込みました: " + sceneName, {0.2f, 0.8f, 0.8f, 1.0f});
 }
 
+std::string BaseObjectManager::MakeUniqueObjectName(const std::string &baseName) const
+{
+    if (objects_.find(baseName) == objects_.end())
+    {
+        return baseName;
+    }
+    // 同名があったら連番を振る。番号が埋まっていても空きが見つかるまで進める
+    for (int index = 1;; ++index)
+    {
+        const std::string candidate = baseName + "_" + std::to_string(index);
+        if (objects_.find(candidate) == objects_.end())
+        {
+            return candidate;
+        }
+    }
+}
+
 void BaseObjectManager::CreateObject(std::string objectName, std::string modelPath, std::string texturePath)
 {
+    // 同名オブジェクトを作ると unordered_map のキーが衝突して片方が行方不明になるため、必ず一意にする
+    objectName = MakeUniqueObjectName(objectName);
+
     std::unique_ptr<BaseObject> newObject = std::make_unique<BaseObject>();
     newObject->Init(objectName);
     newObject->CreateModel(modelPath);
@@ -192,8 +255,49 @@ void BaseObjectManager::CreateObject(std::string objectName, std::string modelPa
     {
         newObject->SetTexture(texturePath, i);
     }
+#ifdef USE_IMGUI
+    // 原点に出すと毎回カメラを原点まで戻す羽目になるので、今見ている場所の前に出す
+    newObject->GetLocalPosition() = ImGuizmoManager::GetInstance()->GetSpawnPosition();
+#endif // USE_IMGUI
     this->AddObject(std::move(newObject));
     ImGuiNotification::Post("オブジェクトを作成しました: " + objectName, {0.2f, 0.8f, 0.2f, 1.0f});
+}
+
+BaseObject *BaseObjectManager::CreateObjectFromModel(const std::string &modelPath, const Vector3 &position)
+{
+    if (modelPath.empty())
+    {
+        return nullptr;
+    }
+
+    // 名前はモデルのファイル名（拡張子なし）を元にする
+    const std::string name = MakeUniqueObjectName(std::filesystem::path(modelPath).stem().string());
+
+    std::unique_ptr<BaseObject> newObject = std::make_unique<BaseObject>();
+    newObject->Init(name);
+    newObject->CreateModel(modelPath);
+    newObject->GetLocalPosition() = position;
+
+    this->AddObject(std::move(newObject));
+    ImGuiNotification::Post("オブジェクトを配置しました: " + name, {0.2f, 0.8f, 0.2f, 1.0f});
+    return GetObjectByName(name);
+}
+
+BaseObject *BaseObjectManager::CreatePrimitiveObject(PrimitiveType type, const std::string &baseName)
+{
+    const std::string name = MakeUniqueObjectName(baseName);
+
+    std::unique_ptr<BaseObject> newObject = std::make_unique<BaseObject>();
+    newObject->SetPrimitive(true);
+    newObject->Init(name);
+    newObject->CreatePrimitiveModel(type);
+#ifdef USE_IMGUI
+    // 原点ではなく今見ている場所の前に出す
+    newObject->GetLocalPosition() = ImGuizmoManager::GetInstance()->GetSpawnPosition();
+#endif // USE_IMGUI
+
+    this->AddObject(std::move(newObject));
+    return GetObjectByName(name);
 }
 
 BaseObject *BaseObjectManager::GetObjectByName(const std::string &name)
@@ -237,70 +341,37 @@ bool g_dndReparentRequested = false;
 
 void BaseObjectManager::ShowParentChildHierarchy()
 {
-#ifdef _DEBUG
+#ifdef USE_IMGUI
 
     if (ImGui::CollapsingHeader("階層エディター", ImGuiTreeNodeFlags_DefaultOpen))
     {
 
-        // 親子付けセクション
+        // 親子付けは下のツリーで直感的に操作する（右クリックメニュー / ドラッグ&ドロップ）
         ImGui::Separator();
-        ImGui::Text("親子付け:");
-
-        static int selectedChild = 0;
-        static int selectedParent = 0;
-
-        std::vector<std::string> objectNames = GetObjectNames();
-
-        if (!objectNames.empty())
-        {
-            std::vector<const char *> objectNamesCStr;
-            for (const auto &name : objectNames)
-            {
-                objectNamesCStr.push_back(name.c_str());
-            }
-
-            ImGui::Text("子オブジェクト:");
-            ImGui::SameLine();
-            ImGui::PushItemWidth(150);
-            ImGui::Combo("##ChildObject", &selectedChild, objectNamesCStr.data(), static_cast<int>(objectNamesCStr.size()));
-            ImGui::PopItemWidth();
-
-            ImGui::Text("親オブジェクト:");
-            ImGui::SameLine();
-            ImGui::PushItemWidth(150);
-            ImGui::Combo("##ParentObject", &selectedParent, objectNamesCStr.data(), static_cast<int>(objectNamesCStr.size()));
-            ImGui::PopItemWidth();
-
-            selectedChild = std::clamp(selectedChild, 0, static_cast<int>(objectNames.size()) - 1);
-            selectedParent = std::clamp(selectedParent, 0, static_cast<int>(objectNames.size()) - 1);
-
-            if (ImGui::Button("親子付け"))
-            {
-                if (selectedChild != selectedParent)
-                {
-                    SetParentChild(objectNames[selectedChild], objectNames[selectedParent]);
-                }
-            }
-
-            ImGui::SameLine();
-            if (ImGui::Button("親子解除"))
-            {
-                RemoveParentChild(objectNames[selectedChild]);
-            }
-        }
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.72f, 0.80f, 0.92f, 1.0f));
+        ImGui::TextWrapped("親子付けの操作:");
+        ImGui::PopStyleColor();
+        ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kTextDim);
+        ImGui::BulletText("ノードを右クリック →「親を設定」「親子解除」");
+        ImGui::BulletText("右クリックメニューで「継承(位置/回転/スケール)」も切替可能");
+        ImGui::BulletText("ドラッグして別ノードに重ねても親子付け（余白へドロップで解除）");
+        ImGui::PopStyleColor();
 
         ImGui::Separator();
         ImGui::Text("階層表示:");
-        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.55f, 0.55f, 0.60f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kTextDim);
         ImGui::TextUnformatted("（ノードをドラッグして別ノードに重ねると親子付け / 余白へドロップで解除）");
         ImGui::PopStyleColor();
 
         // 階層構造を表示
         ImGui::BeginChild("HierarchyView", ImVec2(0, 300), ImGuiChildFlags_Borders);
 
-        for (auto &[name, obj] : objects_)
+        // objects_ は unordered_map なので、そのまま回すと並び順がハッシュ順（実質ランダム）になり、
+        // オブジェクトを増減させるたびに一覧の位置が変わってしまう。名前順に並べて安定させる。
+        for (const std::string &name : GetSortedObjectNames())
         {
-            if (!obj->GetParent())
+            BaseObject *obj = GetObjectByName(name);
+            if (obj && !obj->GetParent())
             { // ルートオブジェクトのみ表示
                 ShowObjectHierarchy(obj, 0);
             }
@@ -349,12 +420,12 @@ void BaseObjectManager::ShowParentChildHierarchy()
             g_dndReparentParent.clear();
         }
     }
-#endif // _DEBUG
+#endif // USE_IMGUI
 }
 
 void BaseObjectManager::ShowObjectHierarchy(BaseObject *obj, int depth)
 {
-#ifdef _DEBUG
+#ifdef USE_IMGUI
 
     if (!obj)
         return;
@@ -393,30 +464,89 @@ void BaseObjectManager::ShowObjectHierarchy(BaseObject *obj, int depth)
         ImGui::EndDragDropTarget();
     }
 
+    // 右クリックメニュー: 親を設定 / 親子解除 / 親のSRT継承設定
+    if (ImGui::BeginPopupContextItem((obj->GetName() + "##ctx").c_str()))
+    {
+        ImGui::TextDisabled("%s", obj->GetName().c_str());
+        ImGui::Separator();
+
+        if (ImGui::BeginMenu("親を設定"))
+        {
+            for (const std::string &otherName : GetSortedObjectNames())
+            {
+                BaseObject *other = GetObjectByName(otherName);
+                if (!other || other == obj)
+                    continue;
+                // 循環になる相手（自分の子孫）は候補から除外する
+                bool isDescendant = false;
+                for (BaseObject *p = other; p; p = p->GetParent())
+                {
+                    if (p == obj)
+                    {
+                        isDescendant = true;
+                        break;
+                    }
+                }
+                if (isDescendant)
+                    continue;
+
+                const bool isCurrentParent = (obj->GetParent() == other);
+                if (ImGui::MenuItem(otherName.c_str(), nullptr, isCurrentParent))
+                {
+                    // 実際の付け替えはツリー描画後にまとめて適用する（g_dnd 経由）
+                    g_dndReparentChild = obj->GetName();
+                    g_dndReparentParent = otherName;
+                    g_dndReparentRequested = true;
+                }
+            }
+            ImGui::EndMenu();
+        }
+
+        if (ImGui::MenuItem("親子解除", nullptr, false, obj->GetParent() != nullptr))
+        {
+            g_dndReparentChild = obj->GetName();
+            g_dndReparentParent.clear();
+            g_dndReparentRequested = true;
+        }
+
+        // 親がある場合のみ、親のSRTをどこまで継承するかを切り替えられる
+        if (obj->GetParent() && obj->GetWorldTransform())
+        {
+            ImGui::Separator();
+            ImGui::TextDisabled("親の継承 (外すと追従しない)");
+            WorldTransform *t = obj->GetWorldTransform();
+            ImGui::Checkbox("位置を継承##inh", &t->inheritTranslation_);
+            ImGui::Checkbox("回転を継承##inh", &t->inheritRotation_);
+            ImGui::Checkbox("スケールを継承##inh", &t->inheritScale_);
+        }
+
+        ImGui::EndPopup();
+    }
+
     if (nodeOpen)
     {
         // 子オブジェクトを表示
-        for (BaseObject *child : *obj->GetChildren())
+        for (BaseObject *pChild : *obj->GetChildren())
         {
-            ShowObjectHierarchy(child, depth + 1);
+            ShowObjectHierarchy(pChild, depth + 1);
         }
         ImGui::TreePop();
     }
-#endif // _DEBUG
+#endif // USE_IMGUI
 }
 
 void BaseObjectManager::SetParentChild(const std::string &childName, const std::string &parentName)
 {
-    BaseObject *child = GetObjectByName(childName);
+    BaseObject *pChild = GetObjectByName(childName);
     BaseObject *parent = GetObjectByName(parentName);
 
-    if (child && parent && child != parent)
+    if (pChild && parent && pChild != parent)
     {
         // 循環参照チェック
         BaseObject *currentParent = parent;
         while (currentParent)
         {
-            if (currentParent == child)
+            if (currentParent == pChild)
             {
                 // 循環参照が発生するため、親子付けを拒否
                 return;
@@ -424,26 +554,34 @@ void BaseObjectManager::SetParentChild(const std::string &childName, const std::
             currentParent = currentParent->GetParent();
         }
 
-        child->SetParent(parent);
+        pChild->SetParent(parent);
     }
 }
 
 void BaseObjectManager::RemoveParentChild(const std::string &childName)
 {
-    BaseObject *child = GetObjectByName(childName);
-    if (child)
+    BaseObject *pChild = GetObjectByName(childName);
+    if (pChild)
     {
-        child->DetachParent();
+        pChild->DetachParent();
     }
 }
 
 std::vector<std::string> BaseObjectManager::GetObjectNames() const
 {
     std::vector<std::string> names;
+    names.reserve(objects_.size());
     for (const auto &[name, obj] : objects_)
     {
         names.push_back(name);
     }
+    return names;
+}
+
+std::vector<std::string> BaseObjectManager::GetSortedObjectNames() const
+{
+    std::vector<std::string> names = GetObjectNames();
+    std::sort(names.begin(), names.end());
     return names;
 }
 
@@ -463,16 +601,16 @@ void BaseObjectManager::LoadAllParentChildRelationships()
 
     for (auto &[name, obj] : objects_)
     {
-        if (!obj->ObjectDatas_)
+        if (!obj->objectData_)
             continue;
 
-        std::string parentName = obj->ObjectDatas_->Load<std::string>("parentName", "");
+        std::string parentName = obj->objectData_->Load<std::string>("parentName", "");
         if (!parentName.empty())
         {
             parentRelations[name] = parentName;
         }
 
-        std::vector<std::string> childrenNames = obj->ObjectDatas_->Load<std::vector<std::string>>("childrenNames", std::vector<std::string>());
+        std::vector<std::string> childrenNames = obj->objectData_->Load<std::vector<std::string>>("childrenNames", std::vector<std::string>());
         if (!childrenNames.empty())
         {
             childRelations[name] = childrenNames;
@@ -482,12 +620,21 @@ void BaseObjectManager::LoadAllParentChildRelationships()
     // 親子関係を復元
     for (const auto &[childName, parentName] : parentRelations)
     {
-        BaseObject *child = GetObjectByName(childName);
+        BaseObject *pChild = GetObjectByName(childName);
         BaseObject *parent = GetObjectByName(parentName);
 
-        if (child && parent)
+        if (pChild && parent)
         {
-            child->SetParent(parent);
+            pChild->SetParent(parent);
+
+            // SRT成分ごとの継承設定を復元する（未保存の古いデータは全継承=trueにフォールバック）
+            if (pChild->objectData_ && pChild->GetWorldTransform())
+            {
+                WorldTransform *ct = pChild->GetWorldTransform();
+                ct->inheritTranslation_ = pChild->objectData_->Load<bool>("inheritTranslation", true);
+                ct->inheritRotation_ = pChild->objectData_->Load<bool>("inheritRotation", true);
+                ct->inheritScale_ = pChild->objectData_->Load<bool>("inheritScale", true);
+            }
         }
     }
 }
@@ -501,20 +648,21 @@ void BaseObjectManager::RemoveObject(const std::string &name)
 
         if (targetObject)
         {
-            // 子供の親解除
-            for (auto &pair : objects_)
+            // 子の親子付けを解除する。
+            // children_ を直接辿るので、マネージャに未登録の子も取りこぼさない
+            // （取りこぼすと、破棄済みの親を指したままの WorldTransform::pParent_ が残る）。
+            // DetachParent() が親の children_ から自分を外すのでループは必ず終わる。
+            std::list<BaseObject *> *children = targetObject->GetChildren();
+            while (children && !children->empty())
             {
-                BaseObject *obj = pair.second;
-                if (obj && obj->GetParent() == targetObject)
-                {
-                    obj->DetachParent();
-                }
+                children->front()->DetachParent();
             }
 
             // 親からの解除
             targetObject->DetachParent();
         }
 
+        DetachRegistrations(targetObject, name);
         objects_.erase(it);
         ownedObjects_.erase(name);
     }
@@ -522,7 +670,7 @@ void BaseObjectManager::RemoveObject(const std::string &name)
 
 void BaseObjectManager::ShowSaveTargetManager()
 {
-#ifdef _DEBUG
+#ifdef USE_IMGUI
     if (ImGui::CollapsingHeader("セーブ対象管理##SaveTargetManagement", ImGuiTreeNodeFlags_DefaultOpen))
     {
         ImGui::Spacing();
@@ -530,9 +678,14 @@ void BaseObjectManager::ShowSaveTargetManager()
         std::vector<std::string> saveTargets;
         std::vector<std::string> nonSaveTargets;
 
-        // オブジェクトを分類
-        for (const auto &[name, obj] : objects_)
+        // オブジェクトを分類（unordered_map をそのまま回すと並びが毎回変わるので名前順で見る）
+        for (const std::string &name : GetSortedObjectNames())
         {
+            BaseObject *obj = GetObjectByName(name);
+            if (!obj)
+            {
+                continue;
+            }
             if (obj->GetShouldSave())
             {
                 saveTargets.push_back(name);
@@ -619,21 +772,12 @@ void BaseObjectManager::ShowSaveTargetManager()
         // 垂直中央揃えのためのスペース調整
         ImGui::Dummy(ImVec2(0, 60));
 
-        bool canMoveRight = !leftSelected.empty();
-        if (!canMoveRight)
-        {
-            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.3f, 0.3f, 0.3f, 0.5f));
-            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.3f, 0.3f, 0.3f, 0.5f));
-            ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.3f, 0.3f, 0.3f, 0.5f));
-        }
-        else
-        {
-            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.22f, 0.40f, 0.30f, 0.85f));
-            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.28f, 0.50f, 0.38f, 0.95f));
-            ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.32f, 0.58f, 0.44f, 1.0f));
-        }
-
-        if (ImGui::Button("追加 >>##SaveAddButton", ImVec2(buttonWidth, 30)) && canMoveRight)
+        // 選択が無いときは地味な色にして「押しても動かない」ことを見た目で伝える
+        const bool canMoveRight = !leftSelected.empty();
+        const ImVec2 moveButtonSize(buttonWidth, 30.0f);
+        const bool addPressed = canMoveRight ? ConfirmButton("追加 >>##SaveAddButton", moveButtonSize)
+                                             : NeutralButton("追加 >>##SaveAddButton", moveButtonSize);
+        if (addPressed && canMoveRight)
         {
             for (int idx : leftSelected)
             {
@@ -642,23 +786,10 @@ void BaseObjectManager::ShowSaveTargetManager()
             leftSelected.clear();
         }
 
-        ImGui::PopStyleColor(3);
-
-        bool canMoveLeft = !rightSelected.empty();
-        if (!canMoveLeft)
-        {
-            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.3f, 0.3f, 0.3f, 0.5f));
-            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.3f, 0.3f, 0.3f, 0.5f));
-            ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.3f, 0.3f, 0.3f, 0.5f));
-        }
-        else
-        {
-            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.46f, 0.24f, 0.24f, 0.85f));
-            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.58f, 0.30f, 0.30f, 0.95f));
-            ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.66f, 0.36f, 0.36f, 1.0f));
-        }
-
-        if (ImGui::Button("<< 削除##SaveRemoveButton", ImVec2(buttonWidth, 30)) && canMoveLeft)
+        const bool canMoveLeft = !rightSelected.empty();
+        const bool removePressed = canMoveLeft ? DangerButton("<< 削除##SaveRemoveButton", moveButtonSize)
+                                               : NeutralButton("<< 削除##SaveRemoveButton", moveButtonSize);
+        if (removePressed && canMoveLeft)
         {
             for (int idx : rightSelected)
             {
@@ -667,7 +798,6 @@ void BaseObjectManager::ShowSaveTargetManager()
             rightSelected.clear();
         }
 
-        ImGui::PopStyleColor(3);
         ImGui::EndGroup();
 
         ImGui::SameLine();
@@ -723,7 +853,7 @@ void BaseObjectManager::ShowSaveTargetManager()
         ImGui::TextWrapped("操作: Ctrlキー + クリックで複数選択, ダブルクリックで追加/削除");
         ImGui::PopStyleColor();
     }
-#endif // _DEBUG
+#endif // USE_IMGUI
 }
 void BaseObjectManager::AddToSaveTargets(const std::string &objectName)
 {
@@ -746,12 +876,16 @@ void BaseObjectManager::RemoveFromSaveTargets(const std::string &objectName)
 // シーン保存モーダルの描画
 void BaseObjectManager::DrawSceneSaveModel()
 {
-#ifdef _DEBUG
+#ifdef USE_IMGUI
+    static char sceneNameBuffer[128] = "";
+
     // メニューから呼び出された場合のモーダル表示
     if (showSceneSaveModal_)
     {
         ImGui::OpenPopup("シーン保存");
         showSceneSaveModal_ = false;
+        // 上書き保存が大半なので、編集中のシーン名を初期値として入れておく
+        strncpy_s(sceneNameBuffer, sceneName_.c_str(), _TRUNCATE);
     }
 
     // モーダルウィンドウ（中央に表示、背景は自動で薄暗くなる）
@@ -759,10 +893,23 @@ void BaseObjectManager::DrawSceneSaveModel()
     {
         ImGui::Text("シーンの名前を入力してください");
 
-        static char sceneNameBuffer[128] = "";
-
         // テキスト入力欄（sceneName_ を編集）
         ImGui::InputText("シーン名", sceneNameBuffer, IM_ARRAYSIZE(sceneNameBuffer));
+
+        // 保存する内容の選択（オブジェクト以外も一緒に保存できるようにする）
+        ImGui::Separator();
+        ImGui::TextDisabled("保存する内容:");
+        bool objAlways = true;
+        ImGui::BeginDisabled();
+        ImGui::Checkbox("オブジェクト (セーブ対象のみ)", &objAlways);
+        ImGui::EndDisabled();
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("どのオブジェクトを保存するかは下の「セーブ対象管理」で仕分けできます");
+        static bool saveSprites = true;
+        static bool saveUI = true;
+        ImGui::Checkbox("スプライト (全シーン共通)", &saveSprites);
+        ImGui::Checkbox("UIアニメーション (全シーン共通)", &saveUI);
+        ImGui::Separator();
 
         // 横並びに「保存」ボタンと「キャンセル」ボタン
         if (ImGui::Button("保存", ImVec2(120, 0)))
@@ -770,10 +917,15 @@ void BaseObjectManager::DrawSceneSaveModel()
             sceneName_ = sceneNameBuffer; // 入力内容を保存
             std::unique_ptr<DataHandler> datas_ = std::make_unique<DataHandler>("SceneData/" + sceneName_ + "/ObjectDatas", "");
             datas_->DeleteAllJsonsInFolder();
-            SaveAll();                         // 実際の保存処理
+            SaveAll();                         // オブジェクトの保存
             SaveAllParentChildRelationships(); // 親子関係も保存
-            ImGui::CloseCurrentPopup();        // モーダルを閉じる
-            sceneName_.clear();                // 入力欄をクリア
+            if (saveSprites)
+                SpriteManager::GetInstance()->SaveAllSprites(); // スプライトも保存
+            if (saveUI)
+                UIAnimator::GetInstance()->Save(); // UIアニメーションも保存
+            ImGui::CloseCurrentPopup();           // モーダルを閉じる
+            // sceneName_ は「今どのシーンを編集しているか」を保持する変数なので、
+            // 保存後にクリアしてはいけない（次の SaveAll が SceneData//ObjectDatas に書いてしまう）
         }
 
         ImGui::SameLine();
@@ -785,37 +937,50 @@ void BaseObjectManager::DrawSceneSaveModel()
 
         ImGui::EndPopup();
     }
-#endif // _DEBUG
+#endif // USE_IMGUI
 }
 
 // シーン読み込みモーダルの描画
 void BaseObjectManager::DrawSceneLoadModel()
 {
-#ifdef _DEBUG
+#ifdef USE_IMGUI
+    static char sceneNameBuffer[128] = "";
+
     // メニューから呼び出された場合のモーダル表示
     if (showSceneLoadModal_)
     {
         ImGui::OpenPopup("シーン読み込み");
         showSceneLoadModal_ = false;
+        strncpy_s(sceneNameBuffer, sceneName_.c_str(), _TRUNCATE);
     }
 
     if (ImGui::BeginPopupModal("シーン読み込み", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
     {
         ImGui::Text("シーンの名前を入力してください");
 
-        static char sceneNameBuffer[128] = "";
-
         // テキスト入力欄（sceneName_ を編集）
         ImGui::InputText("シーン名", sceneNameBuffer, IM_ARRAYSIZE(sceneNameBuffer));
+
+        // 読み込む内容の選択
+        ImGui::Separator();
+        ImGui::TextDisabled("読み込む内容:");
+        static bool loadSprites = true;
+        static bool loadUI = true;
+        ImGui::Checkbox("スプライトも読み込み", &loadSprites);
+        ImGui::Checkbox("UIアニメーションも読み込み", &loadUI);
+        ImGui::Separator();
 
         // 横並びに「読み込み」ボタンと「キャンセル」ボタン
         if (ImGui::Button("読み込み", ImVec2(120, 0)))
         {
-            sceneName_ = sceneNameBuffer;      // 入力内容を保存
-            LoadAll(sceneName_);               // 実際の読み込み処理
-            LoadAllParentChildRelationships(); // 親子関係も読み込み
-            ImGui::CloseCurrentPopup();        // モーダルを閉じる
-            sceneName_.clear();                // 読み込み後はシーン名をクリア
+            sceneName_ = sceneNameBuffer; // 入力内容を保存
+            LoadAll(sceneName_);          // オブジェクトの読み込み（親子関係の復元も内部で行う）
+            if (loadSprites)
+                SpriteManager::GetInstance()->LoadAllSprites(); // スプライトも読み込み
+            if (loadUI)
+                UIAnimator::GetInstance()->Load(); // UIアニメーションも読み込み
+            ImGui::CloseCurrentPopup();           // モーダルを閉じる
+            // 読み込んだシーン名はそのまま保持する（次の保存先がこのシーンになる）
         }
 
         ImGui::SameLine();
@@ -827,13 +992,13 @@ void BaseObjectManager::DrawSceneLoadModel()
 
         ImGui::EndPopup();
     }
-#endif // _DEBUG
+#endif // USE_IMGUI
 }
 
 // オブジェクト生成モーダルの描画
 void BaseObjectManager::DrawObjectCreationModel()
 {
-#ifdef _DEBUG
+#ifdef USE_IMGUI
     // メニューから呼び出された場合のモーダル表示
     if (showObjectCreationModal_)
     {
@@ -856,8 +1021,18 @@ void BaseObjectManager::DrawObjectCreationModel()
         // モデルファイル選択セクション
         ImGui::Text("モデルファイル選択:");
         ImGui::BeginChild("ModelFileSelector", ImVec2(600, 300), true);
-        ShowModelFile(modelPath_);
+        ShowModelFile(modelPath_, "objectCreate");
         ImGui::EndChild();
+
+        // モデルを選んだらオブジェクト名を自動で埋める。
+        // 名前は後から変えられるので、毎回手打ちさせない方が置く作業が速い。
+        static std::string lastAutoFilledModel;
+        if (!modelPath_.empty() && modelPath_ != lastAutoFilledModel)
+        {
+            lastAutoFilledModel = modelPath_;
+            const std::string suggested = MakeUniqueObjectName(std::filesystem::path(modelPath_).stem().string());
+            strncpy_s(objectNameBuffer, suggested.c_str(), _TRUNCATE);
+        }
 
         ImGui::Separator();
 
@@ -878,32 +1053,20 @@ void BaseObjectManager::DrawObjectCreationModel()
         // 生成ボタンとキャンセルボタン
         bool canCreate = strlen(objectNameBuffer) > 0 && !modelPath_.empty();
 
-        if (!canCreate)
+        // 名前とモデルが揃うまでは確定色にしない
+        const bool createPressed = canCreate ? ConfirmButton("生成", ImVec2(120, 0))
+                                             : NeutralButton("生成", ImVec2(120, 0));
+        if (createPressed && canCreate)
         {
-            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.3f, 0.3f, 0.3f, 1.0f));
-            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.3f, 0.3f, 0.3f, 1.0f));
-            ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.3f, 0.3f, 0.3f, 1.0f));
-        }
+            objectName_ = objectNameBuffer;
+            CreateObject(objectName_, modelPath_, texturePath_);
 
-        if (ImGui::Button("生成", ImVec2(120, 0)))
-        {
-            if (canCreate)
-            {
-                objectName_ = objectNameBuffer;
-                CreateObject(objectName_, modelPath_, texturePath_);
+            // 入力欄とパスをリセット
+            memset(objectNameBuffer, 0, sizeof(objectNameBuffer));
+            modelPath_ = "";
+            texturePath_ = "";
 
-                // 入力欄とパスをリセット
-                memset(objectNameBuffer, 0, sizeof(objectNameBuffer));
-                modelPath_ = "";
-                texturePath_ = "";
-
-                ImGui::CloseCurrentPopup();
-            }
-        }
-
-        if (!canCreate)
-        {
-            ImGui::PopStyleColor(3);
+            ImGui::CloseCurrentPopup();
         }
 
         ImGui::SameLine();
@@ -935,12 +1098,12 @@ void BaseObjectManager::DrawObjectCreationModel()
 
         ImGui::EndPopup();
     }
-#endif // _DEBUG
+#endif // USE_IMGUI
 }
 
 void BaseObjectManager::DrawObjectLoadModel()
 {
-#ifdef _DEBUG
+#ifdef USE_IMGUI
     // メニューから呼び出された場合のモーダル表示
     if (showObjectLoadModal_)
     {
@@ -975,29 +1138,18 @@ void BaseObjectManager::DrawObjectLoadModel()
         ImGui::Separator();
 
         // 読み込みボタンとキャンセルボタン
-        bool canLoad = !selectedJsonPath_.empty();
-        if (!canLoad)
+        const bool canLoad = !selectedJsonPath_.empty();
+        const bool loadPressed = canLoad ? ConfirmButton("読み込み", ImVec2(120, 0))
+                                         : NeutralButton("読み込み", ImVec2(120, 0));
+        if (loadPressed && canLoad)
         {
-            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.3f, 0.3f, 0.3f, 1.0f));
-            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.3f, 0.3f, 0.3f, 1.0f));
-            ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.3f, 0.3f, 0.3f, 1.0f));
-        }
-        if (ImGui::Button("読み込み", ImVec2(120, 0)))
-        {
-            if (canLoad)
-            {
-                LoadObjectFromJson(startPath, autoObjectName);
-                // パスをリセット
-                selectedJsonPath_ = "";
-                ImGui::CloseCurrentPopup();
-            }
-        }
-        if (!canLoad)
-        {
-            ImGui::PopStyleColor(3);
+            LoadObjectFromJson(startPath, autoObjectName);
+            // パスをリセット
+            selectedJsonPath_ = "";
+            ImGui::CloseCurrentPopup();
         }
         ImGui::SameLine();
-        if (ImGui::Button("キャンセル", ImVec2(120, 0)))
+        if (NeutralButton("キャンセル", ImVec2(120, 0)))
         {
             // パスをリセット
             selectedJsonPath_ = "";
@@ -1015,7 +1167,7 @@ void BaseObjectManager::DrawObjectLoadModel()
         }
         ImGui::EndPopup();
     }
-#endif // _DEBUG
+#endif // USE_IMGUI
 }
 
 void BaseObjectManager::LoadObjectFromJson(const std::string &startPath, const std::string &objectName)
@@ -1045,47 +1197,45 @@ void BaseObjectManager::LoadObjectFromJson(const std::string &startPath, const s
     Logger::Info("Object loaded: " + objectName + " (" + fullPath + ")");
 }
 
-void BaseObjectManager::RestoreParentChildRelationshipForObject(BaseObject *object)
+void BaseObjectManager::RestoreParentChildRelationshipForObject(BaseObject *pObject)
 {
-    if (!object)
+    if (!pObject)
         return;
 
     // 親の復元
-    std::string parentName = object->GetParentName();
+    std::string parentName = pObject->GetParentName();
     if (!parentName.empty())
     {
         auto it = objects_.find(parentName);
         if (it != objects_.end())
         {
-            object->SetParent(it->second);
+            pObject->SetParent(it->second);
         }
     }
 
     // 子の復元
-    std::vector<std::string> childrenNames = object->GetChildrenNames();
+    std::vector<std::string> childrenNames = pObject->GetChildrenNames();
     for (const std::string &childName : childrenNames)
     {
         auto it = objects_.find(childName);
         if (it != objects_.end())
         {
-            object->AddChild(it->second);
+            pObject->AddChild(it->second);
         }
     }
 }
 
 void BaseObjectManager::DrawHierarchyEditor()
 {
-#ifdef _DEBUG
-    ImGui::Begin("オブジェクトマネージャ");
-
+#ifdef USE_IMGUI
+    // ウィンドウの Begin/End は呼び出し元（ImGuiManager::ShowHierarchyWindow）が行う。
+    // ここで再度 Begin すると同名ウィンドウが入れ子になる。
     ShowParentChildHierarchy();
     ShowSaveTargetManager();
-
-    ImGui::End();
-#endif // _DEBUG
+#endif // USE_IMGUI
 }
 
-#ifdef _DEBUG
+#ifdef USE_IMGUI
 // -------------------------------------------------------
 // Undo/Redo 用の状態キャプチャ・復元
 // -------------------------------------------------------
@@ -1112,7 +1262,7 @@ nlohmann::json BaseObjectManager::CaptureUndoState()
         // トランスフォーム
         const WorldTransform *transform = obj->GetWorldTransform();
         s["scale"] = transform->scale_;
-        s["rotation"] = transform->quateRotation_;
+        s["rotation"] = transform->quaternionRotation_;
         s["translation"] = transform->translation_;
 
         // 親子関係・フラグ類
@@ -1203,7 +1353,7 @@ void BaseObjectManager::RestoreUndoState(const nlohmann::json &state)
         }
         if (s.contains("rotation"))
         {
-            transform->quateRotation_ = s["rotation"].get<Quaternion>();
+            transform->quaternionRotation_ = s["rotation"].get<Quaternion>();
         }
         if (s.contains("translation"))
         {
@@ -1268,5 +1418,5 @@ void BaseObjectManager::RestoreUndoState(const nlohmann::json &state)
         }
     }
 }
-#endif // _DEBUG
+#endif // USE_IMGUI
 } // namespace Hagine

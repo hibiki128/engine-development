@@ -29,8 +29,8 @@ class ParticleManager
     /// <summary>
     /// 初期化
     /// </summary>
-    /// <param name="srvManager">SRVマネージャー</param>
-    void Initialize(SrvManager *srvManager);
+    /// <param name="pSrvManager">SRVマネージャー</param>
+    void Initialize(SrvManager *pSrvManager);
 
     /// <summary>
     /// 更新処理

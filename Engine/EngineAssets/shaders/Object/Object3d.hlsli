@@ -1,6 +1,9 @@
 
-#define MAX_POINT_LIGHTS 5
-#define MAX_SPOT_LIGHTS 5
+// 前方描画（定数バッファ経由）のライト枠。
+// ディファードON時はポイントライトを StructuredBuffer から読むためこの枠を使わない。
+// ※ LightGroup.h の MAX_POINT_LIGHTS / MAX_SPOT_LIGHTS と必ず一致させること。
+#define MAX_POINT_LIGHTS 16
+#define MAX_SPOT_LIGHTS 32
 
 struct VertexShaderOutput
 {
@@ -9,6 +12,10 @@ struct VertexShaderOutput
     float3 normal        : NORMAL0;
     float3 worldPosition : POSITION0;
     float4 shadowCoord   : POSITION1;
+    // インスタンシング描画で「1つのマテリアル定数バッファを共有したまま個体ごとに色を変える」ための倍率。
+    // 通常描画（非インスタンシング）の VS は白(1,1,1,1)を入れるので従来と結果は変わらない。
+    // ※ この構造体を出力する全ての VS（Object3d / Skinning / Instanced）で必ず書き込むこと。
+    float4 instanceColor : COLOR0;
 };
 
 struct ShadowData

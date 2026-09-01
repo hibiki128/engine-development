@@ -1,9 +1,9 @@
 #pragma once
 
 #include "cmath"
-#ifdef _DEBUG
+#ifdef USE_IMGUI
 #include "imgui.h"
-#endif // _DEBUG
+#endif // USE_IMGUI
 /// <summary>
 /// 4次元ベクトル
 /// </summary>
@@ -144,8 +144,8 @@ struct Vector4 final
     {
         return x * other.x + y * other.y + z * other.z + w * other.w;
     }
-#ifdef _DEBUG
+#ifdef USE_IMGUI
     operator ImVec4() const { return ImVec4(x, y, z, w); }
-#endif // _DEBUG
+#endif // USE_IMGUI
 };
 } // namespace Hagine

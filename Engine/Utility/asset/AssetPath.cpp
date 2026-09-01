@@ -65,9 +65,15 @@ std::string ToUtf8RootString(const std::filesystem::path &path)
 
 /// <summary>
 /// アセットルートを解決する。
-/// exe と同じ場所に bundledDirName フォルダがあればその絶対パス (配布時) を、
+/// exe と同じ場所に bundledDirName フォルダがあれば配布構成とみなし、
+/// カレントディレクトリを exe の場所へ移したうえでフォルダ名だけの相対パスを返す。
 /// 無ければ sourceTreeFallback (開発時) を返す。
-/// 存在判定とパス構築は wide/filesystem で行い、文字コードの取り違えを避ける。
+///
+/// 絶対パスを返さないのは、配布先フォルダ名に日本語が含まれていると起動できなくなるため。
+/// エンジンの narrow (char) 文字列は UTF-8 だが、std::ifstream や Assimp (fopen) は
+/// パスを ANSI (CP932) として解釈するので、UTF-8 の絶対パスは開けずに落ちる。
+/// 相対パスなら ASCII のみで済み、日本語部分の解決は
+/// ワイド版の SetCurrentDirectoryW が受け持つので文字コードの問題が起きない。
 /// </summary>
 /// <param name="bundledDirName">exe 隣に置く配布用フォルダ名 (例: L"EngineAssets")</param>
 /// <param name="sourceTreeFallback">開発時に使うソースツリー相対パス (末尾スラッシュ付き)</param>
@@ -80,7 +86,10 @@ std::string ResolveRoot(const wchar_t *bundledDirName, const char *sourceTreeFal
         const std::filesystem::path bundled = exeDir / bundledDirName;
         if (std::filesystem::exists(bundled, ec))
         {
-            return ToUtf8RootString(bundled);
+            // 相対パスの基準を exe の場所に固定する
+            // (エクスプローラ以外から起動された場合はカレントが別の場所になっているため)
+            SetCurrentDirectoryW(exeDir.c_str());
+            return ToUtf8RootString(std::filesystem::path(bundledDirName));
         }
     }
     return std::string(sourceTreeFallback);
@@ -90,15 +99,15 @@ std::string ResolveRoot(const wchar_t *bundledDirName, const char *sourceTreeFal
 
 const std::string &EngineRoot()
 {
-    // 配布時: <exe>/EngineAssets/ ／ 開発時: ../module/Hagine/Engine/EngineAssets/
-    static const std::string kRoot = ResolveRoot(L"EngineAssets", "../module/Hagine/Engine/EngineAssets/");
+    // 配布時: EngineAssets/ (カレント = exe の場所) ／ 開発時: Engine/EngineAssets/
+    static const std::string kRoot = ResolveRoot(L"EngineAssets", "Engine/EngineAssets/");
     return kRoot;
 }
 
 const std::string &AppRoot()
 {
-    // 配布時: <exe>/Assets/ ／ 開発時: ../app/Assets/
-    static const std::string kRoot = ResolveRoot(L"Assets", "../app/Assets/");
+    // 配布時: Assets/ (カレント = exe の場所) ／ 開発時: Application/Assets/
+    static const std::string kRoot = ResolveRoot(L"Assets", "Application/Assets/");
     return kRoot;
 }
 

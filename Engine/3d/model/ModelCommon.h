@@ -35,7 +35,7 @@ class ModelCommon
 
   private:
     /// ===================================================
-    /// private varians
+    /// private variables
     /// ===================================================
 
     DirectXCommon *pDxCommon_; // DirectX共通クラス

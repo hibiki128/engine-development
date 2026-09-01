@@ -8,9 +8,11 @@
 #include "Object3dCommon.h"
 #include "transform/WorldTransform.h"
 #include "cassert"
+#include <cstring>
 #include <Frame.h>
+#include <render/deferred/DeferredRenderer.h>
 #include <shadow/ShadowMap.h>
-#include <line/DrawLine3D.h>
+#include <line/LineRenderer.h>
 #include <MyMath.h>
 #include <type/Matrix4x4.h>
 
@@ -94,7 +96,7 @@ void Object3d::Update(const WorldTransform &worldTransform, const ViewProjection
     }
 
     // ローカル行列を作成
-    Matrix4x4 localMatrix = MakeAffineMatrix(worldTransform.scale_, worldTransform.quateRotation_, worldTransform.translation_);
+    Matrix4x4 localMatrix = MakeAffineMatrix(worldTransform.scale_, worldTransform.quaternionRotation_, worldTransform.translation_);
 
     // ワールド行列を計算（親がいる場合は親の行列と合成）
     Matrix4x4 worldMatrix = localMatrix;
@@ -159,6 +161,27 @@ void Object3d::Draw(const WorldTransform &worldTransform, const ViewProjection &
         DrawShadow(worldTransform);
         return;
     }
+
+    // ── ディファードの振り分け ──
+    // G-Buffer に載せられるのは「不透明かつライティングあり」のものだけ。
+    // 半透明（加算合成など）やライティング無効のものは従来どおり前方描画に残す。
+    DeferredRenderer *deferred = DeferredRenderer::GetInstance();
+    const bool deferredEligible = deferred->IsEnabled() && lighting && useDeferred_ &&
+                                  (blendMode_ == BlendMode::None || blendMode_ == BlendMode::Normal);
+    if (deferred->IsGBufferPassActive())
+    {
+        // G-Buffer パス中: 対象外のものは前方描画のフェーズで描く
+        if (!deferredEligible)
+        {
+            return;
+        }
+    }
+    else if (deferredEligible)
+    {
+        // 前方描画フェーズ: G-Buffer で描き済みなので二重に描かない
+        return;
+    }
+
     objectCommon_->SetBlendMode(blendMode_);
     Update(worldTransform, viewProjection);
 
@@ -171,8 +194,23 @@ void Object3d::Draw(const WorldTransform &worldTransform, const ViewProjection &
         }
     }
 
-    // 変換行列設定
-    pDxCommon_->GetCommandList()->SetGraphicsRootConstantBufferView(1, transformationMatrixResource_->GetGPUVirtualAddress());
+    // G-Buffer パス中は PSO だけ差し替える（ルートシグネチャは前方描画と共通なので
+    // 以降のバインド処理は一切変えなくてよい）
+    if (deferred->IsGBufferPassActive())
+    {
+        const bool skinned = pModel_ && pModel_->IsGltf() && pModel_->GetModelData().hasAnimations;
+        PipelineManager::GetInstance()->DrawCommonSetting(
+            skinned ? PipelineType::GBufferSkinning : PipelineType::GBuffer);
+    }
+
+    // 変換行列設定（頂点シェーダーの b0）
+    {
+        const ShaderRootSignature *rootSignature = PipelineManager::GetInstance()->GetCurrentRootSignature();
+        assert(rootSignature && "オブジェクト描画のルートシグネチャが未生成です");
+        pDxCommon_->GetCommandList()->SetGraphicsRootConstantBufferView(
+            rootSignature->GetCbvIndex(0, D3D12_SHADER_VISIBILITY_VERTEX),
+            transformationMatrixResource_->GetGPUVirtualAddress());
+    }
 
     // ライティング設定
     if (pLightGroup_)
@@ -287,14 +325,14 @@ void Object3d::SetAnimation(const std::string &animationFileName)
         return;
     }
 
-    Animator *animator = currentModelAnimation_->GetAnimator();
-    if (!animator)
+    Animator *pAnimator = currentModelAnimation_->GetAnimator();
+    if (!pAnimator)
     {
         return;
     }
 
     // 現在のファイル名と比較
-    std::string currentFile = animator->GetCurrentFilename();
+    std::string currentFile = pAnimator->GetCurrentFilename();
 
     // 同じアニメーションの場合は何もしない
     if (currentFile == animationFileName && !isAnimationSwitchPending_)
@@ -312,7 +350,7 @@ void Object3d::SetAnimation(const std::string &animationFileName)
     targetLoop_ = GetAnimationLoop(animationFileName);
 
     // 新しいアニメーションへの補間開始
-    animator->BlendToAnimation(AssetPath::ModelsRoot(animationFileName), animationFileName, blendDuration_);
+    pAnimator->BlendToAnimation(AssetPath::ModelsRoot(animationFileName), animationFileName, blendDuration_);
 
     // 切り替え待機状態にする
     isAnimationSwitchPending_ = true;
@@ -492,22 +530,22 @@ void Object3d::DrawWireframe(const WorldTransform &worldTransform, const ViewPro
         const std::vector<VertexData> &vertices = mesh.vertices;
         const std::vector<uint32_t> &indices = mesh.indices;
 
+        // 三角形ごとに3本積むので本数が多い。シングルトン参照と色詰めはループ外へ出しておく
+        LineRenderer *pLine = LineRenderer::GetInstance();
+        constexpr uint32_t kWhite = 0xFFFFFFFFu;
+
         auto drawTriangle = [&](const Vector3 &v0, const Vector3 &v1, const Vector3 &v2) {
             if (gamingMode)
             {
-                Vector4 c0 = GetTimeGradientColor(v0);
-                Vector4 c1 = GetTimeGradientColor(v1);
-                Vector4 c2 = GetTimeGradientColor(v2);
-                DrawLine3D::GetInstance()->SetPoints(v0, v1, c0);
-                DrawLine3D::GetInstance()->SetPoints(v1, v2, c1);
-                DrawLine3D::GetInstance()->SetPoints(v2, v0, c2);
+                pLine->AddLinePacked(v0, v1, PackLineColor(GetTimeGradientColor(v0)));
+                pLine->AddLinePacked(v1, v2, PackLineColor(GetTimeGradientColor(v1)));
+                pLine->AddLinePacked(v2, v0, PackLineColor(GetTimeGradientColor(v2)));
             }
             else
             {
-                Vector4 wireframeColor = {1.0f, 1.0f, 1.0f, 1.0f};
-                DrawLine3D::GetInstance()->SetPoints(v0, v1, wireframeColor);
-                DrawLine3D::GetInstance()->SetPoints(v1, v2, wireframeColor);
-                DrawLine3D::GetInstance()->SetPoints(v2, v0, wireframeColor);
+                pLine->AddLinePacked(v0, v1, kWhite);
+                pLine->AddLinePacked(v1, v2, kWhite);
+                pLine->AddLinePacked(v2, v0, kWhite);
             }
         };
 
@@ -552,7 +590,7 @@ void Object3d::DrawSkeleton(const WorldTransform &worldTransform, const ViewProj
     // モデルに適用されているワールド変換を生成
     Matrix4x4 worldMatrix = MakeAffineMatrix(
         worldTransform.scale_,
-        worldTransform.quateRotation_,
+        worldTransform.quaternionRotation_,
         worldTransform.translation_);
 
     if (worldTransform.pParent_)
@@ -570,7 +608,7 @@ void Object3d::DrawSkeleton(const WorldTransform &worldTransform, const ViewProj
         float jointRadius = 0.03f * worldTransform.scale_.x;
 
         Vector4 jointColor = {0.8f, 0.2f, 0.2f, 1.0f};
-        DrawLine3D::GetInstance()->DrawSphere(jointPosition, jointColor, jointRadius, 8);
+        LineRenderer::GetInstance()->AddSphere(jointPosition, jointRadius, jointColor, 8);
 
         if (!joint.parent.has_value())
         {
@@ -663,22 +701,22 @@ void Object3d::DrawArmatureShape(const Vector3 &startPos, const Vector3 &endPos,
             Vector3 p2_2 = pos2 + (right * cosf(angle2) + up * sinf(angle2)) * width2;
 
             // 円周の線
-            DrawLine3D::GetInstance()->SetPoints(p1_1, p1_2, color);
-            DrawLine3D::GetInstance()->SetPoints(p2_1, p2_2, color);
+            LineRenderer::GetInstance()->AddLine(p1_1, p1_2, color);
+            LineRenderer::GetInstance()->AddLine(p2_1, p2_2, color);
 
             // 縦の線（長さ方向）
-            DrawLine3D::GetInstance()->SetPoints(p1_1, p2_1, color);
+            LineRenderer::GetInstance()->AddLine(p1_1, p2_1, color);
 
             // 最後のセグメントの場合、先端を中心点に収束させる
             if (i == lengthSegments - 1)
             {
-                DrawLine3D::GetInstance()->SetPoints(p2_1, endPos, color);
+                LineRenderer::GetInstance()->AddLine(p2_1, endPos, color);
             }
         }
     }
 
     // 基部から中心軸への線も描画（強調用）
-    DrawLine3D::GetInstance()->SetPoints(startPos, endPos, {color.x * 1.2f, color.y * 1.2f, color.z * 1.2f, color.w});
+    LineRenderer::GetInstance()->AddLine(startPos, endPos, {color.x * 1.2f, color.y * 1.2f, color.z * 1.2f, color.w});
 }
 
 void Object3d::SetModel(const std::string &filePath)
@@ -698,6 +736,172 @@ void Object3d::SetModel(const std::string &filePath)
     }
 }
 
+bool Object3d::CanBatchInstanced() const
+{
+    if (!pModel_)
+    {
+        return false;
+    }
+    // スキニングは「スキニング結果の頂点バッファ」がモデル側の1本しかないため、
+    // 同じモデルを参照する複数オブジェクトを1回の描画にまとめると全員同じポーズになる。
+    if (pModel_->GetModelData().hasAnimations)
+    {
+        return false;
+    }
+    // マテリアルが1つも無い（＝バインドできない）ものは対象外
+    if (materials_.empty() || color_.empty())
+    {
+        return false;
+    }
+    return true;
+}
+
+bool Object3d::ShouldDrawInCurrentPass(bool lighting) const
+{
+    if (ShadowMap::GetInstance()->IsShadowPassActive())
+    {
+        return true; // 影パスは全オブジェクトが対象
+    }
+    // Draw() の振り分けと同じ: G-Buffer に載せられるのは不透明かつライティングありのものだけ。
+    DeferredRenderer *deferred = DeferredRenderer::GetInstance();
+    const bool deferredEligible = deferred->IsEnabled() && lighting && useDeferred_ &&
+                                  (blendMode_ == BlendMode::None || blendMode_ == BlendMode::Normal);
+    if (deferred->IsGBufferPassActive())
+    {
+        return deferredEligible;
+    }
+    // 前方描画フェーズ: G-Buffer で描き済みのものは描かない
+    return !deferredEligible;
+}
+
+size_t Object3d::ComputeBatchSignature(bool reflect, bool lighting) const
+{
+    size_t hash = 0;
+    auto mix = [&hash](size_t value) {
+        hash ^= value + 0x9e3779b9 + (hash << 6) + (hash >> 2);
+    };
+
+    // 頂点/インデックスバッファが同一であること＝同じモデル実体であること
+    mix(std::hash<const void *>{}(pModel_));
+    mix(static_cast<size_t>(blendMode_));
+    mix(lighting ? 1u : 0u);
+    mix(reflect ? 1u : 0u);
+    mix(useDeferred_ ? 1u : 0u);
+    // マテリアルは1本の定数バッファとテクスチャを共有するので全て一致している必要がある
+    for (const auto &material : materials_)
+    {
+        mix(material->ComputeDrawSignature());
+    }
+    // 色は「マテリアルが1つのときだけ」インスタンスごとに渡せる（頂点シェーダーの instanceColor は
+    // 個体単位でマテリアル単位ではないため）。複数マテリアルの場合は色も一致していないとまとめられない。
+    if (!UsesInstanceColor())
+    {
+        for (const auto &objColor : color_)
+        {
+            const Vector4 c = objColor.GetColor();
+            auto mixFloat = [&mix](float value) {
+                uint32_t bits = 0;
+                std::memcpy(&bits, &value, sizeof(bits));
+                mix(static_cast<size_t>(bits));
+            };
+            mixFloat(c.x);
+            mixFloat(c.y);
+            mixFloat(c.z);
+            mixFloat(c.w);
+        }
+    }
+    return hash;
+}
+
+void Object3d::BuildInstanceMatrices(const WorldTransform &worldTransform, const ViewProjection &viewProjection,
+                                     Matrix4x4 &outWVP, Matrix4x4 &outWorld,
+                                     Matrix4x4 &outWorldInverseTranspose, Matrix4x4 &outLightWVP) const
+{
+    // Update() の非アニメーション経路と同じ計算（バッチ対象はアニメーション無しに限定済み）
+    Matrix4x4 localMatrix = MakeAffineMatrix(worldTransform.scale_, worldTransform.quaternionRotation_, worldTransform.translation_);
+    Matrix4x4 worldMatrix = localMatrix;
+    if (worldTransform.pParent_)
+    {
+        worldMatrix = localMatrix * worldTransform.pParent_->matWorld_;
+    }
+
+    outWorld = worldMatrix;
+    outWVP = worldMatrix * (viewProjection.matView_ * viewProjection.matProjection_);
+    outWorldInverseTranspose = Transpose(Inverse(worldMatrix));
+    outLightWVP = worldMatrix * ShadowMap::GetInstance()->GetLightViewProjection();
+}
+
+void Object3d::DrawInstancedBatch(D3D12_GPU_VIRTUAL_ADDRESS instanceBufferAddress, uint32_t instanceCount,
+                                  const ViewProjection &viewProjection, bool reflect, bool lighting)
+{
+    if (!pModel_ || instanceCount == 0)
+    {
+        return;
+    }
+
+    DeferredRenderer *deferred = DeferredRenderer::GetInstance();
+    const bool gBufferPass = deferred->IsGBufferPassActive();
+
+    // PSO は頂点シェーダーだけがインスタンシング版のもの。ルートシグネチャは通常描画と共有なので、
+    // 以降のバインド（マテリアル・ライト・シャドウ）は Draw() とまったく同じでよい。
+    PipelineManager::GetInstance()->DrawCommonSetting(
+        gBufferPass ? PipelineType::GBufferInstanced : PipelineType::StandardInstanced,
+        gBufferPass ? BlendMode::Normal : blendMode_);
+
+    // インスタンスデータ（変換行列＋個体色）をルートSRV(t4)で直接指す
+    {
+        const ShaderRootSignature *rootSignature = PipelineManager::GetInstance()->GetCurrentRootSignature();
+        assert(rootSignature && "インスタンシング描画のルートシグネチャが未生成です");
+        pDxCommon_->GetCommandList()->SetGraphicsRootShaderResourceView(
+            rootSignature->GetSrvIndex(4, D3D12_SHADER_VISIBILITY_VERTEX), instanceBufferAddress);
+    }
+
+    if (pLightGroup_)
+    {
+        pLightGroup_->Update(viewProjection);
+        pLightGroup_->Draw();
+    }
+
+    if (UsesInstanceColor())
+    {
+        // 個体色はインスタンスバッファ側で乗算するので、マテリアル定数バッファの色は白にしておく。
+        // （こうしないとバッチ代表の色が全インスタンスに二重で掛かる）
+        // ObjColor は値の取り出ししか使われないので GPU リソースの初期化は不要。
+        if (instanceWhiteColors_.size() != color_.size())
+        {
+            instanceWhiteColors_.assign(color_.size(), ObjColor{});
+            for (auto &objColor : instanceWhiteColors_)
+            {
+                objColor.SetColor({1.0f, 1.0f, 1.0f, 1.0f});
+            }
+        }
+        pModel_->Draw(materials_, instanceWhiteColors_, lighting, reflect, instanceCount);
+    }
+    else
+    {
+        // 複数マテリアルのときは色までバッチキーに含めて一致させているので、そのまま送ってよい
+        // （インスタンス側の色は白）。
+        pModel_->Draw(materials_, color_, lighting, reflect, instanceCount);
+    }
+}
+
+void Object3d::DrawShadowInstancedBatch(D3D12_GPU_VIRTUAL_ADDRESS instanceBufferAddress, uint32_t instanceCount)
+{
+    if (!pModel_ || instanceCount == 0)
+    {
+        return;
+    }
+    PipelineManager::GetInstance()->DrawCommonSetting(PipelineType::ShadowMapInstanced);
+    // シャドウ用ルートシグネチャの t0 = インスタンスデータ SRV。
+    // 番号はリフレクション由来なのでレジスタ番号で引く
+    const ShaderRootSignature *shadowRootSignature =
+        PipelineManager::GetInstance()->GetReflectedRootSignature(PipelineType::ShadowMap);
+    assert(shadowRootSignature && "シャドウマップのルートシグネチャが未生成です");
+    pDxCommon_->GetCommandList()->SetGraphicsRootShaderResourceView(shadowRootSignature->GetSrvIndex(0),
+                                                                   instanceBufferAddress);
+    pModel_->DrawShadow(instanceCount);
+}
+
 void Object3d::DrawShadow(const WorldTransform &worldTransform)
 {
     if (!pModel_)
@@ -714,7 +918,7 @@ void Object3d::DrawShadow(const WorldTransform &worldTransform)
         skinnedThisFrame_ = true;
     }
 
-    Matrix4x4 localMatrix = MakeAffineMatrix(worldTransform.scale_, worldTransform.quateRotation_, worldTransform.translation_);
+    Matrix4x4 localMatrix = MakeAffineMatrix(worldTransform.scale_, worldTransform.quaternionRotation_, worldTransform.translation_);
     Matrix4x4 worldMatrix = localMatrix;
     if (worldTransform.pParent_)
     {
@@ -735,7 +939,12 @@ void Object3d::DrawShadow(const WorldTransform &worldTransform)
     }
 
     PipelineManager::GetInstance()->DrawCommonSetting(PipelineType::ShadowMap);
-    pDxCommon_->GetCommandList()->SetGraphicsRootConstantBufferView(0, transformationMatrixResource_->GetGPUVirtualAddress());
+    {
+        const ShaderRootSignature *rootSignature = PipelineManager::GetInstance()->GetCurrentRootSignature();
+        assert(rootSignature && "シャドウマップのルートシグネチャが未生成です");
+        pDxCommon_->GetCommandList()->SetGraphicsRootConstantBufferView(
+            rootSignature->GetCbvIndex(0), transformationMatrixResource_->GetGPUVirtualAddress());
+    }
 
     if (pModel_)
     {

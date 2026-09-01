@@ -33,10 +33,10 @@ Quaternion LerpE(const Quaternion &start, const Quaternion &end, float t)
 
 Vector3 SLerp(const Vector3 &start, const Vector3 &end, float t)
 {
-    Vector3 Nstart = (start).Normalize();
-    Vector3 Nend = (end).Normalize();
+    Vector3 normalizedStart = (start).Normalize();
+    Vector3 normalizedEnd = (end).Normalize();
     // 内積を求める
-    float dot = (Nstart).Dot(Nend);
+    float dot = (normalizedStart).Dot(normalizedEnd);
     // 誤差により1.0fを超えるのを防ぐ
     if (dot > 1.0f)
     {
@@ -50,17 +50,17 @@ Vector3 SLerp(const Vector3 &start, const Vector3 &end, float t)
     float sinThetaFrom = std::sin((1 - t) * theta);
     // サインθtを求める
     float sinThetaTo = std::sin(t * theta);
-    Vector3 NormalizeVector;
+    Vector3 normalizedVector;
     if (sinTheta < 1.0e-5)
     {
-        NormalizeVector = Nstart;
+        normalizedVector = normalizedStart;
     }
     else
     {
         // 球面線形補間したベクトル(単位ベクトル)
-        NormalizeVector.x = (sinThetaFrom * Nstart.x + sinThetaTo * Nend.x) / sinTheta;
-        NormalizeVector.y = (sinThetaFrom * Nstart.y + sinThetaTo * Nend.y) / sinTheta;
-        NormalizeVector.z = (sinThetaFrom * Nstart.z + sinThetaTo * Nend.z) / sinTheta;
+        normalizedVector.x = (sinThetaFrom * normalizedStart.x + sinThetaTo * normalizedEnd.x) / sinTheta;
+        normalizedVector.y = (sinThetaFrom * normalizedStart.y + sinThetaTo * normalizedEnd.y) / sinTheta;
+        normalizedVector.z = (sinThetaFrom * normalizedStart.z + sinThetaTo * normalizedEnd.z) / sinTheta;
     }
     // ベクトルの長さはstartとendの長さを線形補間
     float length1 = (start).Length();
@@ -68,7 +68,7 @@ Vector3 SLerp(const Vector3 &start, const Vector3 &end, float t)
     // LerpEで補間ベクトルの長さを求める
     float length = LerpE(length1, length2, t);
     // 長さを反映
-    return NormalizeVector * length;
+    return normalizedVector * length;
 }
 
 float EaseInElasticAmplitude(float t, const float &totaltime, const float &amplitude, const float &period)

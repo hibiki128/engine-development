@@ -14,9 +14,9 @@
 
 namespace Hagine {
 
-void AnimationController::Initialize(Object3d *object)
+void AnimationController::Initialize(Object3d *pObject)
 {
-    pObject_ = object;
+    pObject_ = pObject;
     clips_.clear();
     index_.clear();
     currentClipName_.clear();
@@ -211,8 +211,8 @@ Animator *AnimationController::GetAnimator() const
 
 bool AnimationController::IsFinished() const
 {
-    Animator *animator = GetAnimator();
-    return animator ? animator->IsFinish() : false;
+    Animator *pAnimator = GetAnimator();
+    return pAnimator ? pAnimator->IsFinish() : false;
 }
 
 bool AnimationController::IsBlending() const
@@ -222,32 +222,32 @@ bool AnimationController::IsBlending() const
 
 float AnimationController::GetAnimationTime() const
 {
-    Animator *animator = GetAnimator();
-    return animator ? animator->GetAnimationTime() : 0.0f;
+    Animator *pAnimator = GetAnimator();
+    return pAnimator ? pAnimator->GetAnimationTime() : 0.0f;
 }
 
 float AnimationController::GetDuration() const
 {
-    Animator *animator = GetAnimator();
-    return animator ? animator->GetMutableAnimation().duration : 0.0f;
+    Animator *pAnimator = GetAnimator();
+    return pAnimator ? pAnimator->GetMutableAnimation().duration : 0.0f;
 }
 
 void AnimationController::SetPaused(bool paused)
 {
     paused_ = paused;
-    Animator *animator = GetAnimator();
-    if (animator)
+    Animator *pAnimator = GetAnimator();
+    if (pAnimator)
     {
-        animator->SetIsAnimation(!paused);
+        pAnimator->SetIsAnimation(!paused);
     }
 }
 
 void AnimationController::SetTime(float time)
 {
-    Animator *animator = GetAnimator();
-    if (animator)
+    Animator *pAnimator = GetAnimator();
+    if (pAnimator)
     {
-        animator->SetAnimationTime(time);
+        pAnimator->SetAnimationTime(time);
     }
 }
 
@@ -262,6 +262,11 @@ void AnimationController::SetGlobalSpeed(float speed)
 
 void AnimationController::SaveClips(const std::string &folder, const std::string &file)
 {
+    // 最後に使った保存先を覚えておき、エディタの保存/読込ボタンから同じ場所を使えるようにする
+    // （エンジンがゲーム固有のファイル名を決め打ちしないため）
+    clipsFolder_ = folder;
+    clipsFile_ = file;
+
     DataHandler data(folder, file);
     data.Save("count", static_cast<int>(clips_.size()));
     data.Save("globalSpeed", globalSpeed_);
@@ -281,6 +286,11 @@ void AnimationController::SaveClips(const std::string &folder, const std::string
 
 void AnimationController::LoadClips(const std::string &folder, const std::string &file)
 {
+    // 読み込み元をそのまま保存先として覚える（エディタの保存ボタンが同じ場所へ書けるように）。
+    // ファイルが無い場合でも覚えておく（新規作成してそのまま保存できる）。
+    clipsFolder_ = folder;
+    clipsFile_ = file;
+
     DataHandler data(folder, file);
     if (!data.Exists())
     {
@@ -332,13 +342,18 @@ void AnimationController::DrawImGui()
 
     ImGui::Spacing();
     SectionHeader("[ クリップ設定 セーブ / ロード ]", DebugTheme::kAccentPurple);
+    // 保存先はゲーム側が LoadClips / SaveClips で指定したものを使う。
+    // エンジンがファイル名を決め打ちすると、複数のキャラクターが同じファイルを
+    // 奪い合うことになる（以前は全員が "PlayerClips" を読み書きしていた）。
+    ImGui::TextDisabled("保存先: %s / %s", clipsFolder_.c_str(), clipsFile_.c_str());
+
     float bw = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
     ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.20f, 0.42f, 0.58f, 0.85f));
     ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.26f, 0.52f, 0.70f, 0.95f));
     if (ImGui::Button("保存", ImVec2(bw, 0)))
     {
-        SaveClips("AnimationController", "PlayerClips");
-        ImGuiNotification::Post("クリップ設定を保存しました", {0.45f, 0.68f, 0.52f, 1.0f});
+        SaveClips(clipsFolder_, clipsFile_);
+        ImGuiNotification::Post("クリップ設定を保存しました: " + clipsFile_, {0.45f, 0.68f, 0.52f, 1.0f});
     }
     ImGui::PopStyleColor(2);
     ImGui::SameLine();
@@ -346,8 +361,8 @@ void AnimationController::DrawImGui()
     ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.26f, 0.60f, 0.50f, 0.95f));
     if (ImGui::Button("読込", ImVec2(bw, 0)))
     {
-        LoadClips("AnimationController", "PlayerClips");
-        ImGuiNotification::Post("クリップ設定を読み込みました", {0.42f, 0.66f, 0.68f, 1.0f});
+        LoadClips(clipsFolder_, clipsFile_);
+        ImGuiNotification::Post("クリップ設定を読み込みました: " + clipsFile_, {0.42f, 0.66f, 0.68f, 1.0f});
     }
     ImGui::PopStyleColor(2);
 #endif // USE_IMGUI
@@ -494,8 +509,8 @@ void AnimationController::DrawKeyframeImGui()
         return;
     }
 
-    Animator *animator = GetAnimator();
-    if (!animator)
+    Animator *pAnimator = GetAnimator();
+    if (!pAnimator)
     {
         ImGui::TextDisabled("アニメーターがありません");
         return;
@@ -503,7 +518,7 @@ void AnimationController::DrawKeyframeImGui()
 
     ImGui::TextDisabled("編集は現在再生中クリップに即時反映されます（クリップ切替で元に戻ります）");
 
-    Animation &animation = animator->GetMutableAnimation();
+    Animation &animation = pAnimator->GetMutableAnimation();
     if (animation.nodeAnimations.empty())
     {
         ImGui::TextDisabled("ノードアニメーションがありません");

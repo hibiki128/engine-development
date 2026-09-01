@@ -1,6 +1,6 @@
 #define NOMINMAX
 #include "Input.h"
-#include <line/DrawLine3D.h>
+#include <line/LineRenderer.h>
 #include <assert.h>
 
 #pragma comment(lib, "dinput8.lib")
@@ -349,6 +349,92 @@ Ray Input::CreateRayFromMouse(const Vector2 &mousePos, const ViewProjection &vie
     ray.length = rayLength;
 
     return ray;
+}
+
+// ---- OBB 衝突判定（行列直接指定版）------------------------------------
+// レイをオブジェクトのローカル空間へ移してからスラブ法で判定する。
+// ワールド軸に平行な箱を作り直さないので、回転した対象でも形どおりに当たる。
+bool Input::RayIntersectOBBByMatrix(const Ray &ray, const Matrix4x4 &worldMatrix, RayHitInfo &hitInfo, const AABB &localBounds)
+{
+    hitInfo.hit = false;
+
+    const Matrix4x4 invWorldMatrix = Inverse(worldMatrix);
+
+    // レイの始点と終点をローカル空間へ移す。
+    // 方向ベクトルは正規化せず「始点→終点」をそのまま使うことで、
+    // スラブ法のパラメータ t がそのまま 0〜1（＝ワールドでの 0〜ray.length）に対応する。
+    const Vector3 worldEnd = ray.origin + ray.direction * ray.length;
+    const Vector3 localOrigin = Transformation(ray.origin, invWorldMatrix);
+    const Vector3 localEnd = Transformation(worldEnd, invWorldMatrix);
+    const Vector3 localDirection = localEnd - localOrigin;
+
+    float tMin = 0.0f;
+    float tMax = 1.0f;
+    for (int axis = 0; axis < 3; ++axis)
+    {
+        const float direction = (&localDirection.x)[axis];
+        const float origin = (&localOrigin.x)[axis];
+        const float slabMin = (&localBounds.min.x)[axis];
+        const float slabMax = (&localBounds.max.x)[axis];
+
+        if (std::abs(direction) < 1e-8f)
+        {
+            // この軸に対して平行。スラブの外にいるなら交差しない。
+            if (origin < slabMin || origin > slabMax)
+            {
+                return false;
+            }
+            continue;
+        }
+
+        float t1 = (slabMin - origin) / direction;
+        float t2 = (slabMax - origin) / direction;
+        if (t1 > t2)
+        {
+            std::swap(t1, t2);
+        }
+        tMin = std::max(tMin, t1);
+        tMax = std::min(tMax, t2);
+        if (tMin > tMax)
+        {
+            return false;
+        }
+    }
+
+    // ローカルでの交点をワールドへ戻す
+    const Vector3 localHitPoint = localOrigin + localDirection * tMin;
+    hitInfo.hitPoint = Transformation(localHitPoint, worldMatrix);
+    hitInfo.distance = (hitInfo.hitPoint - ray.origin).Length();
+
+    // 交点がどの面に一番近いかで法線を決める（ローカルで判定してからワールドへ）
+    const Vector3 boxCenter = (localBounds.min + localBounds.max) * 0.5f;
+    const Vector3 boxExtent = (localBounds.max - localBounds.min) * 0.5f;
+    const Vector3 toHit = localHitPoint - boxCenter;
+
+    int faceAxis = 0;
+    float maxRatio = -1.0f;
+    for (int axis = 0; axis < 3; ++axis)
+    {
+        const float extent = (&boxExtent.x)[axis];
+        if (extent <= 1e-8f)
+        {
+            continue;
+        }
+        const float ratio = std::abs((&toHit.x)[axis] / extent);
+        if (ratio > maxRatio)
+        {
+            maxRatio = ratio;
+            faceAxis = axis;
+        }
+    }
+    Vector3 localNormal = {0.0f, 0.0f, 0.0f};
+    (&localNormal.x)[faceAxis] = ((&toHit.x)[faceAxis] > 0.0f) ? 1.0f : -1.0f;
+
+    // 法線は逆行列の転置で変換する（非一様スケールでも面に垂直なまま保つため）
+    hitInfo.hitNormal = TransformNormal(localNormal, Transpose(invWorldMatrix)).Normalize();
+
+    hitInfo.hit = true;
+    return true;
 }
 
 // ---- AABB 衝突判定（行列直接指定版）------------------------------------

@@ -27,6 +27,7 @@ VertexShaderOutput main(VertexShaderInput input)
     output.texcoord      = input.texcoord;
     output.normal        = normalize(mul(input.normal, (float3x3) gTransformationMatrix.WorldInverseTranspose));
     output.shadowCoord   = mul(input.position, gTransformationMatrix.LightWVP);
+    output.instanceColor = float4(1.0f, 1.0f, 1.0f, 1.0f); // スキニングはインスタンシング対象外
 
     return output;
 }

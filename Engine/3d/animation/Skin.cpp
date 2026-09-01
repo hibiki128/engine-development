@@ -54,19 +54,19 @@ void Skin::UpdateInputVertices(const ModelData &modelData)
     inputVerticesUploaded_ = true;
 }
 
-void Skin::ExecuteSkinning(ID3D12GraphicsCommandList *commandList)
+void Skin::ExecuteSkinning(ID3D12GraphicsCommandList *pCommandList)
 {
     // ComputeShaderで使用するリソース（パレット、頂点、ウェイト等）をバインド
-    commandList->SetComputeRootDescriptorTable(0, skinCluster_.paletteSrvHandle.second);
-    commandList->SetComputeRootDescriptorTable(1, skinCluster_.inputVertexSrvHandle.second);
-    commandList->SetComputeRootDescriptorTable(2, skinCluster_.influenceSrvHandle.second);
-    commandList->SetComputeRootDescriptorTable(3, skinCluster_.outputVertexSrvHandle.second);
-    commandList->SetComputeRootConstantBufferView(4,
+    pCommandList->SetComputeRootDescriptorTable(0, skinCluster_.paletteSrvHandle.second);
+    pCommandList->SetComputeRootDescriptorTable(1, skinCluster_.inputVertexSrvHandle.second);
+    pCommandList->SetComputeRootDescriptorTable(2, skinCluster_.influenceSrvHandle.second);
+    pCommandList->SetComputeRootDescriptorTable(3, skinCluster_.outputVertexSrvHandle.second);
+    pCommandList->SetComputeRootConstantBufferView(4,
                                                   skinCluster_.skinningInformationResource->GetGPUVirtualAddress());
 
     // 頂点数に応じてスレッドグループ数を計算し、スキニング計算シェーダーを実行
     uint32_t numGroups = (static_cast<uint32_t>(totalVertexCount_) + 1023) / 1024;
-    commandList->Dispatch(numGroups, 1, 1);
+    pCommandList->Dispatch(numGroups, 1, 1);
 }
 
 SkinCluster Skin::CreateSkinCluster(const Skeleton &skeleton, const ModelData &modelData)

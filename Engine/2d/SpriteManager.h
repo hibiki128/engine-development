@@ -6,10 +6,10 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
-#ifdef _DEBUG
+#ifdef USE_IMGUI
 #include <edit/undo/ImGuiUndoTracker.h>
 #include <nlohmann/json.hpp>
-#endif // _DEBUG
+#endif // USE_IMGUI
 
 /// <summary>
 /// インスタンス単位でのSRTデータ構造体
@@ -180,7 +180,7 @@ class SpriteManager
     void LoadAllSprites();
     void Clear();
 
-#ifdef _DEBUG
+#ifdef USE_IMGUI
     /// <summary>
     /// Undo用: 全所有スプライトの編集可能状態をJSON化する
     /// （トップレベル = スプライト名 → 状態、"__order" = 描画順）
@@ -194,7 +194,7 @@ class SpriteManager
     /// </summary>
     /// <param name="state">適用する状態JSON</param>
     void RestoreUndoState(const nlohmann::json &state);
-#endif // _DEBUG
+#endif // USE_IMGUI
 
   private:
     /// ===================================================
@@ -209,14 +209,14 @@ class SpriteManager
     SpriteData *FindSpriteByName(const std::string &name);
     int FindSpriteIndex(const std::string &name);
     void UpdateSpriteInstances(SpriteData *spriteData);
-#ifdef _DEBUG
+#ifdef USE_IMGUI
     /// <summary>
     /// 指定インスタンスの translation をギズモの操作対象として登録し直す。
     /// instanceData の再確保（追加・削除・Undo復元）でポインタが無効になるため、
     /// ギズモ登録は必ずこの関数を経由し gizmoBound_ で現在の登録先を追跡する。
     /// </summary>
     void SyncGizmoTarget(SpriteData *spriteData, int instanceIndex);
-#endif // _DEBUG
+#endif // USE_IMGUI
 
   private:
     /// ===================================================
@@ -227,7 +227,7 @@ class SpriteManager
     bool showSpriteCreationModal_ = false;             // 作成モーダル表示フラグ
     std::string texturePath_ = "";                     // テクスチャパス
     std::string saveFolder_ = "Sprite";                // 保存先フォルダ
-#ifdef _DEBUG
+#ifdef USE_IMGUI
     ImGuiUndoTracker undoTracker_;                           // スプライトマネージャUIのUndoトラッカー
     std::unordered_map<std::string, Vector3 *> gizmoBound_; // ギズモに登録中の平行移動ポインタ（スプライト名 → instanceData 内アドレス）
 #endif                                                       // _DEBUG

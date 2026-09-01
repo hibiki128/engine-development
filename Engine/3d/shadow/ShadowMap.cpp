@@ -6,7 +6,7 @@
 #include "light/LightGroup.h"
 #include <cmath>
 #include <MyMath.h>
-#ifdef _DEBUG
+#ifdef USE_IMGUI
 #include "imgui.h"
 #include "utility/debug/imgui/DebugUIHelper.h"
 #endif
@@ -82,7 +82,7 @@ void ShadowMap::Finalize()
     }
     if (srvIndex_ != UINT32_MAX)
     {
-        pSrvManager_->Free(srvIndex_);
+        pSrvManager_->Free(srvIndex_ - 1); // +1 規約なので予約番号へ戻してから解放する
         srvIndex_ = UINT32_MAX;
     }
     depthResource_.Reset();
@@ -92,7 +92,9 @@ void ShadowMap::Finalize()
 
 void ShadowMap::CreateShadowSRV()
 {
-    srvIndex_ = pSrvManager_->Allocate();
+    // エンジン共通の +1 規約（予約 r → 実書き込みは r+1）に従う。
+    // 付けないと直前に +1 で確保したリソースのディスクリプタを上書きしてしまう
+    srvIndex_ = pSrvManager_->Allocate() + 1;
 
     D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc{};
     srvDesc.Format = DXGI_FORMAT_R32_FLOAT;
@@ -107,7 +109,7 @@ void ShadowMap::CreateShadowSRV()
 
 void ShadowMap::BeginShadowPass()
 {
-    auto *cmdList = pDxCommon_->GetCommandList().Get();
+    auto *pCommandList = pDxCommon_->GetCommandList().Get();
 
     if (currentState_ != D3D12_RESOURCE_STATE_DEPTH_WRITE)
     {
@@ -117,25 +119,25 @@ void ShadowMap::BeginShadowPass()
         barrier.Transition.StateBefore = currentState_;
         barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_DEPTH_WRITE;
         barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
-        cmdList->ResourceBarrier(1, &barrier);
+        pCommandList->ResourceBarrier(1, &barrier);
     }
     currentState_ = D3D12_RESOURCE_STATE_DEPTH_WRITE;
 
     // レンダーターゲットなし + シャドウ DSV
-    cmdList->OMSetRenderTargets(0, nullptr, false, &dsvHandle_);
-    cmdList->ClearDepthStencilView(dsvHandle_, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
+    pCommandList->OMSetRenderTargets(0, nullptr, false, &dsvHandle_);
+    pCommandList->ClearDepthStencilView(dsvHandle_, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
 
     // ビューポート・シザーRect
     D3D12_VIEWPORT vp{};
     vp.Width = static_cast<float>(kShadowMapSize);
     vp.Height = static_cast<float>(kShadowMapSize);
     vp.MaxDepth = 1.0f;
-    cmdList->RSSetViewports(1, &vp);
+    pCommandList->RSSetViewports(1, &vp);
 
     D3D12_RECT sc{};
     sc.right = kShadowMapSize;
     sc.bottom = kShadowMapSize;
-    cmdList->RSSetScissorRects(1, &sc);
+    pCommandList->RSSetScissorRects(1, &sc);
 }
 
 void ShadowMap::EndShadowPass()
@@ -230,7 +232,7 @@ D3D12_GPU_VIRTUAL_ADDRESS ShadowMap::GetShadowDataGpuAddress() const
 
 void ShadowMap::UpdateImGui(bool *open)
 {
-#ifdef _DEBUG
+#ifdef USE_IMGUI
     // ラベル列を作って次の列に全幅ウィジェットを置く準備をする
     auto label = [](const char *text) {
         ImGui::TableNextRow();

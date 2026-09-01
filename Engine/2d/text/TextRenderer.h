@@ -94,6 +94,42 @@ class TextRenderer
 
   private:
     /// <summary>
+    /// フォントアトラスから文字列をサンプリングしてRGBA(8bit×4)のピクセル列を生成する。
+    /// RGBは白固定・Aがグリフのカバレッジで、アウトライン有効時は外周に色を合成する。
+    /// ファイル保存はせずメモリ上のバッファを返す（保存版・プレビュー版で共用する）。
+    /// フォントが無効な場合は空のvectorを返す。
+    /// </summary>
+    std::vector<uint8_t> BuildTextRGBA(
+        const std::string &text,
+        const std::string &fontKey,
+        bool outlineEnabled,
+        float outlineThickness,
+        Vector4 outlineColor,
+        int &outWidth,
+        int &outHeight);
+
+    /// <summary>
+    /// 各文字を固定セルサイズで横並びに配置したアトラスのRGBAピクセル列を生成する。
+    /// ファイル保存はせずメモリ上のバッファを返す（保存版・プレビュー版で共用する）。
+    /// </summary>
+    std::vector<uint8_t> BuildCharacterAtlasRGBA(
+        const std::vector<uint32_t> &codepoints,
+        const std::string &fontKey,
+        int cellWidth,
+        int cellHeight,
+        bool outlineEnabled,
+        float outlineThickness,
+        Vector4 outlineColor,
+        int &outWidth,
+        int &outHeight);
+
+    /// <summary>
+    /// テキスト作成UIにプレビュー画像を表示する。入力が変わったときだけ動的テクスチャを更新する。
+    /// mode 0: テキストスプライト / mode 1: アトラススプライト。
+    /// </summary>
+    void DrawPreview(int mode, const std::string &fontKey);
+
+    /// <summary>
     /// フォントアトラスから文字列をサンプリングしてRGBAテクスチャを生成し、
     /// PNGファイルとして保存してTextureManagerにロードする。
     /// アウトライン設定が有効な場合はグリフの外周にアウトラインを描画する。
@@ -140,6 +176,18 @@ class TextRenderer
     bool imguiOutlineEnabled_ = false;
     float imguiOutlineThickness_ = 2.0f;
     float imguiOutlineColor_[4] = {0.0f, 0.0f, 0.0f, 1.0f};
+
+    // ------------------------------------------------------------------
+    // プレビュー用キャッシュ（入力が変わったときだけ動的テクスチャを更新する）
+    // ------------------------------------------------------------------
+    std::string textPreviewSig_;                          // 直近に生成したテキストプレビューの入力シグネチャ
+    D3D12_GPU_DESCRIPTOR_HANDLE textPreviewHandle_ = {};  // テキストプレビューのGPUハンドル
+    int textPreviewWidth_ = 0;                            // テキストプレビュー画像の幅
+    int textPreviewHeight_ = 0;                           // テキストプレビュー画像の高さ
+    std::string atlasPreviewSig_;                         // 直近に生成したアトラスプレビューの入力シグネチャ
+    D3D12_GPU_DESCRIPTOR_HANDLE atlasPreviewHandle_ = {}; // アトラスプレビューのGPUハンドル
+    int atlasPreviewWidth_ = 0;                           // アトラスプレビュー画像の幅
+    int atlasPreviewHeight_ = 0;                          // アトラスプレビュー画像の高さ
 
     // ImGui入力バッファ（アトラススプライト用）
     char imguiAtlasSpriteName_[128] = {};

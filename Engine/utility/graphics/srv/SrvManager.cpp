@@ -26,9 +26,9 @@ void SrvManager::Initialize()
 
 void SrvManager::SetDescriptorHeap()
 {
-    ID3D12GraphicsCommandList *commandList = pDxCommon_->GetCommandList().Get();
+    ID3D12GraphicsCommandList *pCommandList = pDxCommon_->GetCommandList().Get();
     ID3D12DescriptorHeap *descriptorHeaps[] = {descriptorHeap_.Get()};
-    commandList->SetDescriptorHeaps(_countof(descriptorHeaps), descriptorHeaps);
+    pCommandList->SetDescriptorHeaps(_countof(descriptorHeaps), descriptorHeaps);
 }
 
 void SrvManager::CreateSRVforTexture2D(uint32_t srvIndex, ID3D12Resource *pResource, DirectX::TexMetadata metaData, UINT MipLevels)
@@ -85,11 +85,13 @@ void SrvManager::SetGraphicsRootDescriptorTable(UINT RootParameterIndex, uint32_
     pDxCommon_->GetCommandList()->SetGraphicsRootDescriptorTable(RootParameterIndex, GetGPUDescriptorHandle(srvIndex));
 }
 
-void SrvManager::CreateSRVforRenderTexture(uint32_t srvIndex, ID3D12Resource *pResource)
+void SrvManager::CreateSRVforRenderTexture(uint32_t srvIndex, ID3D12Resource *pResource, DXGI_FORMAT format)
 {
     // SRVの設定。FormatはResourceと同じにしておく
+    // （指定が無ければリソース自身のフォーマットを使う。G-Bufferのように
+    //   R8G8B8A8_UNORM_SRGB 以外のRTを渡された場合に不一致でエラーになるのを防ぐ）
     D3D12_SHADER_RESOURCE_VIEW_DESC renderTextureSrvDesc{};
-    renderTextureSrvDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
+    renderTextureSrvDesc.Format = (format != DXGI_FORMAT_UNKNOWN) ? format : pResource->GetDesc().Format;
     renderTextureSrvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
     renderTextureSrvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
     renderTextureSrvDesc.Texture2D.MipLevels = 1;
@@ -120,6 +122,17 @@ void SrvManager::CreateUAVStructuredBuffer(uint32_t srvIndex, ID3D12Resource *pR
     uavDesc.Buffer.CounterOffsetInBytes = 0;
     uavDesc.Buffer.Flags = D3D12_BUFFER_UAV_FLAG_NONE;
     uavDesc.Buffer.StructureByteStride = structureByteStride;
+
+    pDxCommon_->GetDevice()->CreateUnorderedAccessView(pResource, nullptr, &uavDesc, GetCPUDescriptorHandle(srvIndex));
+}
+
+void SrvManager::CreateUAVforTexture2D(uint32_t srvIndex, ID3D12Resource *pResource, DXGI_FORMAT format)
+{
+    D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc{};
+    uavDesc.Format = format;
+    uavDesc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
+    uavDesc.Texture2D.MipSlice = 0;
+    uavDesc.Texture2D.PlaneSlice = 0;
 
     pDxCommon_->GetDevice()->CreateUnorderedAccessView(pResource, nullptr, &uavDesc, GetCPUDescriptorHandle(srvIndex));
 }

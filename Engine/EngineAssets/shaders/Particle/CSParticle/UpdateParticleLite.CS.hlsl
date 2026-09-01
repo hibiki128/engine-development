@@ -42,6 +42,10 @@ RWStructuredBuffer<uint> gAliveList    : register(u9);
 RWStructuredBuffer<uint> gAliveCounter : register(u10);
 // 描画コンパクション（u11）
 RWStructuredBuffer<PDrawCore> gRenderCompact : register(u11);
+// GPU駆動カリング（u12）: 描画リストは生存リストと別カウンタ・別順序になる。
+//   ※ 軽量版は回転を持たないグループ専用なので、回転用の gRenderSlot(u13) は書かない
+//     （描画VS も enableRotation=0 で参照しない）。
+RWStructuredBuffer<uint> gVisibleCounter : register(u12); // 描画リスト長(=instanceCount)
 // 生存リスト間接ディスパッチ: 前フレームの out リスト = 今フレームの in（処理対象）。
 //   軽量版はトレイルを持たないため append は survivor のみ（下のグループ集約コンパクション）。
 StructuredBuffer<uint> gAliveListIn    : register(t2); // in: 処理対象 slot index 列
@@ -52,6 +56,8 @@ StructuredBuffer<uint> gAliveCounterIn : register(t3); // in: リスト長
 //   単一アドレスへの atomic 殺到（35M で約110万回/フレーム）を 1/(グループ内ワープ数) に削減する。
 groupshared uint sGroupAliveCount; // グループ内の生存数（LDS で集計）
 groupshared uint sGroupBase;       // gAliveCounter から取得したグループのグローバル基点
+groupshared uint sGroupVisCount;   // グループ内の可視数（視錐台カリング後）
+groupshared uint sGroupVisBase;    // gVisibleCounter から取得したグループのグローバル基点
 
 // スレッドグループ=256（フル版1024と異なる）。
 //   Ampere(GA106/RTX3060)は1SM常駐1536スレッド上限のため、1024ブロックだと
@@ -238,8 +244,20 @@ void main(uint3 DTid : SV_DispatchThreadID, uint groupIndex : SV_GroupIndex)
     //     1) 各ワープが自ワープの生存数を LDS カウンタ sGroupAliveCount へ1回だけ加算（ワープ集約）
     //     2) グループ先頭スレッドが1回だけ gAliveCounter[0] へ加算し基点を取得
     //     3) 各生存レーンは base + ワープ内基点 + レーン内オフセット へ詰めて書き出す
+    //   描画リスト（視錐台カリング後）も同じ集約を並走させる。生存リストとは別カウンタなので、
+    //   カリングされた粒子も sim からは外れない（画面外で時間が止まらない）。
+    bool visible = alive &&
+                   ((gSettings.enableFrustumCull == 0) ||
+                    IsSphereInFrustum(gSettings.frustumPlanes, odc.translate,
+                                      ParticleCullRadius(UnpackScale3(odc.scaleXY, odc.scaleZ), odc.velocity,
+                                                         gSettings.frustumRadiusScale,
+                                                         gSettings.frustumStretchFactor)));
+
     if (groupIndex == 0)
+    {
         sGroupAliveCount = 0;
+        sGroupVisCount = 0;
+    }
     GroupMemoryBarrierWithGroupSync();
 
     uint aliveInWave = WaveActiveCountBits(alive);
@@ -248,6 +266,13 @@ void main(uint3 DTid : SV_DispatchThreadID, uint groupIndex : SV_GroupIndex)
     if (WaveIsFirstLane() && aliveInWave > 0)
         InterlockedAdd(sGroupAliveCount, aliveInWave, warpBase); // LDS atomic（ワープに1回）
     warpBase = WaveReadLaneFirst(warpBase);
+
+    uint visInWave = WaveActiveCountBits(visible);
+    uint visLaneOffset = WavePrefixCountBits(visible);
+    uint visWarpBase = 0;
+    if (WaveIsFirstLane() && visInWave > 0)
+        InterlockedAdd(sGroupVisCount, visInWave, visWarpBase);
+    visWarpBase = WaveReadLaneFirst(visWarpBase);
     GroupMemoryBarrierWithGroupSync();
 
     if (groupIndex == 0)
@@ -256,13 +281,20 @@ void main(uint3 DTid : SV_DispatchThreadID, uint groupIndex : SV_GroupIndex)
         if (sGroupAliveCount > 0)
             InterlockedAdd(gAliveCounter[0], sGroupAliveCount, base); // グローバルは「グループに1回」
         sGroupBase = base;
+
+        uint visBase = 0;
+        if (sGroupVisCount > 0)
+            InterlockedAdd(gVisibleCounter[0], sGroupVisCount, visBase);
+        sGroupVisBase = visBase;
     }
     GroupMemoryBarrierWithGroupSync();
 
     if (alive)
     {
-        uint dst = sGroupBase + warpBase + laneOffset;
-        gAliveList[dst] = (uint) particleIndex;
-        gRenderCompact[dst] = odc;
+        gAliveList[sGroupBase + warpBase + laneOffset] = (uint) particleIndex;
+    }
+    if (visible)
+    {
+        gRenderCompact[sGroupVisBase + visWarpBase + visLaneOffset] = odc;
     }
 }

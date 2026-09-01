@@ -6,10 +6,10 @@
 
 namespace Hagine {
 
-void ResourceFactory::Initialize(DXDevice *device)
+void ResourceFactory::Initialize(DXDevice *pDevice)
 {
-    assert(device);
-    pDevice_ = device;
+    assert(pDevice);
+    pDevice_ = pDevice;
 }
 
 void ResourceFactory::Finalize()
@@ -101,7 +101,7 @@ Microsoft::WRL::ComPtr<ID3D12Resource> ResourceFactory::CreateTextureResource(co
     return resource;
 }
 
-Microsoft::WRL::ComPtr<ID3D12Resource> ResourceFactory::CreateRenderTextureResource(uint32_t width, uint32_t height, DXGI_FORMAT format, D3D12_CLEAR_VALUE color)
+Microsoft::WRL::ComPtr<ID3D12Resource> ResourceFactory::CreateRenderTextureResource(uint32_t width, uint32_t height, DXGI_FORMAT format, D3D12_CLEAR_VALUE color, bool allowUAV)
 {
     D3D12_RESOURCE_DESC resourceDesc{};
     resourceDesc.Width = width;
@@ -113,6 +113,12 @@ Microsoft::WRL::ComPtr<ID3D12Resource> ResourceFactory::CreateRenderTextureResou
     resourceDesc.SampleDesc.Quality = 0;
     resourceDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
     resourceDesc.Flags = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;
+    // コンピュートシェーダーから書き込む場合は UAV を許可する。
+    // ※ sRGB フォーマットには UAV を作れないので、呼び出し側は非sRGBを指定すること。
+    if (allowUAV)
+    {
+        resourceDesc.Flags |= D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
+    }
     resourceDesc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
 
     D3D12_HEAP_PROPERTIES heapProperties{};
@@ -165,13 +171,13 @@ Microsoft::WRL::ComPtr<ID3D12Resource> ResourceFactory::CreateDepthStencilTextur
     return resource;
 }
 
-Microsoft::WRL::ComPtr<ID3D12Resource> ResourceFactory::UploadTextureData(Microsoft::WRL::ComPtr<ID3D12Resource> texture, const DirectX::ScratchImage &mipImages, ID3D12GraphicsCommandList *commandList)
+Microsoft::WRL::ComPtr<ID3D12Resource> ResourceFactory::UploadTextureData(Microsoft::WRL::ComPtr<ID3D12Resource> texture, const DirectX::ScratchImage &mipImages, ID3D12GraphicsCommandList *pCommandList)
 {
     std::vector<D3D12_SUBRESOURCE_DATA> subresources;
     DirectX::PrepareUpload(pDevice_->Get(), mipImages.GetImages(), mipImages.GetImageCount(), mipImages.GetMetadata(), subresources);
     uint64_t intermediateSize = GetRequiredIntermediateSize(texture.Get(), 0, UINT(subresources.size()));
     Microsoft::WRL::ComPtr<ID3D12Resource> intermediateResource = CreateBufferResource(intermediateSize);
-    UpdateSubresources(commandList, texture.Get(), intermediateResource.Get(), 0, 0, UINT(subresources.size()), subresources.data());
+    UpdateSubresources(pCommandList, texture.Get(), intermediateResource.Get(), 0, 0, UINT(subresources.size()), subresources.data());
     // Textureへの転送後は利用できるよう、D3D12_RESOURCE_STATE_COPY_DESTからD3D12_RESOURCE_STATE_GENERIC_READへResourceStateを変更する
     D3D12_RESOURCE_BARRIER barrier{};
     barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
@@ -180,7 +186,7 @@ Microsoft::WRL::ComPtr<ID3D12Resource> ResourceFactory::UploadTextureData(Micros
     barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
     barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_DEST;
     barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_GENERIC_READ;
-    commandList->ResourceBarrier(1, &barrier);
+    pCommandList->ResourceBarrier(1, &barrier);
     return intermediateResource;
 }
 

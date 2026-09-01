@@ -21,16 +21,16 @@ class SkyBox;
 class BaseObject {
   public:
     /// ===================================================
-    /// public variaus
+    /// public variables
     /// ===================================================
 
-    std::unique_ptr<DataHandler> ObjectDatas_{};
+    std::unique_ptr<DataHandler> objectData_{};
     std::unique_ptr<DataHandler> AnimaDatas_{};
     virtual ~BaseObject();
 
   protected:
     /// ===================================================
-    /// protected variaus
+    /// protected variables
     /// ===================================================
 
     // モデル配列データ
@@ -82,7 +82,7 @@ class BaseObject {
     virtual void CreateModel(const std::string modelname);
     virtual void CreatePrimitiveModel(const PrimitiveType &type);
 
-    virtual void ImGui();
+    virtual void DrawImGui();
 
     SphereCollider *AddSphereCollider(const std::string &name = "");
     AABBCollider *AddAABBCollider(const std::string &name = "");
@@ -109,11 +109,11 @@ class BaseObject {
 
     void SetParent(BaseObject *parent);
 
-    void AddChild(BaseObject *child);
+    void AddChild(BaseObject *pChild);
 
     void DetachParent();
 
-    void DetachChild(BaseObject *child);
+    void DetachChild(BaseObject *pChild);
 
     BaseObject *GetParent();
 
@@ -147,18 +147,35 @@ class BaseObject {
     std::string &GetName() { return objectName_; }
     std::string &GetModelPath() { return modelPath_; }
     bool &GetIsModelDraw() { return isModelDraw_; }
-    std::string &GetTexturePath(int index = 0) { return texturePaths_[index]; }
+    // 範囲外を引かれても落ちないよう、足りなければ伸ばしてから返す
+    std::string &GetTexturePath(int index = 0) {
+        if (index < 0) {
+            index = 0;
+        }
+        if (texturePaths_.size() <= static_cast<size_t>(index)) {
+            texturePaths_.resize(static_cast<size_t>(index) + 1);
+        }
+        return texturePaths_[index];
+    }
     std::string GetParentName() const;
     std::vector<std::string> GetChildrenNames() const;
     Object3d *GetObject3d() { return obj3d_.get(); }
     PrimitiveType GetPrimitiveType() { return type_; }
     Vector3 &GetLocalPosition() { return transform_->translation_; }
-    Quaternion &GetLocalRotation() { return transform_->quateRotation_; }
+    Quaternion &GetLocalRotation() { return transform_->quaternionRotation_; }
     Vector3 &GetLocalScale() { return transform_->scale_; }
     Vector3 GetWorldPosition();
     Quaternion GetWorldRotation();
     Vector3 GetWorldScale();
     Matrix4x4 GetWorldMatrix() { return transform_->matWorld_; }
+
+    /// <summary>
+    /// モデルのローカル空間AABBを取得する（ワールド行列を掛ける前の実際の広がり）
+    /// モデル未設定のときは単位サイズのボックスを返す
+    /// </summary>
+    /// <returns>AABB: ローカル空間の境界ボックス</returns>
+    AABB GetLocalBounds() const;
+
     bool AnimaIsFinish() { return obj3d_->IsFinish(); }
     bool &GetLighting() { return isLighting_; }
     bool GetShouldSave() const { return shouldSave_; }
@@ -179,6 +196,10 @@ class BaseObject {
             return; // ファイルパスが空なら何もしない
         }
         obj3d_->SetTexture(filePath, index);
+        // マテリアル数より texturePaths_ が短いモデルもあるので、足りなければ伸ばしてから書く
+        if (texturePaths_.size() <= index) {
+            texturePaths_.resize(static_cast<size_t>(index) + 1);
+        }
         texturePaths_[index] = filePath;
     }
     void SetModel(std::unique_ptr<Object3d> obj) {
@@ -284,14 +305,14 @@ class BaseObject {
 
     // --- 物理 ---
     /// <summary>衝突相手に対して押し出し（＋リジッドボディなら速度補正）を適用する</summary>
-    void ResolveCollisionWith(ColliderBase *self, ColliderBase *other);
+    void ResolveCollisionWith(ColliderBase *self, ColliderBase *pOther);
     /// <summary>全コライダーの OnCollision に押し出しコールバックを仕込む</summary>
     void InstallResolveCallbacks();
     /// <summary>全コライダーの OnCollision をクリアする</summary>
     void ClearResolveCallbacks();
-    /// <summary>物理パラメータを ObjectDatas_ へ保存</summary>
+    /// <summary>物理パラメータを objectData_ へ保存</summary>
     void SavePhysics();
-    /// <summary>物理パラメータを ObjectDatas_ から読み込み</summary>
+    /// <summary>物理パラメータを objectData_ から読み込み</summary>
     void LoadPhysics();
 
     bool shouldSave_ = true;

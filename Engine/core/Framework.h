@@ -1,16 +1,18 @@
 #pragma once
 #include "DirectXCommon.h"
-#ifdef _DEBUG
-#endif // _DEBUG
+#ifdef USE_IMGUI
+#endif // USE_IMGUI
 #include "Audio.h"
 #include "collider/CollisionManager.h"
 #include "debug/imgui/ImGuiManager.h"
 #include "debug/imgui/ImGuizmoManager.h"
 #include "debug/leak/D3DResourceLeakChecker.h"
 #include "edit/shortcut/ShortcutManager.h"
+#include "edit/play/PlayModeManager.h"
 #include "offscreen/OffScreen.h"
 #include "graphics/model/ModelManager.h"
 #include "graphics/pipeline/ComputePipelineManager.h"
+#include "graphics/pipeline/ComputeEffectPipeline.h"
 #include "graphics/pipeline/PipelineManager.h"
 #include "graphics/srv/SrvManager.h"
 #include "graphics/texture/TextureManager.h"
@@ -28,7 +30,8 @@
 #include "skybox/SkyBox.h"
 #include "SpriteCommon.h"
 #include "SpriteManager.h"
-#include "line/DrawLine3D.h"
+#include "line/LineRenderer.h"
+#include "render/deferred/DeferredRenderer.h"
 #include "edit/motion/MotionEditor.h"
 #include "utility/loader/csv/CsvLoad.h"
 #include "render/DrawSystem.h"
@@ -83,7 +86,7 @@ class Framework
     virtual bool IsEndRequest() { return endRequest_; }
 
   protected:
-    D3DResourceLeakChecker LeakChecker_;
+    D3DResourceLeakChecker leakChecker_;
 
     // ---- Framework が所有するインスタンス（生成・寿命を管理し、必要な所へ注入する）----
     std::unique_ptr<WinApp> winApp_;
@@ -99,7 +102,8 @@ class Framework
     Input *pInput_ = nullptr;
     Audio *pAudio_ = nullptr;
     DirectXCommon *pDxCommon_ = nullptr;
-    DrawLine3D *pLine3d_ = nullptr;
+    LineRenderer *pLineRenderer_ = nullptr;
+    DeferredRenderer *pDeferredRenderer_ = nullptr;
     SkyBox *pSkyBox_ = nullptr;
 
     SceneManager *pSceneManager_ = nullptr;

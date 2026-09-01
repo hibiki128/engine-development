@@ -1,5 +1,6 @@
 #pragma once
 #include "../ColliderBase.h"
+#include "line/LineRenderer.h"
 #include "type/Matrix4x4.h"
 #include <functional>
 #include <vector>
@@ -24,7 +25,7 @@ class MeshCollider : public ColliderBase
     /// ===================================================
 
     MeshCollider() = default;
-    ~MeshCollider() override = default;
+    ~MeshCollider() override { ReleaseWireframeBatch(); }
 
     /// <summary>
     /// モデルの全メッシュからローカル空間の三角形群を構築しBVHを作る
@@ -155,6 +156,12 @@ class MeshCollider : public ColliderBase
     /// <summary>デバッグ描画用に、重複を除いたローカル空間のエッジ群を構築する</summary>
     void BuildEdges();
 
+    /// <summary>ローカルエッジから静的バッチを作り直す（初回描画時に一度だけ走る）</summary>
+    void EnsureWireframeBatch();
+
+    /// <summary>静的バッチを破棄する</summary>
+    void ReleaseWireframeBatch();
+
     /// <summary>ローカル空間の問い合わせ境界に重なる三角形インデックスをBVHから収集</summary>
     void QueryCandidates(const AABB &localBounds, std::vector<int> &outIndices) const;
 
@@ -169,11 +176,10 @@ class MeshCollider : public ColliderBase
     std::vector<BVHNode> nodes_;      // BVHノード配列
     int rootNode_ = -1;               // ルートノードインデックス
 
-    // デバッグ描画の高速化用：重複を除いたローカルエッジと、そのワールド変換キャッシュ
+    // デバッグ描画の高速化用：ローカルエッジをそのままGPUへ常駐させ、毎フレームは
+    // ワールド行列と色だけをルート定数で差し替えて1ドローで描く（CPU変換は不要）
     std::vector<std::pair<Vector3, Vector3>> localEdges_; // 重複排除済みローカルエッジ
-    std::vector<std::pair<Vector3, Vector3>> worldEdges_; // ワールド変換済みエッジ（キャッシュ）
-    Matrix4x4 lastDrawMatrix_ = MakeIdentity4x4();        // 前回ワールド変換に使った行列
-    bool worldEdgesValid_ = false;                        // ワールドエッジキャッシュが有効か
+    LineBatchId wireframeBatch_ = kInvalidLineBatch;      // ワイヤーフレームの静的バッチ
 
     std::function<Matrix4x4()> getMatrixFunc_; // ワールド行列取得関数
     // 初回 UpdateWorldTransform 前に描画・判定されても不正な行列にならないよう単位行列で初期化する

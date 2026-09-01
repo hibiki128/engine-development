@@ -51,7 +51,7 @@ class TextureManager
     /// <summary>
     /// 初期化
     /// </summary>
-    void Initialize(SrvManager *srvManager);
+    void Initialize(SrvManager *pSrvManager);
 
     /// <summary>
     /// シングルトンインスタンスの取得
@@ -97,6 +97,18 @@ class TextureManager
     D3D12_GPU_DESCRIPTOR_HANDLE GetSrvHandleGPU(const std::string &filePath);
 
     /// <summary>
+    /// メモリ上のRGBA(8bit×4)ピクセル列から動的テクスチャを生成／更新する。
+    /// key ごとにSRVインデックスを固定で確保し、以降は同じインデックスへ描画し直す。
+    /// テキストプレビューのように毎フレーム内容が変わる用途向け。
+    /// 返り値はImGui等で使えるGPUデスクリプタハンドル。
+    /// </summary>
+    /// <param name="key">動的テクスチャの識別キー（"__text_preview__" 等）</param>
+    /// <param name="rgba">幅×高さ×4バイトのRGBAピクセル列（先頭行から順に）</param>
+    /// <param name="width">画像の幅（px）</param>
+    /// <param name="height">画像の高さ（px）</param>
+    D3D12_GPU_DESCRIPTOR_HANDLE UpdateDynamicTexture(const std::string &key, const uint8_t *rgba, int width, int height);
+
+    /// <summary>
     /// ファイルパスからテクスチャのメタデータを取得する
     /// </summary>
     const DirectX::TexMetadata &GetMetaData(const std::string &filePath);
@@ -140,6 +152,11 @@ class TextureManager
 
     // ファイルパスをキーとするテクスチャデータのマップ
     std::unordered_map<std::string, TextureData> textureDatas_;
+
+    // 動的テクスチャ（メモリから毎回書き換える用途）。キーで固定SRVインデックスを保持する。
+    std::unordered_map<std::string, TextureData> dynamicTextures_;
+    // 動的テクスチャ更新時に差し替えた旧リソースを数世代分保持し、GPU使用中の解放を避ける
+    std::vector<Microsoft::WRL::ComPtr<ID3D12Resource>> retiredDynamicResources_;
 
     // MakeFontKey() で生成したキーをキーとするフォントデータのマップ
     std::unordered_map<std::string, FontData> fontDatas_;

@@ -140,6 +140,36 @@ bool IsAliveParticle(Particle p)
     return p.lifeTime > 0.0f;
 }
 
+// =============================================
+// GPU駆動の視錐台カリング
+//   粒子を「中心＋半径の球」とみなして視錐台6平面と判定する。
+//   平面は描画に使う viewProjection から抽出しているので、判定結果は
+//   VS が実際に射影する結果と一致する（半径ぶんの余裕は radiusScale で持たせる）。
+//   ビルボードでもワールド固定でも回転しても、球で包んでいる限り判定は保守的。
+// =============================================
+bool IsSphereInFrustum(float4 planes[6], float3 center, float radius)
+{
+    [unroll]
+    for (int i = 0; i < 6; ++i)
+    {
+        if (dot(planes[i].xyz, center) + planes[i].w < -radius)
+            return false; // どれか1つの平面の外側なら画面に映らない
+    }
+    return true;
+}
+
+// 粒子の描画半径（球の半径）。スケールの最大成分にモデルの広がり係数を掛ける。
+// 速度ストレッチ有効時は伸びるぶんを速度で膨らませる（stretchFactor=0 なら無影響）。
+float ParticleCullRadius(float3 scale, float3 velocity, float radiusScale, float stretchFactor)
+{
+    float r = max(max(abs(scale.x), abs(scale.y)), abs(scale.z)) * radiusScale;
+    if (stretchFactor > 0.0f)
+    {
+        r *= (1.0f + length(velocity) * stretchFactor);
+    }
+    return r;
+}
+
 bool HasOverrideBit(uint2 flags, uint bitIndex)
 {
     if (bitIndex < 32u)
@@ -322,6 +352,12 @@ struct ParticleCSSettings
     float audioAttackSharpness;      // 反応カーブ指数（>1で大きい音だけドンと反応・小さい音は無視）
     float audioReleaseRate;          // エンベロープ減衰速度[1/s]（CPUが使用。shaderは未使用）
     float audioPad0;                 // 16B境界パディング
+    // ---- GPU駆動の視錐台カリング。C++ ParticleCSSettings と一致させること ----
+    uint enableFrustumCull;      // 1=視錐台の外の粒子を描画リストに載せない（シミュは継続）
+    float frustumRadiusScale;    // 粒子半径 = max(scale)×この係数
+    float frustumStretchFactor;  // 速度ストレッチ係数（0=無効）
+    float frustumPad0;
+    float4 frustumPlanes[6];     // left/right/bottom/top/near/far（内側で dot(n,p)+d が正）
     // ※ C++ ParticleCSSettings はこの後ろに CPU 専用メンバ（effectSpace / vortexAxisBase）を持つ。
     //   それらは CB 末尾に乗るだけでシェーダからは参照しない（渦の軸・目標は CPU 側で
     //   ワールド空間へ解決してから vortexAxis / vortexTarget / gatherTarget に入れて渡す）。

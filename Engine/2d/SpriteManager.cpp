@@ -7,6 +7,7 @@
 #include "MyMath.h"
 #include <asset/AssetPath.h>
 #include <data/DataHandler.h>
+#include <render/deferred/DeferredRenderer.h>
 #include <shadow/ShadowMap.h>
 #include <utility/debug/imgui/ImGuiNotification.h>
 #include <browser/ShowFolder.h>
@@ -50,7 +51,7 @@ void SpriteManager::RegisterSprite(const std::string &name, const std::string &t
     sprites_.push_back(std::move(spriteData));
     UpdateSpriteInstances(sprites_.back().get());
     DrawGroupManager::GetInstance()->RegisterGroup(sprites_.back()->drawGroup); // 所属グループを登録
-#ifdef _DEBUG
+#ifdef USE_IMGUI
     // instanceData[0].translation の xy をギズモで直接編集できるよう登録
     SyncGizmoTarget(sprites_.back().get(), 0);
 #endif
@@ -67,7 +68,7 @@ void SpriteManager::UnregisterSprite(const std::string &name)
 
     if (it != sprites_.end())
     {
-#ifdef _DEBUG
+#ifdef USE_IMGUI
         ImGuizmoManager::GetInstance()->RemoveTarget(name);
         gizmoBound_.erase(name);
 #endif
@@ -79,7 +80,10 @@ void SpriteManager::UnregisterSprite(const std::string &name)
 void SpriteManager::DrawAll()
 {
     // シャドウパス中(D32 DSV)はスプライト(D24 PSO)を描かない（深度フォーマット不一致を防ぐ）
-    if (ShadowMap::GetInstance()->IsShadowPassActive())
+    // G-Bufferパス中も同様に描かない（不透明のObject3d専用のパスなので、
+    // スプライトは後続の前方描画フェーズで描かれる）
+    if (ShadowMap::GetInstance()->IsShadowPassActive() ||
+        DeferredRenderer::GetInstance()->IsGBufferPassActive())
     {
         return;
     }
@@ -150,9 +154,9 @@ void SpriteManager::UpdateAll(float deltaTime)
 
 void SpriteManager::UpdateImGui()
 {
-#ifdef _DEBUG
+#ifdef USE_IMGUI
     DrawSpriteCreationModal();
-#endif // _DEBUG
+#endif // USE_IMGUI
 }
 
 std::string SpriteManager::GetTextureFilePath(const std::string &name)
@@ -345,7 +349,7 @@ void SpriteManager::SetUpdateFunction(const std::string &name, std::function<voi
 
 void SpriteManager::Clear()
 {
-#ifdef _DEBUG
+#ifdef USE_IMGUI
     for (auto &sp : sprites_)
     {
         if (sp)
@@ -357,7 +361,7 @@ void SpriteManager::Clear()
     externalSprites_.clear();
 }
 
-#ifdef _DEBUG
+#ifdef USE_IMGUI
 void SpriteManager::SyncGizmoTarget(SpriteData *spriteData, int instanceIndex)
 {
     if (!spriteData)
@@ -377,6 +381,8 @@ void SpriteManager::SyncGizmoTarget(SpriteData *spriteData, int instanceIndex)
 
     gizmo->AddTarget(spriteData->name, translation, nullptr, nullptr, true);
     gizmo->SetScreenSpace(spriteData->name, true, 50.0f);
+    // Vector3直接指定の既定はParticleなので、スプライトとして明示的に分類し直す
+    gizmo->SetCategory(spriteData->name, GizmoCategory::Sprite);
 
     // 当たり判定はスプライトの実際の矩形で行う（translation は矩形の角なので円判定だと掴めない）。
     // spriteData は unique_ptr の指す先なので vector 再確保でもアドレスは不変
@@ -415,7 +421,7 @@ void SpriteManager::SyncGizmoTarget(SpriteData *spriteData, int instanceIndex)
 
     gizmoBound_[spriteData->name] = translation;
 }
-#endif // _DEBUG
+#endif // USE_IMGUI
 
 void SpriteManager::UpdateSpriteInstances(SpriteData *spriteData)
 {
@@ -481,7 +487,7 @@ void SpriteManager::UpdateSpriteInstances(SpriteData *spriteData)
 
 void SpriteManager::DrawSpriteCreationModal()
 {
-#ifdef _DEBUG
+#ifdef USE_IMGUI
     if (showSpriteCreationModal_)
     {
         ImGui::OpenPopup("スプライト生成##modal");
@@ -608,13 +614,10 @@ void SpriteManager::DrawSpriteCreationModal()
 
         float bw = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
 
-        ImGui::PushStyleColor(ImGuiCol_Button,
-                              canCreate ? ImVec4{0.20f, 0.50f, 0.20f, 0.85f}
-                                        : ImVec4{0.25f, 0.25f, 0.28f, 0.60f});
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
-                              canCreate ? ImVec4{0.25f, 0.60f, 0.25f, 0.90f}
-                                        : ImVec4{0.25f, 0.25f, 0.28f, 0.60f});
-        if (ImGui::Button("生成##spcreate", ImVec2(bw, 0)) && canCreate)
+        // 名前とテクスチャが揃うまでは確定色にせず、押しても何も起きないことを見た目で示す
+        const bool createPressed = canCreate ? ConfirmButton("生成##spcreate", ImVec2(bw, 0))
+                                             : NeutralButton("生成##spcreate", ImVec2(bw, 0));
+        if (createPressed && canCreate)
         {
             // 生成操作をUndo履歴へ積む（生成前後の差分）
             nlohmann::json before = CaptureUndoState();
@@ -629,28 +632,24 @@ void SpriteManager::DrawSpriteCreationModal()
             ResetModal();
             ImGui::CloseCurrentPopup();
         }
-        ImGui::PopStyleColor(2);
         ImGui::SameLine();
 
-        ImGui::PushStyleColor(ImGuiCol_Button, {0.45f, 0.20f, 0.20f, 0.85f});
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, {0.60f, 0.25f, 0.25f, 0.90f});
-        if (ImGui::Button("キャンセル##spcancel", ImVec2(bw, 0)))
+        if (DangerButton("キャンセル##spcancel", ImVec2(bw, 0)))
         {
             ResetModal();
             ImGui::CloseCurrentPopup();
         }
-        ImGui::PopStyleColor(2);
 
         ImGui::EndPopup();
     }
 
     ImGui::PopStyleVar(3);
-#endif // _DEBUG
+#endif // USE_IMGUI
 }
 
 void SpriteManager::DrawSpriteManager()
 {
-#ifdef _DEBUG
+#ifdef USE_IMGUI
     // このウィンドウでの編集ジェスチャをUndo履歴として追跡する
     undoTracker_.Begin([this] { return CaptureUndoState(); });
 
@@ -659,11 +658,8 @@ void SpriteManager::DrawSpriteManager()
     ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 4.0f);
 
     // ---- 新規作成ボタン ----
-    ImGui::PushStyleColor(ImGuiCol_Button, {0.20f, 0.50f, 0.20f, 0.85f});
-    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, {0.25f, 0.60f, 0.25f, 0.90f});
-    if (ImGui::Button("+ スプライト新規作成##spmain", ImVec2(-1, 0)))
+    if (ConfirmButton("+ スプライト新規作成##spmain", ImVec2(-1, 0)))
         ShowSpriteCreationModal();
-    ImGui::PopStyleColor(2);
 
     ImGui::Spacing();
     ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kTextDim);
@@ -764,11 +760,11 @@ void SpriteManager::DrawSpriteManager()
 
                 // 削除
                 ImGui::TableNextColumn();
-                ImGui::PushStyleColor(ImGuiCol_Button, {0.65f, 0.20f, 0.20f, 0.75f});
-                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, {0.85f, 0.25f, 0.25f, 0.90f});
-                if (ImGui::SmallButton("削除##del"))
-                    toDelete.push_back(sp->name);
-                ImGui::PopStyleColor(2);
+                {
+                    ScopedButtonColors danger(DebugTheme::kButtonDanger, DebugTheme::kButtonDangerHover);
+                    if (ImGui::SmallButton("削除##del"))
+                        toDelete.push_back(sp->name);
+                }
 
                 ImGui::PopID();
             }
@@ -853,9 +849,7 @@ void SpriteManager::DrawSpriteManager()
                     {
                         float bwAdd = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
                         ImGui::BeginDisabled(instCount >= 1000); // Sprite 側の行列バッファ上限
-                        ImGui::PushStyleColor(ImGuiCol_Button, {0.18f, 0.45f, 0.35f, 0.85f});
-                        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, {0.22f, 0.58f, 0.45f, 0.90f});
-                        if (ImGui::Button("+ 追加##instadd", ImVec2(bwAdd, 0)))
+                        if (ConfirmButton("+ 追加##instadd", ImVec2(bwAdd, 0)))
                         {
                             // 選択中インスタンスを複製し、視認しやすいよう少しずらして直後に挿入する
                             InstanceSRT newInst = sp->instanceData[selIdx];
@@ -865,19 +859,15 @@ void SpriteManager::DrawSpriteManager()
                             selIdx++;
                             UpdateSpriteInstances(sp);
                         }
-                        ImGui::PopStyleColor(2);
                         ImGui::EndDisabled();
                         ImGui::SameLine();
                         ImGui::BeginDisabled(instCount <= 1);
-                        ImGui::PushStyleColor(ImGuiCol_Button, {0.50f, 0.22f, 0.22f, 0.85f});
-                        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, {0.65f, 0.26f, 0.26f, 0.90f});
-                        if (ImGui::Button("- 削除##instdel", ImVec2(bwAdd, 0)) && instCount > 1)
+                        if (DangerButton("- 削除##instdel", ImVec2(bwAdd, 0)) && instCount > 1)
                         {
                             sp->instanceData.erase(sp->instanceData.begin() + selIdx);
                             selIdx = std::clamp(selIdx, 0, static_cast<int>(sp->instanceData.size()) - 1);
                             UpdateSpriteInstances(sp);
                         }
-                        ImGui::PopStyleColor(2);
                         ImGui::EndDisabled();
 
                         // 追加・削除で要素数が変わっている可能性があるため取り直す
@@ -950,26 +940,23 @@ void SpriteManager::DrawSpriteManager()
                         ImGui::PopStyleColor();
 
                         float bwInst = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x * 2) / 3.0f;
-                        ImGui::PushStyleColor(ImGuiCol_Button, {0.18f, 0.40f, 0.55f, 0.85f});
-                        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, {0.25f, 0.55f, 0.75f, 0.90f});
-                        if (ImGui::Button("全て表示##iactall", ImVec2(bwInst, 0)))
+                        if (PrimaryButton("全て表示##iactall", ImVec2(bwInst, 0)))
                         {
                             for (auto &inst2 : sp->instanceData)
                                 inst2.isActive = true;
                         }
                         ImGui::SameLine();
-                        if (ImGui::Button("全て非表示##ideactall", ImVec2(bwInst, 0)))
+                        if (PrimaryButton("全て非表示##ideactall", ImVec2(bwInst, 0)))
                         {
                             for (auto &inst2 : sp->instanceData)
                                 inst2.isActive = false;
                         }
                         ImGui::SameLine();
-                        if (ImGui::Button("スケールリセット##iscrs", ImVec2(bwInst, 0)))
+                        if (PrimaryButton("スケールリセット##iscrs", ImVec2(bwInst, 0)))
                         {
                             for (auto &inst2 : sp->instanceData)
                                 inst2.scale = {1.0f, 1.0f, 1.0f};
                         }
-                        ImGui::PopStyleColor(2);
                     }
 
                     ImGui::TreePop();
@@ -1179,26 +1166,20 @@ void SpriteManager::DrawSpriteManager()
 
     ImGui::Spacing();
 
-    ImGui::PushStyleColor(ImGuiCol_Button, {0.20f, 0.45f, 0.20f, 0.80f});
-    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, {0.25f, 0.55f, 0.25f, 0.90f});
-    if (ImGui::Button("全スプライトを保存##spsvall", ImVec2(-1, 0)))
+    if (ConfirmButton("全スプライトを保存##spsvall", ImVec2(-1, 0)))
         SaveAllSprites();
     ImGui::Spacing();
-    if (ImGui::Button("全スプライトを読み込み##spldall", ImVec2(-1, 0)))
+    if (ConfirmButton("全スプライトを読み込み##spldall", ImVec2(-1, 0)))
     {
         Clear();
         LoadAllSprites();
     }
-    ImGui::PopStyleColor(2);
 
     ImGui::Spacing();
 
     // 全削除
-    ImGui::PushStyleColor(ImGuiCol_Button, {0.55f, 0.15f, 0.15f, 0.80f});
-    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, {0.75f, 0.20f, 0.20f, 0.90f});
-    if (ImGui::Button("全スプライトを削除##spdelall", ImVec2(-1, 0)))
+    if (DangerButton("全スプライトを削除##spdelall", ImVec2(-1, 0)))
         ImGui::OpenPopup("全削除の確認##spdelconfirm");
-    ImGui::PopStyleColor(2);
 
     // 確認モーダル
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(12, 12));
@@ -1215,16 +1196,13 @@ void SpriteManager::DrawSpriteManager()
 
         float bw = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
 
-        ImGui::PushStyleColor(ImGuiCol_Button, {0.60f, 0.15f, 0.15f, 0.85f});
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, {0.80f, 0.20f, 0.20f, 0.90f});
-        if (ImGui::Button("削除##spdelok", ImVec2(bw, 0)))
+        if (DangerButton("削除##spdelok", ImVec2(bw, 0)))
         {
             Clear();
             ImGui::CloseCurrentPopup();
         }
-        ImGui::PopStyleColor(2);
         ImGui::SameLine();
-        if (ImGui::Button("キャンセル##spdelcancel", ImVec2(bw, 0)))
+        if (NeutralButton("キャンセル##spdelcancel", ImVec2(bw, 0)))
             ImGui::CloseCurrentPopup();
 
         ImGui::EndPopup();
@@ -1238,7 +1216,7 @@ void SpriteManager::DrawSpriteManager()
         "スプライト編集",
         [this] { return CaptureUndoState(); },
         [](const nlohmann::json &s) { SpriteManager::GetInstance()->RestoreUndoState(s); });
-#endif // _DEBUG
+#endif // USE_IMGUI
 }
 
 void SpriteManager::SetSaveFolder(const std::string &folderName)
@@ -1453,7 +1431,7 @@ void SpriteManager::LoadAllSprites()
     ImGuiNotification::Post("スプライトデータを読み込みました: " + saveFolder_, {0.2f, 0.8f, 0.8f, 1.0f});
 }
 
-#ifdef _DEBUG
+#ifdef USE_IMGUI
 // -------------------------------------------------------
 // Undo/Redo 用の状態キャプチャ・復元
 // -------------------------------------------------------
@@ -1671,5 +1649,5 @@ void SpriteManager::RestoreUndoState(const nlohmann::json &state)
         sprites_ = std::move(reordered);
     }
 }
-#endif // _DEBUG
+#endif // USE_IMGUI
 } // namespace Hagine
