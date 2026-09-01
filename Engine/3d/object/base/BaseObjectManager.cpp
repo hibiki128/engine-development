@@ -1,6 +1,7 @@
 #include "BaseObjectManager.h"
 #include "SpriteManager.h"
 #include <2d/ui/UIAnimator.h>
+#include <metaball/MetaBallGroupManager.h>
 #include <metaball/MetaBallObject.h>
 #include <asset/AssetPath.h>
 #include <utility/debug/imgui/ImGuiNotification.h>
@@ -115,6 +116,10 @@ void BaseObjectManager::Update()
         obj->UpdateHierarchy();
         obj->UpdateWorldTransformHierarchy();
     }
+
+    // メタボールはワールド行列が確定してから場を組み直す。
+    // 中身が前フレームと同じならここは何もしない
+    MetaBallGroupManager::GetInstance()->Update();
 }
 
 void BaseObjectManager::Draw(const ViewProjection &viewProjection)
@@ -129,6 +134,10 @@ void BaseObjectManager::Draw(const ViewProjection &viewProjection)
         obj->Draw(viewProjection);
     }
     instancing->Flush(viewProjection);
+
+    // 融合したメタボールの表面はグループ単位で 1 回だけ描く。
+    // 個々の MetaBallObject は isModelDraw_ = false なので二重には出ない
+    MetaBallGroupManager::GetInstance()->Draw(viewProjection);
 }
 
 void BaseObjectManager::UpdateImGui()

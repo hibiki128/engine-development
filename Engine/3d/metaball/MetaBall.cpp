@@ -51,6 +51,49 @@ inline float DistanceSqToSegment(const Vector3 &point, const Vector3 &a, const V
     return (point - (a + ab * t)).LengthSq();
 }
 
+/// <summary>要素が影響を及ぼす範囲の半サイズ</summary>
+inline Vector3 ElementHalfExtent(const MetaBallElement &element)
+{
+    if (element.shape == MetaBallShape::Capsule)
+    {
+        return {std::fabs(element.axis.x) + element.radius,
+                std::fabs(element.axis.y) + element.radius,
+                std::fabs(element.axis.z) + element.radius};
+    }
+    return {element.radius, element.radius, element.radius};
+}
+
+/// <summary>要素の集合の AABB。有効な要素が無ければ false</summary>
+bool ComputeBounds(const std::vector<MetaBallElement> &elements,
+                   const std::vector<uint32_t> &members,
+                   Vector3 &outMin, Vector3 &outMax)
+{
+    bool hasAny = false;
+    for (uint32_t index : members)
+    {
+        const MetaBallElement &element = elements[index];
+        if (!element.enabled || element.radius <= 0.0f)
+        {
+            continue;
+        }
+        const Vector3 half = ElementHalfExtent(element);
+        const Vector3 lo = element.position - half;
+        const Vector3 hi = element.position + half;
+        if (!hasAny)
+        {
+            outMin = lo;
+            outMax = hi;
+            hasAny = true;
+        }
+        else
+        {
+            outMin = {std::min(outMin.x, lo.x), std::min(outMin.y, lo.y), std::min(outMin.z, lo.z)};
+            outMax = {std::max(outMax.x, hi.x), std::max(outMax.y, hi.y), std::max(outMax.z, hi.z)};
+        }
+    }
+    return hasAny;
+}
+
 } // namespace
 
 float MetaBallBuilder::EvaluateElement(const MetaBallElement &element, const Vector3 &point)
@@ -90,63 +133,33 @@ float MetaBallBuilder::EvaluateDensity(const std::vector<MetaBallElement> &eleme
     return sum;
 }
 
-MeshData MetaBallBuilder::Build(const std::vector<MetaBallElement> &elements,
-                                const MetaBallBuildParams &params,
-                                MetaBallBuildStats *outStats)
+namespace {
+
+/// <summary>
+/// かたまり 1 つ分を格子に切って三角形化し、meshData に連結する。
+/// members に入っている要素だけを見る。
+/// </summary>
+/// <returns>格子のサンプル点数（x,y,z）。作れなかった場合は全て 0</returns>
+struct GridDims
 {
-    const auto startTime = std::chrono::high_resolution_clock::now();
+    int nx = 0, ny = 0, nz = 0;
+};
 
-    MeshData meshData{};
-    if (outStats)
-    {
-        *outStats = MetaBallBuildStats{};
-    }
-
-    // ---- 有効な要素の AABB を求める ---------------------------------------
+GridDims AppendClusterMesh(const std::vector<MetaBallElement> &elements,
+                           const std::vector<uint32_t> &members,
+                           float cellSize, float threshold, float uvScale,
+                           uint64_t maxSamples, MeshData &meshData)
+{
     Vector3 boundsMin{};
     Vector3 boundsMax{};
-    bool hasAny = false;
-    for (const MetaBallElement &element : elements)
+    if (!ComputeBounds(elements, members, boundsMin, boundsMax) || cellSize <= 0.0f)
     {
-        if (!element.enabled || element.radius <= 0.0f)
-        {
-            continue;
-        }
-        // Capsule は線分の両端を含める
-        Vector3 half{std::fabs(element.axis.x) + element.radius,
-                     std::fabs(element.axis.y) + element.radius,
-                     std::fabs(element.axis.z) + element.radius};
-        if (element.shape != MetaBallShape::Capsule)
-        {
-            half = {element.radius, element.radius, element.radius};
-        }
-        const Vector3 lo = element.position - half;
-        const Vector3 hi = element.position + half;
-        if (!hasAny)
-        {
-            boundsMin = lo;
-            boundsMax = hi;
-            hasAny = true;
-        }
-        else
-        {
-            boundsMin = {std::min(boundsMin.x, lo.x), std::min(boundsMin.y, lo.y), std::min(boundsMin.z, lo.z)};
-            boundsMax = {std::max(boundsMax.x, hi.x), std::max(boundsMax.y, hi.y), std::max(boundsMax.z, hi.z)};
-        }
+        return {};
     }
-    if (!hasAny)
-    {
-        return meshData;
-    }
-
-    // ---- 格子を決める -------------------------------------------------------
-    const uint32_t resolution = std::clamp(params.resolution, kMinResolution, kMaxResolution);
-    const Vector3 extent = boundsMax - boundsMin;
-    const float longestSide = std::max({extent.x, extent.y, extent.z, 1e-4f});
-    const float cellSize = longestSide / static_cast<float>(resolution);
 
     // 外周 2 セル分を余白にする。一番外のサンプル点が必ず密度 0 になり、表面が閉じる
     constexpr int kPadCells = 2;
+    const Vector3 extent = boundsMax - boundsMin;
     const Vector3 origin = boundsMin - Vector3{cellSize, cellSize, cellSize} * static_cast<float>(kPadCells);
 
     auto axisSampleCount = [&](float length) {
@@ -155,15 +168,15 @@ MeshData MetaBallBuilder::Build(const std::vector<MetaBallElement> &elements,
     const int nx = axisSampleCount(extent.x);
     const int ny = axisSampleCount(extent.y);
     const int nz = axisSampleCount(extent.z);
-    const size_t sampleCount = static_cast<size_t>(nx) * ny * nz;
+    const uint64_t sampleCount = static_cast<uint64_t>(nx) * ny * nz;
 
-    // 上限を超えるほど細かい指定はメモリを食うだけなので諦める
-    if (sampleCount > 64ull * 1024 * 1024)
+    // セルを細かくしすぎたときの保険。ここで諦めないとメモリを食い潰す
+    if (sampleCount == 0 || sampleCount > maxSamples)
     {
-        return meshData;
+        return {};
     }
 
-    std::vector<float> density(sampleCount, 0.0f);
+    std::vector<float> density(static_cast<size_t>(sampleCount), 0.0f);
 
     auto sampleIndex = [nx, ny](int x, int y, int z) {
         return (static_cast<size_t>(z) * ny + y) * nx + x;
@@ -177,20 +190,15 @@ MeshData MetaBallBuilder::Build(const std::vector<MetaBallElement> &elements,
     int touchedMin[3] = {nx, ny, nz};
     int touchedMax[3] = {-1, -1, -1};
 
-    for (const MetaBallElement &element : elements)
+    for (uint32_t memberIndex : members)
     {
+        const MetaBallElement &element = elements[memberIndex];
         if (!element.enabled || element.radius <= 0.0f)
         {
             continue;
         }
 
-        Vector3 half{element.radius, element.radius, element.radius};
-        if (element.shape == MetaBallShape::Capsule)
-        {
-            half = {std::fabs(element.axis.x) + element.radius,
-                    std::fabs(element.axis.y) + element.radius,
-                    std::fabs(element.axis.z) + element.radius};
-        }
+        const Vector3 half = ElementHalfExtent(element);
         const Vector3 lo = element.position - half - origin;
         const Vector3 hi = element.position + half - origin;
 
@@ -219,7 +227,7 @@ MeshData MetaBallBuilder::Build(const std::vector<MetaBallElement> &elements,
                 const size_t rowBase = (static_cast<size_t>(z) * ny + y) * nx;
                 for (int x = i0; x <= i1; ++x)
                 {
-                    density[rowBase + x] += EvaluateElement(element, samplePosition(x, y, z));
+                    density[rowBase + x] += MetaBallBuilder::EvaluateElement(element, samplePosition(x, y, z));
                 }
             }
         }
@@ -227,12 +235,10 @@ MeshData MetaBallBuilder::Build(const std::vector<MetaBallElement> &elements,
 
     if (touchedMax[0] < 0)
     {
-        return meshData;
+        return {};
     }
 
     // ---- Marching Cubes ----------------------------------------------------
-    const float threshold = params.threshold;
-
     auto densityAt = [&](int x, int y, int z) -> float {
         x = std::clamp(x, 0, nx - 1);
         y = std::clamp(y, 0, ny - 1);
@@ -249,7 +255,7 @@ MeshData MetaBallBuilder::Build(const std::vector<MetaBallElement> &elements,
     };
 
     // サンプル点ごとに X/Y/Z 方向の辺を 1 本ずつ持たせ、隣接セル間で頂点を共有する
-    std::vector<int32_t> edgeCache(sampleCount * 3, -1);
+    std::vector<int32_t> edgeCache(static_cast<size_t>(sampleCount) * 3, -1);
 
     // 触られた範囲の外は密度が 0 のままなので、その内側だけ歩けばよい
     const int cx0 = std::max(0, touchedMin[0] - 1);
@@ -258,8 +264,6 @@ MeshData MetaBallBuilder::Build(const std::vector<MetaBallElement> &elements,
     const int cx1 = std::min(nx - 2, touchedMax[0]);
     const int cy1 = std::min(ny - 2, touchedMax[1]);
     const int cz1 = std::min(nz - 2, touchedMax[2]);
-
-    const float uvScale = (params.uvScale > 0.0f) ? params.uvScale : 1.0f;
 
     for (int z = cz0; z <= cz1; ++z)
     {
@@ -376,6 +380,47 @@ MeshData MetaBallBuilder::Build(const std::vector<MetaBallElement> &elements,
         }
     }
 
+    // edgeCache はかたまりごとに作り直すので、頂点番号の付け替えは不要。
+    // meshData.vertices の末尾に積んだ番号をそのまま使っている
+    return GridDims{nx, ny, nz};
+}
+
+} // namespace
+
+MeshData MetaBallBuilder::Build(const std::vector<MetaBallElement> &elements,
+                                const MetaBallBuildParams &params,
+                                MetaBallBuildStats *outStats)
+{
+    const auto startTime = std::chrono::high_resolution_clock::now();
+
+    MeshData meshData{};
+    if (outStats)
+    {
+        *outStats = MetaBallBuildStats{};
+    }
+
+    // 全要素をひとまとめに扱う
+    std::vector<uint32_t> members(elements.size());
+    for (uint32_t i = 0; i < static_cast<uint32_t>(elements.size()); ++i)
+    {
+        members[i] = i;
+    }
+
+    Vector3 boundsMin{};
+    Vector3 boundsMax{};
+    if (!ComputeBounds(elements, members, boundsMin, boundsMax))
+    {
+        return meshData;
+    }
+
+    const uint32_t resolution = std::clamp(params.resolution, kMinResolution, kMaxResolution);
+    const Vector3 extent = boundsMax - boundsMin;
+    const float longestSide = std::max({extent.x, extent.y, extent.z, 1e-4f});
+    const float cellSize = longestSide / static_cast<float>(resolution);
+
+    const GridDims dims = AppendClusterMesh(elements, members, cellSize, params.threshold,
+                                            params.uvScale, 64ull * 1024 * 1024, meshData);
+
     meshData.materialIndex = 0;
 
     if (outStats)
@@ -383,10 +428,129 @@ MeshData MetaBallBuilder::Build(const std::vector<MetaBallElement> &elements,
         const auto endTime = std::chrono::high_resolution_clock::now();
         outStats->vertexCount = static_cast<uint32_t>(meshData.vertices.size());
         outStats->triangleCount = static_cast<uint32_t>(meshData.indices.size() / 3);
-        outStats->gridX = static_cast<uint32_t>(nx);
-        outStats->gridY = static_cast<uint32_t>(ny);
-        outStats->gridZ = static_cast<uint32_t>(nz);
+        outStats->gridX = static_cast<uint32_t>(dims.nx);
+        outStats->gridY = static_cast<uint32_t>(dims.ny);
+        outStats->gridZ = static_cast<uint32_t>(dims.nz);
         outStats->cellSize = cellSize;
+        outStats->clusterCount = meshData.indices.empty() ? 0u : 1u;
+        outStats->elementCount = static_cast<uint32_t>(elements.size());
+        outStats->buildMilliseconds =
+            std::chrono::duration<float, std::milli>(endTime - startTime).count();
+    }
+
+    return meshData;
+}
+
+MeshData MetaBallBuilder::BuildClustered(const std::vector<MetaBallElement> &elements,
+                                         const MetaBallWorldParams &params,
+                                         MetaBallBuildStats *outStats)
+{
+    const auto startTime = std::chrono::high_resolution_clock::now();
+
+    MeshData meshData{};
+    if (outStats)
+    {
+        *outStats = MetaBallBuildStats{};
+    }
+
+    // 有効な要素だけを拾う
+    std::vector<uint32_t> active;
+    active.reserve(elements.size());
+    for (uint32_t i = 0; i < static_cast<uint32_t>(elements.size()); ++i)
+    {
+        if (elements[i].enabled && elements[i].radius > 0.0f)
+        {
+            active.push_back(i);
+        }
+    }
+    if (active.empty() || params.voxelSize <= 0.0f)
+    {
+        return meshData;
+    }
+
+    // ---- 影響範囲が重なる要素をつなげてかたまりに分ける（Union-Find）--------
+    // 判定は AABB の重なりで多めに拾う。多めに繋がっても格子が少し大きくなるだけで
+    // 結果は変わらないが、取りこぼすと表面が切れてしまう
+    std::vector<uint32_t> parent(active.size());
+    for (uint32_t i = 0; i < static_cast<uint32_t>(active.size()); ++i)
+    {
+        parent[i] = i;
+    }
+    auto find = [&parent](uint32_t x) {
+        while (parent[x] != x)
+        {
+            parent[x] = parent[parent[x]];
+            x = parent[x];
+        }
+        return x;
+    };
+    auto unite = [&](uint32_t a, uint32_t b) {
+        a = find(a);
+        b = find(b);
+        if (a != b)
+        {
+            parent[a] = b;
+        }
+    };
+
+    for (size_t i = 0; i < active.size(); ++i)
+    {
+        const MetaBallElement &ei = elements[active[i]];
+        const Vector3 hi = ElementHalfExtent(ei);
+        for (size_t j = i + 1; j < active.size(); ++j)
+        {
+            const MetaBallElement &ej = elements[active[j]];
+            const Vector3 hj = ElementHalfExtent(ej);
+            const Vector3 d = ei.position - ej.position;
+            if (std::fabs(d.x) <= hi.x + hj.x && std::fabs(d.y) <= hi.y + hj.y &&
+                std::fabs(d.z) <= hi.z + hj.z)
+            {
+                unite(static_cast<uint32_t>(i), static_cast<uint32_t>(j));
+            }
+        }
+    }
+
+    // 代表ごとにメンバーを集める
+    std::vector<std::vector<uint32_t>> clusters;
+    std::vector<int> clusterOfRoot(active.size(), -1);
+    for (uint32_t i = 0; i < static_cast<uint32_t>(active.size()); ++i)
+    {
+        const uint32_t root = find(i);
+        if (clusterOfRoot[root] < 0)
+        {
+            clusterOfRoot[root] = static_cast<int>(clusters.size());
+            clusters.emplace_back();
+        }
+        clusters[static_cast<size_t>(clusterOfRoot[root])].push_back(active[i]);
+    }
+
+    // ---- かたまりごとに切って 1 つのメッシュに連結する ----------------------
+    uint32_t builtClusters = 0;
+    GridDims lastDims{};
+    for (const std::vector<uint32_t> &cluster : clusters)
+    {
+        const GridDims dims = AppendClusterMesh(elements, cluster, params.voxelSize, params.threshold,
+                                                params.uvScale, params.maxSamplesPerCluster, meshData);
+        if (dims.nx > 0)
+        {
+            ++builtClusters;
+            lastDims = dims;
+        }
+    }
+
+    meshData.materialIndex = 0;
+
+    if (outStats)
+    {
+        const auto endTime = std::chrono::high_resolution_clock::now();
+        outStats->vertexCount = static_cast<uint32_t>(meshData.vertices.size());
+        outStats->triangleCount = static_cast<uint32_t>(meshData.indices.size() / 3);
+        outStats->gridX = static_cast<uint32_t>(lastDims.nx);
+        outStats->gridY = static_cast<uint32_t>(lastDims.ny);
+        outStats->gridZ = static_cast<uint32_t>(lastDims.nz);
+        outStats->cellSize = params.voxelSize;
+        outStats->clusterCount = builtClusters;
+        outStats->elementCount = static_cast<uint32_t>(active.size());
         outStats->buildMilliseconds =
             std::chrono::duration<float, std::milli>(endTime - startTime).count();
     }

@@ -1,4 +1,5 @@
 #include "Framework.h"
+#include <metaball/MetaBallGroupManager.h>
 #include "utility/debug/imgui/ImGuiNotification.h"
 #include "utility/scene/SceneRegistry.h"
 #include <2d/ui/UIAnimator.h>
@@ -255,6 +256,8 @@ void Framework::Finalize()
     pComputePipelineManager_->Finalize();
     ComputeEffectPipeline::GetInstance()->Finalize();
     pTextureManager_->Finalize();
+    // メタボールのグループが持つモデルを先に返してから ModelManager を畳む
+    MetaBallGroupManager::GetInstance()->Finalize();
     pModelManager_->Finalize();
     pPrimitiveModel_->Finalize();
     pParticleGroupManager_->Finalize();
