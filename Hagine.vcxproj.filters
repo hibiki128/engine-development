@@ -588,6 +588,12 @@
     <ClCompile Include="externals\imgui\ImGuizmo.cpp">
       <Filter>externals\imgui</Filter>
     </ClCompile>
+    <ClCompile Include="Engine\3d\camera\Camera.cpp">
+      <Filter>Engine\3d\camera</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\3d\camera\CameraManager.cpp">
+      <Filter>Engine\3d\camera</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Engine\2d\Sprite.h">
@@ -978,6 +984,12 @@
       <Filter>externals\imgui</Filter>
     </ClInclude>
     <ClInclude Include="resource.h" />
+    <ClInclude Include="Engine\3d\camera\Camera.h">
+      <Filter>Engine\3d\camera</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\3d\camera\CameraManager.h">
+      <Filter>Engine\3d\camera</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <Font Include="Engine\EngineAssets\fonts\fa-solid-900.ttf">
