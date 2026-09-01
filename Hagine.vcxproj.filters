@@ -37,6 +37,9 @@
     <Filter Include="Engine\3d\line">
       <UniqueIdentifier>{7303F2DD-6A92-73FE-408A-63041F972F21}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Engine\3d\metaball">
+      <UniqueIdentifier>{1DDEE0E6-A43A-8A51-3D8E-C55771A9E631}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Engine\3d\Model">
       <UniqueIdentifier>{73B6E484-EDDA-F559-42D1-0D3214057CEA}</UniqueIdentifier>
     </Filter>
@@ -314,6 +317,12 @@
     </ClCompile>
     <ClCompile Include="Engine\3d\line\LineRenderer.cpp">
       <Filter>Engine\3d\line</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\3d\metaball\MetaBall.cpp">
+      <Filter>Engine\3d\metaball</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\3d\metaball\MetaBallObject.cpp">
+      <Filter>Engine\3d\metaball</Filter>
     </ClCompile>
     <ClCompile Include="Engine\3d\Model\Material\Material.cpp">
       <Filter>Engine\3d\Model\Material</Filter>
@@ -654,9 +663,6 @@
     <ClCompile Include="externals\imgui\ImGradient.cpp">
       <Filter>externals\imgui</Filter>
     </ClCompile>
-    <ClCompile Include="externals\imgui\imgui.cpp">
-      <Filter>externals\imgui</Filter>
-    </ClCompile>
     <ClCompile Include="externals\imgui\imgui_demo.cpp">
       <Filter>externals\imgui</Filter>
     </ClCompile>
@@ -676,6 +682,9 @@
       <Filter>externals\imgui</Filter>
     </ClCompile>
     <ClCompile Include="externals\imgui\imgui-knobs.cpp">
+      <Filter>externals\imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="externals\imgui\imgui.cpp">
       <Filter>externals\imgui</Filter>
     </ClCompile>
     <ClCompile Include="externals\imgui\ImGuizmo.cpp">
@@ -739,6 +748,15 @@
     </ClInclude>
     <ClInclude Include="Engine\3d\line\LineRenderer.h">
       <Filter>Engine\3d\line</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\3d\metaball\MarchingCubesTable.h">
+      <Filter>Engine\3d\metaball</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\3d\metaball\MetaBall.h">
+      <Filter>Engine\3d\metaball</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\3d\metaball\MetaBallObject.h">
+      <Filter>Engine\3d\metaball</Filter>
     </ClInclude>
     <ClInclude Include="Engine\3d\Model\Material\Material.h">
       <Filter>Engine\3d\Model\Material</Filter>
@@ -1070,9 +1088,6 @@
     <ClInclude Include="externals\imgui\ImGradient.h">
       <Filter>externals\imgui</Filter>
     </ClInclude>
-    <ClInclude Include="externals\imgui\imgui.h">
-      <Filter>externals\imgui</Filter>
-    </ClInclude>
     <ClInclude Include="externals\imgui\imgui_impl_dx12.h">
       <Filter>externals\imgui</Filter>
     </ClInclude>
@@ -1083,6 +1098,9 @@
       <Filter>externals\imgui</Filter>
     </ClInclude>
     <ClInclude Include="externals\imgui\imgui-knobs.h">
+      <Filter>externals\imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="externals\imgui\imgui.h">
       <Filter>externals\imgui</Filter>
     </ClInclude>
     <ClInclude Include="externals\imgui\ImGuizmo.h">
@@ -1098,6 +1116,10 @@
       <Filter>externals\imgui</Filter>
     </ClInclude>
     <ClInclude Include="resource.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <DxcRuntime Include="$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxcompiler.dll" />
+    <DxcRuntime Include="$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" />
   </ItemGroup>
   <ItemGroup>
     <Font Include="Engine\EngineAssets\fonts\fa-solid-900.ttf">

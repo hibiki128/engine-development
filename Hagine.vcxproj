@@ -291,6 +291,8 @@
     <ClCompile Include="Engine\Utility\graphics\pipeline\PipelineManagerShadowSky.cpp" />
     <ClCompile Include="Engine\Utility\graphics\pipeline\PipelineManagerSprite.cpp" />
     <ClCompile Include="Engine\Utility\graphics\pipeline\ShaderRootSignature.cpp" />
+    <ClCompile Include="Engine\3d\metaball\MetaBall.cpp" />
+    <ClCompile Include="Engine\3d\metaball\MetaBallObject.cpp" />
   </ItemGroup>
   <ItemGroup>
     <None Include=".clang-format" />
@@ -450,6 +452,9 @@
     <ClInclude Include="Engine\Utility\edit\play\PlayModeManager.h" />
     <ClInclude Include="Engine\Utility\graphics\pipeline\ComputeEffectPipeline.h" />
     <ClInclude Include="Engine\Utility\graphics\pipeline\ShaderRootSignature.h" />
+    <ClInclude Include="Engine\3d\metaball\MarchingCubesTable.h" />
+    <ClInclude Include="Engine\3d\metaball\MetaBall.h" />
+    <ClInclude Include="Engine\3d\metaball\MetaBallObject.h" />
   </ItemGroup>
   <ItemGroup>
     <Text Include="externals\imgui\LICENSE.txt" />

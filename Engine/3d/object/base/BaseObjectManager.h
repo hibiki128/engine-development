@@ -146,6 +146,13 @@ class BaseObjectManager
     BaseObject *CreatePrimitiveObject(PrimitiveType type, const std::string &baseName);
 
     /// <summary>
+    /// メタボールオブジェクトを生成して追加する
+    /// </summary>
+    /// <param name="baseName">名前のもと（重複したら連番が付く）</param>
+    /// <returns>BaseObject*: 生成されたオブジェクト</returns>
+    BaseObject *CreateMetaBallObject(const std::string &baseName);
+
+    /// <summary>
     /// オブジェクト生成モーダルを開く
     /// </summary>
     void OpenObjectCreationModal();

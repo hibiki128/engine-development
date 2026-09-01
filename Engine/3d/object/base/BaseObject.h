@@ -125,9 +125,11 @@ class BaseObject {
     /// セーブロード
     /// ===================================================
 
-    void SceneSaveToJson();
-    void SaveToJson();
-    void LoadFromJson();
+    // 派生クラスが独自データ（メタボールの要素リストなど）を足せるよう virtual にしてある。
+    // override する側は基底の実装を必ず呼ぶこと
+    virtual void SceneSaveToJson();
+    virtual void SaveToJson();
+    virtual void LoadFromJson();
     void LoadFromJson(std::string folderPath, std::string jsonName);
     void SaveColliders();
     void LoadColliders();

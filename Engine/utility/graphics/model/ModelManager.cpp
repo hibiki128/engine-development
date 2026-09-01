@@ -70,6 +70,24 @@ std::string ModelManager::CreatePrimitiveModel(PrimitiveType type, std::string t
     return uniqueKey;
 }
 
+std::string ModelManager::CreateDynamicModel(uint32_t vertexCapacity, uint32_t indexCapacity)
+{
+    std::unique_ptr<Model> model = std::make_unique<Model>();
+    model->Initialize(pModelCommon_);
+    model->CreateDynamicModel(vertexCapacity, indexCapacity);
+    model->SetSrv(pSrvManager_);
+    // 動的モデルはオブジェクトごとに 1 個できるので通知は出さない
+    static int dynamicModelIndex = 0;
+    std::string uniqueKey = "DynamicModel_" + std::to_string(dynamicModelIndex++);
+    models_.insert(std::make_pair(uniqueKey, std::move(model)));
+    return uniqueKey;
+}
+
+void ModelManager::RemoveModel(const std::string &key)
+{
+    models_.erase(key);
+}
+
 Model *ModelManager::FindModel(const std::string &filePath)
 {
     // .gltfファイルの場合はファイルパスにユニークな識別子を使って検索

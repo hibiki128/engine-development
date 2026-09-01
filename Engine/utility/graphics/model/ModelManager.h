@@ -61,6 +61,18 @@ class ModelManager
     /// </summary>
     std::string CreatePrimitiveModel(PrimitiveType type, std::string texPath, const PrimitiveParams &params);
 
+    /// <summary>
+    /// 動的メッシュのモデルを作る（メタボールなど、オブジェクトごとに形が違うもの用）。
+    /// プリミティブと違って共有できないので、呼ぶたびに新しい実体ができる。
+    /// </summary>
+    /// <returns>std::string: 生成したモデルのキー</returns>
+    std::string CreateDynamicModel(uint32_t vertexCapacity = 4096, uint32_t indexCapacity = 8192);
+
+    /// <summary>
+    /// モデルを破棄する（動的モデルは使い捨てなので、オブジェクト破棄時に呼ぶ）
+    /// </summary>
+    void RemoveModel(const std::string &key);
+
   public:
     std::unordered_map<std::string, std::unique_ptr<Model>> models_;
 

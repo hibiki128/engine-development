@@ -668,6 +668,17 @@ void ImGuiManager::ShowMainMenu() {
                     }
                 }
 
+                ImGui::Separator();
+
+                // メタボールは形が固定でないのでプリミティブ表とは別扱い
+                if (ImGui::MenuItem(ICON_FA_CIRCLE " メタボール")) {
+                    BaseObject *created = pBaseObjectManager_->CreateMetaBallObject("metaball");
+                    if (created) {
+                        pImGuizmoManager_->SelectOnly(created->GetName());
+                    }
+                }
+                ImGui::SetItemTooltip("球やカプセルを並べて融合させる。インスペクタの「メタボール」から要素を編集する");
+
                 if (ImGui::MenuItem(ICON_FA_TRASH_ALT " オブジェクト全削除")) {
                     // RemoveAllObjects が自分の登録だけを解除する。
                     // ここで DeleteTarget()（＝全操作対象を消す）を呼ぶと、スプライト・ライト・

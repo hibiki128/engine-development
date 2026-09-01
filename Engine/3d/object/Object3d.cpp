@@ -88,6 +88,33 @@ void Object3d::CreatePrimitiveModel(const PrimitiveType &type, std::string texPa
     color_[0].SetColor({1.0f, 1.0f, 1.0f, 1.0f});
 }
 
+void Object3d::CreateDynamicModel(std::string texPath)
+{
+    // 動的モデルは形がオブジェクトごとに違うので共有できない。専用の実体を持つ
+    dynamicModelKey_ = ModelManager::GetInstance()->CreateDynamicModel();
+    pModel_ = ModelManager::GetInstance()->FindModel(dynamicModelKey_);
+    isPrimitive_ = false;
+    materials_.resize(1);
+    color_.resize(1);
+
+    materials_[0] = std::make_unique<Material>();
+    materials_[0]->Initialize();
+    materials_[0]->GetMaterialData().color = {1.0f, 1.0f, 1.0f, 1.0f};
+    materials_[0]->GetMaterialData().uvTransform = MakeIdentity4x4();
+    materials_[0]->GetMaterialData().textureFilePath = texPath;
+    materials_[0]->LoadTexture();
+    color_[0].Initialize();
+    color_[0].SetColor({1.0f, 1.0f, 1.0f, 1.0f});
+}
+
+void Object3d::RebuildDynamicMesh(MeshData &&data)
+{
+    if (pModel_)
+    {
+        pModel_->RebuildDynamicMesh(std::move(data));
+    }
+}
+
 void Object3d::Update(const WorldTransform &worldTransform, const ViewProjection &viewProjection)
 {
     if (pLightGroup_)
