@@ -293,6 +293,7 @@
     <ClCompile Include="Engine\Utility\graphics\pipeline\ShaderRootSignature.cpp" />
     <ClCompile Include="Engine\3d\metaball\MetaBall.cpp" />
     <ClCompile Include="Engine\3d\metaball\MetaBallObject.cpp" />
+    <ClCompile Include="Engine\3d\metaball\MetaBallGroupManager.cpp" />
   </ItemGroup>
   <ItemGroup>
     <None Include=".clang-format" />
@@ -455,6 +456,7 @@
     <ClInclude Include="Engine\3d\metaball\MarchingCubesTable.h" />
     <ClInclude Include="Engine\3d\metaball\MetaBall.h" />
     <ClInclude Include="Engine\3d\metaball\MetaBallObject.h" />
+    <ClInclude Include="Engine\3d\metaball\MetaBallGroupManager.h" />
   </ItemGroup>
   <ItemGroup>
     <Text Include="externals\imgui\LICENSE.txt" />

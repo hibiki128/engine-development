@@ -321,6 +321,9 @@
     <ClCompile Include="Engine\3d\metaball\MetaBall.cpp">
       <Filter>Engine\3d\metaball</Filter>
     </ClCompile>
+    <ClCompile Include="Engine\3d\metaball\MetaBallGroupManager.cpp">
+      <Filter>Engine\3d\metaball</Filter>
+    </ClCompile>
     <ClCompile Include="Engine\3d\metaball\MetaBallObject.cpp">
       <Filter>Engine\3d\metaball</Filter>
     </ClCompile>
@@ -753,6 +756,9 @@
       <Filter>Engine\3d\metaball</Filter>
     </ClInclude>
     <ClInclude Include="Engine\3d\metaball\MetaBall.h">
+      <Filter>Engine\3d\metaball</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\3d\metaball\MetaBallGroupManager.h">
       <Filter>Engine\3d\metaball</Filter>
     </ClInclude>
     <ClInclude Include="Engine\3d\metaball\MetaBallObject.h">
