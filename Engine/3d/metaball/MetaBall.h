@@ -27,6 +27,25 @@ struct MetaBallElement
     bool negative = false;                    // 負の要素（他をへこませる）
     Vector3 axis{};                           // Capsule の半長ベクトル（中心から端まで）
     bool enabled = true;                      // 無効化フラグ
+
+    /// <summary>
+    /// 軸ごとの半径倍率。{1,1,1} なら真球、{2,1,1} なら X に 2 倍伸びた楕円体になる。
+    /// ローカル空間の XYZ に対応し、オブジェクトの回転・スケールが掛かる。
+    /// Ball のみ有効（Capsule は axis で伸ばす）。
+    /// </summary>
+    Vector3 radiusScale{1.0f, 1.0f, 1.0f};
+
+    /// <summary>
+    /// 楕円体を評価するための「単位空間へ写す基底」。
+    /// point との差 d を (d·ux, d·uy, d·uz) に写すと、半径 1 の球として距離を測れる。
+    /// MetaBallObject::AppendWorldElements がオブジェクトの回転・スケールを
+    /// 焼き込んで書き込む中間データなので、手で設定する必要はない（保存もされない）。
+    /// isEllipsoid が false のときは参照されず、従来どおり radius で評価される。
+    /// </summary>
+    Vector3 unitAxisX{1.0f, 0.0f, 0.0f};
+    Vector3 unitAxisY{0.0f, 1.0f, 0.0f};
+    Vector3 unitAxisZ{0.0f, 0.0f, 1.0f};
+    bool isEllipsoid = false; // 各軸の半径が揃っていない（＝真球ではない）
 };
 
 /// <summary>

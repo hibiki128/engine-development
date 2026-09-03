@@ -60,6 +60,21 @@ inline Vector3 ElementHalfExtent(const MetaBallElement &element)
                 std::fabs(element.axis.y) + element.radius,
                 std::fabs(element.axis.z) + element.radius};
     }
+    if (element.isEllipsoid)
+    {
+        // 傾いた楕円体を包む AABB。半軸ベクトル s_i（= u_i / |u_i|^2）を各ワールド軸へ
+        // 投影して二乗和の平方根を取るのが、ちょうど外接ボックスの半サイズになる
+        auto semiAxis = [](const Vector3 &unitAxis) {
+            const float lenSq = unitAxis.LengthSq();
+            return (lenSq > 1e-12f) ? unitAxis / lenSq : Vector3{0.0f, 0.0f, 0.0f};
+        };
+        const Vector3 sx = semiAxis(element.unitAxisX);
+        const Vector3 sy = semiAxis(element.unitAxisY);
+        const Vector3 sz = semiAxis(element.unitAxisZ);
+        return {std::sqrt(sx.x * sx.x + sy.x * sy.x + sz.x * sz.x),
+                std::sqrt(sx.y * sx.y + sy.y * sy.y + sz.y * sz.y),
+                std::sqrt(sx.z * sx.z + sy.z * sy.z + sz.z * sz.z)};
+    }
     return {element.radius, element.radius, element.radius};
 }
 
@@ -103,23 +118,38 @@ float MetaBallBuilder::EvaluateElement(const MetaBallElement &element, const Vec
         return 0.0f;
     }
 
-    float distSq = 0.0f;
+    // t2 = (距離 / 影響半径)^2。1 以上なら影響外
+    float t2 = 0.0f;
     if (element.shape == MetaBallShape::Capsule)
     {
-        distSq = DistanceSqToSegment(point, element.position - element.axis, element.position + element.axis);
+        const float distSq =
+            DistanceSqToSegment(point, element.position - element.axis, element.position + element.axis);
+        const float radiusSq = element.radius * element.radius;
+        t2 = distSq / radiusSq;
+    }
+    else if (element.isEllipsoid)
+    {
+        // 単位空間（半径 1 の球）へ写してから測る。基底に回転とスケールが
+        // 焼き込んであるので、傾いた楕円体でも割り算なしで正しく評価できる
+        const Vector3 d = point - element.position;
+        const float u = d.Dot(element.unitAxisX);
+        const float v = d.Dot(element.unitAxisY);
+        const float w = d.Dot(element.unitAxisZ);
+        t2 = u * u + v * v + w * w;
     }
     else
     {
-        distSq = (point - element.position).LengthSq();
+        const float distSq = (point - element.position).LengthSq();
+        const float radiusSq = element.radius * element.radius;
+        t2 = distSq / radiusSq;
     }
 
-    const float radiusSq = element.radius * element.radius;
-    if (distSq >= radiusSq)
+    if (t2 >= 1.0f)
     {
         return 0.0f;
     }
 
-    const float value = element.stiffness * WyvillFalloff(distSq / radiusSq);
+    const float value = element.stiffness * WyvillFalloff(t2);
     return element.negative ? -value : value;
 }
 

@@ -102,6 +102,13 @@ class BaseObject {
     virtual const char *GetImGuiExtensionName() const { return nullptr; }
 
     /// <summary>
+    /// インスペクタの「見た目」タブに素のマテリアル欄を出すか。
+    /// メタボールのように obj3d_ を選択用のダミーとしてしか持たないオブジェクトは
+    /// false を返す（触っても何も変わらない欄を出さないため）。
+    /// </summary>
+    virtual bool HasInspectorMaterial() const { return true; }
+
+    /// <summary>
     /// 複製元の設定をこのオブジェクトへ写す。
     /// 派生クラスは基底を呼んでから独自データを足すこと。
     /// </summary>

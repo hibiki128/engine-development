@@ -43,6 +43,18 @@ size_t HashElements(const std::vector<MetaBallElement> &elements, const MetaBall
         HashInt(hash, static_cast<uint32_t>(e.shape));
         HashInt(hash, e.negative ? 1u : 0u);
         HashInt(hash, e.enabled ? 1u : 0u);
+        // 楕円体は回転しただけでも形が変わる。基底に回転が焼き込まれているので、
+        // ここを見ておかないと回してもメッシュが作り直されない
+        HashInt(hash, e.isEllipsoid ? 1u : 0u);
+        if (e.isEllipsoid)
+        {
+            for (const Vector3 &axis : {e.unitAxisX, e.unitAxisY, e.unitAxisZ})
+            {
+                HashFloat(hash, axis.x);
+                HashFloat(hash, axis.y);
+                HashFloat(hash, axis.z);
+            }
+        }
     }
     return hash;
 }
@@ -135,6 +147,28 @@ void MetaBallGroupManager::Rebind(MetaBallObject *object, const std::string &old
 
 void MetaBallGroupManager::Update()
 {
+    // ---- 空になったグループを片付ける ------------------------------------
+    // グループは既定でオブジェクト 1 個につき 1 つ作られるので、
+    // 消したり名前を変えたりするたびに、誰も居ないグループと
+    // その動的メッシュ（GPUバッファ）が残っていく。
+    //
+    // 消すのは Register / Unregister の中ではなく必ずここ。
+    // GetSettings() が返す参照を UI が掴んでいる最中に erase すると、
+    // その参照が宙に浮いてしまう（UI の描画中には呼ばれない Update で掃除する）
+    for (auto it = groups_.begin(); it != groups_.end();)
+    {
+        if (!it->second.members.empty())
+        {
+            ++it;
+            continue;
+        }
+        if (it->second.obj3d && !it->second.obj3d->GetDynamicModelKey().empty())
+        {
+            ModelManager::GetInstance()->RemoveModel(it->second.obj3d->GetDynamicModelKey());
+        }
+        it = groups_.erase(it);
+    }
+
     for (auto &[name, group] : groups_)
     {
         // ---- 全メンバーの要素をワールド空間で集める ----------------------
@@ -175,8 +209,11 @@ void MetaBallGroupManager::Draw(const ViewProjection &viewProjection)
         {
             continue;
         }
+        // ブレンドモードは Draw のたびに Object3d へ入れ直す必要がある
+        // （BaseObject::Update が毎フレーム SetBlendMode しているのと同じ理由）
+        group.obj3d->SetBlendMode(group.settings.blendMode);
         // メッシュはワールド空間で作ってあるので、変換は単位行列のまま
-        group.obj3d->Draw(*group.transform, viewProjection, false, true, true);
+        group.obj3d->Draw(*group.transform, viewProjection, false, group.settings.lighting, true);
     }
 }
 
@@ -214,14 +251,20 @@ void MetaBallGroupManager::MarkDirty(const std::string &groupName)
     }
 }
 
-void MetaBallGroupManager::ApplyTexture(const std::string &groupName)
+void MetaBallGroupManager::ApplyMaterial(const std::string &groupName)
 {
     auto it = groups_.find(groupName);
-    if (it == groups_.end() || !it->second.obj3d || it->second.settings.texturePath.empty())
+    if (it == groups_.end() || !it->second.obj3d)
     {
         return;
     }
-    it->second.obj3d->SetTexture(it->second.settings.texturePath, 0);
+    const MetaBallGroupSettings &settings = it->second.settings;
+    if (!settings.texturePath.empty())
+    {
+        it->second.obj3d->SetTexture(settings.texturePath, 0);
+    }
+    it->second.obj3d->SetColor(settings.color, 0);
+    it->second.obj3d->SetBlendMode(settings.blendMode);
 }
 
 } // namespace Hagine

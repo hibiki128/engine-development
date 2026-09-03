@@ -351,8 +351,16 @@ void BaseObject::DebugObject() {
 
         // ====================================================
         // マテリアル（スロット・カラー・テクスチャ・ブレンド）
+        // メタボールのように実体のモデルを持たないオブジェクトでは、
+        // ここを触っても何も変わらないので出さない（専用タブ側に用意する）
         // ====================================================
-        if (ThemedHeader("マテリアル##hdr", DebugTheme::kAccentPurple)) {
+        if (!HasInspectorMaterial()) {
+            ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kTextDim);
+            const char *extensionName = GetImGuiExtensionName();
+            ImGui::TextWrapped("マテリアルは「%s」タブで設定します", extensionName ? extensionName : "専用");
+            ImGui::PopStyleColor();
+            ImGui::Spacing();
+        } else if (ThemedHeader("マテリアル##hdr", DebugTheme::kAccentPurple)) {
             ImGui::Indent(6.0f);
             static int selMat = 0;
             size_t matCount = obj3d_->GetMaterialCount();
