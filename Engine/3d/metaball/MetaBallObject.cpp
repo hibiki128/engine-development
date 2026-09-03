@@ -2,6 +2,7 @@
 #include "MetaBallObject.h"
 #include "MetaBallGroupManager.h"
 #include "MyMath.h"
+#include "browser/ShowFolder.h"
 #include "utility/debug/imgui/DebugUIHelper.h"
 #include <algorithm>
 #include <cmath>
@@ -120,6 +121,21 @@ void MetaBallObject::SetRadius(float radius)
     }
 }
 
+void MetaBallObject::CopyPropertiesFrom(const BaseObject &source)
+{
+    BaseObject::CopyPropertiesFrom(source);
+
+    const MetaBallObject *other = dynamic_cast<const MetaBallObject *>(&source);
+    if (!other)
+    {
+        return;
+    }
+    elements_ = other->elements_;
+    selectedElement_ = other->selectedElement_;
+    // グループを写す（同じグループなら複製した瞬間から元とくっつく）
+    SetGroupName(other->groupName_);
+}
+
 void MetaBallObject::SetStiffness(float stiffness)
 {
     for (MetaBallElement &e : elements_)
@@ -181,6 +197,7 @@ void MetaBallObject::SaveMetaBallToJson()
     groupData.Save<float>("voxelSize", settings.voxelSize);
     groupData.Save<float>("threshold", settings.threshold);
     groupData.Save<float>("uvScale", settings.uvScale);
+    groupData.Save<std::string>("texturePath", settings.texturePath);
 }
 
 void MetaBallObject::LoadMetaBallFromJson()
@@ -196,6 +213,8 @@ void MetaBallObject::LoadMetaBallFromJson()
         settings.voxelSize = groupData.Load<float>("voxelSize", settings.voxelSize);
         settings.threshold = groupData.Load<float>("threshold", settings.threshold);
         settings.uvScale = groupData.Load<float>("uvScale", settings.uvScale);
+        settings.texturePath = groupData.Load<std::string>("texturePath", settings.texturePath);
+        MetaBallGroupManager::GetInstance()->ApplyTexture(groupName_);
         MetaBallGroupManager::GetInstance()->MarkDirty(groupName_);
     }
 
@@ -226,21 +245,42 @@ void MetaBallObject::LoadMetaBallFromJson()
 //  インスペクタ UI
 // ============================================================
 
-void MetaBallObject::DrawImGui()
+void MetaBallObject::DrawImGuiExtension()
 {
 #ifdef USE_IMGUI
-    BaseObject::DrawImGui();
-
-    if (!ImGui::CollapsingHeader("メタボール", ImGuiTreeNodeFlags_DefaultOpen))
+    if (!ThemedHeader("メタボール##hdr", DebugTheme::kAccentPurple, true))
     {
         return;
     }
+    ImGui::Indent(6.0f);
 
     MetaBallGroupManager *manager = MetaBallGroupManager::GetInstance();
+    MetaBallGroupSettings &settings = manager->GetSettings(groupName_);
 
-    // ---- グループ ------------------------------------------------------
-    ImGui::SeparatorText("グループ");
-    ImGui::TextWrapped("同じグループ名のメタボール同士が融合します。近づけるとくっつきます。");
+    // ---- 大きさ（一番よく触るので最初に置く）-----------------------------
+    SectionHeader("[ 大きさ ]", DebugTheme::kAccentPurple);
+
+    float radius = elements_.empty() ? 1.0f : elements_[0].radius;
+    ImGui::SetNextItemWidth(-1);
+    if (ImGui::DragFloat("##mbradius", &radius, 0.01f, 0.01f, 100.0f, "半径 %.2f"))
+    {
+        SetRadius(radius);
+    }
+    ImGui::SetItemTooltip("全要素の影響半径をまとめて変える。\n"
+                          "この距離で密度が 0 になるので、大きいほど遠くの相手とくっつく。\n"
+                          "トランスフォームのスケールでも変えられる（掛け算される）");
+
+    ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kTextDim);
+    ImGui::TextWrapped("スケールを掛けた実効半径: %.2f", radius * (std::max)({transform_->scale_.x, transform_->scale_.y, transform_->scale_.z}));
+    ImGui::PopStyleColor();
+
+    ImGui::Spacing();
+
+    // ---- グループ -------------------------------------------------------
+    SectionHeader("[ グループ ]", DebugTheme::kAccentPurple);
+    ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kTextDim);
+    ImGui::TextWrapped("同じグループ名のメタボール同士が融合します。");
+    ImGui::PopStyleColor();
 
     char groupBuffer[128];
     strncpy_s(groupBuffer, groupName_.c_str(), _TRUNCATE);
@@ -250,15 +290,34 @@ void MetaBallObject::DrawImGui()
         SetGroupName(groupBuffer);
     }
     ImGui::SetItemTooltip("Enter で確定。名前を分けると別々の塊として扱われます");
-
     ImGui::Text("このグループのオブジェクト数: %d",
                 static_cast<int>(manager->GetMemberCount(groupName_)));
 
-    // ---- グループ共通の生成設定 -----------------------------------------
-    ImGui::SeparatorText("生成設定（グループ共通）");
-    MetaBallGroupSettings &settings = manager->GetSettings(groupName_);
+    ImGui::Spacing();
+
+    // ---- 見た目（グループ共通）-------------------------------------------
+    SectionHeader("[ 見た目（グループ共通）]", DebugTheme::kAccentPurple);
 
     bool settingsChanged = false;
+
+    // テクスチャ。融合した表面はグループが 1 枚のメッシュとして描くので、
+    // マテリアルもグループ単位になる（BaseObject のマテリアル欄はこのオブジェクトの
+    // 空モデルに対するものなので効かない）
+    ImGui::Text("テクスチャ: %s", settings.texturePath.empty() ? "未設定" : settings.texturePath.c_str());
+    if (ImGui::TreeNode("テクスチャを選ぶ##metaballTex"))
+    {
+        std::string picked = settings.texturePath;
+        ImGui::BeginChild("MetaBallTexSelector", ImVec2(0, 180), true);
+        ShowTextureFile(picked, "metaballTex");
+        ImGui::EndChild();
+        if (!picked.empty() && picked != settings.texturePath)
+        {
+            settings.texturePath = picked;
+            manager->ApplyTexture(groupName_);
+        }
+        ImGui::TreePop();
+    }
+
     if (ImGui::DragFloat("セルの大きさ", &settings.voxelSize, 0.005f, 0.01f, 5.0f, "%.3f"))
     {
         settingsChanged = true;
@@ -284,93 +343,104 @@ void MetaBallObject::DrawImGui()
         manager->MarkDirty(groupName_);
     }
 
-    // ---- 統計 ----------------------------------------------------------
-    ImGui::SeparatorText("生成結果（グループ全体）");
+    ImGui::Spacing();
+
+    // ---- 統計 -----------------------------------------------------------
+    SectionHeader("[ 生成結果（グループ全体）]", DebugTheme::kAccentPurple);
     const MetaBallBuildStats &stats = manager->GetStats(groupName_);
     ImGui::Text("要素 %u / かたまり %u", stats.elementCount, stats.clusterCount);
     ImGui::Text("頂点 %u / 三角形 %u", stats.vertexCount, stats.triangleCount);
     const bool slow = stats.buildMilliseconds > 8.0f;
-    ImGui::TextColored(slow ? ImVec4(1.0f, 0.5f, 0.3f, 1.0f) : ImVec4(0.5f, 0.9f, 0.5f, 1.0f),
+    ImGui::TextColored(slow ? DebugTheme::kAccentOrange : DebugTheme::kAccentGreen,
                        "生成時間 %.2f ms%s", stats.buildMilliseconds,
                        slow ? "  (セルを大きくするか数を減らしてください)" : "");
 
-    // ---- このオブジェクトの要素 ------------------------------------------
-    ImGui::SeparatorText("このオブジェクトの要素");
-    ImGui::TextWrapped("弾として使うなら球 1 個のままで構いません。オブジェクトごと動かせば融合します。");
+    ImGui::Spacing();
 
-    if (ImGui::Button("球を追加"))
+    // ---- 要素（複数を組み合わせたいときだけ）-----------------------------
+    if (ImGui::TreeNode("要素を細かく編集##metaballElements"))
     {
-        Vector3 position{};
-        if (!elements_.empty())
-        {
-            position = elements_[elements_.size() - 1].position + Vector3{1.0f, 0.0f, 0.0f};
-        }
-        selectedElement_ = static_cast<int>(AddBall(position, 1.0f));
-    }
-    ImGui::SameLine();
-    if (ImGui::Button("カプセルを追加"))
-    {
-        MetaBallElement element{};
-        element.shape = MetaBallShape::Capsule;
-        element.axis = {1.0f, 0.0f, 0.0f};
-        element.radius = 1.0f;
-        element.stiffness = 1.0f;
-        selectedElement_ = static_cast<int>(AddElement(element));
-    }
-    ImGui::SameLine();
-    if (ImGui::Button("全消去") && !elements_.empty())
-    {
-        ClearElements();
-    }
+        ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kTextDim);
+        ImGui::TextWrapped("弾として使うなら球 1 個のままで構いません。");
+        ImGui::PopStyleColor();
 
-    if (ImGui::BeginListBox("##metaballElements",
-                            ImVec2(-FLT_MIN, 5.0f * ImGui::GetTextLineHeightWithSpacing())))
-    {
-        for (int i = 0; i < static_cast<int>(elements_.size()); ++i)
+        if (ImGui::Button("球を追加"))
         {
-            const MetaBallElement &e = elements_[static_cast<size_t>(i)];
-            char label[128];
-            std::snprintf(label, sizeof(label), "%d: %s%s  r=%.2f##elem%d", i,
-                          (e.shape == MetaBallShape::Capsule) ? "カプセル" : "球",
-                          e.negative ? " (負)" : "", e.radius, i);
-            if (ImGui::Selectable(label, selectedElement_ == i))
+            Vector3 position{};
+            if (!elements_.empty())
             {
-                selectedElement_ = i;
+                position = elements_[elements_.size() - 1].position + Vector3{1.0f, 0.0f, 0.0f};
+            }
+            selectedElement_ = static_cast<int>(AddBall(position, radius));
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("カプセルを追加"))
+        {
+            MetaBallElement element{};
+            element.shape = MetaBallShape::Capsule;
+            element.axis = {1.0f, 0.0f, 0.0f};
+            element.radius = radius;
+            element.stiffness = 1.0f;
+            selectedElement_ = static_cast<int>(AddElement(element));
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("全消去") && !elements_.empty())
+        {
+            ClearElements();
+        }
+
+        if (ImGui::BeginListBox("##metaballElementList",
+                                ImVec2(-FLT_MIN, 5.0f * ImGui::GetTextLineHeightWithSpacing())))
+        {
+            for (int i = 0; i < static_cast<int>(elements_.size()); ++i)
+            {
+                const MetaBallElement &e = elements_[static_cast<size_t>(i)];
+                char label[128];
+                std::snprintf(label, sizeof(label), "%d: %s%s  r=%.2f##elem%d", i,
+                              (e.shape == MetaBallShape::Capsule) ? "カプセル" : "球",
+                              e.negative ? " (負)" : "", e.radius, i);
+                if (ImGui::Selectable(label, selectedElement_ == i))
+                {
+                    selectedElement_ = i;
+                }
+            }
+            ImGui::EndListBox();
+        }
+
+        if (selectedElement_ >= 0 && selectedElement_ < static_cast<int>(elements_.size()))
+        {
+            MetaBallElement &e = elements_[static_cast<size_t>(selectedElement_)];
+            SectionHeader("[ 選択中の要素 ]", DebugTheme::kAccentPurple);
+
+            ImGui::DragFloat3("位置（ローカル）", &e.position.x, 0.01f);
+            ImGui::DragFloat("影響半径", &e.radius, 0.01f, 0.01f, 100.0f);
+            ImGui::DragFloat("強さ", &e.stiffness, 0.01f, 0.01f, 10.0f);
+
+            int shape = static_cast<int>(e.shape);
+            if (ImGui::Combo("形状", &shape, "球\0カプセル\0"))
+            {
+                e.shape = static_cast<MetaBallShape>(shape);
+            }
+            if (e.shape == MetaBallShape::Capsule)
+            {
+                ImGui::DragFloat3("軸（中心から端まで）", &e.axis.x, 0.01f);
+            }
+
+            ImGui::Checkbox("負の要素", &e.negative);
+            ImGui::SetItemTooltip("他の要素をへこませる");
+            ImGui::SameLine();
+            ImGui::Checkbox("有効", &e.enabled);
+
+            if (ImGui::Button("この要素を削除"))
+            {
+                RemoveElement(static_cast<size_t>(selectedElement_));
             }
         }
-        ImGui::EndListBox();
+        ImGui::TreePop();
     }
 
-    if (selectedElement_ >= 0 && selectedElement_ < static_cast<int>(elements_.size()))
-    {
-        MetaBallElement &e = elements_[static_cast<size_t>(selectedElement_)];
-        ImGui::SeparatorText("選択中の要素");
-
-        ImGui::DragFloat3("位置（ローカル）", &e.position.x, 0.01f);
-        ImGui::DragFloat("影響半径", &e.radius, 0.01f, 0.01f, 100.0f);
-        ImGui::SetItemTooltip("この距離で密度がちょうど 0 になる。大きいほど遠くの相手とくっつく");
-        ImGui::DragFloat("強さ", &e.stiffness, 0.01f, 0.01f, 10.0f);
-
-        int shape = static_cast<int>(e.shape);
-        if (ImGui::Combo("形状", &shape, "球\0カプセル\0"))
-        {
-            e.shape = static_cast<MetaBallShape>(shape);
-        }
-        if (e.shape == MetaBallShape::Capsule)
-        {
-            ImGui::DragFloat3("軸（中心から端まで）", &e.axis.x, 0.01f);
-        }
-
-        ImGui::Checkbox("負の要素", &e.negative);
-        ImGui::SetItemTooltip("他の要素をへこませる");
-        ImGui::SameLine();
-        ImGui::Checkbox("有効", &e.enabled);
-
-        if (ImGui::Button("この要素を削除"))
-        {
-            RemoveElement(static_cast<size_t>(selectedElement_));
-        }
-    }
+    ImGui::Unindent(6.0f);
+    ImGui::Spacing();
 #endif // USE_IMGUI
 }
 

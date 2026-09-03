@@ -470,8 +470,9 @@ class ImGuizmoManager
     std::string GenerateUniqueName(const std::string &baseName);
 
     /// <summary>
-    /// BaseObject を複製して BaseObjectManager へ追加する
-    /// マテリアルごとのテクスチャ・色や保存対象フラグまで引き継ぐ
+    /// BaseObject を複製して BaseObjectManager へ追加する。
+    /// 中身は BaseObjectManager::CloneObject が写す（元と同じ派生クラスで作り直され、
+    /// マテリアルごとのテクスチャ・色やメタボールの要素まで引き継がれる）。
     /// </summary>
     /// <param name="pSource">複製元</param>
     /// <param name="offset">複製先に加える位置のずらし量</param>

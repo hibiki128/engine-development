@@ -113,6 +113,39 @@ void BaseObject::Draw(const ViewProjection &viewProjection) {
     }
 }
 
+void BaseObject::CopyPropertiesFrom(const BaseObject &source) {
+    // トランスフォーム
+    transform_->translation_ = source.transform_->translation_;
+    transform_->quaternionRotation_ = source.transform_->quaternionRotation_;
+    transform_->scale_ = source.transform_->scale_;
+    transform_->UpdateMatrix();
+
+    // 見た目のフラグ
+    isLighting_ = source.isLighting_;
+    isModelDraw_ = source.isModelDraw_;
+    isWireframe_ = source.isWireframe_;
+    isRainbow_ = source.isRainbow_;
+    reflect_ = source.reflect_;
+    skeletonDraw_ = source.skeletonDraw_;
+    offSet_ = source.offSet_;
+
+    // マテリアル（テクスチャ・色）。複製先のマテリアル数に収まる範囲だけ写す
+    const size_t materialCount =
+        (std::min)(obj3d_->GetMaterialCount(), source.obj3d_->GetMaterialCount());
+    for (size_t i = 0; i < materialCount; ++i)
+    {
+        const std::string texture = source.obj3d_->GetTextureFilePath(static_cast<uint32_t>(i));
+        if (!texture.empty()) {
+            SetTexture(texture, static_cast<uint32_t>(i));
+        }
+        obj3d_->SetColor(source.obj3d_->GetColor(static_cast<int>(i)), static_cast<int>(i));
+    }
+
+    // 物理
+    rigidBody_ = source.rigidBody_;
+    resolveCollision_ = source.resolveCollision_;
+}
+
 void BaseObject::UpdateWorldTransformHierarchy() {
     // まず自分のトランスフォームを更新
     if (transform_) {

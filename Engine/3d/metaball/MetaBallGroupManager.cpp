@@ -214,4 +214,14 @@ void MetaBallGroupManager::MarkDirty(const std::string &groupName)
     }
 }
 
+void MetaBallGroupManager::ApplyTexture(const std::string &groupName)
+{
+    auto it = groups_.find(groupName);
+    if (it == groups_.end() || !it->second.obj3d || it->second.settings.texturePath.empty())
+    {
+        return;
+    }
+    it->second.obj3d->SetTexture(it->second.settings.texturePath, 0);
+}
+
 } // namespace Hagine

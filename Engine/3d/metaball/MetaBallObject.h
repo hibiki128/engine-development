@@ -45,9 +45,13 @@ class MetaBallObject : public BaseObject
     void Init(const std::string objectName) override;
 
     /// <summary>
-    /// インスペクタ UI
+    /// インスペクタのメタボール専用セクション。
+    /// BaseObject のセクション群と同じ枠の中に出る。
     /// </summary>
-    void DrawImGui() override;
+    void DrawImGuiExtension() override;
+
+    /// <summary>複製元の要素リストとグループ名も写す</summary>
+    void CopyPropertiesFrom(const BaseObject &source) override;
 
     /// <summary>
     /// 自分の要素をワールド空間に変換して out の末尾に足す。

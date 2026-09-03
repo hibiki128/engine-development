@@ -273,6 +273,12 @@ void BaseObject::DebugObject() {
     }
 
     // ====================================================
+    // 派生クラス固有のセクション（メタボールなど）
+    // トランスフォームの直後に出すことで、そのオブジェクト固有の設定を見つけやすくする
+    // ====================================================
+    DrawImGuiExtension();
+
+    // ====================================================
     // 表示（描画モード・ライティング・ギズモ）
     // ====================================================
     if (ThemedHeader("表示##hdr", DebugTheme::kAccentCyan)) {
@@ -738,6 +744,21 @@ void BaseObject::DebugObject() {
     // ====================================================
     if (ThemedHeader("ツール##hdr", DebugTheme::kAccentGreen)) {
         ImGui::Indent(6.0f);
+
+        SectionHeader("[ 複製 ]", DebugTheme::kAccentGreen);
+        if (ImGui::Button("このオブジェクトを複製", ImVec2(-1, 0))) {
+            // 複製はオブジェクトの生成・登録を伴うので、インスペクタを描いている
+            // 最中に objects_ を触らないよう、マネージャ側で次フレームに実行させる
+            BaseObjectManager::GetInstance()->RequestDuplicate(objectName_);
+        }
+        ImGui::SetItemTooltip("トランスフォーム・マテリアル・メタボールの要素ごと複製し、少しずらして置く。\n"
+                              "選択中のオブジェクトが対象のショートカットとは違い、\n"
+                              "こちらは今インスペクタに出ているこのオブジェクトを複製する");
+        ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kTextDim);
+        ImGui::TextWrapped("選択中のオブジェクトには Ctrl+D（複製）/ Ctrl+C・Ctrl+V（コピー＆ペースト）も使えます");
+        ImGui::PopStyleColor();
+        ImGui::Spacing();
+
         SectionHeader("[ スケールイージング検証 ]", DebugTheme::kAccentGreen);
         DrawScaleEaseImGui();
         ImGui::Unindent(6.0f);
