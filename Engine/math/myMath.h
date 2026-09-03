@@ -35,7 +35,7 @@ struct OBB
     Vector3 rotationCenter;     // 回転中心
     Vector3 scaleCenter;        // スケール中心
     Vector3 scaleCenterRotated; // 回転後のスケール中心
-    Vector3 size;               // サイズ
+    Vector3 size;               // 半径extent（中心から各面までの距離。一辺の長さではない）
     Vector3 orientations[3];    // 各軸の方向ベクトル
 };
 

@@ -76,15 +76,18 @@ class SphereCollider : public ColliderBase
     /// <param name="viewProjection">ビュープロジェクション</param>
     void DebugDraw(const ViewProjection &viewProjection) override;
 
+  protected:
     /// <summary>
-    /// 設定をJsonへ保存
+    /// 半径・オフセットを保存
     /// </summary>
-    void SaveToJson() override;
+    /// <param name="json">保存先</param>
+    void SaveShapeToJson(DataHandler &json) override;
 
     /// <summary>
-    /// 設定をJsonから読み込み
+    /// 半径・オフセットを読み込み
     /// </summary>
-    void LoadFromJson() override;
+    /// <param name="json">読み込み元</param>
+    void LoadShapeFromJson(DataHandler &json) override;
 
   private:
     /// ===================================================

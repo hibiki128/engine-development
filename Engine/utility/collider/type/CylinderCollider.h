@@ -83,6 +83,19 @@ class CylinderCollider : public ColliderBase
         }
     }
 
+  protected:
+    /// <summary>
+    /// 半径・高さ・内外の向きを保存
+    /// </summary>
+    /// <param name="json">保存先</param>
+    void SaveShapeToJson(DataHandler &json) override;
+
+    /// <summary>
+    /// 半径・高さ・内外の向きを読み込み
+    /// </summary>
+    /// <param name="json">読み込み元</param>
+    void LoadShapeFromJson(DataHandler &json) override;
+
   private:
     float radius_ = 30.0f;
     float height_ = 100.0f; // Y方向は現状チェックなし（必要なら追加可）

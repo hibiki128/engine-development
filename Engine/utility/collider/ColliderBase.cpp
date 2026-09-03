@@ -24,12 +24,36 @@ void ColliderBase::SetTag(const std::string &tag)
     }
 }
 
+void ColliderBase::ApplyLoadedTag(const std::string &tag)
+{
+    if (tag_ == tag)
+    {
+        return;
+    }
+
+    const std::string oldTag = tag_;
+    tag_ = tag;
+
+    // 登録済みなら CollisionManager 側のタグ別リストも張り替える。
+    // これをしないと、読み込み直したタグと登録先が食い違って判定されなくなる
+    if (isRegistered_)
+    {
+        CollisionManager::GetInstance()->UpdateColliderTag(this, oldTag, tag);
+    }
+}
+
 void ColliderBase::SaveToJson()
 {
     if (!dataHandler_)
     {
         dataHandler_ = std::make_unique<DataHandler>("Collider", name_);
     }
+
+    // 「誰のどの形状か」をファイル名だけに頼らず中身にも持たせる。
+    // BaseObject はこれを見て保存済みコライダーを組み立て直す
+    dataHandler_->Save("name", name_);
+    dataHandler_->Save("objectName", ownerName_);
+    dataHandler_->Save("type", static_cast<int>(GetType()));
 
     dataHandler_->Save("isVisible", isVisible_);
     dataHandler_->Save("isEnabled", isEnabled_);
@@ -39,6 +63,12 @@ void ColliderBase::SaveToJson()
     // 衝突マスクを配列として保存
     std::vector<std::string> maskList(collisionMask_.begin(), collisionMask_.end());
     dataHandler_->Save("collisionMask", maskList);
+
+    // 形状ごとの値
+    SaveShapeToJson(*dataHandler_);
+
+    // 保存した時点でファイルに残す（デストラクタ任せにしない）
+    dataHandler_->Flush();
 }
 
 void ColliderBase::LoadFromJson()
@@ -48,18 +78,26 @@ void ColliderBase::LoadFromJson()
         dataHandler_ = std::make_unique<DataHandler>("Collider", name_);
     }
 
-    isVisible_ = dataHandler_->Load<bool>("isVisible", true);
-    isEnabled_ = dataHandler_->Load<bool>("isEnabled", true);
-    collideWithAll_ = dataHandler_->Load<bool>("collideWithAll", false);
-    tag_ = dataHandler_->Load<std::string>("tag", "None");
+    ownerName_ = dataHandler_->Load<std::string>("objectName", ownerName_);
+    isVisible_ = dataHandler_->Load<bool>("isVisible", isVisible_);
+    isEnabled_ = dataHandler_->Load<bool>("isEnabled", isEnabled_);
+    collideWithAll_ = dataHandler_->Load<bool>("collideWithAll", collideWithAll_);
+    ApplyLoadedTag(dataHandler_->Load<std::string>("tag", tag_));
 
-    // 衝突マスクを配列から読み込み
-    auto maskList = dataHandler_->Load<std::vector<std::string>>("collisionMask", std::vector<std::string>());
-    collisionMask_.clear();
-    for (const auto &mask : maskList)
+    // 衝突マスクを配列から読み込み。
+    // 保存されていない場合は、呼び出し側がコードで入れたマスクを消さずに残す
+    if (dataHandler_->Contains("collisionMask"))
     {
-        AddCollisionMask(mask);
+        auto maskList = dataHandler_->Load<std::vector<std::string>>("collisionMask", std::vector<std::string>());
+        collisionMask_.clear();
+        for (const auto &mask : maskList)
+        {
+            AddCollisionMask(mask);
+        }
     }
+
+    // 形状ごとの値
+    LoadShapeFromJson(*dataHandler_);
 }
 
 #ifdef USE_IMGUI

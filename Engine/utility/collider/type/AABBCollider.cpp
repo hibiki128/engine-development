@@ -31,19 +31,15 @@ void AABBCollider::DebugDraw(const ViewProjection &viewProjection)
     pLine->AddBox(cachedAABB_.min, cachedAABB_.max, color_);
 }
 
-void AABBCollider::SaveToJson()
+void AABBCollider::SaveShapeToJson(DataHandler &json)
 {
-    ColliderBase::SaveToJson();
-
-    dataHandler_->Save("size", size_);
-    dataHandler_->Save("offset", offset_);
+    json.Save("size", size_);
+    json.Save("offset", offset_);
 }
 
-void AABBCollider::LoadFromJson()
+void AABBCollider::LoadShapeFromJson(DataHandler &json)
 {
-    ColliderBase::LoadFromJson();
-
-    size_ = dataHandler_->Load<Vector3>("size", {1.0f, 1.0f, 1.0f});
-    offset_ = dataHandler_->Load<Vector3>("offset", {0.0f, 0.0f, 0.0f});
+    size_ = json.Load<Vector3>("size", size_);
+    offset_ = json.Load<Vector3>("offset", offset_);
 }
 } // namespace Hagine

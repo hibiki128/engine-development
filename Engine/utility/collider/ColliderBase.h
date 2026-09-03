@@ -23,6 +23,29 @@ enum class ColliderType
     Mesh
 };
 
+/// <summary>
+/// 形状種別の名前を返す（保存JSONのファイル名に使う）
+/// </summary>
+/// <param name="type">形状種別</param>
+/// <returns>const char*: 種別名（"Sphere" など）</returns>
+inline const char *ColliderTypeName(ColliderType type)
+{
+    switch (type)
+    {
+    case ColliderType::Sphere:
+        return "Sphere";
+    case ColliderType::AABB:
+        return "AABB";
+    case ColliderType::OBB:
+        return "OBB";
+    case ColliderType::Cylinder:
+        return "Cylinder";
+    case ColliderType::Mesh:
+        return "Mesh";
+    }
+    return "Unknown";
+}
+
 class CollisionManager;
 
 /// <summary>
@@ -219,7 +242,28 @@ class ColliderBase
     /// 名前を設定
     /// </summary>
     /// <param name="name">設定する名前</param>
-    void SetName(const std::string &name) { name_ = name; }
+    void SetName(const std::string &name)
+    {
+        if (name_ == name)
+        {
+            return;
+        }
+        name_ = name;
+        // 保存先のファイル名は名前から決まるので、次の保存／読込で作り直させる
+        dataHandler_.reset();
+    }
+
+    /// <summary>
+    /// このコライダーを持つオブジェクトの名前を設定（保存JSONへ所有者として書き出す）
+    /// </summary>
+    /// <param name="ownerName">オブジェクト名</param>
+    void SetOwnerName(const std::string &ownerName) { ownerName_ = ownerName; }
+
+    /// <summary>
+    /// このコライダーを持つオブジェクトの名前を取得
+    /// </summary>
+    /// <returns>const std::string&: オブジェクト名</returns>
+    const std::string &GetOwnerName() const { return ownerName_; }
 
     /// <summary>
     /// 描画色を設定
@@ -261,14 +305,15 @@ class ColliderBase
     void ResetCollisionFlag() { isCollidingInCurrentFrame_ = false; }
 
     /// <summary>
-    /// コライダー設定をJsonへ保存
+    /// コライダー設定を jsons/Collider/&lt;名前&gt;.json へ保存する。
+    /// コライダーの設定はここが唯一の保存場所で、オブジェクトJSONには持たせない
     /// </summary>
-    virtual void SaveToJson();
+    void SaveToJson();
 
     /// <summary>
-    /// コライダー設定をJsonから読み込み
+    /// jsons/Collider/&lt;名前&gt;.json からコライダー設定を読み込む
     /// </summary>
-    virtual void LoadFromJson();
+    void LoadFromJson();
 
     // 中心座標・回転を外部から取得するための関数オブジェクト
     std::function<Vector3()> getPositionFunc_;
@@ -314,10 +359,34 @@ class ColliderBase
 
   protected:
     /// ===================================================
+    /// protected method
+    /// ===================================================
+
+    /// <summary>
+    /// 形状ごとの値を保存する（派生クラスで実装）
+    /// </summary>
+    /// <param name="json">保存先</param>
+    virtual void SaveShapeToJson(DataHandler &json) {}
+
+    /// <summary>
+    /// 形状ごとの値を読み込む（派生クラスで実装）
+    /// </summary>
+    /// <param name="json">読み込み元</param>
+    virtual void LoadShapeFromJson(DataHandler &json) {}
+
+    /// <summary>
+    /// 保存値のタグを反映する。SetTag と違い未登録のタグでも捨てない
+    /// （タグを登録し切る前にオブジェクトを読み込んでも設定が消えないようにするため）
+    /// </summary>
+    /// <param name="tag">反映するタグ名</param>
+    void ApplyLoadedTag(const std::string &tag);
+
+    /// ===================================================
     /// protected variables
     /// ===================================================
 
     std::string name_;                              // 名前
+    std::string ownerName_;                         // このコライダーを持つオブジェクト名
     std::string tag_ = "None";                      // 自身のタグ
     std::unordered_set<std::string> collisionMask_; // 衝突対象タグの集合
     bool collideWithAll_ = false;                   // タグ無視で全コライダーと判定（デバッグ用）

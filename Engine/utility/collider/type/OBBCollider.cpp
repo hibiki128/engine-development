@@ -7,13 +7,20 @@ void OBBCollider::UpdateWorldTransform()
 {
     cachedOBB_.rotationCenter = GetCenterPosition() + rotationOffset_;
 
+    // size_ は AABBCollider と同じく「一辺の長さ」。
+    // 一方 OBB 構造体の size は判定・描画のどちらも半径extent（中心から面までの距離）を
+    // 前提にしているので、ここで必ず半分に落としてから渡す。
+    // ここで変換し忘れると、設定した値の 2倍の大きさの当たり判定になる
+    const Vector3 halfSize = size_ * 0.5f;
+
+    // アンカーは 0.0〜1.0 の割合。中心(0.5)からのずれ × 一辺の長さ が中心の移動量になる
     Vector3 anchorOffset = Vector3(
-        (anchorPoint_.x - 0.5f) * size_.x * 2.0f,
-        (anchorPoint_.y - 0.5f) * size_.y * 2.0f,
-        (anchorPoint_.z - 0.5f) * size_.z * 2.0f);
+        (anchorPoint_.x - 0.5f) * size_.x,
+        (anchorPoint_.y - 0.5f) * size_.y,
+        (anchorPoint_.z - 0.5f) * size_.z);
 
     cachedOBB_.scaleCenter = GetCenterPosition() + positionOffset_ + anchorOffset;
-    cachedOBB_.size = size_;
+    cachedOBB_.size = halfSize;
 
     MakeOBBOrientations(GetCenterRotation());
     UpdateOBBScaleCenter();
@@ -87,23 +94,19 @@ void OBBCollider::DrawRotationCenter(const ViewProjection &viewProjection)
     LineRenderer::GetInstance()->AddSphere(cachedOBB_.rotationCenter, 0.1f, color_, 12);
 }
 
-void OBBCollider::SaveToJson()
+void OBBCollider::SaveShapeToJson(DataHandler &json)
 {
-    ColliderBase::SaveToJson();
-
-    dataHandler_->Save("size", size_);
-    dataHandler_->Save("rotationOffset", rotationOffset_);
-    dataHandler_->Save("scaleOffset", positionOffset_);
-    dataHandler_->Save("anchorPoint", anchorPoint_);
+    json.Save("size", size_);
+    json.Save("rotationOffset", rotationOffset_);
+    json.Save("scaleOffset", positionOffset_);
+    json.Save("anchorPoint", anchorPoint_);
 }
 
-void OBBCollider::LoadFromJson()
+void OBBCollider::LoadShapeFromJson(DataHandler &json)
 {
-    ColliderBase::LoadFromJson();
-
-    size_ = dataHandler_->Load<Vector3>("size", {1.0f, 1.0f, 1.0f});
-    rotationOffset_ = dataHandler_->Load<Vector3>("rotationOffset", {0.0f, 0.0f, 0.0f});
-    positionOffset_ = dataHandler_->Load<Vector3>("scaleOffset", {0.0f, 0.0f, 0.0f});
-    anchorPoint_ = dataHandler_->Load<Vector3>("anchorPoint", {0.5f, 0.5f, 0.5f});
+    size_ = json.Load<Vector3>("size", size_);
+    rotationOffset_ = json.Load<Vector3>("rotationOffset", rotationOffset_);
+    positionOffset_ = json.Load<Vector3>("scaleOffset", positionOffset_);
+    anchorPoint_ = json.Load<Vector3>("anchorPoint", anchorPoint_);
 }
 } // namespace Hagine

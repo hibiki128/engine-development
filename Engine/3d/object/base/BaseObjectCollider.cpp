@@ -20,14 +20,11 @@
 
 // コライダーの追加と簡易物理（押し戻し・重力）。
 namespace Hagine {
-namespace {
-/// <summary>
-/// コライダー生成時、保存フォルダ(jsons/Collider)に同名のJSONがあれば
-/// その設定（サイズ・オフセット・色・表示/判定・タグ・マスク）を読み込む。
-/// 無ければ何もしない（コードの既定値のまま）。
-/// CollisionManager への登録より前に呼ぶことで、保存されたタグで正しく登録される。
-/// </summary>
-void LoadColliderIfSaved(ColliderBase *collider) {
+// コライダー生成時、保存フォルダ(jsons/Collider)に同名のJSONがあれば
+// その設定（サイズ・オフセット・表示/判定・タグ・マスク）を読み込む。
+// 無ければ何もしない（コードの既定値のまま）。
+// CollisionManager への登録より前に呼ぶことで、保存されたタグで正しく登録される
+void BaseObject::LoadColliderIfSaved(ColliderBase *collider) {
     if (!collider)
         return;
     DataHandler probe("Collider", collider->GetName());
@@ -35,13 +32,30 @@ void LoadColliderIfSaved(ColliderBase *collider) {
         collider->LoadFromJson();
     }
 }
-} // namespace
+
+std::string BaseObject::MakeColliderName(ColliderType type) const {
+    const std::string base = objectName_ + "_" + ColliderTypeName(type) + "Collider_";
+    for (int index = 0;; ++index) {
+        std::string candidate = base + std::to_string(index);
+        bool used = false;
+        for (const auto &collider : colliders_) {
+            if (collider && collider->GetName() == candidate) {
+                used = true;
+                break;
+            }
+        }
+        if (!used) {
+            return candidate;
+        }
+    }
+}
 
 SphereCollider *BaseObject::AddSphereCollider(const std::string &name) {
     auto collider = std::make_unique<SphereCollider>();
 
-    std::string colliderName = name.empty() ? objectName_ + "_SphereCollider" : name;
+    std::string colliderName = name.empty() ? MakeColliderName(ColliderType::Sphere) : name;
     collider->SetName(colliderName);
+    collider->SetOwnerName(objectName_);
 
     collider->SetPositionGetter([this]() { return this->GetWorldPosition(); });
     collider->SetRotationGetter([this]() { return this->GetWorldRotation(); });
@@ -60,8 +74,9 @@ SphereCollider *BaseObject::AddSphereCollider(const std::string &name) {
 AABBCollider *BaseObject::AddAABBCollider(const std::string &name) {
     auto collider = std::make_unique<AABBCollider>();
 
-    std::string colliderName = name.empty() ? objectName_ + "_AABBCollider" : name;
+    std::string colliderName = name.empty() ? MakeColliderName(ColliderType::AABB) : name;
     collider->SetName(colliderName);
+    collider->SetOwnerName(objectName_);
 
     collider->SetPositionGetter([this]() { return this->GetWorldPosition(); });
     collider->SetRotationGetter([this]() { return this->GetWorldRotation(); });
@@ -80,8 +95,9 @@ AABBCollider *BaseObject::AddAABBCollider(const std::string &name) {
 OBBCollider *BaseObject::AddOBBCollider(const std::string &name) {
     auto collider = std::make_unique<OBBCollider>();
 
-    std::string colliderName = name.empty() ? objectName_ + "_OBBCollider" : name;
+    std::string colliderName = name.empty() ? MakeColliderName(ColliderType::OBB) : name;
     collider->SetName(colliderName);
+    collider->SetOwnerName(objectName_);
 
     collider->SetPositionGetter([this]() { return this->GetWorldPosition(); });
     collider->SetRotationGetter([this]() { return this->GetWorldRotation(); });
@@ -100,8 +116,9 @@ OBBCollider *BaseObject::AddOBBCollider(const std::string &name) {
 CylinderCollider *BaseObject::AddCylinderCollider(const std::string &name) {
     auto collider = std::make_unique<CylinderCollider>();
 
-    std::string colliderName = name.empty() ? objectName_ + "_CylinderCollider" : name;
+    std::string colliderName = name.empty() ? MakeColliderName(ColliderType::Cylinder) : name;
     collider->SetName(colliderName);
+    collider->SetOwnerName(objectName_);
 
     collider->SetPositionGetter([this]() { return this->GetWorldPosition(); });
     collider->SetRotationGetter([this]() { return this->GetWorldRotation(); });
@@ -120,8 +137,9 @@ CylinderCollider *BaseObject::AddCylinderCollider(const std::string &name) {
 MeshCollider *BaseObject::AddMeshCollider(const std::string &name) {
     auto collider = std::make_unique<MeshCollider>();
 
-    std::string colliderName = name.empty() ? objectName_ + "_MeshCollider" : name;
+    std::string colliderName = name.empty() ? MakeColliderName(ColliderType::Mesh) : name;
     collider->SetName(colliderName);
+    collider->SetOwnerName(objectName_);
 
     // 位置・回転に加え、スケールを含むワールド行列も取得できるよう配線する
     collider->SetPositionGetter([this]() { return this->GetWorldPosition(); });
