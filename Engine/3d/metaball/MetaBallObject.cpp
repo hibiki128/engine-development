@@ -248,10 +248,7 @@ void MetaBallObject::LoadMetaBallFromJson()
 void MetaBallObject::DrawImGuiExtension()
 {
 #ifdef USE_IMGUI
-    if (!ThemedHeader("メタボール##hdr", DebugTheme::kAccentPurple, true))
-    {
-        return;
-    }
+    // インスペクタ側で「メタボール」タブとして枠が付くので、ここでは中身だけ描く
     ImGui::Indent(6.0f);
 
     MetaBallGroupManager *manager = MetaBallGroupManager::GetInstance();

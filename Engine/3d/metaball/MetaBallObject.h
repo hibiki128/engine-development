@@ -45,10 +45,13 @@ class MetaBallObject : public BaseObject
     void Init(const std::string objectName) override;
 
     /// <summary>
-    /// インスペクタのメタボール専用セクション。
-    /// BaseObject のセクション群と同じ枠の中に出る。
+    /// インスペクタのメタボール専用タブの中身。
+    /// タブ自体が枠になるので、ここで折りたたみヘッダーは作らない。
     /// </summary>
     void DrawImGuiExtension() override;
+
+    /// <summary>インスペクタに「メタボール」タブを出す</summary>
+    const char *GetImGuiExtensionName() const override { return "メタボール"; }
 
     /// <summary>複製元の要素リストとグループ名も写す</summary>
     void CopyPropertiesFrom(const BaseObject &source) override;

@@ -93,6 +93,15 @@ class BaseObject {
     virtual void DrawImGuiExtension() {}
 
     /// <summary>
+    /// 独自セクションを出すタブの名前。nullptr を返すとタブ自体が出ない。
+    /// DrawImGuiExtension() を実装する派生クラスはこれも返すこと
+    /// （例：メタボールなら "メタボール"）。専用タブになるので、
+    /// DrawImGuiExtension() の側で折りたたみヘッダーを作る必要はない。
+    /// </summary>
+    /// <returns>const char*: タブ名（不要なら nullptr）</returns>
+    virtual const char *GetImGuiExtensionName() const { return nullptr; }
+
+    /// <summary>
     /// 複製元の設定をこのオブジェクトへ写す。
     /// 派生クラスは基底を呼んでから独自データを足すこと。
     /// </summary>

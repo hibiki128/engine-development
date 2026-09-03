@@ -192,13 +192,28 @@ void BaseObject::ResolveCollisionWith(ColliderBase *self, ColliderBase *other) {
     // めり込み解消（押し出し）
     transform_->translation_ += mtv;
 
+    // 押し出した結果を即座にワールド行列とコライダーへ反映する。
+    // CollisionManager は1フレーム中に同じ組み合わせを複数回判定する（A対B と B対A）ので、
+    // ここで位置を更新しておかないと、2回目も同じめり込み量を見て二重に押してしまう。
+    // 描画も押し出し後の位置になるので、着地フレームの見た目のズレも消える。
+    transform_->UpdateMatrix();
+    if (self) {
+        self->UpdateWorldTransform();
+    }
+
     // リジッドボディなら、接触面に沿うよう速度を補正する
     if (rigidBody_.enabled) {
         Vector3 n = mtv.Normalize();
         float vn = rigidBody_.velocity.Dot(n);
         if (vn < 0.0f) {
+            // 接地して静止したいだけの接触で跳ね返さないよう、
+            // 衝突速度が十分小さいときは反発を切る（restingContact）。
+            // これが無いと反発係数 > 0 のオブジェクトが床の上で永久に細かく跳ね続ける。
+            // しきい値は重力が数フレームで得る速度（9.8 * 1/60 ≒ 0.16）より少し上に取る
+            constexpr float kRestingSpeed = 0.5f;
+            const float restitution = (-vn < kRestingSpeed) ? 0.0f : rigidBody_.restitution;
             // 法線方向の侵入成分を除去（反発係数で跳ね返り）
-            rigidBody_.velocity -= n * (vn * (1.0f + rigidBody_.restitution));
+            rigidBody_.velocity -= n * (vn * (1.0f + restitution));
         }
         // 接線方向に摩擦をかける（坂を滑り落ちる挙動になる）
         Vector3 vTangent = rigidBody_.velocity - n * rigidBody_.velocity.Dot(n);

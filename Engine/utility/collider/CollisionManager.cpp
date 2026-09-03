@@ -930,8 +930,10 @@ bool CollisionManager::CalculateDepenetration(OBBCollider *colliderA, OBBCollide
         obbA.orientations[2].Cross(obbB.orientations[2]),
     };
 
-    // A→B の方向ベクトル（MTV軸の向きを揃えるために使用）
-    Vector3 d = obbB.scaleCenterRotated - obbA.scaleCenterRotated;
+    // B→A の方向ベクトル（MTV軸の向きを揃えるために使用）。
+    // AをBから「離す」向きなので、B から A へ向くベクトルを基準にする
+    // （A→B で揃えると押し出しが逆になり、相手にめり込む方向へ動いてしまう）
+    Vector3 d = obbA.scaleCenterRotated - obbB.scaleCenterRotated;
 
     float minPenetration = FLT_MAX;
     Vector3 mtvAxis = {};
@@ -989,9 +991,19 @@ bool CollisionManager::CalculateDepenetration(AABBCollider *colliderA, AABBColli
     Vector3 centerB = (b.min + b.max) * 0.5f;
     Vector3 d = centerA - centerB; // B→Aの方向
 
-    // Y軸は絶対に選ばないよう大きな値にしておく
-    // XとZのうち浅い方向に押し返す
-    if (overlapX <= overlapZ)
+    // 3軸のうち一番浅い方向へ押し返す（最小移動ベクトル）。
+    //
+    // 以前はY軸を候補から外して必ずXかZへ押していた。壁ずりのような水平方向の
+    // 押し戻しだけを想定した実装だったが、それだと床に落ちてきた物を真上へ返せない。
+    // 重力で沈む → 横へ押される、が毎フレーム繰り返され、
+    // 落下物が床の端まで滑っていって落ちてしまう。Yも候補に含めて解消する。
+    if (overlapY <= overlapX && overlapY <= overlapZ)
+    {
+        // Y方向に押し返す（床に着地したときはここが選ばれる）
+        float sign = (d.y >= 0.0f) ? 1.0f : -1.0f;
+        outMTV = {0.0f, sign * overlapY, 0.0f};
+    }
+    else if (overlapX <= overlapZ)
     {
         // X方向に押し返す。dのX成分の符号でAをどちらに押すか決める
         float sign = (d.x >= 0.0f) ? 1.0f : -1.0f;
