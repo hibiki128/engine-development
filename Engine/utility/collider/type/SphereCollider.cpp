@@ -20,19 +20,15 @@ void SphereCollider::DebugDraw(const ViewProjection &viewProjection)
     LineRenderer::GetInstance()->AddSphere(cachedSphere_.center, cachedSphere_.radius, color_, 16);
 }
 
-void SphereCollider::SaveToJson()
+void SphereCollider::SaveShapeToJson(DataHandler &json)
 {
-    ColliderBase::SaveToJson();
-
-    dataHandler_->Save("radius", radius_);
-    dataHandler_->Save("offset", offset_);
+    json.Save("radius", radius_);
+    json.Save("offset", offset_);
 }
 
-void SphereCollider::LoadFromJson()
+void SphereCollider::LoadShapeFromJson(DataHandler &json)
 {
-    ColliderBase::LoadFromJson();
-
-    radius_ = dataHandler_->Load<float>("radius", 1.0f);
-    offset_ = dataHandler_->Load<Vector3>("offset", {0.0f, 0.0f, 0.0f});
+    radius_ = json.Load<float>("radius", radius_);
+    offset_ = json.Load<Vector3>("offset", offset_);
 }
 } // namespace Hagine

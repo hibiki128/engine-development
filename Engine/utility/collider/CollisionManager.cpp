@@ -13,8 +13,8 @@ namespace Hagine {
 
 #ifdef USE_IMGUI
 namespace {
-/// <summary>コライダー種別を日本語名に変換する</summary>
-const char *ColliderTypeName(ColliderType type)
+/// <summary>コライダー種別を表示用の日本語名に変換する（保存名に使う ColliderTypeName とは別物）</summary>
+const char *ColliderTypeDisplayName(ColliderType type)
 {
     switch (type)
     {
@@ -782,7 +782,7 @@ void CollisionManager::ImGuiColliderInspector()
         const std::string &name = c->GetName();
         ReadOnlyRow("名前", "%s", name.empty() ? "(名前なし)" : name.c_str());
         ReadOnlyRow("タグ", "%s", c->GetTag().c_str());
-        ReadOnlyRow("種別", "%s", ColliderTypeName(c->GetType()));
+        ReadOnlyRow("種別", "%s", ColliderTypeDisplayName(c->GetType()));
 
         ImGui::Spacing();
         bool enabled = c->IsEnabled();

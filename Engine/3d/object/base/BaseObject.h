@@ -162,8 +162,46 @@ class BaseObject {
     virtual void SaveToJson();
     virtual void LoadFromJson();
     void LoadFromJson(std::string folderPath, std::string jsonName);
+    /// <summary>
+    /// 全コライダーを jsons/Collider/ 以下へ保存する。
+    /// コライダー設定の保存場所はそこだけで、オブジェクトJSONには書かない
+    /// </summary>
     void SaveColliders();
+
+    /// <summary>
+    /// jsons/Collider/ から、このオブジェクトのコライダーを読み込んで作り直す
+    /// </summary>
     void LoadColliders();
+
+    /// <summary>
+    /// コライダーの既定名を作る（&lt;オブジェクト名&gt;_&lt;種別&gt;Collider_&lt;連番&gt;）。
+    /// 連番は今持っているコライダーと重ならない最小の値になる
+    /// </summary>
+    /// <param name="type">コライダーの形状種別</param>
+    /// <returns>std::string: 既定名</returns>
+    std::string MakeColliderName(ColliderType type) const;
+
+    /// <summary>
+    /// 保存済みJSONからコライダーを1つ作り、設定を反映して登録する
+    /// </summary>
+    /// <param name="colliderName">コライダー名（拡張子を除いたJSONのファイル名と同じ）</param>
+    /// <param name="type">形状種別</param>
+    /// <returns>ColliderBase*: 作成したコライダー（未知の種別なら nullptr）</returns>
+    ColliderBase *AttachColliderFromJson(const std::string &colliderName, ColliderType type);
+
+    /// <summary>
+    /// 旧形式（オブジェクトJSONに埋め込んだ colliderCount / collider_N_*）を個別JSONへ移し替える。
+    /// 一度変換すれば、以降は個別JSONだけが読まれる
+    /// </summary>
+    void MigrateLegacyColliders();
+
+    /// <summary>
+    /// コライダー生成直後に、保存フォルダ(jsons/Collider)へ保存済みの設定があれば読み込む。
+    /// 無ければ何もしない（呼び出し側が設定した値のまま）。
+    /// CollisionManager への登録より前に呼ぶことで、保存されたタグで正しく登録される
+    /// </summary>
+    /// <param name="collider">対象のコライダー</param>
+    static void LoadColliderIfSaved(ColliderBase *collider);
     void SaveMaterials();
     void LoadMaterials();
     void AnimaSaveToJson();

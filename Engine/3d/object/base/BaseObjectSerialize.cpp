@@ -10,6 +10,7 @@
 #include "scene/SceneManager.h"
 #include "utility/debug/imgui/DebugUIHelper.h"
 #include "utility/debug/imgui/ImGuiNotification.h"
+#include <algorithm>
 #ifdef USE_IMGUI
 #include "utility/debug/imgui/AssetDragDrop.h"
 #include <asset/AssetPath.h>
@@ -306,63 +307,155 @@ void BaseObject::LoadMaterials() {
     }
 }
 
-void BaseObject::SaveColliders() {
-    if (!objectData_) {
-        return;
+namespace {
+/// <summary>
+/// コライダー保存JSONのファイル名を分解する。
+/// 形式は「&lt;オブジェクト名&gt;_&lt;種別&gt;Collider_&lt;連番&gt;」
+/// </summary>
+/// <param name="stem">拡張子を除いたファイル名</param>
+/// <param name="objectName">持ち主のオブジェクト名</param>
+/// <param name="outType">形状種別の出力先</param>
+/// <param name="outIndex">連番の出力先</param>
+/// <returns>bool: このオブジェクトのコライダーとして解釈できたら true</returns>
+bool ParseColliderFileName(const std::string &stem, const std::string &objectName,
+                           ColliderType &outType, int &outIndex) {
+    const std::string prefix = objectName + "_";
+    if (stem.size() <= prefix.size() || stem.compare(0, prefix.size(), prefix) != 0) {
+        return false;
     }
 
-    // コライダー数を保存
-    objectData_->Save<int>("colliderCount", static_cast<int>(colliders_.size()));
+    // 残りは "<種別>Collider_<連番>" になっているはず
+    const std::string rest = stem.substr(prefix.size());
+    const std::string separator = "Collider_";
+    const size_t sep = rest.rfind(separator);
+    if (sep == std::string::npos) {
+        return false;
+    }
 
-    // 各コライダーの情報を保存
-    for (size_t i = 0; i < colliders_.size(); ++i) {
-        auto *collider = colliders_[i].get();
-        if (!collider)
+    // 連番以外が続くもの（名前の頭がたまたま一致した別オブジェクトのファイル）は弾く
+    const std::string indexText = rest.substr(sep + separator.size());
+    if (indexText.empty() || indexText.size() > 9 ||
+        indexText.find_first_not_of("0123456789") != std::string::npos) {
+        return false;
+    }
+
+    const std::string typeName = rest.substr(0, sep);
+    for (ColliderType type : {ColliderType::Sphere, ColliderType::AABB, ColliderType::OBB,
+                              ColliderType::Cylinder, ColliderType::Mesh}) {
+        if (typeName == ColliderTypeName(type)) {
+            outType = type;
+            outIndex = std::stoi(indexText);
+            return true;
+        }
+    }
+    return false;
+}
+
+/// <summary>
+/// 保存済みコライダーJSONの情報
+/// </summary>
+struct SavedColliderFile {
+    std::string name;  // コライダー名（＝拡張子を除いたファイル名）
+    ColliderType type; // 形状種別
+    int index;         // 連番
+};
+
+/// <summary>
+/// jsons/Collider/ から、指定オブジェクトのコライダーJSONを連番順に列挙する
+/// </summary>
+/// <param name="objectName">持ち主のオブジェクト名</param>
+/// <returns>std::vector&lt;SavedColliderFile&gt;: 見つかったJSONの一覧</returns>
+std::vector<SavedColliderFile> ListSavedColliderFiles(const std::string &objectName) {
+    std::vector<SavedColliderFile> found;
+    if (objectName.empty()) {
+        return found;
+    }
+
+    const std::string folder = AssetPath::JsonRoot() + "/Collider";
+    std::error_code ec;
+    if (!fs::is_directory(folder, ec)) {
+        return found;
+    }
+
+    for (const auto &entry : fs::directory_iterator(folder, ec)) {
+        if (ec) {
+            break;
+        }
+        if (!entry.is_regular_file() || entry.path().extension() != ".json") {
             continue;
+        }
 
-        std::string prefix = "collider_" + std::to_string(i) + "_";
+        // オブジェクト名に日本語が含まれても壊れないよう UTF-8 で取り出す
+        const std::u8string stemUtf8 = entry.path().stem().u8string();
+        const std::string stem(stemUtf8.begin(), stemUtf8.end());
 
-        // 共通情報
-        objectData_->Save<std::string>(prefix + "name", collider->GetName());
-        objectData_->Save<int>(prefix + "type", static_cast<int>(collider->GetType()));
-        objectData_->Save<std::string>(prefix + "tag", collider->GetTag());
-        objectData_->Save<bool>(prefix + "isEnabled", collider->IsEnabled());
-        objectData_->Save<bool>(prefix + "isVisible", collider->IsVisible());
+        SavedColliderFile file{};
+        if (!ParseColliderFileName(stem, objectName, file.type, file.index)) {
+            continue;
+        }
+        file.name = stem;
+        found.push_back(file);
+    }
 
-        // 衝突マスクを保存
-        const auto &mask = collider->GetCollisionMask();
-        std::vector<std::string> maskList(mask.begin(), mask.end());
-        objectData_->Save<std::vector<std::string>>(prefix + "collisionMask", maskList);
+    std::sort(found.begin(), found.end(), [](const SavedColliderFile &a, const SavedColliderFile &b) {
+        return a.index != b.index ? a.index < b.index : a.name < b.name;
+    });
+    return found;
+}
 
-        // 型別の詳細情報を保存
-        if (auto *sphere = dynamic_cast<SphereCollider *>(collider)) {
-            objectData_->Save<float>(prefix + "radius", sphere->GetRadius());
-            objectData_->Save<Vector3>(prefix + "offset", sphere->GetOffset());
-        } else if (auto *aabb = dynamic_cast<AABBCollider *>(collider)) {
-            objectData_->Save<Vector3>(prefix + "size", aabb->GetSize());
-            objectData_->Save<Vector3>(prefix + "offset", aabb->GetOffset());
-        } else if (auto *obb = dynamic_cast<OBBCollider *>(collider)) {
-            objectData_->Save<Vector3>(prefix + "size", obb->GetSize());
-            objectData_->Save<Vector3>(prefix + "rotationOffset", obb->GetRotationOffset());
-            objectData_->Save<Vector3>(prefix + "scaleOffset", obb->GetPositionOffset());
-        } else if (auto *cyl = dynamic_cast<CylinderCollider *>(collider)) {
-            objectData_->Save<float>(prefix + "radius", cyl->GetRadius());
-            objectData_->Save<float>(prefix + "height", cyl->GetHeight());
-            objectData_->Save<bool>(prefix + "inward", cyl->IsInward());
-        } else if (auto *mesh = dynamic_cast<MeshCollider *>(collider)) {
-            // メッシュ形状（三角形データ）は保存せず、オブジェクトのモデルから再構築する。
-            // ここでは復元に必要な最低限の情報のみ保存する。
-            objectData_->Save<std::string>(prefix + "sourceModelPath", mesh->GetSourceModelPath());
-            objectData_->Save<bool>(prefix + "wireframeVisible", mesh->IsWireframeVisible());
+/// <summary>
+/// 形状種別からコライダーの実体を作る
+/// </summary>
+/// <param name="type">形状種別</param>
+/// <returns>std::unique_ptr&lt;ColliderBase&gt;: 生成したコライダー（未知の種別なら nullptr）</returns>
+std::unique_ptr<ColliderBase> CreateColliderOfType(ColliderType type) {
+    switch (type) {
+    case ColliderType::Sphere:
+        return std::make_unique<SphereCollider>();
+    case ColliderType::AABB:
+        return std::make_unique<AABBCollider>();
+    case ColliderType::OBB:
+        return std::make_unique<OBBCollider>();
+    case ColliderType::Cylinder:
+        return std::make_unique<CylinderCollider>();
+    case ColliderType::Mesh:
+        return std::make_unique<MeshCollider>();
+    }
+    return nullptr;
+}
+} // namespace
+
+// コライダーの設定は jsons/Collider/<オブジェクト名>_<種別>Collider_<連番>.json だけに置く。
+// 以前はオブジェクトJSONにも同じ設定を書いていて、両者が食い違うとどちらが効くのか
+// 分からなくなっていたため、保存場所を個別JSONへ一本化した
+void BaseObject::SaveColliders() {
+    // 旧形式のキーが残っていたら消す（保存場所が二重になるのを防ぐ）
+    if (objectData_) {
+        objectData_->Remove("colliderCount");
+        objectData_->RemoveByPrefix("collider_");
+    }
+
+    std::vector<std::string> savedNames;
+    savedNames.reserve(colliders_.size());
+    for (auto &collider : colliders_) {
+        if (!collider) {
+            continue;
+        }
+        collider->SetOwnerName(objectName_);
+        collider->SaveToJson();
+        savedNames.push_back(collider->GetName());
+    }
+
+    // GUIで削除したコライダーのJSONを消す。
+    // 残しておくと、次に読み込んだときに復活してしまう
+    for (const SavedColliderFile &file : ListSavedColliderFiles(objectName_)) {
+        if (std::find(savedNames.begin(), savedNames.end(), file.name) == savedNames.end()) {
+            DataHandler("Collider", file.name).DeleteJson(file.name);
         }
     }
 }
 
 void BaseObject::LoadColliders() {
-    if (!objectData_) {
-        return;
-    }
-
     // 既存のコライダーをクリア（登録解除後、unique_ptr が自動解放）
     for (auto &collider : colliders_) {
         if (collider) {
@@ -371,87 +464,103 @@ void BaseObject::LoadColliders() {
     }
     colliders_.clear();
 
-    // コライダー数を読み込み
-    int colliderCount = objectData_->Load<int>("colliderCount", 0);
+    const std::vector<SavedColliderFile> savedFiles = ListSavedColliderFiles(objectName_);
+    if (savedFiles.empty()) {
+        // 個別JSONがまだ無いなら、旧形式で保存された内容を移し替える
+        MigrateLegacyColliders();
+        return;
+    }
 
-    // 各コライダーを読み込んで作成
+    for (const SavedColliderFile &file : savedFiles) {
+        AttachColliderFromJson(file.name, file.type);
+    }
+}
+
+ColliderBase *BaseObject::AttachColliderFromJson(const std::string &colliderName, ColliderType type) {
+    std::unique_ptr<ColliderBase> colliderOwner = CreateColliderOfType(type);
+    if (!colliderOwner) {
+        return nullptr;
+    }
+
+    ColliderBase *collider = colliderOwner.get();
+    collider->SetName(colliderName);
+    collider->SetOwnerName(objectName_);
+
+    // 位置と回転の取得関数を設定
+    collider->SetPositionGetter([this]() { return this->GetWorldPosition(); });
+    collider->SetRotationGetter([this]() { return this->GetWorldRotation(); });
+
+    if (auto *mesh = dynamic_cast<MeshCollider *>(collider)) {
+        // 三角形データは保存していないので、オブジェクトのモデルから組み直す
+        mesh->SetMatrixGetter([this]() { return this->GetWorldMatrix(); });
+        mesh->SetSourceModelPath(modelPath_);
+        if (obj3d_) {
+            mesh->BuildFromModel(obj3d_->GetModel());
+        }
+    }
+
+    // 登録より前に保存値を反映する（保存されたタグで CollisionManager に登録されるようにする）
+    collider->LoadFromJson();
+
+    colliders_.push_back(std::move(colliderOwner));
+    CollisionManager::GetInstance()->Register(collider);
+    return collider;
+}
+
+void BaseObject::MigrateLegacyColliders() {
+    if (!objectData_) {
+        return;
+    }
+
+    const int colliderCount = objectData_->Load<int>("colliderCount", 0);
+    if (colliderCount <= 0) {
+        return;
+    }
+
     for (int i = 0; i < colliderCount; ++i) {
-        std::string prefix = "collider_" + std::to_string(i) + "_";
+        const std::string prefix = "collider_" + std::to_string(i) + "_";
+        const ColliderType type = static_cast<ColliderType>(objectData_->Load<int>(prefix + "type", 0));
 
-        // 型を読み込み
-        ColliderType type = static_cast<ColliderType>(
-            objectData_->Load<int>(prefix + "type", 0));
+        std::unique_ptr<ColliderBase> colliderOwner = CreateColliderOfType(type);
+        if (!colliderOwner) {
+            continue;
+        }
+        ColliderBase *collider = colliderOwner.get();
 
-        ColliderBase *collider = nullptr;
-        std::unique_ptr<ColliderBase> colliderOwner;
-
-        // 型に応じてコライダーを作成
-        switch (type) {
-        case ColliderType::Sphere: {
-            auto sphere = std::make_unique<SphereCollider>();
+        // 型別の詳細情報
+        if (auto *sphere = dynamic_cast<SphereCollider *>(collider)) {
             sphere->SetRadius(objectData_->Load<float>(prefix + "radius", 1.0f));
             sphere->SetOffset(objectData_->Load<Vector3>(prefix + "offset", {0.0f, 0.0f, 0.0f}));
-            collider = sphere.get();
-            colliderOwner = std::move(sphere);
-            break;
-        }
-        case ColliderType::AABB: {
-            auto aabb = std::make_unique<AABBCollider>();
+        } else if (auto *aabb = dynamic_cast<AABBCollider *>(collider)) {
             aabb->SetSize(objectData_->Load<Vector3>(prefix + "size", {1.0f, 1.0f, 1.0f}));
             aabb->SetOffset(objectData_->Load<Vector3>(prefix + "offset", {0.0f, 0.0f, 0.0f}));
-            collider = aabb.get();
-            colliderOwner = std::move(aabb);
-            break;
-        }
-        case ColliderType::OBB: {
-            auto obb = std::make_unique<OBBCollider>();
+        } else if (auto *obb = dynamic_cast<OBBCollider *>(collider)) {
             obb->SetSize(objectData_->Load<Vector3>(prefix + "size", {1.0f, 1.0f, 1.0f}));
             obb->SetRotationOffset(objectData_->Load<Vector3>(prefix + "rotationOffset", {0.0f, 0.0f, 0.0f}));
             obb->SetPositionOffSet(objectData_->Load<Vector3>(prefix + "scaleOffset", {0.0f, 0.0f, 0.0f}));
-            collider = obb.get();
-            colliderOwner = std::move(obb);
-            break;
-        }
-        case ColliderType::Cylinder: {
-            auto cyl = std::make_unique<CylinderCollider>();
+        } else if (auto *cyl = dynamic_cast<CylinderCollider *>(collider)) {
             cyl->SetRadius(objectData_->Load<float>(prefix + "radius", 30.0f));
             cyl->SetHeight(objectData_->Load<float>(prefix + "height", 100.0f));
             cyl->SetInward(objectData_->Load<bool>(prefix + "inward", true));
-            collider = cyl.get();
-            colliderOwner = std::move(cyl);
-            break;
-        }
-        case ColliderType::Mesh: {
-            auto mesh = std::make_unique<MeshCollider>();
+        } else if (auto *mesh = dynamic_cast<MeshCollider *>(collider)) {
+            // メッシュ形状（三角形データ）は保存されていないので、モデルから再構築する
             mesh->SetSourceModelPath(objectData_->Load<std::string>(prefix + "sourceModelPath", modelPath_));
             mesh->SetWireframeVisible(objectData_->Load<bool>(prefix + "wireframeVisible", true));
-            // 三角形データは保存していないため、オブジェクトのモデルから再構築する
+            mesh->SetMatrixGetter([this]() { return this->GetWorldMatrix(); });
             if (obj3d_) {
-                mesh->SetMatrixGetter([this]() { return this->GetWorldMatrix(); });
                 mesh->BuildFromModel(obj3d_->GetModel());
             }
-            collider = mesh.get();
-            colliderOwner = std::move(mesh);
-            break;
-        }
-        default:
-            continue;
         }
 
-        if (!collider)
-            continue;
-
-        // 共通情報を設定
-        std::string name = objectData_->Load<std::string>(prefix + "name", objectName_ + "_Collider" + std::to_string(i));
-        collider->SetName(name);
+        // 共通情報。名前は新しい規則（<オブジェクト名>_<種別>Collider_<連番>）に付け替える
+        collider->SetName(MakeColliderName(type));
+        collider->SetOwnerName(objectName_);
         collider->SetTag(objectData_->Load<std::string>(prefix + "tag", "None"));
         collider->SetEnabled(objectData_->Load<bool>(prefix + "isEnabled", true));
         collider->SetVisible(objectData_->Load<bool>(prefix + "isVisible", true));
 
-        // 衝突マスクを読み込み
-        auto maskList = objectData_->Load<std::vector<std::string>>(
-            prefix + "collisionMask",
-            std::vector<std::string>());
+        const auto maskList = objectData_->Load<std::vector<std::string>>(
+            prefix + "collisionMask", std::vector<std::string>());
         for (const auto &maskTag : maskList) {
             collider->AddCollisionMask(maskTag);
         }
@@ -460,10 +569,23 @@ void BaseObject::LoadColliders() {
         collider->SetPositionGetter([this]() { return this->GetWorldPosition(); });
         collider->SetRotationGetter([this]() { return this->GetWorldRotation(); });
 
-        // リストに追加して登録
+        // 個別JSONへ書き出す。以降はこちらだけが読まれる
+        collider->SaveToJson();
+
+        // 連番の無い旧ファイル名で保存されていた分は消す（設定が混在する原因だった）
+        const std::string legacyName = objectData_->Load<std::string>(prefix + "name", "");
+        if (!legacyName.empty() && legacyName != collider->GetName()) {
+            DataHandler("Collider", legacyName).DeleteJson(legacyName);
+        }
+
         colliders_.push_back(std::move(colliderOwner));
         CollisionManager::GetInstance()->Register(collider);
     }
+
+    // 移行が済んだので旧キーを落とす
+    objectData_->Remove("colliderCount");
+    objectData_->RemoveByPrefix("collider_");
+    objectData_->Flush();
 }
 
 void BaseObject::AnimaSaveToJson() {

@@ -638,20 +638,16 @@ void MeshCollider::DebugDraw(const ViewProjection &viewProjection)
     pLine->SubmitBatch(wireframeBatch_, cachedWorld_, color_);
 }
 
-void MeshCollider::SaveToJson()
+void MeshCollider::SaveShapeToJson(DataHandler &json)
 {
-    ColliderBase::SaveToJson();
-
-    dataHandler_->Save("sourceModelPath", sourceModelPath_);
-    dataHandler_->Save("wireframeVisible", isWireframeVisible_);
+    json.Save("sourceModelPath", sourceModelPath_);
+    json.Save("wireframeVisible", isWireframeVisible_);
 }
 
-void MeshCollider::LoadFromJson()
+void MeshCollider::LoadShapeFromJson(DataHandler &json)
 {
-    ColliderBase::LoadFromJson();
-
-    sourceModelPath_ = dataHandler_->Load<std::string>("sourceModelPath", sourceModelPath_);
-    isWireframeVisible_ = dataHandler_->Load<bool>("wireframeVisible", true);
+    sourceModelPath_ = json.Load<std::string>("sourceModelPath", sourceModelPath_);
+    isWireframeVisible_ = json.Load<bool>("wireframeVisible", isWireframeVisible_);
 }
 
 bool MeshCollider::Intersect(const Sphere &sphere) const

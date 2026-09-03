@@ -25,15 +25,17 @@ class OBBCollider : public ColliderBase
     ~OBBCollider() override = default;
 
     /// <summary>
-    /// サイズを設定
+    /// サイズ（一辺の長さ）を設定する。
+    /// AABBCollider と同じく「箱の全体の大きさ」で、半径extentではない。
+    /// 例えば {1,1,1} を渡すと 1x1x1 の箱になる
     /// </summary>
-    /// <param name="size">設定するサイズ</param>
+    /// <param name="size">設定するサイズ（一辺の長さ）</param>
     void SetSize(const Vector3 &size) { size_ = size; }
 
     /// <summary>
-    /// サイズを取得
+    /// サイズ（一辺の長さ）を取得
     /// </summary>
-    /// <returns>const Vector3&: 現在のサイズ</returns>
+    /// <returns>const Vector3&: 現在のサイズ（一辺の長さ）</returns>
     const Vector3 &GetSize() const { return size_; }
 
     /// <summary>
@@ -84,16 +86,6 @@ class OBBCollider : public ColliderBase
     void DebugDraw(const ViewProjection &viewProjection) override;
 
     /// <summary>
-    /// 設定をJsonへ保存
-    /// </summary>
-    void SaveToJson() override;
-
-    /// <summary>
-    /// 設定をJsonから読み込み
-    /// </summary>
-    void LoadFromJson() override;
-
-    /// <summary>
     /// 回転の基準となるアンカーポイントを設定
     /// </summary>
     /// <param name="anchor">設定するアンカーポイント</param>
@@ -104,6 +96,19 @@ class OBBCollider : public ColliderBase
     /// </summary>
     /// <returns>const Vector3&: 現在のアンカーポイント</returns>
     const Vector3 &GetAnchorPoint() const { return anchorPoint_; }
+
+  protected:
+    /// <summary>
+    /// サイズ・各オフセット・アンカーポイントを保存
+    /// </summary>
+    /// <param name="json">保存先</param>
+    void SaveShapeToJson(DataHandler &json) override;
+
+    /// <summary>
+    /// サイズ・各オフセット・アンカーポイントを読み込み
+    /// </summary>
+    /// <param name="json">読み込み元</param>
+    void LoadShapeFromJson(DataHandler &json) override;
 
   private:
     /// ===================================================
@@ -131,7 +136,7 @@ class OBBCollider : public ColliderBase
     /// private variables
     /// ===================================================
 
-    Vector3 size_ = {1.0f, 1.0f, 1.0f};           // サイズ
+    Vector3 size_ = {1.0f, 1.0f, 1.0f};           // サイズ（一辺の長さ。半径extentではない）
     Vector3 rotationOffset_ = {0.0f, 0.0f, 0.0f}; // 回転オフセット
     Vector3 positionOffset_ = {0.0f, 0.0f, 0.0f}; // 位置オフセット
     OBB cachedOBB_;                               // 計算済みのOBB形状データ

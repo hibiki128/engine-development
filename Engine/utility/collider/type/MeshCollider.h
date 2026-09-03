@@ -62,16 +62,6 @@ class MeshCollider : public ColliderBase
     /// <param name="viewProjection">ビュープロジェクション</param>
     void DebugDraw(const ViewProjection &viewProjection) override;
 
-    /// <summary>
-    /// 設定をJsonへ保存
-    /// </summary>
-    void SaveToJson() override;
-
-    /// <summary>
-    /// 設定をJsonから読み込み
-    /// </summary>
-    void LoadFromJson() override;
-
     /// ===================================================
     /// ヒット判定（相手形状はワールド空間）
     /// ===================================================
@@ -121,6 +111,19 @@ class MeshCollider : public ColliderBase
     void SetWireframeVisible(bool visible) { isWireframeVisible_ = visible; }
     bool IsWireframeVisible() const { return isWireframeVisible_; }
     bool IsBuilt() const { return !triangles_.empty(); }
+
+  protected:
+    /// <summary>
+    /// 元モデルのパス・ワイヤーフレーム表示を保存（三角形データはモデルから組み直すので保存しない）
+    /// </summary>
+    /// <param name="json">保存先</param>
+    void SaveShapeToJson(DataHandler &json) override;
+
+    /// <summary>
+    /// 元モデルのパス・ワイヤーフレーム表示を読み込み
+    /// </summary>
+    /// <param name="json">読み込み元</param>
+    void LoadShapeFromJson(DataHandler &json) override;
 
   private:
     /// ===================================================

@@ -59,10 +59,9 @@ void BaseObject::DrawImGui() {
 
         // ---- 保存バー（常に最下部に固定）----
         if (ConfirmButton("この設定を全て保存##objsave")) {
+            // SaveToJson の中で全コライダーも jsons/Collider/ へ保存される
             SaveToJson();
             AnimaSaveToJson();
-            for (auto &c : colliders_)
-                c->SaveToJson();
 
             ImGuiNotification::Post(std::format("「{}」をセーブしました", objectName_),
                                     {0.45f, 0.68f, 0.52f, 1.0f});
@@ -670,27 +669,41 @@ void BaseObject::DebugObject() {
                         c->AddCollisionMask(mask);
                     }
                 };
+                // AddXxxCollider は保存済みJSON(jsons/Collider)があればそれを読み込んで返す。
+                // そこへ既定値を被せると、保存しておいたサイズやタグが消えてしまうので、
+                // 既定値を入れるのは「保存済み設定が無かったとき」だけにする
+                auto isFresh = [](auto *c) {
+                    return !DataHandler("Collider", c->GetName()).Exists();
+                };
                 if (ImGui::MenuItem("Sphere")) {
                     auto *c = AddSphereCollider();
-                    makeDefault(c);
-                    c->SetRadius(1.0f);
+                    if (isFresh(c)) {
+                        makeDefault(c);
+                        c->SetRadius(1.0f);
+                    }
                 }
                 if (ImGui::MenuItem("AABB")) {
                     auto *c = AddAABBCollider();
-                    makeDefault(c);
-                    c->SetSize({2.0f, 2.0f, 2.0f});
+                    if (isFresh(c)) {
+                        makeDefault(c);
+                        c->SetSize({2.0f, 2.0f, 2.0f});
+                    }
                 }
                 if (ImGui::MenuItem("OBB")) {
                     auto *c = AddOBBCollider();
-                    makeDefault(c);
-                    c->SetSize({2.0f, 2.0f, 2.0f});
+                    if (isFresh(c)) {
+                        makeDefault(c);
+                        c->SetSize({2.0f, 2.0f, 2.0f});
+                    }
                 }
                 if (ImGui::MenuItem("Cylinder")) {
                     auto *c = AddCylinderCollider();
-                    makeDefault(c);
-                    c->SetRadius(2.0f);
-                    c->SetHeight(4.0f);
-                    c->SetInward(false); // 障害物として外側に押し出す
+                    if (isFresh(c)) {
+                        makeDefault(c);
+                        c->SetRadius(2.0f);
+                        c->SetHeight(4.0f);
+                        c->SetInward(false); // 障害物として外側に押し出す
+                    }
                 }
                 if (ImGui::MenuItem("Mesh")) {
                     // 自身のモデル形状から三角形メッシュコライダーを生成する

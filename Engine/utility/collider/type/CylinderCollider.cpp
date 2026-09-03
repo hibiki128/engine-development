@@ -14,4 +14,18 @@ void CylinderCollider::DebugDraw(const ViewProjection &viewProjection)
     // 視錐台カリングと三角関数テーブルは LineRenderer 側で行われる。
     LineRenderer::GetInstance()->AddCylinder(GetCenterPosition(), radius_, height_ * 0.5f, color_, 24);
 }
+
+void CylinderCollider::SaveShapeToJson(DataHandler &json)
+{
+    json.Save("radius", radius_);
+    json.Save("height", height_);
+    json.Save("inward", inward_);
+}
+
+void CylinderCollider::LoadShapeFromJson(DataHandler &json)
+{
+    radius_ = json.Load<float>("radius", radius_);
+    height_ = json.Load<float>("height", height_);
+    inward_ = json.Load<bool>("inward", inward_);
+}
 } // namespace Hagine

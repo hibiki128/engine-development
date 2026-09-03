@@ -122,6 +122,30 @@ class DataHandler
     }
 
     /// <summary>
+    /// 指定した接頭辞で始まるキーをまとめて削除する（次回Flushでファイルへ反映）
+    /// </summary>
+    /// <param name="prefix">削除するキーの接頭辞</param>
+    void RemoveByPrefix(const std::string &prefix)
+    {
+        if (!cachedJson_.is_object())
+        {
+            return;
+        }
+        for (auto it = cachedJson_.begin(); it != cachedJson_.end();)
+        {
+            if (it.key().rfind(prefix, 0) == 0)
+            {
+                it = cachedJson_.erase(it);
+                isDirty_ = true;
+            }
+            else
+            {
+                ++it;
+            }
+        }
+    }
+
+    /// <summary>
     /// 指定キーが存在するか
     /// </summary>
     bool Contains(const std::string &key) const
