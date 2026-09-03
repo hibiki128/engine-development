@@ -1445,6 +1445,7 @@ nlohmann::json BaseObjectManager::CaptureUndoState()
                 e["negative"] = element.negative;
                 e["axis"] = element.axis;
                 e["enabled"] = element.enabled;
+                e["radiusScale"] = element.radiusScale;
                 elements.push_back(e);
             }
             s["metaBallGroup"] = metaBall->GetGroupName();
@@ -1539,6 +1540,7 @@ void BaseObjectManager::RestoreUndoState(const nlohmann::json &state)
                     element.negative = e.value("negative", false);
                     element.axis = e.value("axis", Vector3{});
                     element.enabled = e.value("enabled", true);
+                    element.radiusScale = e.value("radiusScale", Vector3{1.0f, 1.0f, 1.0f});
                     elements.push_back(element);
                 }
                 metaBall->GetElements() = std::move(elements);

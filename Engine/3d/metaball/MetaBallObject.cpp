@@ -27,6 +27,12 @@ void MetaBallObject::Init(const std::string objectName)
     isModelDraw_ = false;
     modelPath_ = kMetaBallModelTag;
 
+    // 既定のグループは「自分の名前」。オブジェクト名は一意なので、
+    // 作ったメタボールは既定で独立し、テクスチャや太さを個別に設定できる。
+    // （以前は全員が共通グループに入っていたので、1つ変えると全部変わっていた）
+    // くっつけたいときはインスペクタで同じグループ名を入れる。
+    groupName_ = objectName.empty() ? kMetaBallDefaultGroup : objectName;
+
     // 弾として 1 個ずつ飛ばす使い方を想定して、既定は球 1 個だけ
     elements_.clear();
     MetaBallElement ball{};
@@ -43,11 +49,16 @@ void MetaBallObject::AppendWorldElements(std::vector<MetaBallElement> &out) cons
 {
     const Matrix4x4 world = transform_->matWorld_;
 
-    // ワールド行列に入っているスケールを取り出す。半径は一様スケールとして扱う
+    // ワールド行列の基底（＝回転 × スケール）を取り出す。
+    // 各軸の長さがそのままその軸のスケールになる
     const Vector3 basisX{world.m[0][0], world.m[0][1], world.m[0][2]};
     const Vector3 basisY{world.m[1][0], world.m[1][1], world.m[1][2]};
     const Vector3 basisZ{world.m[2][0], world.m[2][1], world.m[2][2]};
-    const float scale = std::max({basisX.Length(), basisY.Length(), basisZ.Length(), 1e-6f});
+    const float scaleX = (std::max)(basisX.Length(), 1e-6f);
+    const float scaleY = (std::max)(basisY.Length(), 1e-6f);
+    const float scaleZ = (std::max)(basisZ.Length(), 1e-6f);
+    // カプセルや AABB 見積もり用の代表スケール（一番大きい軸）
+    const float scaleMax = (std::max)({scaleX, scaleY, scaleZ});
 
     for (const MetaBallElement &local : elements_)
     {
@@ -58,12 +69,39 @@ void MetaBallObject::AppendWorldElements(std::vector<MetaBallElement> &out) cons
         MetaBallElement world_{};
         world_.position = Transformation(local.position, world);
         world_.shape = local.shape;
-        world_.radius = local.radius * scale;
         world_.stiffness = local.stiffness;
         world_.negative = local.negative;
         // 軸は向きなので平行移動を掛けない
         world_.axis = TransformNormal(local.axis, world);
         world_.enabled = true;
+        world_.radiusScale = local.radiusScale;
+
+        // 軸ごとの実効半径 = 影響半径 × 要素の軸倍率 × オブジェクトのその軸のスケール
+        const float rx = (std::max)(local.radius * local.radiusScale.x * scaleX, 1e-6f);
+        const float ry = (std::max)(local.radius * local.radiusScale.y * scaleY, 1e-6f);
+        const float rz = (std::max)(local.radius * local.radiusScale.z * scaleZ, 1e-6f);
+
+        // 3 軸が揃っていれば従来どおりの真球として扱う（評価が速い経路に乗る）。
+        // カプセルはチューブ半径が 1 つしかないので、常に代表半径で扱う
+        const float maxR = (std::max)({rx, ry, rz});
+        const float minR = (std::min)({rx, ry, rz});
+        const bool uniform = (maxR - minR) <= maxR * 1e-4f;
+
+        if (local.shape == MetaBallShape::Capsule || uniform)
+        {
+            world_.radius = local.radius * scaleMax;
+            world_.isEllipsoid = false;
+        }
+        else
+        {
+            // 単位空間へ写す基底を焼き込む。u_i = (正規化した軸) / その軸の半径 なので、
+            // 差分ベクトルとの内積がそのまま「半径何個ぶん離れているか」になる
+            world_.radius = maxR; // AABB 見積もりや UI 表示用の代表値
+            world_.unitAxisX = (basisX / scaleX) / rx;
+            world_.unitAxisY = (basisY / scaleY) / ry;
+            world_.unitAxisZ = (basisZ / scaleZ) / rz;
+            world_.isEllipsoid = true;
+        }
         out.push_back(world_);
     }
 }
@@ -132,8 +170,15 @@ void MetaBallObject::CopyPropertiesFrom(const BaseObject &source)
     }
     elements_ = other->elements_;
     selectedElement_ = other->selectedElement_;
-    // グループを写す（同じグループなら複製した瞬間から元とくっつく）
-    SetGroupName(other->groupName_);
+
+    // グループ名は写さない。写すと複製した瞬間に元とくっついてしまい、
+    // テクスチャや太さも共有されて片方だけ変えられなくなる。
+    // 代わりに見た目の設定値だけをコピーして、独立したそっくりさんにする。
+    // （わざとくっつけたいときはインスペクタで同じグループ名を入れる）
+    MetaBallGroupManager *manager = MetaBallGroupManager::GetInstance();
+    manager->GetSettings(groupName_) = manager->GetSettings(other->groupName_);
+    manager->ApplyMaterial(groupName_);
+    manager->MarkDirty(groupName_);
 }
 
 void MetaBallObject::SetStiffness(float stiffness)
@@ -141,6 +186,18 @@ void MetaBallObject::SetStiffness(float stiffness)
     for (MetaBallElement &e : elements_)
     {
         e.stiffness = stiffness;
+    }
+}
+
+void MetaBallObject::SetRadiusScale(const Vector3 &radiusScale)
+{
+    // 0 や負の倍率は密度が発散するので下限で止める
+    const Vector3 clamped{(std::max)(radiusScale.x, 0.01f),
+                          (std::max)(radiusScale.y, 0.01f),
+                          (std::max)(radiusScale.z, 0.01f)};
+    for (MetaBallElement &e : elements_)
+    {
+        e.radiusScale = clamped;
     }
 }
 
@@ -189,6 +246,7 @@ void MetaBallObject::SaveMetaBallToJson()
         data.Save<bool>(prefix + "negative", e.negative);
         data.Save<Vector3>(prefix + "axis", e.axis);
         data.Save<bool>(prefix + "enabled", e.enabled);
+        data.Save<Vector3>(prefix + "radiusScale", e.radiusScale);
     }
 
     // グループ設定はグループ名をキーに別ファイルへ（メンバー全員で共有するため）
@@ -198,13 +256,19 @@ void MetaBallObject::SaveMetaBallToJson()
     groupData.Save<float>("threshold", settings.threshold);
     groupData.Save<float>("uvScale", settings.uvScale);
     groupData.Save<std::string>("texturePath", settings.texturePath);
+    groupData.Save<Vector4>("color", settings.color);
+    groupData.Save<int>("blendMode", static_cast<int>(settings.blendMode));
+    groupData.Save<bool>("lighting", settings.lighting);
+    groupData.Save<bool>("enabled", settings.enabled);
 }
 
 void MetaBallObject::LoadMetaBallFromJson()
 {
     DataHandler data("MetaBallDatas", objectName_);
     const int count = data.Load<int>("elementCount", 0);
-    SetGroupName(data.Load<std::string>("groupName", kMetaBallDefaultGroup));
+    // 保存されていればその名前で復元する（意図的にくっつけた組み合わせを維持するため）。
+    // 保存が無ければ Init と同じく自分の名前＝独立
+    SetGroupName(data.Load<std::string>("groupName", groupName_));
 
     // グループ設定を戻す
     {
@@ -214,7 +278,12 @@ void MetaBallObject::LoadMetaBallFromJson()
         settings.threshold = groupData.Load<float>("threshold", settings.threshold);
         settings.uvScale = groupData.Load<float>("uvScale", settings.uvScale);
         settings.texturePath = groupData.Load<std::string>("texturePath", settings.texturePath);
-        MetaBallGroupManager::GetInstance()->ApplyTexture(groupName_);
+        settings.color = groupData.Load<Vector4>("color", settings.color);
+        settings.blendMode = static_cast<BlendMode>(
+            groupData.Load<int>("blendMode", static_cast<int>(settings.blendMode)));
+        settings.lighting = groupData.Load<bool>("lighting", settings.lighting);
+        settings.enabled = groupData.Load<bool>("enabled", settings.enabled);
+        MetaBallGroupManager::GetInstance()->ApplyMaterial(groupName_);
         MetaBallGroupManager::GetInstance()->MarkDirty(groupName_);
     }
 
@@ -236,6 +305,7 @@ void MetaBallObject::LoadMetaBallFromJson()
         e.negative = data.Load<bool>(prefix + "negative", false);
         e.axis = data.Load<Vector3>(prefix + "axis", {0.0f, 0.0f, 0.0f});
         e.enabled = data.Load<bool>(prefix + "enabled", true);
+        e.radiusScale = data.Load<Vector3>(prefix + "radiusScale", {1.0f, 1.0f, 1.0f});
         elements_.push_back(e);
     }
     selectedElement_ = 0;
@@ -252,7 +322,6 @@ void MetaBallObject::DrawImGuiExtension()
     ImGui::Indent(6.0f);
 
     MetaBallGroupManager *manager = MetaBallGroupManager::GetInstance();
-    MetaBallGroupSettings &settings = manager->GetSettings(groupName_);
 
     // ---- 大きさ（一番よく触るので最初に置く）-----------------------------
     SectionHeader("[ 大きさ ]", DebugTheme::kAccentPurple);
@@ -267,16 +336,47 @@ void MetaBallObject::DrawImGuiExtension()
                           "この距離で密度が 0 になるので、大きいほど遠くの相手とくっつく。\n"
                           "トランスフォームのスケールでも変えられる（掛け算される）");
 
+    // 軸ごとの倍率＝楕円体。真球なら {1,1,1}
+    Vector3 shape = elements_.empty() ? Vector3{1.0f, 1.0f, 1.0f} : elements_[0].radiusScale;
+    ImGui::SetNextItemWidth(-1);
+    if (ImGui::DragFloat3("##mbshape", &shape.x, 0.01f, 0.05f, 20.0f, "%.2f"))
+    {
+        SetRadiusScale(shape);
+    }
+    ImGui::SetItemTooltip("軸ごとの半径倍率。X/Y/Z を変えると楕円体になる（1,1,1 で真球）。\n"
+                          "オブジェクトの回転にも付いてくる。カプセルには効かない（軸で伸ばす）");
+    if (NeutralButton("真球に戻す##mbsphere"))
+    {
+        SetRadiusScale({1.0f, 1.0f, 1.0f});
+    }
+    ImGui::SameLine();
+    if (NeutralButton("トランスフォームのスケールを取り込む##mbbake"))
+    {
+        // 見た目そのままで、伸びをスケールから要素側へ移し替える。
+        // コライダーなど他の機能はスケールを見るので、
+        // 形だけ変えたいときはスケールを 1 に戻しておきたい
+        const Vector3 s = transform_->scale_;
+        SetRadiusScale({shape.x * s.x, shape.y * s.y, shape.z * s.z});
+        transform_->scale_ = {1.0f, 1.0f, 1.0f};
+    }
+    ImGui::SetItemTooltip("トランスフォームのスケールを要素の軸倍率へ移して、スケールを 1 に戻す");
+
     ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kTextDim);
-    ImGui::TextWrapped("スケールを掛けた実効半径: %.2f", radius * (std::max)({transform_->scale_.x, transform_->scale_.y, transform_->scale_.z}));
+    const Vector3 &objScale = transform_->scale_;
+    ImGui::TextWrapped("スケール込みの実効半径: X %.2f / Y %.2f / Z %.2f",
+                       radius * shape.x * objScale.x,
+                       radius * shape.y * objScale.y,
+                       radius * shape.z * objScale.z);
     ImGui::PopStyleColor();
 
     ImGui::Spacing();
 
     // ---- グループ -------------------------------------------------------
     SectionHeader("[ グループ ]", DebugTheme::kAccentPurple);
+    const size_t memberCount = manager->GetMemberCount(groupName_);
     ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kTextDim);
-    ImGui::TextWrapped("同じグループ名のメタボール同士が融合します。");
+    ImGui::TextWrapped("同じグループ名のメタボール同士だけが融合し、下のマテリアルも共有します。\n"
+                       "既定ではオブジェクト名がそのままグループ名なので、作ったものは独立しています。");
     ImGui::PopStyleColor();
 
     char groupBuffer[128];
@@ -286,20 +386,65 @@ void MetaBallObject::DrawImGuiExtension()
     {
         SetGroupName(groupBuffer);
     }
-    ImGui::SetItemTooltip("Enter で確定。名前を分けると別々の塊として扱われます");
-    ImGui::Text("このグループのオブジェクト数: %d",
-                static_cast<int>(manager->GetMemberCount(groupName_)));
+    ImGui::SetItemTooltip("Enter で確定。くっつけたい相手と同じ名前にする。\n"
+                          "名前を分けると別々の塊になり、マテリアルも別々になります");
+    if (memberCount > 1)
+    {
+        ImGui::TextColored(DebugTheme::kAccentOrange,
+                           "このグループには %d 個います（マテリアルは全員で共有）",
+                           static_cast<int>(memberCount));
+        ImGui::SameLine();
+        if (NeutralButton("独立させる##mbdetach"))
+        {
+            SetGroupName(objectName_);
+        }
+        ImGui::SetItemTooltip("グループ名を自分のオブジェクト名に戻して、単独の塊にする");
+    }
+    else
+    {
+        ImGui::TextColored(DebugTheme::kTextDim, "独立（このグループはこのオブジェクトだけ）");
+    }
 
     ImGui::Spacing();
 
-    // ---- 見た目（グループ共通）-------------------------------------------
-    SectionHeader("[ 見た目（グループ共通）]", DebugTheme::kAccentPurple);
+    // ---- マテリアル -----------------------------------------------------
+    // 融合した表面はグループが 1 枚のメッシュとして描くので、マテリアルもグループ単位。
+    // BaseObject のマテリアル欄はこのオブジェクトの空モデル向けで効かないため、
+    // インスペクタ側ではそちらを隠して（HasInspectorMaterial）ここに集約している
+    SectionHeader("[ マテリアル ]", DebugTheme::kAccentPurple);
+
+    // グループ名がこのフレームで変わった可能性があるので、ここで取り直す
+    // （先に取っておくと、名前を変えた直後の1フレームだけ旧グループへ書いてしまう）
+    MetaBallGroupSettings &settings = manager->GetSettings(groupName_);
 
     bool settingsChanged = false;
 
-    // テクスチャ。融合した表面はグループが 1 枚のメッシュとして描くので、
-    // マテリアルもグループ単位になる（BaseObject のマテリアル欄はこのオブジェクトの
-    // 空モデルに対するものなので効かない）
+    if (ImGui::ColorEdit4("カラー##metaballColor", &settings.color.x,
+                          ImGuiColorEditFlags_AlphaBar | ImGuiColorEditFlags_AlphaPreviewHalf))
+    {
+        manager->ApplyMaterial(groupName_);
+    }
+    ImGui::SetItemTooltip("テクスチャに掛かる色。アルファを下げると半透明になる\n"
+                          "（半透明にするならブレンドモードも合わせて変える）");
+
+    {
+        // ブレンドモード（Object3d と同じ並び）
+        static const char *kBlendNames[] = {"なし", "通常", "加算", "減算", "乗算", "スクリーン"};
+        int blend = static_cast<int>(settings.blendMode);
+        if (blend >= 0 && blend < IM_ARRAYSIZE(kBlendNames) &&
+            ImGui::Combo("ブレンド##metaballBlend", &blend, kBlendNames, IM_ARRAYSIZE(kBlendNames)))
+        {
+            settings.blendMode = static_cast<BlendMode>(blend);
+            manager->ApplyMaterial(groupName_);
+        }
+        ImGui::SetItemTooltip("加算にすると光る表現になる。半透明にするなら通常");
+    }
+
+    if (ImGui::Checkbox("ライティングを受ける##metaballLit", &settings.lighting))
+    {
+        manager->ApplyMaterial(groupName_);
+    }
+
     ImGui::Text("テクスチャ: %s", settings.texturePath.empty() ? "未設定" : settings.texturePath.c_str());
     if (ImGui::TreeNode("テクスチャを選ぶ##metaballTex"))
     {
@@ -310,10 +455,15 @@ void MetaBallObject::DrawImGuiExtension()
         if (!picked.empty() && picked != settings.texturePath)
         {
             settings.texturePath = picked;
-            manager->ApplyTexture(groupName_);
+            manager->ApplyMaterial(groupName_);
         }
         ImGui::TreePop();
     }
+
+    ImGui::Spacing();
+
+    // ---- メッシュ生成（グループ共通）-------------------------------------
+    SectionHeader("[ メッシュ生成 ]", DebugTheme::kAccentPurple);
 
     if (ImGui::DragFloat("セルの大きさ", &settings.voxelSize, 0.005f, 0.01f, 5.0f, "%.3f"))
     {
@@ -421,6 +571,16 @@ void MetaBallObject::DrawImGuiExtension()
             if (e.shape == MetaBallShape::Capsule)
             {
                 ImGui::DragFloat3("軸（中心から端まで）", &e.axis.x, 0.01f);
+            }
+            else
+            {
+                if (ImGui::DragFloat3("軸ごとの倍率", &e.radiusScale.x, 0.01f, 0.05f, 20.0f, "%.2f"))
+                {
+                    e.radiusScale.x = (std::max)(e.radiusScale.x, 0.01f);
+                    e.radiusScale.y = (std::max)(e.radiusScale.y, 0.01f);
+                    e.radiusScale.z = (std::max)(e.radiusScale.z, 0.01f);
+                }
+                ImGui::SetItemTooltip("この要素だけを楕円体にする（1,1,1 で真球）");
             }
 
             ImGui::Checkbox("負の要素", &e.negative);

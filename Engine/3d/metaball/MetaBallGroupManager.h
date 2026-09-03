@@ -22,6 +22,9 @@ struct MetaBallGroupSettings
     float threshold = 0.5f;                        // 等値面のしきい値
     float uvScale = 1.0f;                          // 平面投影 UV のスケール
     std::string texturePath = "debug/uvChecker.png"; // 貼るテクスチャ
+    Vector4 color = {1.0f, 1.0f, 1.0f, 1.0f};      // 乗算カラー（テクスチャに掛かる）
+    BlendMode blendMode = BlendMode::Normal;       // ブレンドモード
+    bool lighting = true;                          // ライティングを受けるか
     bool enabled = true;                           // 描画するか
 };
 
@@ -88,10 +91,11 @@ class MetaBallGroupManager
     void MarkDirty(const std::string &groupName);
 
     /// <summary>
-    /// settings.texturePath をグループのマテリアルへ反映する。
-    /// 融合表面はグループが 1 枚のメッシュで描くので、テクスチャもグループ単位になる。
+    /// settings のテクスチャ・カラー・ブレンドモードをグループのマテリアルへ反映する。
+    /// 融合表面はグループが 1 枚のメッシュで描くので、マテリアルもグループ単位になる
+    /// （＝メタボールの見た目は BaseObject のマテリアル欄ではなくこちらで決まる）。
     /// </summary>
-    void ApplyTexture(const std::string &groupName);
+    void ApplyMaterial(const std::string &groupName);
 
   private:
     /// ===================================================

@@ -104,6 +104,19 @@ class MetaBallObject : public BaseObject
     /// <summary>要素 1 個だけを持つメタボールの強さを設定する</summary>
     void SetStiffness(float stiffness);
 
+    /// <summary>
+    /// 全要素の軸ごとの半径倍率をまとめて設定する（楕円体にする）。
+    /// {1,1,1} で真球に戻る。
+    /// </summary>
+    void SetRadiusScale(const Vector3 &radiusScale);
+
+    /// <summary>
+    /// メタボールの見た目はグループのマテリアルが決めるので、
+    /// インスペクタの素のマテリアル欄（このオブジェクトの空モデル向け）は隠す。
+    /// 代わりの操作は「メタボール」タブのマテリアル欄にある。
+    /// </summary>
+    bool HasInspectorMaterial() const override { return false; }
+
     /// ===================================================
     /// シリアライズ（メッシュではなく要素リストを保存する）
     /// ===================================================
