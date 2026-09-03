@@ -87,6 +87,12 @@ class MetaBallGroupManager
     /// <summary>次の Update で必ず作り直す（設定を変えたときに呼ぶ）</summary>
     void MarkDirty(const std::string &groupName);
 
+    /// <summary>
+    /// settings.texturePath をグループのマテリアルへ反映する。
+    /// 融合表面はグループが 1 枚のメッシュで描くので、テクスチャもグループ単位になる。
+    /// </summary>
+    void ApplyTexture(const std::string &groupName);
+
   private:
     /// ===================================================
     /// private struct

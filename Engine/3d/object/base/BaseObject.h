@@ -84,6 +84,21 @@ class BaseObject {
 
     virtual void DrawImGui();
 
+    /// <summary>
+    /// 派生クラスが独自セクションをインスペクタに足すためのフック。
+    /// DebugObject() の中から呼ばれるので、他のセクションと同じ枠・同じ見た目・
+    /// 同じスクロール領域に収まる。DrawImGui() を丸ごと override すると
+    /// タブや保存バーの外にはみ出して扱いづらくなるので、こちらを使うこと。
+    /// </summary>
+    virtual void DrawImGuiExtension() {}
+
+    /// <summary>
+    /// 複製元の設定をこのオブジェクトへ写す。
+    /// 派生クラスは基底を呼んでから独自データを足すこと。
+    /// </summary>
+    /// <param name="source">複製元</param>
+    virtual void CopyPropertiesFrom(const BaseObject &source);
+
     SphereCollider *AddSphereCollider(const std::string &name = "");
     AABBCollider *AddAABBCollider(const std::string &name = "");
     OBBCollider *AddOBBCollider(const std::string &name = "");

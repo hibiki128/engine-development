@@ -109,8 +109,49 @@ void BaseObjectManager::AddObject(std::unique_ptr<BaseObject> baseObject)
     RegisterExternal(ptr);
 }
 
+void BaseObjectManager::RequestDuplicate(const std::string &sourceName)
+{
+    pendingDuplicates_.push_back(sourceName);
+}
+
 void BaseObjectManager::Update()
 {
+    // UI から予約された複製をここで実行する。
+    // インスペクタ描画中に objects_ を書き換えると走査中のイテレータが壊れるため
+    if (!pendingDuplicates_.empty())
+    {
+        std::vector<std::string> requests;
+        requests.swap(pendingDuplicates_);
+
+        // ボタン起点の操作は ImGui の編集ジェスチャに乗らないので、
+        // ショートカット経由の複製（ImGuizmoManager 側）と同じように明示的に履歴へ積む
+        nlohmann::json undoBefore = CaptureUndoState();
+        bool duplicated = false;
+
+        for (const std::string &sourceName : requests)
+        {
+            BaseObject *created = DuplicateObject(sourceName);
+            if (!created)
+            {
+                continue;
+            }
+            duplicated = true;
+#ifdef USE_IMGUI
+            // 複製直後に掴めるよう選択状態にする
+            ImGuizmoManager::GetInstance()->SelectOnly(created->GetName());
+#endif // USE_IMGUI
+        }
+
+        if (duplicated)
+        {
+            nlohmann::json undoAfter = CaptureUndoState();
+            auto [diffBefore, diffAfter] = MakeTopLevelJsonDiff(undoBefore, undoAfter);
+            UndoRedoManager::GetInstance()->Push(std::make_unique<JsonStateCommand>(
+                "オブジェクト複製", std::move(diffBefore), std::move(diffAfter),
+                [](const nlohmann::json &state) { BaseObjectManager::GetInstance()->RestoreUndoState(state); }));
+        }
+    }
+
     for (auto &[name, obj] : objects_)
     {
         obj->UpdateHierarchy();
@@ -332,6 +373,74 @@ BaseObject *BaseObjectManager::CreateMetaBallObject(const std::string &baseName)
 
     this->AddObject(std::move(newObject));
     return GetObjectByName(name);
+}
+
+BaseObject *BaseObjectManager::CloneObject(BaseObject *pSource, const Vector3 &offset,
+                                           const std::string &desiredName)
+{
+    if (!pSource)
+    {
+        return nullptr;
+    }
+
+    // 名前は Init より先に確定させる。あとから変えても DataHandler が
+    // 複製元の名前で作られたままになり、保存先が元と衝突する
+    const std::string name =
+        MakeUniqueObjectName(desiredName.empty() ? pSource->GetName() : desiredName);
+
+    // 元と同じ種類で作り直す。メタボールは Init が動的モデルの生成と
+    // グループへの登録まで面倒を見るので、モデルを作り直してはいけない
+    const bool isMetaBall = (dynamic_cast<MetaBallObject *>(pSource) != nullptr);
+    // type_ が Count 以外ならプリミティブとして作られたオブジェクト
+    const bool isPrimitive = (pSource->GetPrimitiveType() != PrimitiveType::Count);
+    if (!isMetaBall && !isPrimitive && pSource->GetModelPath().empty())
+    {
+        // モデルもプリミティブも持たないものは作り直しようがない
+        return nullptr;
+    }
+
+    std::unique_ptr<BaseObject> newObject =
+        isMetaBall ? std::unique_ptr<BaseObject>(std::make_unique<MetaBallObject>())
+                   : std::make_unique<BaseObject>();
+    newObject->SetPrimitive(isPrimitive);
+    newObject->Init(name);
+
+    if (!isMetaBall)
+    {
+        // モデル or プリミティブを同じもので作る
+        const std::string &modelPath = pSource->GetModelPath();
+        if (isPrimitive || modelPath.empty())
+        {
+            newObject->CreatePrimitiveModel(pSource->GetPrimitiveType());
+        }
+        else
+        {
+            newObject->CreateModel(modelPath);
+        }
+    }
+
+    // 種類ごとの中身を写す（メタボールは要素リストとグループ名も含む）
+    newObject->CopyPropertiesFrom(*pSource);
+    newObject->SetShouldSave(pSource->GetShouldSave());
+
+    newObject->GetLocalPosition() += offset;
+    newObject->GetWorldTransform()->UpdateMatrix();
+
+    BaseObject *result = newObject.get();
+    this->AddObject(std::move(newObject));
+    return result;
+}
+
+BaseObject *BaseObjectManager::DuplicateObject(const std::string &sourceName)
+{
+    // 元と完全に重ねると掴めないので少しずらす
+    BaseObject *created = CloneObject(GetObjectByName(sourceName), {1.0f, 0.0f, 0.0f});
+    if (!created)
+    {
+        return nullptr;
+    }
+    ImGuiNotification::Post("オブジェクトを複製しました: " + created->GetName(), {0.4f, 0.8f, 1.0f, 1.0f});
+    return created;
 }
 
 BaseObject *BaseObjectManager::GetObjectByName(const std::string &name)
@@ -1321,6 +1430,27 @@ nlohmann::json BaseObjectManager::CaptureUndoState()
         s["textures"] = textures;
         s["colors"] = colors;
 
+        // メタボールはモデルファイルを持たないので、modelPath だけでは作り直せない。
+        // 要素リストとグループ名まで残しておく（削除の Undo・貼り付けの Redo に必要）
+        if (const MetaBallObject *metaBall = dynamic_cast<const MetaBallObject *>(obj))
+        {
+            json elements = json::array();
+            for (const MetaBallElement &element : metaBall->GetElements())
+            {
+                json e;
+                e["position"] = element.position;
+                e["shape"] = static_cast<int>(element.shape);
+                e["radius"] = element.radius;
+                e["stiffness"] = element.stiffness;
+                e["negative"] = element.negative;
+                e["axis"] = element.axis;
+                e["enabled"] = element.enabled;
+                elements.push_back(e);
+            }
+            s["metaBallGroup"] = metaBall->GetGroupName();
+            s["metaBallElements"] = elements;
+        }
+
         state[name] = s;
     }
     return state;
@@ -1355,9 +1485,18 @@ void BaseObjectManager::RestoreUndoState(const nlohmann::json &state)
         {
             const std::string modelPath = s.value("modelPath", std::string());
             const bool isPrimitive = s.value("isPrimitive", false);
-            std::unique_ptr<BaseObject> newObject = std::make_unique<BaseObject>();
+            // メタボールは modelName が目印になっているだけでモデルファイルは無い。
+            // 素の BaseObject として作ると "MetaBall" というモデルを読みに行ってしまう
+            const bool isMetaBall = (modelPath == kMetaBallModelTag);
+            std::unique_ptr<BaseObject> newObject =
+                isMetaBall ? std::unique_ptr<BaseObject>(std::make_unique<MetaBallObject>())
+                           : std::make_unique<BaseObject>();
             newObject->Init(name);
-            if (!modelPath.empty())
+            if (isMetaBall)
+            {
+                // MetaBallObject::Init が動的モデルの生成とグループ登録まで済ませている
+            }
+            else if (!modelPath.empty())
             {
                 newObject->CreateModel(modelPath);
             }
@@ -1376,6 +1515,38 @@ void BaseObjectManager::RestoreUndoState(const nlohmann::json &state)
             if (!obj)
             {
                 continue;
+            }
+        }
+
+        // メタボールの要素リストとグループ名を戻す
+        if (MetaBallObject *metaBall = dynamic_cast<MetaBallObject *>(obj))
+        {
+            if (s.contains("metaBallGroup"))
+            {
+                metaBall->SetGroupName(s["metaBallGroup"].get<std::string>());
+            }
+            if (s.contains("metaBallElements") && s["metaBallElements"].is_array())
+            {
+                std::vector<MetaBallElement> elements;
+                elements.reserve(s["metaBallElements"].size());
+                for (const json &e : s["metaBallElements"])
+                {
+                    MetaBallElement element{};
+                    element.position = e.value("position", Vector3{});
+                    element.shape = static_cast<MetaBallShape>(e.value("shape", 0));
+                    element.radius = e.value("radius", 1.0f);
+                    element.stiffness = e.value("stiffness", 1.0f);
+                    element.negative = e.value("negative", false);
+                    element.axis = e.value("axis", Vector3{});
+                    element.enabled = e.value("enabled", true);
+                    elements.push_back(element);
+                }
+                metaBall->GetElements() = std::move(elements);
+                // 選択中の添字が要素数を超えたままになると、インスペクタが空振りする
+                if (metaBall->GetSelectedElementIndex() >= static_cast<int>(metaBall->GetElements().size()))
+                {
+                    metaBall->SetSelectedElementIndex(static_cast<int>(metaBall->GetElements().size()) - 1);
+                }
             }
         }
 

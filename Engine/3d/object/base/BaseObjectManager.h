@@ -153,6 +153,36 @@ class BaseObjectManager
     BaseObject *CreateMetaBallObject(const std::string &baseName);
 
     /// <summary>
+    /// 既存オブジェクトを複製してマネージャへ登録する。
+    /// モデル・プリミティブ・メタボールのいずれも、元と同じ種類で作り直したうえで
+    /// トランスフォームやマテリアル、派生クラス固有のデータまで写す。
+    ///
+    /// コピー＆ペースト（Ctrl+C / Ctrl+V）・複製（Ctrl+D）・インスペクタの複製ボタンは
+    /// すべてここを通る。オブジェクトの種類を増やしたらこの関数だけ直せばよい。
+    /// </summary>
+    /// <param name="pSource">複製元</param>
+    /// <param name="offset">複製先のローカル座標へ加えるずらし量</param>
+    /// <param name="desiredName">付けたい名前（空なら複製元の名前を元に連番を振る）</param>
+    /// <returns>BaseObject*: 複製されたオブジェクト（失敗時は nullptr）</returns>
+    BaseObject *CloneObject(BaseObject *pSource, const Vector3 &offset = {0.0f, 0.0f, 0.0f},
+                            const std::string &desiredName = "");
+
+    /// <summary>
+    /// 名前で引いた既存オブジェクトを複製する。
+    /// 少しずらして置くので複製直後に掴める。
+    /// </summary>
+    /// <param name="sourceName">複製元のオブジェクト名</param>
+    /// <returns>BaseObject*: 複製されたオブジェクト（失敗時は nullptr）</returns>
+    BaseObject *DuplicateObject(const std::string &sourceName);
+
+    /// <summary>
+    /// 複製を次の Update まで遅らせて予約する。
+    /// インスペクタ描画中に objects_ を書き換えるとイテレータが壊れるので、
+    /// UI から複製したいときは必ずこちらを使う。
+    /// </summary>
+    void RequestDuplicate(const std::string &sourceName);
+
+    /// <summary>
     /// オブジェクト生成モーダルを開く
     /// </summary>
     void OpenObjectCreationModal();
@@ -344,6 +374,8 @@ class BaseObjectManager
     bool showSceneSaveModal_ = false;      // シーン保存モーダル表示フラグ
     bool showSceneLoadModal_ = false;      // シーン読み込みモーダル表示フラグ
     bool showObjectCreationModal_ = false; // オブジェクト生成モーダル表示フラグ
+    // 次の Update で複製するオブジェクト名（UI から予約される）
+    std::vector<std::string> pendingDuplicates_{};
     bool showObjectLoadModal_ = false;     // オブジェクト読み込みモーダル表示フラグ
     std::string selectedJsonPath_;         // 選択中のJsonパス
 #ifdef USE_IMGUI

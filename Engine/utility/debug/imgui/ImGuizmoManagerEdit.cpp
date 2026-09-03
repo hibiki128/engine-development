@@ -324,53 +324,27 @@ void ImGuizmoManager::CopySelectedObjects()
 }
 
 // BaseObject を複製して BaseObjectManager へ追加する（貼り付け・複製の共通処理）
+//
+// 実体の生成は BaseObjectManager::CloneObject に任せる。
+// 「元と同じ派生クラスで作り直す」判断をここに二重に持つと、
+// メタボールのように専用クラスを持つオブジェクトが素の BaseObject として
+// 貼り付けられてしまう（実際そうなっていた）。
+// ここが持つのはギズモ側の名前の付け方と、生成後の登録・選択だけにする。
 std::string ImGuizmoManager::CloneObject(BaseObject *pSource, const Vector3 &offset)
 {
     if (!pSource)
         return {};
 
-    // 名前は先に決める。Init 前に確定させないと DataHandler が元の名前で作られてしまう
+    // 名前はギズモの一覧（transformMap_）と衝突しないものを選ぶ。
+    // BaseObject 以外のターゲットとも名前がぶつかり得るので、マネージャ任せにはしない
     const std::string uniqueName = GenerateUniqueName(pSource->GetName());
 
-    std::unique_ptr<BaseObject> newObject = std::make_unique<BaseObject>();
-    newObject->SetPrimitive(pSource->IsPrimitive());
-    newObject->Init(uniqueName);
-
-    if (!pSource->GetModelPath().empty())
-    {
-        newObject->CreateModel(pSource->GetModelPath());
-    }
-    else if (pSource->GetPrimitiveType() != PrimitiveType::Count)
-    {
-        newObject->CreatePrimitiveModel(pSource->GetPrimitiveType());
-    }
-    else
-    {
-        return {}; // モデルもプリミティブも無いものは複製できない
-    }
-
-    // マテリアルごとのテクスチャ・色を全て引き継ぐ
-    // （0番だけコピーしていた頃は、複数マテリアルのモデルで見た目が変わってしまっていた）
-    const int materialCount = newObject->GetObject3d() ? static_cast<int>(newObject->GetObject3d()->GetMaterialCount()) : 0;
-    const int textureCount = pSource->IsPrimitive() ? (materialCount > 0 ? 1 : 0) : materialCount;
-    for (int i = 0; i < textureCount; ++i)
-    {
-        newObject->SetTexture(pSource->GetTexturePath(i), i);
-    }
-    for (int i = 0; i < materialCount; ++i)
-    {
-        newObject->SetColor(pSource->GetColor(i), i);
-    }
-
-    newObject->GetLocalPosition() = pSource->GetLocalPosition() + offset;
-    newObject->GetLocalRotation() = pSource->GetLocalRotation();
-    newObject->GetLocalScale() = pSource->GetLocalScale();
-    newObject->GetLighting() = pSource->GetLighting();
-    newObject->SetShouldSave(pSource->GetShouldSave());
-
     // AddObject → RegisterExternal 内でギズモへの登録も行われる
-    BaseObjectManager::GetInstance()->AddObject(std::move(newObject));
-    return uniqueName;
+    BaseObject *created = BaseObjectManager::GetInstance()->CloneObject(pSource, offset, uniqueName);
+    if (!created)
+        return {};
+
+    return created->GetName();
 }
 
 // コピー済み BaseObject を複製して BaseObjectManager に追加する
