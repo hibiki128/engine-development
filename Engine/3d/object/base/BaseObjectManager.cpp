@@ -123,10 +123,13 @@ void BaseObjectManager::Update()
         std::vector<std::string> requests;
         requests.swap(pendingDuplicates_);
 
+#ifdef USE_IMGUI
         // ボタン起点の操作は ImGui の編集ジェスチャに乗らないので、
-        // ショートカット経由の複製（ImGuizmoManager 側）と同じように明示的に履歴へ積む
+        // ショートカット経由の複製（ImGuizmoManager 側）と同じように明示的に履歴へ積む。
+        // Undo 履歴はエディタ専用機能なので、ImGui を持たない構成（Release）では丸ごと省く
         nlohmann::json undoBefore = CaptureUndoState();
         bool duplicated = false;
+#endif // USE_IMGUI
 
         for (const std::string &sourceName : requests)
         {
@@ -135,13 +138,14 @@ void BaseObjectManager::Update()
             {
                 continue;
             }
-            duplicated = true;
 #ifdef USE_IMGUI
+            duplicated = true;
             // 複製直後に掴めるよう選択状態にする
             ImGuizmoManager::GetInstance()->SelectOnly(created->GetName());
 #endif // USE_IMGUI
         }
 
+#ifdef USE_IMGUI
         if (duplicated)
         {
             nlohmann::json undoAfter = CaptureUndoState();
@@ -150,6 +154,7 @@ void BaseObjectManager::Update()
                 "オブジェクト複製", std::move(diffBefore), std::move(diffAfter),
                 [](const nlohmann::json &state) { BaseObjectManager::GetInstance()->RestoreUndoState(state); }));
         }
+#endif // USE_IMGUI
     }
 
     for (auto &[name, obj] : objects_)
