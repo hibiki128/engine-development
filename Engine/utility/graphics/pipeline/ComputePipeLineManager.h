@@ -16,6 +16,10 @@ enum class ComputePipelineType {
     ResetArgs,
     LightCulling,      // ディファードのタイルベースライトカリング
     ParticleLightGen,  // GPUパーティクルの粒子から動的ポイントライトを生成する
+    // GPU メタボール。3つで1組（出力初期化 → 密度場 → マーチングキューブス）
+    MetaBallClear,
+    MetaBallDensity,
+    MetaBallMarch,
     Count,
 };
 
@@ -106,6 +110,15 @@ class ComputePipelineManager {
     void CreateParticleLightGenPipelines();
     Microsoft::WRL::ComPtr<ID3D12RootSignature> CreateParticleLightGenRootSignature();
     Microsoft::WRL::ComPtr<ID3D12PipelineState> CreateParticleLightGenGraphicsPipeline(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature);
+
+    // GPU メタボール（密度場 → マーチングキューブス）
+    void CreateMetaBallPipelines();
+    Microsoft::WRL::ComPtr<ID3D12RootSignature> CreateMetaBallClearRootSignature();
+    Microsoft::WRL::ComPtr<ID3D12RootSignature> CreateMetaBallDensityRootSignature();
+    Microsoft::WRL::ComPtr<ID3D12RootSignature> CreateMetaBallMarchRootSignature();
+    /// <summary>コンピュートシェーダーをコンパイルして PSO を作る（メタボール共通）</summary>
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> CreateComputePipelineFromShader(
+        const std::wstring &relativeShaderPath, Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature);
 
   private:
     DirectXCommon *pDxCommon_;

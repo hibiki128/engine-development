@@ -125,6 +125,7 @@ void ComputePipelineManager::CreateAllPipelines()
     CreateResetArgsPipelines();
     CreateLightCullingPipelines();
     CreateParticleLightGenPipelines();
+    CreateMetaBallPipelines();
 }
 
 // ディファードのライトカリングパイプライン
@@ -913,6 +914,200 @@ Microsoft::WRL::ComPtr<ID3D12PipelineState> ComputePipelineManager::CreateCountG
     HRESULT hr = pDxCommon_->GetDevice()->CreateComputePipelineState(&computePipelineStateDesc, IID_PPV_ARGS(&graphicsPipelineState));
     assert(SUCCEEDED(hr));
     return graphicsPipelineState;
+}
+
+// =============================================
+// GPU メタボール
+//   3 パスで 1 組:
+//     Clear   : 出力頂点を面積0に潰し、カウンタを 0 に戻す
+//     Density : 格子のサンプル点ごとに全ボールの密度を足す
+//     March   : セルごとに Marching Cubes をかけて三角形を詰める
+//
+//   バッファのレイアウトは HLSL とC++ で解釈がずれないものだけを使う（MetaBall.hlsli 参照）
+// =============================================
+namespace {
+
+/// <summary>ルートシグネチャをシリアライズして作る（メタボール共通）</summary>
+Microsoft::WRL::ComPtr<ID3D12RootSignature> SerializeMetaBallRootSignature(
+    ID3D12Device *pDevice, const D3D12_ROOT_PARAMETER *pParameters, UINT parameterCount)
+{
+    D3D12_ROOT_SIGNATURE_DESC descriptionRootSignature = {};
+    descriptionRootSignature.NumParameters = parameterCount;
+    descriptionRootSignature.pParameters = pParameters;
+    descriptionRootSignature.NumStaticSamplers = 0;
+    descriptionRootSignature.pStaticSamplers = nullptr;
+    descriptionRootSignature.Flags = D3D12_ROOT_SIGNATURE_FLAG_NONE;
+
+    ID3DBlob *signatureBlob = nullptr;
+    ID3DBlob *pErrorBlob = nullptr;
+    HRESULT hr = D3D12SerializeRootSignature(&descriptionRootSignature, D3D_ROOT_SIGNATURE_VERSION_1,
+                                             &signatureBlob, &pErrorBlob);
+    if (FAILED(hr))
+    {
+        Logger::Log(reinterpret_cast<char *>(pErrorBlob->GetBufferPointer()));
+        assert(false);
+    }
+
+    Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature;
+    hr = pDevice->CreateRootSignature(0, signatureBlob->GetBufferPointer(), signatureBlob->GetBufferSize(),
+                                      IID_PPV_ARGS(&rootSignature));
+    assert(SUCCEEDED(hr));
+    return rootSignature;
+}
+
+/// MetaBall.hlsli の MetaBallConstants の大きさ（32bit 値の個数）
+constexpr UINT kMetaBallConstantCount = 16;
+
+/// <summary>UAV 1 個ぶんの記述子レンジを作る</summary>
+D3D12_DESCRIPTOR_RANGE MakeUavRange(UINT shaderRegister)
+{
+    D3D12_DESCRIPTOR_RANGE range = {};
+    range.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_UAV;
+    range.NumDescriptors = 1;
+    range.BaseShaderRegister = shaderRegister;
+    range.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+    return range;
+}
+
+/// <summary>記述子テーブルのルートパラメータを作る</summary>
+D3D12_ROOT_PARAMETER MakeTableParameter(const D3D12_DESCRIPTOR_RANGE *pRange)
+{
+    D3D12_ROOT_PARAMETER parameter = {};
+    parameter.ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+    parameter.ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+    parameter.DescriptorTable.pDescriptorRanges = pRange;
+    parameter.DescriptorTable.NumDescriptorRanges = 1;
+    return parameter;
+}
+
+/// <summary>ルート記述子（CBV / SRV）のルートパラメータを作る</summary>
+D3D12_ROOT_PARAMETER MakeRootDescriptorParameter(D3D12_ROOT_PARAMETER_TYPE type, UINT shaderRegister)
+{
+    D3D12_ROOT_PARAMETER parameter = {};
+    parameter.ParameterType = type;
+    parameter.ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+    parameter.Descriptor.ShaderRegister = shaderRegister;
+    return parameter;
+}
+
+/// <summary>ルート定数のルートパラメータを作る</summary>
+D3D12_ROOT_PARAMETER MakeRootConstantsParameter(UINT shaderRegister, UINT valueCount)
+{
+    D3D12_ROOT_PARAMETER parameter = {};
+    parameter.ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
+    parameter.ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+    parameter.Constants.ShaderRegister = shaderRegister;
+    parameter.Constants.RegisterSpace = 0;
+    parameter.Constants.Num32BitValues = valueCount;
+    return parameter;
+}
+
+} // namespace
+
+void ComputePipelineManager::CreateMetaBallPipelines()
+{
+    struct Entry
+    {
+        ComputePipelineType type;
+        Microsoft::WRL::ComPtr<ID3D12RootSignature> (ComputePipelineManager::*makeRootSignature)();
+        const wchar_t *shaderPath;
+    };
+    const Entry entries[] = {
+        {ComputePipelineType::MetaBallClear, &ComputePipelineManager::CreateMetaBallClearRootSignature,
+         L"shaders/MetaBall/MetaBallClear.CS.hlsl"},
+        {ComputePipelineType::MetaBallDensity, &ComputePipelineManager::CreateMetaBallDensityRootSignature,
+         L"shaders/MetaBall/MetaBallDensity.CS.hlsl"},
+        {ComputePipelineType::MetaBallMarch, &ComputePipelineManager::CreateMetaBallMarchRootSignature,
+         L"shaders/MetaBall/MetaBallMarch.CS.hlsl"},
+    };
+
+    for (const Entry &entry : entries)
+    {
+        auto rootSignature = (this->*entry.makeRootSignature)();
+        rootSignatures_[MakeRootSignatureKey(entry.type, ShaderMode::None)] = rootSignature;
+        pipelines_[MakePipelineKey(entry.type, BlendMode::Normal, ShaderMode::None)] =
+            CreateComputePipelineFromShader(entry.shaderPath, rootSignature);
+    }
+}
+
+// スロット対応表:
+//   [0] b0 : MetaBallConstants (CBV)
+//   [1] u0 : gVertices (UAV)
+//   [2] u1 : gCounter  (UAV)
+Microsoft::WRL::ComPtr<ID3D12RootSignature> ComputePipelineManager::CreateMetaBallClearRootSignature()
+{
+    const D3D12_DESCRIPTOR_RANGE vertexRange = MakeUavRange(0);
+    const D3D12_DESCRIPTOR_RANGE counterRange = MakeUavRange(1);
+
+    D3D12_ROOT_PARAMETER rootParameters[3] = {};
+    // 定数はルート定数で渡す。1フレームに何色ぶんも積むので、
+    // 定数バッファを共用すると「最後に書いた色の値」で全色が実行されてしまう
+    rootParameters[0] = MakeRootConstantsParameter(0, kMetaBallConstantCount);
+    rootParameters[1] = MakeTableParameter(&vertexRange);
+    rootParameters[2] = MakeTableParameter(&counterRange);
+
+    return SerializeMetaBallRootSignature(pDxCommon_->GetDevice().Get(), rootParameters, _countof(rootParameters));
+}
+
+// スロット対応表:
+//   [0] b0 : MetaBallConstants (CBV)
+//   [1] t0 : gBalls   (ルートSRV)
+//   [2] u0 : gDensity (UAV)
+Microsoft::WRL::ComPtr<ID3D12RootSignature> ComputePipelineManager::CreateMetaBallDensityRootSignature()
+{
+    const D3D12_DESCRIPTOR_RANGE densityRange = MakeUavRange(0);
+
+    D3D12_ROOT_PARAMETER rootParameters[3] = {};
+    // 定数はルート定数で渡す。1フレームに何色ぶんも積むので、
+    // 定数バッファを共用すると「最後に書いた色の値」で全色が実行されてしまう
+    rootParameters[0] = MakeRootConstantsParameter(0, kMetaBallConstantCount);
+    rootParameters[1] = MakeRootDescriptorParameter(D3D12_ROOT_PARAMETER_TYPE_SRV, 0);
+    rootParameters[2] = MakeTableParameter(&densityRange);
+
+    return SerializeMetaBallRootSignature(pDxCommon_->GetDevice().Get(), rootParameters, _countof(rootParameters));
+}
+
+// スロット対応表:
+//   [0] b0 : MetaBallConstants (CBV)
+//   [1] t0 : gTriTable (ルートSRV)
+//   [2] u0 : gDensity  (UAV)
+//   [3] u1 : gVertices (UAV)
+//   [4] u2 : gCounter  (UAV)
+Microsoft::WRL::ComPtr<ID3D12RootSignature> ComputePipelineManager::CreateMetaBallMarchRootSignature()
+{
+    const D3D12_DESCRIPTOR_RANGE densityRange = MakeUavRange(0);
+    const D3D12_DESCRIPTOR_RANGE vertexRange = MakeUavRange(1);
+    const D3D12_DESCRIPTOR_RANGE counterRange = MakeUavRange(2);
+
+    D3D12_ROOT_PARAMETER rootParameters[5] = {};
+    // 定数はルート定数で渡す。1フレームに何色ぶんも積むので、
+    // 定数バッファを共用すると「最後に書いた色の値」で全色が実行されてしまう
+    rootParameters[0] = MakeRootConstantsParameter(0, kMetaBallConstantCount);
+    rootParameters[1] = MakeRootDescriptorParameter(D3D12_ROOT_PARAMETER_TYPE_SRV, 0);
+    rootParameters[2] = MakeTableParameter(&densityRange);
+    rootParameters[3] = MakeTableParameter(&vertexRange);
+    rootParameters[4] = MakeTableParameter(&counterRange);
+
+    return SerializeMetaBallRootSignature(pDxCommon_->GetDevice().Get(), rootParameters, _countof(rootParameters));
+}
+
+Microsoft::WRL::ComPtr<ID3D12PipelineState> ComputePipelineManager::CreateComputePipelineFromShader(
+    const std::wstring &relativeShaderPath, Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature)
+{
+    IDxcBlob *pComputeShaderBlob = pDxCommon_->CompileShader(shaderPath + relativeShaderPath, L"cs_6_0");
+    assert(pComputeShaderBlob != nullptr);
+
+    D3D12_COMPUTE_PIPELINE_STATE_DESC computePipelineStateDesc = {};
+    computePipelineStateDesc.CS = {
+        .pShaderBytecode = pComputeShaderBlob->GetBufferPointer(),
+        .BytecodeLength = pComputeShaderBlob->GetBufferSize(),
+    };
+    computePipelineStateDesc.pRootSignature = rootSignature.Get();
+
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> pipelineState;
+    HRESULT hr = pDxCommon_->GetDevice()->CreateComputePipelineState(&computePipelineStateDesc, IID_PPV_ARGS(&pipelineState));
+    assert(SUCCEEDED(hr));
+    return pipelineState;
 }
 
 } // namespace Hagine

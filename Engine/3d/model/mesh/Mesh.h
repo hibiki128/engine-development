@@ -44,6 +44,17 @@ class Mesh
     void Rebuild(MeshData &&data);
 
     /// <summary>
+    /// GPU が中身を書くメッシュとして初期化する。
+    ///
+    /// 頂点バッファを DEFAULT ヒープ（UAV 付き）で作り、コンピュートシェーダーが
+    /// 直接書き込む。インデックスは 0,1,2... の固定並びで、描画数は常に容量ぶん。
+    /// 書かれなかった頂点は面積 0 の三角形になり、ラスタライザが捨てるので何も映らない。
+    /// （メタボールのように、形が毎フレーム GPU 上で決まるもの向け）
+    /// </summary>
+    /// <param name="maxVertexCount">確保する頂点数の上限（3の倍数へ切り下げられる）</param>
+    void InitializeGpuWritable(uint32_t maxVertexCount);
+
+    /// <summary>
     /// プリミティブ初期化
     /// </summary>
     /// <param name="type">プリミティブタイプ</param>
@@ -65,6 +76,11 @@ class Mesh
     uint32_t GetIndexCount() const { return indexCount_; }
     uint32_t GetVertexCount() const { return vertexCount_; }
     bool IsDynamic() const { return isDynamic_; }
+
+    /// GPU が書き込むメッシュか
+    bool IsGpuWritable() const { return isGpuWritable_; }
+    /// コンピュートシェーダーの書き込み先（UAV を張るリソース）
+    ID3D12Resource *GetGpuVertexResource() const { return vertexResource_.Get(); }
 
   private:
     /// ===================================================
@@ -113,6 +129,7 @@ class Mesh
 
     // 動的メッシュ用
     bool isDynamic_ = false;         // 動的メッシュか
+    bool isGpuWritable_ = false;     // GPU が中身を書くメッシュか
     uint32_t dynamicSlot_ = 0;       // 次に書き込むスロット
     uint32_t vertexCapacity_ = 0;    // 確保済みの頂点数
     uint32_t indexCapacity_ = 0;     // 確保済みのインデックス数

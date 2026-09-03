@@ -69,6 +69,14 @@ class ModelManager
     std::string CreateDynamicModel(uint32_t vertexCapacity = 4096, uint32_t indexCapacity = 8192);
 
     /// <summary>
+    /// GPU が中身を書くモデルを作る（GPUメタボールなど、形をコンピュートシェーダーが決めるもの用）。
+    /// 動的モデルと同じく共有できないので、呼ぶたびに新しい実体ができる。
+    /// </summary>
+    /// <param name="maxVertexCount">確保する頂点数の上限</param>
+    /// <returns>std::string: 生成したモデルのキー</returns>
+    std::string CreateGpuWritableModel(uint32_t maxVertexCount);
+
+    /// <summary>
     /// モデルを破棄する（動的モデルは使い捨てなので、オブジェクト破棄時に呼ぶ）
     /// </summary>
     void RemoveModel(const std::string &key);

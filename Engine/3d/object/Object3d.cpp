@@ -107,6 +107,35 @@ void Object3d::CreateDynamicModel(std::string texPath)
     color_[0].SetColor({1.0f, 1.0f, 1.0f, 1.0f});
 }
 
+void Object3d::CreateGpuWritableModel(std::string texPath, uint32_t maxVertexCount)
+{
+    // 動的モデルと同じく、形がオブジェクトごとに違うので専用の実体を持つ
+    dynamicModelKey_ = ModelManager::GetInstance()->CreateGpuWritableModel(maxVertexCount);
+    pModel_ = ModelManager::GetInstance()->FindModel(dynamicModelKey_);
+    isPrimitive_ = false;
+    materials_.resize(1);
+    color_.resize(1);
+
+    materials_[0] = std::make_unique<Material>();
+    materials_[0]->Initialize();
+    materials_[0]->GetMaterialData().color = {1.0f, 1.0f, 1.0f, 1.0f};
+    materials_[0]->GetMaterialData().uvTransform = MakeIdentity4x4();
+    materials_[0]->GetMaterialData().textureFilePath = texPath;
+    materials_[0]->LoadTexture();
+    color_[0].Initialize();
+    color_[0].SetColor({1.0f, 1.0f, 1.0f, 1.0f});
+}
+
+ID3D12Resource *Object3d::GetGpuVertexResource() const
+{
+    return pModel_ ? pModel_->GetGpuVertexResource() : nullptr;
+}
+
+uint32_t Object3d::GetGpuVertexCapacity() const
+{
+    return pModel_ ? pModel_->GetGpuVertexCapacity() : 0;
+}
+
 void Object3d::RebuildDynamicMesh(MeshData &&data)
 {
     if (pModel_)

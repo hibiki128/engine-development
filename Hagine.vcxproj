@@ -307,6 +307,7 @@
     <ClCompile Include="Engine\3d\metaball\MetaBall.cpp" />
     <ClCompile Include="Engine\3d\metaball\MetaBallObject.cpp" />
     <ClCompile Include="Engine\3d\metaball\MetaBallGroupManager.cpp" />
+    <ClCompile Include="Engine\3d\metaball\MetaBallGpuField.cpp" />
   </ItemGroup>
   <ItemGroup>
     <None Include=".clang-format" />
@@ -471,6 +472,7 @@
     <ClInclude Include="Engine\3d\metaball\MetaBall.h" />
     <ClInclude Include="Engine\3d\metaball\MetaBallObject.h" />
     <ClInclude Include="Engine\3d\metaball\MetaBallGroupManager.h" />
+    <ClInclude Include="Engine\3d\metaball\MetaBallGpuField.h" />
   </ItemGroup>
   <ItemGroup>
     <Text Include="externals\imgui\LICENSE.txt" />
@@ -540,6 +542,10 @@
     <None Include="Engine\EngineAssets\shaders\OffScreen\GaussianBlur.CS.hlsl" />
     <None Include="Engine\EngineAssets\shaders\OffScreen\Monochrome.PS.hlsl" />
     <None Include="Engine\EngineAssets\shaders\Shadow\ShadowMapInstanced.VS.hlsl" />
+    <None Include="Engine\EngineAssets\shaders\MetaBall\MetaBall.hlsli" />
+    <None Include="Engine\EngineAssets\shaders\MetaBall\MetaBallClear.CS.hlsl" />
+    <None Include="Engine\EngineAssets\shaders\MetaBall\MetaBallDensity.CS.hlsl" />
+    <None Include="Engine\EngineAssets\shaders\MetaBall\MetaBallMarch.CS.hlsl" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
