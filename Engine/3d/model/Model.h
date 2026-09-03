@@ -74,6 +74,24 @@ class Model
     void RebuildDynamicMesh(MeshData &&data);
 
     /// <summary>
+    /// GPU が中身を書くモデルを作る。
+    /// 形をコンピュートシェーダーが毎フレーム決めるもの（GPUメタボールなど）用で、
+    /// CPU からは中身を入れない。書き込み先は GetGpuVertexResource() から取る。
+    /// </summary>
+    /// <param name="maxVertexCount">確保する頂点数の上限</param>
+    void CreateGpuWritableModel(uint32_t maxVertexCount);
+
+    /// <summary>
+    /// GPU が書き込む頂点バッファ。CreateGpuWritableModel() で作った場合だけ返る
+    /// </summary>
+    ID3D12Resource *GetGpuVertexResource() const;
+
+    /// <summary>
+    /// GPU モデルの頂点数（＝確保した上限。常にこの数だけ描く）。GPU モデルでなければ 0
+    /// </summary>
+    uint32_t GetGpuVertexCapacity() const;
+
+    /// <summary>
     /// 更新処理
     /// </summary>
     void Update();

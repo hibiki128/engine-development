@@ -64,6 +64,37 @@ void Mesh::AllocateDynamicBuffers(uint32_t vertexCapacity, uint32_t indexCapacit
     indexCapacity_ = indexCapacity;
 }
 
+void Mesh::InitializeGpuWritable(uint32_t maxVertexCount)
+{
+    pDxCommon_ = DirectXCommon::GetInstance();
+    isGpuWritable_ = true;
+
+    // 三角形単位で書くので3の倍数にそろえる。0 だとバッファを作れないので最低1枚は確保する
+    const uint32_t capacity = (std::max)(maxVertexCount - (maxVertexCount % 3), 3u);
+    vertexCount_ = capacity;
+    indexCount_ = capacity;
+
+    // 頂点はコンピュートシェーダーが書くので DEFAULT ヒープ + UAV。
+    // 状態は COMMON のままにして暗黙の昇格／減衰に任せる
+    // （コンピュートキューでは UAV、描画では頂点バッファへ自動で上がる）
+    vertexResource_ = pDxCommon_->CreateBufferResource(sizeof(VertexData) * capacity, true);
+    vertexResource_->SetName(L"GpuWritableVertexBuffer");
+    vertexBufferView_.BufferLocation = vertexResource_->GetGPUVirtualAddress();
+    vertexBufferView_.SizeInBytes = static_cast<UINT>(sizeof(VertexData) * capacity);
+    vertexBufferView_.StrideInBytes = sizeof(VertexData);
+
+    // インデックスは 0,1,2,... の固定並び。一度書いたら CPU も GPU も触らない
+    indexResource_ = pDxCommon_->CreateBufferResource(sizeof(uint32_t) * capacity);
+    indexResource_->Map(0, nullptr, reinterpret_cast<void **>(&pIndexData_));
+    for (uint32_t i = 0; i < capacity; ++i)
+    {
+        pIndexData_[i] = i;
+    }
+    indexBufferView_.BufferLocation = indexResource_->GetGPUVirtualAddress();
+    indexBufferView_.SizeInBytes = static_cast<UINT>(sizeof(uint32_t) * capacity);
+    indexBufferView_.Format = DXGI_FORMAT_R32_UINT;
+}
+
 void Mesh::Rebuild(MeshData &&data)
 {
     assert(isDynamic_ && "Rebuild は InitializeDynamic した Mesh にしか使えません");

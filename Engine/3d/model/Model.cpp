@@ -104,6 +104,41 @@ void Model::RebuildDynamicMesh(MeshData &&data)
     CalcLocalBounds();
 }
 
+void Model::CreateGpuWritableModel(uint32_t maxVertexCount)
+{
+    // 動的メッシュと同じく単一メッシュ・単一マテリアル
+    meshes_.resize(1);
+    modelData_.meshes.resize(1);
+
+    meshes_[0] = std::make_unique<Mesh>();
+    meshes_[0]->InitializeGpuWritable(maxVertexCount);
+
+    // 頂点は GPU 側にしか無いので materialIndex を伝えるためだけに持つ
+    modelData_.meshes[0] = MeshData{};
+    modelData_.meshes[0].materialIndex = 0;
+
+    // 中身が CPU から見えないぶん、境界は単位サイズ扱いになる（ギズモの選択にしか使わない）
+    CalcLocalBounds();
+}
+
+ID3D12Resource *Model::GetGpuVertexResource() const
+{
+    if (meshes_.empty() || !meshes_[0] || !meshes_[0]->IsGpuWritable())
+    {
+        return nullptr;
+    }
+    return meshes_[0]->GetGpuVertexResource();
+}
+
+uint32_t Model::GetGpuVertexCapacity() const
+{
+    if (meshes_.empty() || !meshes_[0] || !meshes_[0]->IsGpuWritable())
+    {
+        return 0;
+    }
+    return meshes_[0]->GetVertexCount();
+}
+
 void Model::CalcLocalBounds()
 {
     bool hasVertex = false;

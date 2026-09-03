@@ -107,6 +107,24 @@ class Object3d
     void RebuildDynamicMesh(MeshData &&data);
 
     /// <summary>
+    /// GPU が中身を書くモデルを作る（GPUメタボールなど）。
+    /// 形はコンピュートシェーダーが GetGpuVertexResource() へ直接書き込む。
+    /// </summary>
+    /// <param name="texPath">貼るテクスチャのパス</param>
+    /// <param name="maxVertexCount">確保する頂点数の上限</param>
+    void CreateGpuWritableModel(std::string texPath, uint32_t maxVertexCount);
+
+    /// <summary>
+    /// コンピュートシェーダーの書き込み先。GPU モデルでなければ nullptr
+    /// </summary>
+    ID3D12Resource *GetGpuVertexResource() const;
+
+    /// <summary>
+    /// GPU モデルの頂点数（＝確保した上限）。GPU モデルでなければ 0
+    /// </summary>
+    uint32_t GetGpuVertexCapacity() const;
+
+    /// <summary>
     /// 動的モデルのキー（ModelManager から破棄するのに使う）
     /// </summary>
     const std::string &GetDynamicModelKey() const { return dynamicModelKey_; }

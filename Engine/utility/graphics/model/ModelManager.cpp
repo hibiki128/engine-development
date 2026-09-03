@@ -83,6 +83,19 @@ std::string ModelManager::CreateDynamicModel(uint32_t vertexCapacity, uint32_t i
     return uniqueKey;
 }
 
+std::string ModelManager::CreateGpuWritableModel(uint32_t maxVertexCount)
+{
+    std::unique_ptr<Model> model = std::make_unique<Model>();
+    model->Initialize(pModelCommon_);
+    model->CreateGpuWritableModel(maxVertexCount);
+    model->SetSrv(pSrvManager_);
+    // 動的モデルと同じくオブジェクトごとに 1 個できるので通知は出さない
+    static int gpuModelIndex = 0;
+    std::string uniqueKey = "GpuWritableModel_" + std::to_string(gpuModelIndex++);
+    models_.insert(std::make_pair(uniqueKey, std::move(model)));
+    return uniqueKey;
+}
+
 void ModelManager::RemoveModel(const std::string &key)
 {
     models_.erase(key);
