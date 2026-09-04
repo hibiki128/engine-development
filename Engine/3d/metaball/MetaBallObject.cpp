@@ -379,9 +379,8 @@ void MetaBallObject::DrawImGuiExtension()
                        "既定ではオブジェクト名がそのままグループ名なので、作ったものは独立しています。");
     ImGui::PopStyleColor();
 
-    char groupBuffer[128];
-    strncpy_s(groupBuffer, groupName_.c_str(), _TRUNCATE);
-    if (ImGui::InputText("グループ名", groupBuffer, IM_ARRAYSIZE(groupBuffer),
+    std::string groupBuffer = groupName_;
+    if (ImGui::InputText("グループ名", &groupBuffer,
                          ImGuiInputTextFlags_EnterReturnsTrue))
     {
         SetGroupName(groupBuffer);

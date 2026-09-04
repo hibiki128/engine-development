@@ -163,6 +163,22 @@
     <ClInclude Include="imgui_internal.h" />
     <ClInclude Include="imgui_node_editor.h" />
     <ClInclude Include="imgui_node_editor_internal.h" />
+    <ClInclude Include="imgui_stdlib.h" />
+    <ClInclude Include="TextEditor.h" />
+    <ClInclude Include="imgui_offset_rect.h" />
+    <ClInclude Include="imgui_toggle.h" />
+    <ClInclude Include="imgui_toggle_math.h" />
+    <ClInclude Include="imgui_toggle_palette.h" />
+    <ClInclude Include="imgui_toggle_presets.h" />
+    <ClInclude Include="imgui_toggle_renderer.h" />
+    <ClInclude Include="implot3d.h" />
+    <ClInclude Include="implot3d_internal.h" />
+    <ClInclude Include="imspinner.h" />
+    <ClInclude Include="imspinner_bars.h" />
+    <ClInclude Include="imspinner_compat.h" />
+    <ClInclude Include="imspinner_dots.h" />
+    <ClInclude Include="imspinner_shapes.h" />
+    <ClInclude Include="imspinner_text.h" />
     <ClInclude Include="implot.h" />
     <ClInclude Include="implot_internal.h" />
     <ClInclude Include="ImSequencer.h" />
@@ -205,6 +221,33 @@
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="imgui_node_editor_api.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="imgui_stdlib.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="TextEditor.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="imgui_toggle.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="imgui_toggle_palette.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="imgui_toggle_presets.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="imgui_toggle_renderer.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="implot3d.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="implot3d_items.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="implot3d_meshes.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="imgui_tables.cpp">

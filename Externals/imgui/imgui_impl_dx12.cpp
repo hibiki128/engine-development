@@ -775,7 +775,48 @@ bool    ImGui_ImplDX12_CreateDeviceObjects()
 
     // Create the vertex shader
     {
-        static const char* vertexShader =
+        // [Hagine patch] 頂点色を sRGB → リニアへ変換してから出力する版。
+        // RTV が *_UNORM_SRGB のとき、GPU は書き込み時に「リニア → sRGB」変換を掛ける。
+        // ImGui の頂点色（スタイル色・PushStyleColor・DrawList・ImPlot・ImGuizmo すべて）は
+        // 元から sRGB 空間の値なので、素通しすると sRGB を二重に掛けたことになり、
+        // 例えば WindowBg 0.090 が画面上では 0.332（#55）になって全体が白っぽい灰色になる。
+        // ここで先にリニアへ戻しておけば、GPU の再変換で元の見た目どおりに出る。
+        // テクスチャ（フォントアトラス／シーン画像／サムネ）は sRGB SRV でサンプル済み＝
+        // 既にリニアなので触らない。
+        static const char* vertexShaderSRGB =
+            "cbuffer vertexBuffer : register(b0) \
+            {\
+              float4x4 ProjectionMatrix; \
+            };\
+            struct VS_INPUT\
+            {\
+              float2 pos : POSITION;\
+              float4 col : COLOR0;\
+              float2 uv  : TEXCOORD0;\
+            };\
+            \
+            struct PS_INPUT\
+            {\
+              float4 pos : SV_POSITION;\
+              float4 col : COLOR0;\
+              float2 uv  : TEXCOORD0;\
+            };\
+            \
+            float3 SrgbToLinear(float3 c)\
+            {\
+              return (c <= 0.04045f) ? (c / 12.92f) : pow(abs(c + 0.055f) / 1.055f, 2.4f);\
+            }\
+            \
+            PS_INPUT main(VS_INPUT input)\
+            {\
+              PS_INPUT output;\
+              output.pos = mul( ProjectionMatrix, float4(input.pos.xy, 0.f, 1.f));\
+              output.col = float4(SrgbToLinear(input.col.rgb), input.col.a);\
+              output.uv  = input.uv;\
+              return output;\
+            }";
+
+        static const char* vertexShaderLinear =
             "cbuffer vertexBuffer : register(b0) \
             {\
               float4x4 ProjectionMatrix; \
@@ -802,6 +843,11 @@ bool    ImGui_ImplDX12_CreateDeviceObjects()
               output.uv  = input.uv;\
               return output;\
             }";
+
+        // [Hagine patch] RTV が sRGB のときだけ変換版を使う。
+        const bool rtvIsSRGB = (bd->RTVFormat == DXGI_FORMAT_R8G8B8A8_UNORM_SRGB ||
+                                bd->RTVFormat == DXGI_FORMAT_B8G8R8A8_UNORM_SRGB);
+        const char* vertexShader = rtvIsSRGB ? vertexShaderSRGB : vertexShaderLinear;
 
         if (FAILED(D3DCompile(vertexShader, strlen(vertexShader), nullptr, nullptr, nullptr, "main", "vs_5_0", 0, 0, &vertexShaderBlob, nullptr)))
             return false; // NB: Pass ID3DBlob* pErrorBlob to D3DCompile() to get error showing in (const char*)pErrorBlob->GetBufferPointer(). Make sure to Release() the blob!

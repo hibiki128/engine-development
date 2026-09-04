@@ -1,13 +1,19 @@
 #pragma once
 // ============================================================
 //  DebugUIHelper.h  (revision 2)
-//  ImGui 1.92.4 + ImGuizmo + ImPlot
+//  ImGui 1.92.8 + ImGuizmo + ImPlot
 //  * ASCII only  -- no environment-dependent characters
 // ============================================================
 #ifdef USE_IMGUI
 
 // 回転ノブ（imgui-knobs）。imgui.h を使うため、本ヘッダは imgui.h の後に include する前提。
 #include <imgui-knobs.h>
+// トグルスイッチ（imgui_toggle）。ヘッダが軽いのでここで共有する。
+#include <imgui_toggle.h>
+#include <imgui_toggle_palette.h>
+// std::string をそのまま InputText へ渡す（公式 misc/cpp）。
+#include <imgui_stdlib.h>
+#include <string>
 
 namespace Hagine {
 namespace DebugTheme {
@@ -67,12 +73,64 @@ constexpr ImVec4 FrameBg(const ImVec4 &accent)
 } // namespace DebugTheme
 
 // ------------------------------------------------------------
+// 行内のそろえ方
+//
+// ImGui::SameLine(120.0f) のような px 直書きは、フォントやラベルを変えた
+// 途端に「詰まる／空きすぎる」でズレて見える。ここの2つを通すことで、
+// 文字サイズ・窓幅にそのまま追随させる。
+// ------------------------------------------------------------
+
+/// <summary>
+/// 「ラベル : 値」形式のラベル列の幅。文字サイズに追随する。
+/// </summary>
+/// <returns>float: ラベル列の幅(px)</returns>
+inline float LabelColumnWidth()
+{
+    return ImGui::GetFontSize() * 7.5f;
+}
+
+/// <summary>
+/// 1行を等幅の列に割って、チェックボックス等を縦に揃えて並べるための小物。
+/// 行の先頭で作り、2列目以降の直前に Next(i) を呼ぶ。
+/// 列幅は「その行に残っている幅」から決めるので、窓幅を変えても崩れない。
+/// </summary>
+/// <example>
+/// InlineColumns cols(3);
+/// ImGui::Checkbox("A", &a);
+/// cols.Next(1); ImGui::Checkbox("B", &b);
+/// cols.Next(2); ImGui::Checkbox("C", &c);
+/// </example>
+struct InlineColumns
+{
+    float startX = 0.0f;
+    float columnWidth = 0.0f;
+
+    /// <param name="count">その行に並べる列数</param>
+    explicit InlineColumns(int count)
+    {
+        startX = ImGui::GetCursorPosX();
+        const int n = (count > 0) ? count : 1;
+        columnWidth = ImGui::GetContentRegionAvail().x / static_cast<float>(n);
+    }
+
+    /// <summary>index 列目（0 始まり）の先頭へ送る。index が 0 以下なら何もしない</summary>
+    void Next(int index) const
+    {
+        if (index <= 0)
+            return;
+        ImGui::SameLine(startX + columnWidth * static_cast<float>(index));
+    }
+};
+
+// ------------------------------------------------------------
 // 左サイドバー付きセクション見出し (ASCII ラベルのみ)
 // ------------------------------------------------------------
 static void SectionHeader(const char *label, ImVec4 color)
 {
     ImVec2 p = ImGui::GetCursorScreenPos();
-    float lh = ImGui::GetTextLineHeightWithSpacing();
+    // 以前は GetTextLineHeightWithSpacing() を使っていたが、これは行間ぶん
+    // （ItemSpacing.y）まで含む高さなので、色バーだけ文字より下へ伸びていた。
+    float lh = ImGui::GetTextLineHeight();
     ImGui::GetWindowDrawList()->AddRectFilled(
         p, {p.x + 3.0f, p.y + lh},
         ImGui::ColorConvertFloat4ToU32(color), 2.0f);
@@ -88,10 +146,15 @@ static void SectionHeader(const char *label, ImVec4 color)
 // ------------------------------------------------------------
 static void ReadOnlyRow(const char *label, const char *fmt, ...)
 {
+    // 以前は Text("%-12s") で桁を埋めていたが、これはバイト数での詰めなので
+    // 日本語ラベルでは効かず、プロポーショナルフォントでは幅もそろわない。
+    // 値の開始位置は「ラベル列の幅」で決める（インデント下でも崩れないよう
+    // 現在の x を基準にする）。
+    const float labelX = ImGui::GetCursorPosX();
     ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kTextDim);
-    ImGui::Text("%-12s", label);
+    ImGui::TextUnformatted(label);
     ImGui::PopStyleColor();
-    ImGui::SameLine(120.0f);
+    ImGui::SameLine(labelX + LabelColumnWidth());
     va_list args;
     va_start(args, fmt);
     ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kTextReadOnly);
@@ -105,13 +168,16 @@ static void ReadOnlyRow(const char *label, const char *fmt, ...)
 // ------------------------------------------------------------
 static void StatusBadge(const char *text, ImVec4 color)
 {
-    // 以前は枠の高さを「文字高 + 4px」しか取らず、さらに ImGui::TextUnformatted で
-    // 文字を描いていたため、行のベースライン調整が入ると文字が枠から下へはみ出していた。
-    // ここでは上下に同じだけ余白を取り、文字は描画リストへ直接置いてズレを無くしている。
+    // 高さはボタンと同じ GetFrameHeight() にそろえる。
+    // 以前は「文字高 + 6px」で作っていたため、SameLine でボタンやチェックボックスの
+    // 隣に置くとバッジだけ背が低く、行の上端に張り付いて浮いて見えていた
+    // （メニューバーの再生状態バッジがまさにこれ）。
+    // 幅の余白も style.FramePadding.x に合わせ、隣のボタンと同じ間合いにする。
     const ImVec2 textSize = ImGui::CalcTextSize(text);
-    const float padX = 6.0f;
-    const float padY = 3.0f;
-    const ImVec2 badgeSize = {textSize.x + padX * 2.0f, textSize.y + padY * 2.0f};
+    const float padX = ImGui::GetStyle().FramePadding.x;
+    const float height = ImGui::GetFrameHeight();
+    const ImVec2 badgeSize = {textSize.x + padX * 2.0f, height};
+    const float padY = (height - textSize.y) * 0.5f;
 
     const ImVec2 pos = ImGui::GetCursorScreenPos();
     const ImVec2 bottomRight = {pos.x + badgeSize.x, pos.y + badgeSize.y};
@@ -119,8 +185,8 @@ static void StatusBadge(const char *text, ImVec4 color)
     ImDrawList *dl = ImGui::GetWindowDrawList();
     ImVec4 bg = color;
     bg.w = 0.20f;
-    dl->AddRectFilled(pos, bottomRight, ImGui::ColorConvertFloat4ToU32(bg), 3.0f);
-    dl->AddRect(pos, bottomRight, ImGui::ColorConvertFloat4ToU32(color), 3.0f, 0, 1.0f);
+    dl->AddRectFilled(pos, bottomRight, ImGui::ColorConvertFloat4ToU32(bg), ImGui::GetStyle().FrameRounding);
+    dl->AddRect(pos, bottomRight, ImGui::ColorConvertFloat4ToU32(color), ImGui::GetStyle().FrameRounding, 0, 1.0f);
     dl->AddText({pos.x + padX, pos.y + padY}, ImGui::ColorConvertFloat4ToU32(color), text);
 
     // カーソルを手で動かさず、バッジの大きさをレイアウトへ申告する。
@@ -317,6 +383,68 @@ inline bool AccentCheckbox(const char *label, bool *v, ImVec4 accent)
     const bool changed = ImGui::Checkbox(label, v);
     ImGui::PopStyleColor();
     return changed;
+}
+
+// ------------------------------------------------------------
+// トグルスイッチ（imgui_toggle）
+//
+// 使い分け:
+//   ThemedToggle  … 「その機能が生きているか」を表す入切スイッチ
+//                    （描画エントリのON/OFF、コライダーの有効/表示、影の有効 など）
+//   AccentCheckbox… 複数から選ぶ・条件を積むタイプの選択肢
+//
+// 幅はチェックボックスより広いので、行に並べるときは InlineColumns と併用する。
+// ------------------------------------------------------------
+
+/// <summary>テーマ配色のトグルスイッチ</summary>
+/// <param name="label">ラベル（## でID付与可）</param>
+/// <param name="v">対象の値</param>
+/// <param name="accent">ON のときの地色（DebugTheme::kAccentXxx）</param>
+/// <returns>bool: 値が変化したら true</returns>
+inline bool ThemedToggle(const char *label, bool *v, ImVec4 accent = DebugTheme::kAccentBlue)
+{
+    const ImGuiStyle &style = ImGui::GetStyle();
+
+    // ON/OFF それぞれの配色。ImGui のテーマ色を土台にしてアクセントだけ乗せる
+    ImGuiTogglePalette onPalette{};
+    onPalette.Frame = {accent.x * 0.62f, accent.y * 0.62f, accent.z * 0.62f, 1.0f};
+    onPalette.FrameHover = accent;
+    onPalette.Knob = {0.95f, 0.96f, 0.97f, 1.0f};
+    onPalette.KnobHover = {1.0f, 1.0f, 1.0f, 1.0f};
+
+    ImGuiTogglePalette offPalette{};
+    offPalette.Frame = style.Colors[ImGuiCol_FrameBg];
+    offPalette.FrameHover = style.Colors[ImGuiCol_FrameBgHovered];
+    offPalette.Knob = {0.45f, 0.46f, 0.50f, 1.0f};
+    offPalette.KnobHover = {0.58f, 0.59f, 0.63f, 1.0f};
+
+    ImGuiToggleConfig config;
+    config.Flags = ImGuiToggleFlags_Animated;
+    config.AnimationDuration = 0.12f; // きびきび動く程度。長いと操作が重く感じる
+    config.WidthRatio = 1.70f;
+    config.On.Palette = &onPalette;
+    config.Off.Palette = &offPalette;
+
+    return ImGui::Toggle(label, v, config);
+}
+
+/// <summary>
+/// ラベルを左、トグルを右端に置く行。設定項目が縦に並ぶ場所で使うと右端が揃う。
+/// </summary>
+/// <param name="label">左に出す説明</param>
+/// <param name="id">トグルのID（## から始める）</param>
+/// <param name="v">対象の値</param>
+/// <param name="accent">ON のときの地色</param>
+/// <returns>bool: 値が変化したら true</returns>
+inline bool ToggleRow(const char *label, const char *id, bool *v, ImVec4 accent = DebugTheme::kAccentBlue)
+{
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted(label);
+
+    // トグルの幅は WidthRatio × 行の高さ。右端にそろえるので実寸で下がる
+    const float toggleWidth = ImGui::GetFrameHeight() * 1.70f;
+    ImGui::SameLine(ImGui::GetContentRegionMax().x - toggleWidth);
+    return ThemedToggle(id, v, accent);
 }
 
 // ------------------------------------------------------------

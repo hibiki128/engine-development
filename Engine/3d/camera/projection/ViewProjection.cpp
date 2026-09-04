@@ -480,10 +480,13 @@ void ViewProjection::ShowDebugInfo()
                 {
                     ImGui::Indent(6.0f);
                     auto R3 = [](const char *lbl, ImVec4 col, float x, float y, float z) {
+                        // Text("%-8s") はバイト数での桁詰めなので日本語ラベルには効かない。
+                        // 値の開始位置はラベル列の幅でそろえる。
+                        const float labelX = ImGui::GetCursorPosX();
                         ImGui::PushStyleColor(ImGuiCol_Text, col);
-                        ImGui::Text("%-8s", lbl);
+                        ImGui::TextUnformatted(lbl);
                         ImGui::PopStyleColor();
-                        ImGui::SameLine(72.f);
+                        ImGui::SameLine(labelX + LabelColumnWidth());
                         ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kTextReadOnly);
                         ImGui::Text("%.2f  %.2f  %.2f", x, y, z);
                         ImGui::PopStyleColor();

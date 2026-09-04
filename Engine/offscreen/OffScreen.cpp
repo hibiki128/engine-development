@@ -368,7 +368,7 @@ void OffScreen::Setting()
 
         // 有効トグル
         bool enabled = slot.enabled;
-        if (ImGui::Checkbox("##en", &enabled))
+        if (ThemedToggle("##en", &enabled, DebugTheme::kAccentPurple))
             effectChain_.SetEnabled(i, enabled);
         ImGui::SetItemTooltip("このエフェクトの有効 / 無効");
         ImGui::SameLine();

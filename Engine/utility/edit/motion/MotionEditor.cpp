@@ -2,6 +2,8 @@
 #include "utility/debug/imgui/ImGuiNotification.h"
 #ifdef USE_IMGUI
 #include "imgui.h"
+#include "utility/debug/imgui/DebugUIHelper.h" // std::string 版 InputText / テーマ配色ヘルパー
+#include "utility/debug/imgui/ImGuiExtras.h"   // モーション軌跡の3Dプレビュー (implot3d)
 #endif // USE_IMGUI
 #include "MyMath.h"
 #include <line/LineRenderer.h>
@@ -727,6 +729,90 @@ void MotionEditor::DrawCatmullRomCurve()
     }
 }
 
+#ifdef USE_IMGUI
+void MotionEditor::DrawControlPointPreview(const Motion &motion)
+{
+    // 制御点が2点未満だと軌跡にならないので出さない
+    if (motion.controlPoints.size() < 2)
+    {
+        return;
+    }
+
+    if (!ImGui::CollapsingHeader("軌跡プレビュー##motionpath", ImGuiTreeNodeFlags_DefaultOpen))
+    {
+        return;
+    }
+    DimText("ドラッグで視点を回せます（オブジェクトのローカル座標）");
+
+    // 制御点そのもの
+    std::vector<float> px, py, pz;
+    px.reserve(motion.controlPoints.size());
+    py.reserve(motion.controlPoints.size());
+    pz.reserve(motion.controlPoints.size());
+    for (const Vector3 &p : motion.controlPoints)
+    {
+        px.push_back(p.x);
+        py.push_back(p.y);
+        pz.push_back(p.z);
+    }
+
+    // 補間後の軌跡。実際に再生されるカーブと同じ関数を通して描く
+    // （UI 用に別の近似を書くと、見た目と実挙動がずれる）
+    std::vector<float> cx, cy, cz;
+    const int kCurveSamples = 96;
+    if (motion.useCatmullRom && motion.controlPoints.size() >= 4)
+    {
+        cx.reserve(kCurveSamples);
+        cy.reserve(kCurveSamples);
+        cz.reserve(kCurveSamples);
+        for (int i = 0; i < kCurveSamples; ++i)
+        {
+            const float t = static_cast<float>(i) / static_cast<float>(kCurveSamples - 1);
+            const Vector3 v = CatmullRomInterpolation(motion.controlPoints, t);
+            cx.push_back(v.x);
+            cy.push_back(v.y);
+            cz.push_back(v.z);
+        }
+    }
+
+    if (ImPlot3D::BeginPlot("##motionpath3d", ImVec2(-1, 220)))
+    {
+        ImPlot3D::SetupAxes("X", "Y", "Z");
+
+        if (!cx.empty())
+        {
+            ImPlot3D::PlotLine("軌跡", cx.data(), cy.data(), cz.data(), static_cast<int>(cx.size()),
+                               ImPlot3DSpec(ImPlot3DProp_LineColor, ImVec4(0.53f, 0.64f, 0.75f, 1.0f),
+                                            ImPlot3DProp_LineWeight, 2.0f));
+        }
+
+        // 制御点は順番が分かるよう線でもつなぐ
+        ImPlot3D::PlotLine("制御点の並び", px.data(), py.data(), pz.data(), static_cast<int>(px.size()),
+                           ImPlot3DSpec(ImPlot3DProp_LineColor, ImVec4(0.45f, 0.45f, 0.50f, 0.6f),
+                                        ImPlot3DProp_LineWeight, 1.0f));
+        ImPlot3D::PlotScatter("制御点", px.data(), py.data(), pz.data(), static_cast<int>(px.size()),
+                              ImPlot3DSpec(ImPlot3DProp_Marker, ImPlot3DMarker_Circle,
+                                           ImPlot3DProp_MarkerSize, 4.0f,
+                                           ImPlot3DProp_MarkerFillColor, ImVec4(0.80f, 0.72f, 0.42f, 1.0f)));
+
+        // 選択中の制御点だけ大きく出して、リストとの対応を分かるようにする
+        if (selectedControlPoint_ >= 0 && selectedControlPoint_ < static_cast<int>(motion.controlPoints.size()))
+        {
+            const Vector3 &sel = motion.controlPoints[selectedControlPoint_];
+            const float sx[1] = {sel.x};
+            const float sy[1] = {sel.y};
+            const float sz[1] = {sel.z};
+            ImPlot3D::PlotScatter("選択中", sx, sy, sz, 1,
+                                  ImPlot3DSpec(ImPlot3DProp_Marker, ImPlot3DMarker_Circle,
+                                               ImPlot3DProp_MarkerSize, 7.0f,
+                                               ImPlot3DProp_MarkerFillColor, ImVec4(0.80f, 0.46f, 0.46f, 1.0f)));
+        }
+
+        ImPlot3D::EndPlot();
+    }
+}
+#endif // USE_IMGUI
+
 void MotionEditor::DrawImGui()
 {
 #ifdef USE_IMGUI
@@ -791,6 +877,8 @@ void MotionEditor::DrawImGui()
             {
                 ImGui::DragFloat3("位置", &m.controlPoints[selectedControlPoint_].x, 0.1f);
             }
+
+            DrawControlPointPreview(m);
         }
         else
         {
@@ -800,10 +888,8 @@ void MotionEditor::DrawImGui()
             ImGui::DragFloat3("終了RotOff", &m.endRotOffset.x, 0.1f);
         }
 
-        static char nameBuffer[256] = "";
-        strcpy_s(nameBuffer, sizeof(nameBuffer), jsonName_.c_str());
-        if (ImGui::InputText("セーブ名", nameBuffer, sizeof(nameBuffer)))
-            jsonName_ = nameBuffer;
+        // std::string を直接編集できるので中間バッファは不要（imgui_stdlib）
+        ImGui::InputText("セーブ名", &jsonName_);
         if (ImGui::Button("セーブ"))
         {
             Save(jsonName_);

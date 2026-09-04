@@ -373,7 +373,8 @@ void DrawSystem::UpdateImGui(bool *open)
                               ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH |
                                   ImGuiTableFlags_SizingStretchProp))
         {
-            ImGui::TableSetupColumn("表示", ImGuiTableColumnFlags_WidthFixed, 40.0f);
+            // トグルはチェックボックスより横幅を使うので列幅を広げる
+            ImGui::TableSetupColumn("表示", ImGuiTableColumnFlags_WidthFixed, ImGui::GetFrameHeight() * 1.9f);
             ImGui::TableSetupColumn("ステージ", ImGuiTableColumnFlags_WidthFixed, 96.0f);
             ImGui::TableSetupColumn("名前", ImGuiTableColumnFlags_WidthStretch);
 
@@ -383,9 +384,8 @@ void DrawSystem::UpdateImGui(bool *open)
                 ImGui::TableNextRow();
 
                 ImGui::TableNextColumn();
-                ImGui::PushStyleColor(ImGuiCol_CheckMark, DebugTheme::kAccentGreen);
-                ImGui::Checkbox("##en", &entry.enabled);
-                ImGui::PopStyleColor();
+                // 「描いているか」の入切なのでトグルスイッチにする
+                ThemedToggle("##en", &entry.enabled, DebugTheme::kAccentGreen);
                 ImGui::SetItemTooltip("描画の ON / OFF");
 
                 ImGui::TableNextColumn();

@@ -248,9 +248,8 @@ void ShadowMap::UpdateImGui(bool *open)
     // 表示名は日本語、ウィンドウIDは "ShadowMap" のまま（保存済みレイアウトとの互換維持）
     if (ImGui::Begin("シャドウマップ###ShadowMap", open, ImGuiWindowFlags_NoFocusOnAppearing))
     {
-        ImGui::PushStyleColor(ImGuiCol_CheckMark, DebugTheme::kAccentGreen);
-        ImGui::Checkbox("シャドウ有効", &enabled_);
-        ImGui::PopStyleColor();
+        // 影を出すか出さないかの入切なのでトグルにする
+        ThemedToggle("シャドウ有効", &enabled_, DebugTheme::kAccentGreen);
         ImGui::SetItemTooltip("シャドウマップ描画の ON / OFF");
 
         ImGui::Spacing();

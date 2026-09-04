@@ -297,6 +297,15 @@ class MotionEditor
     /// private method
     /// ===================================================
 
+#ifdef USE_IMGUI
+    /// <summary>
+    /// 制御点と Catmull-Rom 軌跡を 3D プロット（ImPlot3D）で表示する。
+    /// 数値の並びだけでは軌跡の形が読めないため、窓の中で回して確かめられるようにする。
+    /// </summary>
+    /// <param name="motion">表示するモーション</param>
+    void DrawControlPointPreview(const Motion &motion);
+#endif // USE_IMGUI
+
     /// <summary>
     /// ローカル座標をワールド座標に変換
     /// </summary>

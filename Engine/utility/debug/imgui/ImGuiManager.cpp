@@ -9,6 +9,7 @@
 #include "ImGuiNotification.h"
 #include "ImGuizmo.h"
 #include "ImGuizmoManager.h"
+#include "ShaderEditorWindow.h"
 #include "collider/CollisionManager.h"
 #include "edit/motion/MotionEditor.h"
 #include "graphics/texture/TextureManager.h"
@@ -33,6 +34,7 @@
 #include <icon/IconsFontAwesome5.h>
 #include <imgui_impl_dx12.h>
 #include <implot.h>
+#include <implot3d.h>
 #include <line/LineRenderer.h>
 #include <map>
 #include <particle/gpu/ParticleCSFieldManager.h>
@@ -56,7 +58,23 @@ static constexpr uint32_t kImGuiSrvOffset = 1;
 void ImGuiSrvAlloc(ImGui_ImplDX12_InitInfo * /*info*/,
                    D3D12_CPU_DESCRIPTOR_HANDLE *outCpu, D3D12_GPU_DESCRIPTOR_HANDLE *outGpu) {
     SrvManager *srv = SrvManager::GetInstance();
-    uint32_t index = srv->Allocate() + kImGuiSrvOffset;
+    const uint32_t reserved = srv->Allocate();
+    const uint32_t index = reserved + kImGuiSrvOffset;
+
+    // 実際に書き込む枠（reserved + 1）も自分で押さえておく。
+    // 押さえずにいると、後から Allocate した誰かがそこを「自分の予約枠」として受け取り、
+    // +1 規約を守らない実装だとそこへ直接書き込んでフォントアトラスのSRVを潰す。
+    // （実際に MetaBallGpuField がこれをやっていて、シーンを作り直すと
+    //   GUI が丸ごと見えなくなる不具合になっていた）
+    const uint32_t claimed = srv->Allocate();
+    if (claimed != index)
+    {
+        // SrvManager::Free を通す経路が無い今は必ず連続で取れる。
+        // 将来 Free を使い始めて連続で取れなくなったら、ここが最初に気づける場所になる
+        Logger::Error("ImGui: SRVの書き込み枠を確保できませんでした（期待 " +
+                      std::to_string(index) + " / 実際 " + std::to_string(claimed) + "）");
+    }
+
     *outCpu = srv->GetCPUDescriptorHandle(index);
     *outGpu = srv->GetGPUDescriptorHandle(index);
 }
@@ -80,6 +98,7 @@ void ImGuiManager::Initialize(WinApp *winApp, ImGuizmoManager *imguizmoManager) 
     // ImGuiのコンテキストを生成
     ImGui::CreateContext();
     ImPlot::CreateContext();
+    ImPlot3D::CreateContext(); // モーション軌跡の3Dプレビュー用
 
     editorIniFilePath_ = AssetPath::Config("imgui_editor.ini");
     gameIniFilePath_ = AssetPath::Config("imgui_game.ini");
@@ -101,7 +120,10 @@ void ImGuiManager::Initialize(WinApp *winApp, ImGuizmoManager *imguizmoManager) 
 
     io.Fonts->Clear(); // 既存のフォントをクリア
 
-    float fontSize = 16.0f;
+    // 本文とアイコンで同じ大きさを使う。
+    // 以前は本文 14px・アイコン 16px と食い違っており、アイコン付きの
+    // メニュー項目やボタンでアイコンだけ大きく／文字とベースラインがずれて見えていた。
+    const float fontSize = 15.0f;
 
     // フォント読み込み。ファイルが見つからないと ImGui は assert で強制終了してしまうため、
     // ImFontFlags_NoLoadError を立てて戻り値で成否を判定し、失敗はログに残して起動を続行する。
@@ -117,18 +139,22 @@ void ImGuiManager::Initialize(WinApp *winApp, ImGuizmoManager *imguizmoManager) 
 
     // 日本語対応の基本フォント。読み込めなければ ImGui 内蔵フォントで代替する
     // (この後のアイコンフォントはマージ指定なので、土台になるフォントが必ず要る)。
-    if (loadFont(AssetPath::Font("PixelMplus12-Regular.ttf"), 14.0f, ImFontConfig(), io.Fonts->GetGlyphRangesJapanese()) == nullptr)
+    if (loadFont(AssetPath::Font("NotoSansJP-Medium.ttf"), fontSize, ImFontConfig(), io.Fonts->GetGlyphRangesJapanese()) == nullptr)
     {
         io.Fonts->AddFontDefault();
     }
 
     // アイコンフォント読み込み（FontAwesomeなど）
-    // FontAwesomeの設定
+    // 本文へマージするので、大きさは本文と同じにする。
+    // GlyphMinAdvanceX を本文サイズにそろえると、アイコン幅が一定になり
+    // 「アイコン + 文字」のメニュー項目で文字の開始位置がそろう。
     static const ImWchar icon_ranges[] = {ICON_MIN_FA, ICON_MAX_FA, 0};
     ImFontConfig icons_config;
     icons_config.MergeMode = true;
     icons_config.PixelSnapH = true;
     icons_config.GlyphMinAdvanceX = fontSize;
+    // アイコンは本文より少し上に付きがちなので、1px 下げて文字とベースラインを合わせる
+    icons_config.GlyphOffset = ImVec2(0.0f, 1.0f);
     loadFont(AssetPath::Font("fa-solid-900.ttf"), fontSize, icons_config, icon_ranges);
 
     // ImGui 1.92 の新DX12バックエンド（ImGui_ImplDX12_InitInfo）は
@@ -167,81 +193,114 @@ void ImGuiManager::Initialize(WinApp *winApp, ImGuizmoManager *imguizmoManager) 
 }
 
 void ImGuiManager::SetupTheme() {
-    // シックなモノクローム調ダークテーマ
-    // 無彩色のグラファイトを基調とし、選択・操作中のみ淡いスチールブルーで強調する
+    // ------------------------------------------------------------------
+    // near-black ダークテーマ
+    //
+    // 色は「sRGB でそのまま見える値」を書く。バックバッファが *_UNORM_SRGB の
+    // ため、imgui_impl_dx12.cpp の頂点シェーダで sRGB → リニアへ戻してから
+    // GPU の再変換に渡している（詳細はそちらのコメント）。
+    //
+    // 明度は段階で組む。ここを崩すと「どれが窓でどれが入力欄か」が読めなくなる:
+    //   Base0: 台座（タイトルバー・ポップアップ・ドック余白）  一番暗い
+    //   Base1: 窓の地（WindowBg）
+    //   Base2: タブ・テーブル見出し
+    //   Base3: 入力欄・ボタン
+    //   Base4/5: ホバー・押下                                  一番明るい
+    // ------------------------------------------------------------------
     ImGuiStyle &style = ImGui::GetStyle();
+
+    // 無彩色の段階（わずかに青寄り。完全な無彩色より画面が締まる）
+    const ImVec4 kBase0 = ImVec4(0.027f, 0.027f, 0.035f, 1.00f); // #070709
+    const ImVec4 kBase1 = ImVec4(0.047f, 0.047f, 0.055f, 1.00f); // #0C0C0E  窓の地
+    const ImVec4 kBase2 = ImVec4(0.078f, 0.082f, 0.094f, 1.00f); // #141518
+    const ImVec4 kBase3 = ImVec4(0.114f, 0.118f, 0.137f, 1.00f); // #1D1E23  入力欄
+    const ImVec4 kBase4 = ImVec4(0.153f, 0.161f, 0.184f, 1.00f); // #27292F  ホバー
+    const ImVec4 kBase5 = ImVec4(0.204f, 0.212f, 0.239f, 1.00f); // #34363D  押下・つまみ
 
     // アクセントカラー（淡いスチールブルー）。色味はこの3段階に統一する
     const ImVec4 accentDim = ImVec4(0.369f, 0.471f, 0.580f, 1.00f);    // 通常
     const ImVec4 accent = ImVec4(0.435f, 0.541f, 0.659f, 1.00f);       // ホバー
     const ImVec4 accentBright = ImVec4(0.533f, 0.635f, 0.745f, 1.00f); // アクティブ
 
+    // アクセントの濃さ違いを作るヘルパー（同じ色をあちこちで書き写さない）
+    auto withAlpha = [](const ImVec4 &c, float a) { return ImVec4(c.x, c.y, c.z, a); };
+
     // カラースキーム
     ImVec4 *colors = style.Colors;
 
     // テキスト（純白を避けたやわらかいオフホワイト）
-    colors[ImGuiCol_Text] = ImVec4(0.878f, 0.882f, 0.890f, 1.00f);
-    colors[ImGuiCol_TextDisabled] = ImVec4(0.416f, 0.424f, 0.439f, 1.00f);
+    colors[ImGuiCol_Text] = ImVec4(0.871f, 0.878f, 0.894f, 1.00f);
+    colors[ImGuiCol_TextDisabled] = ImVec4(0.376f, 0.388f, 0.412f, 1.00f);
 
     // 背景・枠
-    colors[ImGuiCol_WindowBg] = ImVec4(0.090f, 0.094f, 0.102f, 1.00f);
-    colors[ImGuiCol_ChildBg] = ImVec4(0.106f, 0.110f, 0.122f, 1.00f);
-    colors[ImGuiCol_PopupBg] = ImVec4(0.075f, 0.078f, 0.086f, 0.98f);
-    colors[ImGuiCol_Border] = ImVec4(0.227f, 0.235f, 0.251f, 0.50f);
+    colors[ImGuiCol_WindowBg] = kBase1;
+    // 子領域は窓の地よりわずかに暗くして「一段落ち込んだ枠」に見せる。
+    // 一覧（ライト一覧・ヒエラルキー等）が窓の中で region として読めるようになる。
+    // 差は 4/255 程度で、枠なしの単なるレイアウト用 BeginChild では目立たない。
+    colors[ImGuiCol_ChildBg] = ImVec4(0.031f, 0.031f, 0.039f, 1.00f);
+    colors[ImGuiCol_PopupBg] = ImVec4(kBase0.x, kBase0.y, kBase0.z, 0.98f);
+    colors[ImGuiCol_Border] = ImVec4(0.196f, 0.204f, 0.231f, 0.65f);
     colors[ImGuiCol_BorderShadow] = ImVec4(0.000f, 0.000f, 0.000f, 0.00f);
 
     // 入力フィールド
-    colors[ImGuiCol_FrameBg] = ImVec4(0.145f, 0.149f, 0.165f, 1.00f);
-    colors[ImGuiCol_FrameBgHovered] = ImVec4(0.188f, 0.192f, 0.204f, 1.00f);
-    colors[ImGuiCol_FrameBgActive] = ImVec4(0.227f, 0.235f, 0.251f, 1.00f);
+    colors[ImGuiCol_FrameBg] = kBase3;
+    colors[ImGuiCol_FrameBgHovered] = kBase4;
+    colors[ImGuiCol_FrameBgActive] = kBase5;
 
     // タイトルバー・メニューバー
-    colors[ImGuiCol_TitleBg] = ImVec4(0.075f, 0.078f, 0.086f, 1.00f);
-    colors[ImGuiCol_TitleBgActive] = ImVec4(0.122f, 0.125f, 0.137f, 1.00f);
-    colors[ImGuiCol_TitleBgCollapsed] = ImVec4(0.075f, 0.078f, 0.086f, 0.80f);
-    colors[ImGuiCol_MenuBarBg] = ImVec4(0.102f, 0.106f, 0.114f, 1.00f);
+    colors[ImGuiCol_TitleBg] = kBase0;
+    colors[ImGuiCol_TitleBgActive] = ImVec4(0.086f, 0.098f, 0.118f, 1.00f);
+    colors[ImGuiCol_TitleBgCollapsed] = ImVec4(kBase0.x, kBase0.y, kBase0.z, 0.80f);
+    colors[ImGuiCol_MenuBarBg] = ImVec4(0.063f, 0.063f, 0.074f, 1.00f);
 
     // スクロールバー（無彩色のグレー）
-    colors[ImGuiCol_ScrollbarBg] = ImVec4(0.075f, 0.078f, 0.086f, 0.60f);
-    colors[ImGuiCol_ScrollbarGrab] = ImVec4(0.227f, 0.235f, 0.251f, 1.00f);
-    colors[ImGuiCol_ScrollbarGrabHovered] = ImVec4(0.290f, 0.302f, 0.322f, 1.00f);
-    colors[ImGuiCol_ScrollbarGrabActive] = ImVec4(0.353f, 0.369f, 0.392f, 1.00f);
+    colors[ImGuiCol_ScrollbarBg] = ImVec4(kBase0.x, kBase0.y, kBase0.z, 0.55f);
+    colors[ImGuiCol_ScrollbarGrab] = kBase4;
+    colors[ImGuiCol_ScrollbarGrabHovered] = kBase5;
+    colors[ImGuiCol_ScrollbarGrabActive] = ImVec4(0.263f, 0.275f, 0.306f, 1.00f);
 
     // チェック・スライダー（アクセント）
     colors[ImGuiCol_CheckMark] = accentBright;
+    colors[ImGuiCol_CheckboxSelectedBg] = withAlpha(accentDim, 0.28f);
     colors[ImGuiCol_SliderGrab] = accent;
     colors[ImGuiCol_SliderGrabActive] = accentBright;
 
     // ボタン（無彩色ベース、ホバー時のみ淡くスチールへ寄せる）
-    colors[ImGuiCol_Button] = ImVec4(0.180f, 0.188f, 0.204f, 1.00f);
-    colors[ImGuiCol_ButtonHovered] = ImVec4(0.243f, 0.306f, 0.369f, 1.00f);
-    colors[ImGuiCol_ButtonActive] = ImVec4(0.204f, 0.255f, 0.310f, 1.00f);
+    colors[ImGuiCol_Button] = kBase3;
+    colors[ImGuiCol_ButtonHovered] = ImVec4(0.196f, 0.251f, 0.318f, 1.00f);
+    colors[ImGuiCol_ButtonActive] = ImVec4(0.161f, 0.208f, 0.267f, 1.00f);
 
     // ヘッダー（CollapsingHeader / Selectable など）
-    colors[ImGuiCol_Header] = ImVec4(0.165f, 0.173f, 0.188f, 1.00f);
-    colors[ImGuiCol_HeaderHovered] = ImVec4(0.173f, 0.216f, 0.259f, 1.00f);
-    colors[ImGuiCol_HeaderActive] = ImVec4(0.204f, 0.255f, 0.310f, 1.00f);
+    colors[ImGuiCol_Header] = ImVec4(0.106f, 0.114f, 0.133f, 1.00f);
+    colors[ImGuiCol_HeaderHovered] = ImVec4(0.153f, 0.196f, 0.247f, 1.00f);
+    colors[ImGuiCol_HeaderActive] = ImVec4(0.184f, 0.235f, 0.298f, 1.00f);
 
     // セパレータ
-    colors[ImGuiCol_Separator] = ImVec4(0.227f, 0.235f, 0.251f, 0.50f);
-    colors[ImGuiCol_SeparatorHovered] = ImVec4(accent.x, accent.y, accent.z, 0.60f);
+    colors[ImGuiCol_Separator] = ImVec4(0.184f, 0.192f, 0.216f, 0.60f);
+    colors[ImGuiCol_SeparatorHovered] = withAlpha(accent, 0.60f);
     colors[ImGuiCol_SeparatorActive] = accentBright;
 
     // リサイズグリップ
-    colors[ImGuiCol_ResizeGrip] = ImVec4(0.227f, 0.235f, 0.251f, 0.40f);
-    colors[ImGuiCol_ResizeGripHovered] = ImVec4(accent.x, accent.y, accent.z, 0.60f);
-    colors[ImGuiCol_ResizeGripActive] = ImVec4(accentBright.x, accentBright.y, accentBright.z, 0.90f);
+    colors[ImGuiCol_ResizeGrip] = ImVec4(0.184f, 0.192f, 0.216f, 0.40f);
+    colors[ImGuiCol_ResizeGripHovered] = withAlpha(accent, 0.60f);
+    colors[ImGuiCol_ResizeGripActive] = withAlpha(accentBright, 0.90f);
 
-    // タブ
-    colors[ImGuiCol_Tab] = ImVec4(0.102f, 0.106f, 0.114f, 1.00f);
-    colors[ImGuiCol_TabHovered] = ImVec4(accent.x, accent.y, accent.z, 0.50f);
-    colors[ImGuiCol_TabActive] = ImVec4(0.173f, 0.216f, 0.259f, 1.00f);
-    colors[ImGuiCol_TabUnfocused] = ImVec4(0.090f, 0.094f, 0.102f, 1.00f);
-    colors[ImGuiCol_TabUnfocusedActive] = ImVec4(0.122f, 0.125f, 0.137f, 1.00f);
+    // テキスト入力のキャレット
+    colors[ImGuiCol_InputTextCursor] = accentBright;
+
+    // タブ（選択タブは上の細線＝Overline で示す。ここを未設定にすると
+    //       ImGui 既定の鮮やかな青が1本だけ残って浮くので必ず埋める）
+    colors[ImGuiCol_Tab] = ImVec4(0.063f, 0.067f, 0.078f, 1.00f);
+    colors[ImGuiCol_TabHovered] = withAlpha(accent, 0.45f);
+    colors[ImGuiCol_TabSelected] = ImVec4(0.129f, 0.161f, 0.204f, 1.00f);
+    colors[ImGuiCol_TabSelectedOverline] = accentBright;
+    colors[ImGuiCol_TabDimmed] = ImVec4(0.043f, 0.043f, 0.051f, 1.00f);
+    colors[ImGuiCol_TabDimmedSelected] = ImVec4(0.086f, 0.090f, 0.106f, 1.00f);
+    colors[ImGuiCol_TabDimmedSelectedOverline] = ImVec4(0.259f, 0.278f, 0.306f, 1.00f);
 
     // ドッキング
-    colors[ImGuiCol_DockingPreview] = ImVec4(accent.x, accent.y, accent.z, 0.55f);
-    colors[ImGuiCol_DockingEmptyBg] = ImVec4(0.075f, 0.078f, 0.086f, 1.00f);
+    colors[ImGuiCol_DockingPreview] = withAlpha(accent, 0.45f);
+    colors[ImGuiCol_DockingEmptyBg] = kBase0;
 
     // プロット（アクセントに統一）
     colors[ImGuiCol_PlotLines] = accentBright;
@@ -249,24 +308,73 @@ void ImGuiManager::SetupTheme() {
     colors[ImGuiCol_PlotHistogram] = accent;
     colors[ImGuiCol_PlotHistogramHovered] = accentBright;
 
-    // 選択範囲・ドラッグ＆ドロップ・ナビゲーション
-    colors[ImGuiCol_TextSelectedBg] = ImVec4(accent.x, accent.y, accent.z, 0.35f);
-    colors[ImGuiCol_DragDropTarget] = ImVec4(accentBright.x, accentBright.y, accentBright.z, 0.90f);
-    colors[ImGuiCol_NavHighlight] = accentBright;
-    colors[ImGuiCol_NavWindowingHighlight] = ImVec4(1.00f, 1.00f, 1.00f, 0.70f);
-    colors[ImGuiCol_NavWindowingDimBg] = ImVec4(0.050f, 0.050f, 0.060f, 0.60f);
-    colors[ImGuiCol_ModalWindowDimBg] = ImVec4(0.020f, 0.020f, 0.030f, 0.65f);
+    // テーブル（未設定だと ImGui 既定の明るい青灰が出てテーマから浮く）
+    colors[ImGuiCol_TableHeaderBg] = kBase2;
+    colors[ImGuiCol_TableBorderStrong] = ImVec4(0.196f, 0.204f, 0.231f, 1.00f);
+    colors[ImGuiCol_TableBorderLight] = ImVec4(0.125f, 0.129f, 0.149f, 1.00f);
+    colors[ImGuiCol_TableRowBg] = ImVec4(0.000f, 0.000f, 0.000f, 0.00f);
+    colors[ImGuiCol_TableRowBgAlt] = ImVec4(1.000f, 1.000f, 1.000f, 0.022f);
 
-    // スタイル設定
+    // ツリー・リンク・未保存マーカー
+    colors[ImGuiCol_TreeLines] = ImVec4(0.216f, 0.224f, 0.251f, 0.70f);
+    colors[ImGuiCol_TextLink] = accentBright;
+    colors[ImGuiCol_UnsavedMarker] = ImVec4(0.800f, 0.720f, 0.420f, 1.00f);
+
+    // 選択範囲・ドラッグ＆ドロップ・ナビゲーション
+    colors[ImGuiCol_TextSelectedBg] = withAlpha(accent, 0.32f);
+    colors[ImGuiCol_DragDropTarget] = withAlpha(accentBright, 0.90f);
+    colors[ImGuiCol_DragDropTargetBg] = withAlpha(accent, 0.15f);
+    colors[ImGuiCol_NavCursor] = accentBright;
+    colors[ImGuiCol_NavWindowingHighlight] = ImVec4(1.00f, 1.00f, 1.00f, 0.70f);
+    colors[ImGuiCol_NavWindowingDimBg] = ImVec4(0.020f, 0.020f, 0.027f, 0.65f);
+    colors[ImGuiCol_ModalWindowDimBg] = ImVec4(0.008f, 0.008f, 0.016f, 0.70f);
+
+    // ------------------------------------------------------------------
+    // 余白・寸法
+    // 「ボタンがずれて見える」の多くは、行の高さ（FramePadding.y から決まる）と
+    // 行間（ItemSpacing.y）が噛み合っていないせい。ここを一箇所で決めておく。
+    // ------------------------------------------------------------------
     style.WindowPadding = ImVec2(10, 10);
-    style.FramePadding = ImVec2(8, 6);
-    style.CellPadding = ImVec2(6, 3);
+    style.FramePadding = ImVec2(8, 5);
+    style.CellPadding = ImVec2(8, 4);
     style.ItemSpacing = ImVec2(8, 6);
-    style.ItemInnerSpacing = ImVec2(6, 6);
+    style.ItemInnerSpacing = ImVec2(6, 4);
     style.TouchExtraPadding = ImVec2(0, 0);
     style.IndentSpacing = 20;
-    style.ScrollbarSize = 14;
-    style.GrabMinSize = 12;
+    style.ScrollbarSize = 13;
+    style.GrabMinSize = 11;
+    style.ColumnsMinSpacing = 8;
+
+    // 文字の置き方。既定では Selectable の文字が枠の上端寄りに付き、
+    // 同じ行のボタンとベースラインがずれて見えるので、縦は中央に揃える。
+    style.WindowTitleAlign = ImVec2(0.0f, 0.5f);
+    style.ButtonTextAlign = ImVec2(0.5f, 0.5f);
+    style.SelectableTextAlign = ImVec2(0.0f, 0.5f);
+
+    // SeparatorText（「シーン・オブジェクト」等の区切り見出し）
+    style.SeparatorTextBorderSize = 2.0f;
+    style.SeparatorTextAlign = ImVec2(0.0f, 0.5f);
+    style.SeparatorTextPadding = ImVec2(18, 5);
+
+    // 無効化した項目は薄くしすぎない（押せないのか読めないのか分からなくなる）
+    style.DisabledAlpha = 0.45f;
+
+    // タイトルバー左の折りたたみ矢印を出さない。
+    // 出していると窓名の開始位置が窓ごとに変わってタブが不揃いに見える。
+    style.WindowMenuButtonPosition = ImGuiDir_None;
+
+    // ドック分割のつまみ。細すぎると掴めず、太いと線に見えるのでこの辺り
+    style.DockingSeparatorSize = 2.0f;
+
+    // タブ。ドックが狭いと「描画シ…」のように名前がすぐ切れるので、
+    // 非選択タブの ✕ はホバー時だけ出して、その幅を名前に回す。
+    style.TabCloseButtonMinWidthUnselected = 0.0f;
+    style.TabBarOverlineSize = 2.0f;
+
+    // ツリー（ヒエラルキー）に親子の接続線を出す。
+    // 入れ子が深いとインデントだけでは親子関係が追えない。
+    style.TreeLinesFlags = ImGuiTreeNodeFlags_DrawLinesToNodes;
+    style.TreeLinesSize = 1.0f;
 
     // 外観
     style.WindowBorderSize = 1;
@@ -274,6 +382,7 @@ void ImGuiManager::SetupTheme() {
     style.PopupBorderSize = 1;
     style.FrameBorderSize = 0;
     style.TabBorderSize = 0;
+    style.TabBarBorderSize = 1;
 
     // 丸み
     style.WindowRounding = 6;
@@ -289,6 +398,52 @@ void ImGuiManager::SetupTheme() {
         style.WindowRounding = 0.0f;
         style.Colors[ImGuiCol_WindowBg].w = 1.0f;
     }
+
+    SetupPlotTheme();
+}
+
+void ImGuiManager::SetupPlotTheme() {
+    // ImPlot は ImGui とは別のスタイルを持っているので、こちらも合わせておく。
+    // 揃えておかないと統計窓のグラフだけ地色・軸色が既定のままで浮く。
+    ImPlotStyle &plot = ImPlot::GetStyle();
+    ImVec4 *pc = plot.Colors;
+
+    const ImVec4 accent = ImVec4(0.435f, 0.541f, 0.659f, 1.00f);
+
+    pc[ImPlotCol_FrameBg] = ImVec4(0.000f, 0.000f, 0.000f, 0.00f); // 窓の地に溶かす
+    pc[ImPlotCol_PlotBg] = ImVec4(0.027f, 0.027f, 0.035f, 1.00f);
+    pc[ImPlotCol_PlotBorder] = ImVec4(0.196f, 0.204f, 0.231f, 0.65f);
+    pc[ImPlotCol_LegendBg] = ImVec4(0.027f, 0.027f, 0.035f, 0.94f);
+    pc[ImPlotCol_LegendBorder] = ImVec4(0.196f, 0.204f, 0.231f, 0.65f);
+    pc[ImPlotCol_LegendText] = ImVec4(0.871f, 0.878f, 0.894f, 1.00f);
+    pc[ImPlotCol_TitleText] = ImVec4(0.871f, 0.878f, 0.894f, 1.00f);
+    pc[ImPlotCol_InlayText] = ImVec4(0.871f, 0.878f, 0.894f, 1.00f);
+    pc[ImPlotCol_AxisText] = ImVec4(0.596f, 0.612f, 0.643f, 1.00f);
+    pc[ImPlotCol_AxisGrid] = ImVec4(0.259f, 0.267f, 0.298f, 0.35f);
+    pc[ImPlotCol_AxisBgHovered] = ImVec4(0.153f, 0.161f, 0.184f, 1.00f);
+    pc[ImPlotCol_AxisBgActive] = ImVec4(0.204f, 0.212f, 0.239f, 1.00f);
+    pc[ImPlotCol_Selection] = accent;
+    pc[ImPlotCol_Crosshairs] = ImVec4(0.596f, 0.612f, 0.643f, 0.60f);
+
+    plot.PlotPadding = ImVec2(8, 6);
+    plot.LabelPadding = ImVec2(4, 3);
+    plot.LegendPadding = ImVec2(8, 6);
+    plot.PlotBorderSize = 1.0f;
+    plot.MinorAlpha = 0.20f;
+
+    // ImPlot3D（モーション軌跡プレビュー）も同じ配色に合わせる
+    ImPlot3DStyle &plot3d = ImPlot3D::GetStyle();
+    ImVec4 *p3 = plot3d.Colors;
+    p3[ImPlot3DCol_FrameBg] = ImVec4(0.000f, 0.000f, 0.000f, 0.00f);
+    p3[ImPlot3DCol_PlotBg] = ImVec4(0.027f, 0.027f, 0.035f, 1.00f);
+    p3[ImPlot3DCol_PlotBorder] = ImVec4(0.196f, 0.204f, 0.231f, 0.65f);
+    p3[ImPlot3DCol_LegendBg] = ImVec4(0.027f, 0.027f, 0.035f, 0.94f);
+    p3[ImPlot3DCol_LegendBorder] = ImVec4(0.196f, 0.204f, 0.231f, 0.65f);
+    p3[ImPlot3DCol_LegendText] = ImVec4(0.871f, 0.878f, 0.894f, 1.00f);
+    p3[ImPlot3DCol_TitleText] = ImVec4(0.871f, 0.878f, 0.894f, 1.00f);
+    p3[ImPlot3DCol_InlayText] = ImVec4(0.871f, 0.878f, 0.894f, 1.00f);
+    p3[ImPlot3DCol_AxisText] = ImVec4(0.596f, 0.612f, 0.643f, 1.00f);
+    p3[ImPlot3DCol_AxisGrid] = ImVec4(0.259f, 0.267f, 0.298f, 0.35f);
 }
 
 void ImGuiManager::CreateDescriptorHeap() {
@@ -316,6 +471,7 @@ void ImGuiManager::Finalize() {
 #ifdef USE_IMGUI
     ImGui_ImplDX12_Shutdown();
     ImGui_ImplWin32_Shutdown();
+    ImPlot3D::DestroyContext();
     ImPlot::DestroyContext();
     ImGui::DestroyContext();
 #endif // USE_IMGUI
@@ -509,6 +665,7 @@ void ImGuiManager::ShowMainMenu() {
                 windowToggle(ICON_FA_LIGHTBULB " ライト", showLightView_, "ライティング（平行光・環境光など）の設定");
                 windowToggle(ICON_FA_ADJUST " シャドウマップ", showShadowMapView_, "影の描画設定・デバッグ表示");
                 windowToggle(ICON_FA_LAYER_GROUP " 描画システム", showDrawSystemView_, "描画ステージ/順序などレンダリング全体の設定");
+                windowToggle(ICON_FA_CODE " シェーダー", showShaderEditorView_, "shaders/ 配下のHLSLを構文色付きで閲覧・編集します（反映は次回起動から）");
 
                 ImGui::SeparatorText("統計・デバッグ");
                 windowToggle(ICON_FA_DATABASE " 統計 (FPS/プロファイラ/ログ)", showFPSView_, "FPS・処理時間・ログ履歴を表示します");
@@ -569,8 +726,6 @@ void ImGuiManager::ShowMainMenu() {
 
                 ImGui::EndMenu();
             }
-            ImGui::Separator();
-
             // 表示モード切替
             ImGui::Separator();
             if (isShowMainUI_) {
@@ -1029,6 +1184,14 @@ void ImGuiManager::ShowDrawSystemWindow() {
     }
 }
 
+void ImGuiManager::ShowShaderEditorWindow() {
+    if (!showShaderEditorView_)
+        return; // 表示しない場合は早期リターン
+
+    // ウィンドウの生成・閉じるボタンは ShaderEditorWindow 側に委譲する
+    ShaderEditorWindow::GetInstance()->Draw(&showShaderEditorView_);
+}
+
 void ImGuiManager::ShowAssetBrowserWindow() {
     if (!showAssetBrowserView_)
         return; // 表示しない場合は早期リターン
@@ -1355,6 +1518,7 @@ void ImGuiManager::ShowMainUI(OffScreen *pOffScreen) {
     ShowShadowMapWindow();
     // 描画システム設定ウィンドウを描画
     ShowDrawSystemWindow();
+    ShowShaderEditorWindow();
     // カメラ窓を描画
     ShowCameraWindow();
     // アセットブラウザ窓を描画
@@ -1424,9 +1588,11 @@ void ImGuiManager::DisplayFPS() {
             fps >= 59.0f ? ImVec4(0.0f, 1.0f, 0.0f, 1.0f) : fps >= 30.0f ? ImVec4(1.0f, 1.0f, 0.0f, 1.0f)
                                                                          : ImVec4(1.0f, 0.0f, 0.0f, 1.0f);
 
-        // 数値をコンパクトに横並び表示
+        // 数値をコンパクトに横並び表示（列位置は文字サイズ基準。px 直書きだと
+        // フォントを変えたときに "FPS: 60.0" と重なる）
+        const float fpsColX = ImGui::GetCursorPosX();
         ImGui::TextColored(color, "FPS: %.1f", fps);
-        ImGui::SameLine(100);
+        ImGui::SameLine(fpsColX + LabelColumnWidth());
         ImGui::TextColored(color, "Frame: %.2f ms", frameTime);
 
         // -----------------------------------------------
@@ -1897,6 +2063,7 @@ void ImGuiManager::SaveFlag() {
     data->Save("showUIEditorView", showUIEditorView_);
     data->Save("showShadowMapView", showShadowMapView_);
     data->Save("showDrawSystemView", showDrawSystemView_);
+    data->Save("showShaderEditorView", showShaderEditorView_);
     data->Save("showAssetBrowserView", showAssetBrowserView_);
     data->Save("showGameParamView", showGameParamView_);
     data->Save("isEditorMode", isEditorMode_);
@@ -1925,6 +2092,7 @@ void ImGuiManager::LoadFlag() {
     showUIEditorView_ = data->Load("showUIEditorView", false);
     showShadowMapView_ = data->Load("showShadowMapView", true);
     showDrawSystemView_ = data->Load("showDrawSystemView", true);
+    showShaderEditorView_ = data->Load("showShaderEditorView", false);
     showAssetBrowserView_ = data->Load("showAssetBrowserView", false);
     showGameParamView_ = data->Load("showGameParamView", true);
     isEditorMode_ = data->Load("isEditorMode", true);

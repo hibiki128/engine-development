@@ -312,16 +312,21 @@ void BaseObject::DebugObject() {
 
             // ---- 描画モード（モデル / ワイヤーフレームは排他）----
             SectionHeader("[ 描画モード ]", DebugTheme::kAccentBlue);
-            if (AccentCheckbox("モデル描画##mdraw", &isModelDraw_, DebugTheme::kAccentBlue) && isModelDraw_)
-                isWireframe_ = false;
-            ImGui::SameLine(170.0f);
-            if (AccentCheckbox("ワイヤーフレーム##wf", &isWireframe_, DebugTheme::kAccentBlue) && isWireframe_)
-                isModelDraw_ = false;
-            if (isWireframe_) {
-                ImGui::SameLine(330.0f);
-                AccentCheckbox("レインボー##rb", &isRainbow_, DebugTheme::kAccentYellow);
-            } else {
-                isRainbow_ = false;
+            {
+                // px 直書きの SameLine(170/330) をやめ、窓幅を3等分した列に置く。
+                // 直書きだと窓を狭めたときにラベルへ重なり、広げると間延びしていた。
+                InlineColumns modeCols(3);
+                if (AccentCheckbox("モデル描画##mdraw", &isModelDraw_, DebugTheme::kAccentBlue) && isModelDraw_)
+                    isWireframe_ = false;
+                modeCols.Next(1);
+                if (AccentCheckbox("ワイヤーフレーム##wf", &isWireframe_, DebugTheme::kAccentBlue) && isWireframe_)
+                    isModelDraw_ = false;
+                if (isWireframe_) {
+                    modeCols.Next(2);
+                    AccentCheckbox("レインボー##rb", &isRainbow_, DebugTheme::kAccentYellow);
+                } else {
+                    isRainbow_ = false;
+                }
             }
 
             ImGui::Spacing();
@@ -588,11 +593,12 @@ void BaseObject::DebugObject() {
                 // 現在のアニメーションのループ設定を取得・変更
                 std::string currentModelPath = obj3d_->GetModelFilePath();
                 bool loop = obj3d_->GetAnimationLoop(currentModelPath);
+                InlineColumns animCols(2);
                 if (ImGui::Checkbox("ループ##lp", &loop)) {
                     obj3d_->SetAnimationLoop(currentModelPath, loop);
                 }
 
-                ImGui::SameLine(130.0f);
+                animCols.Next(1);
                 ImGui::Checkbox("スケルトン表示##sk", &skeletonDraw_);
                 ImGui::PopStyleColor();
                 ImGui::Spacing();

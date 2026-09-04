@@ -237,15 +237,15 @@ void CameraManager::DrawImGui()
 {
 #ifdef USE_IMGUI
     // 新規追加（ここで作って位置を決めて保存 → コードからは Find(名前)->Load() で呼び出せる）
-    static char newCameraName[64] = "";
+    static std::string newCameraName;
     ImGui::SetNextItemWidth(-90.0f);
-    ImGui::InputText("##cameranewname", newCameraName, sizeof(newCameraName));
+    ImGui::InputText("##cameranewname", &newCameraName);
     ImGui::SameLine();
-    if (ImGui::Button("カメラ追加##cameraadd") && newCameraName[0] != '\0')
+    if (ImGui::Button("カメラ追加##cameraadd") && !newCameraName.empty())
     {
         Camera *pCreated = Create(newCameraName);
         selectedName_ = pCreated->GetName();
-        newCameraName[0] = '\0';
+        newCameraName.clear();
     }
     ImGui::Separator();
 
