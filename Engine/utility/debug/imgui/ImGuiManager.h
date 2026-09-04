@@ -35,6 +35,11 @@ class ImGuiManager {
     void SetupTheme();
 
     /// <summary>
+    /// ImPlot 側の配色を ImGui のテーマへ合わせる（SetupTheme から呼ばれる）
+    /// </summary>
+    void SetupPlotTheme();
+
+    /// <summary>
     /// 統計ウィンドウで参照する DrawSystem を設定（Framework が注入する）
     /// </summary>
     void SetDrawSystem(DrawSystem *drawSystem) { pDrawSystem_ = drawSystem; }
@@ -170,6 +175,9 @@ class ImGuiManager {
 
     void ShowDrawSystemWindow();
 
+    // シェーダー窓（shaders/ 配下のHLSLを構文色付きで閲覧・編集する）
+    void ShowShaderEditorWindow();
+
     // カメラ窓（登録カメラの一覧・切り替え・各カメラの設定）
     void ShowCameraWindow();
 
@@ -250,6 +258,7 @@ class ImGuiManager {
     bool showAudioManagerView_ = false;
     bool showShadowMapView_ = true;
     bool showDrawSystemView_ = true;
+    bool showShaderEditorView_ = false; // シェーダー窓（HLSLの閲覧・編集）
     bool showCameraView_ = false; // カメラ窓
     bool showGameParamView_ = true;     // ゲームパラメータHub窓
     bool showAssetBrowserView_ = false; // アセットブラウザ窓

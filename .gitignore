@@ -19,6 +19,9 @@ mono_crash.*
 # Build results
 Generated/
 /externals/DirectXTex/Bin/
+# DirectXTex の BC6H/BC7 シェーダーは Shaders/CompileShaders.cmd が生成する中間物。
+# ビルド時に自動生成されるので追跡しない（.pdb は下の *.pdb でも拾われる）
+/externals/DirectXTex/Shaders/Compiled/
 /externals/imgui/imgui/x64/
 /externals/imgui/x64/
 /x64

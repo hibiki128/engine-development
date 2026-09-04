@@ -4,6 +4,7 @@
 #include <imgui.h>
 #include <object/base/BaseObjectManager.h>
 #include <scene/SceneManager.h>
+#include <utility/debug/imgui/ImGuiExtras.h> // 再生中インジケータ (imspinner)
 #include <utility/debug/imgui/DebugUIHelper.h>
 #include <utility/debug/imgui/ImGuiNotification.h>
 
@@ -188,9 +189,23 @@ void PlayModeManager::DrawToolbar()
 
     ImGui::SameLine();
     const char *label = isPlaying ? "再生中" : (state_ == State::Paused ? "一時停止" : "停止中");
-    StatusBadge(label, isPlaying ? DebugTheme::kAccentGreen
-                                 : (state_ == State::Paused ? DebugTheme::kAccentYellow
-                                                            : DebugTheme::kTextDim));
+    const ImVec4 stateColor = isPlaying ? DebugTheme::kAccentGreen
+                                        : (state_ == State::Paused ? DebugTheme::kAccentYellow
+                                                                   : DebugTheme::kTextDim);
+    StatusBadge(label, stateColor);
+
+    // 再生中だけ回るスピナー。ゲームループが実際に進んでいるかが一目で分かる
+    // （固まったときはここが止まるので、バッジの文字より早く気づける）。
+    if (isPlaying)
+    {
+        ImGui::SameLine();
+        // バッジと同じ高さの円に収め、行の中心へ合わせる
+        const float frameHeight = ImGui::GetFrameHeight();
+        const float radius = frameHeight * 0.30f;
+        ImGui::SetCursorPosY(ImGui::GetCursorPosY() + (frameHeight * 0.5f - radius));
+        ImSpinner::SpinnerAng("##playspin", radius, radius * 0.45f,
+                              ImColor(stateColor), ImColor(0.0f, 0.0f, 0.0f, 0.0f), 5.0f, IM_PI * 1.4f);
+    }
 }
 } // namespace Hagine
 #endif // USE_IMGUI

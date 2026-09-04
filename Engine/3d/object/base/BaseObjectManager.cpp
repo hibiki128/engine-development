@@ -1025,7 +1025,7 @@ void BaseObjectManager::RemoveFromSaveTargets(const std::string &objectName)
 void BaseObjectManager::DrawSceneSaveModel()
 {
 #ifdef USE_IMGUI
-    static char sceneNameBuffer[128] = "";
+    static std::string sceneNameBuffer;
 
     // メニューから呼び出された場合のモーダル表示
     if (showSceneSaveModal_)
@@ -1033,7 +1033,7 @@ void BaseObjectManager::DrawSceneSaveModel()
         ImGui::OpenPopup("シーン保存");
         showSceneSaveModal_ = false;
         // 上書き保存が大半なので、編集中のシーン名を初期値として入れておく
-        strncpy_s(sceneNameBuffer, sceneName_.c_str(), _TRUNCATE);
+        sceneNameBuffer = sceneName_;
     }
 
     // モーダルウィンドウ（中央に表示、背景は自動で薄暗くなる）
@@ -1042,7 +1042,7 @@ void BaseObjectManager::DrawSceneSaveModel()
         ImGui::Text("シーンの名前を入力してください");
 
         // テキスト入力欄（sceneName_ を編集）
-        ImGui::InputText("シーン名", sceneNameBuffer, IM_ARRAYSIZE(sceneNameBuffer));
+        ImGui::InputText("シーン名", &sceneNameBuffer);
 
         // 保存する内容の選択（オブジェクト以外も一緒に保存できるようにする）
         ImGui::Separator();
@@ -1092,14 +1092,14 @@ void BaseObjectManager::DrawSceneSaveModel()
 void BaseObjectManager::DrawSceneLoadModel()
 {
 #ifdef USE_IMGUI
-    static char sceneNameBuffer[128] = "";
+    static std::string sceneNameBuffer;
 
     // メニューから呼び出された場合のモーダル表示
     if (showSceneLoadModal_)
     {
         ImGui::OpenPopup("シーン読み込み");
         showSceneLoadModal_ = false;
-        strncpy_s(sceneNameBuffer, sceneName_.c_str(), _TRUNCATE);
+        sceneNameBuffer = sceneName_;
     }
 
     if (ImGui::BeginPopupModal("シーン読み込み", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
@@ -1107,7 +1107,7 @@ void BaseObjectManager::DrawSceneLoadModel()
         ImGui::Text("シーンの名前を入力してください");
 
         // テキスト入力欄（sceneName_ を編集）
-        ImGui::InputText("シーン名", sceneNameBuffer, IM_ARRAYSIZE(sceneNameBuffer));
+        ImGui::InputText("シーン名", &sceneNameBuffer);
 
         // 読み込む内容の選択
         ImGui::Separator();
@@ -1159,10 +1159,10 @@ void BaseObjectManager::DrawObjectCreationModel()
     {
         ImGui::Text("新しいオブジェクトを作成します");
 
-        static char objectNameBuffer[128] = "";
+        static std::string objectNameBuffer;
 
         // オブジェクト名入力欄
-        ImGui::InputText("オブジェクト名", objectNameBuffer, IM_ARRAYSIZE(objectNameBuffer));
+        ImGui::InputText("オブジェクト名", &objectNameBuffer);
 
         ImGui::Separator();
 
@@ -1179,7 +1179,7 @@ void BaseObjectManager::DrawObjectCreationModel()
         {
             lastAutoFilledModel = modelPath_;
             const std::string suggested = MakeUniqueObjectName(std::filesystem::path(modelPath_).stem().string());
-            strncpy_s(objectNameBuffer, suggested.c_str(), _TRUNCATE);
+            objectNameBuffer = suggested;
         }
 
         ImGui::Separator();
@@ -1199,7 +1199,7 @@ void BaseObjectManager::DrawObjectCreationModel()
         ImGui::Separator();
 
         // 生成ボタンとキャンセルボタン
-        bool canCreate = strlen(objectNameBuffer) > 0 && !modelPath_.empty();
+        bool canCreate = !objectNameBuffer.empty() && !modelPath_.empty();
 
         // 名前とモデルが揃うまでは確定色にしない
         const bool createPressed = canCreate ? ConfirmButton("生成", ImVec2(120, 0))
@@ -1210,7 +1210,7 @@ void BaseObjectManager::DrawObjectCreationModel()
             CreateObject(objectName_, modelPath_, texturePath_);
 
             // 入力欄とパスをリセット
-            memset(objectNameBuffer, 0, sizeof(objectNameBuffer));
+            objectNameBuffer.clear();
             modelPath_ = "";
             texturePath_ = "";
 
@@ -1222,7 +1222,7 @@ void BaseObjectManager::DrawObjectCreationModel()
         if (ImGui::Button("キャンセル", ImVec2(120, 0)))
         {
             // 入力欄とパスをリセット
-            memset(objectNameBuffer, 0, sizeof(objectNameBuffer));
+            objectNameBuffer.clear();
             modelPath_ = "";
             texturePath_ = "";
 
@@ -1234,7 +1234,7 @@ void BaseObjectManager::DrawObjectCreationModel()
         {
             ImGui::Separator();
             ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "生成するには:");
-            if (strlen(objectNameBuffer) == 0)
+            if (objectNameBuffer.empty())
             {
                 ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "・オブジェクト名を入力してください");
             }

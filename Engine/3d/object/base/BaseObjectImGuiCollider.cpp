@@ -67,18 +67,16 @@ void BaseObject::DebugCollider() {
             bool ena = col->IsEnabled();
             bool vis = col->IsVisible();
 
-            ImGui::PushStyleColor(ImGuiCol_CheckMark,
-                                  ena ? DebugTheme::kAccentGreen : DebugTheme::kAccentRed);
-            if (ImGui::Checkbox("有効##cena", &ena))
+            // 「当たり判定が生きているか」「線を出しているか」の入切なのでトグルにする。
+            // 見ただけで今どちらかが分かり、チェックボックスより誤読しにくい
+            InlineColumns badgeCols(3);
+            if (ThemedToggle("有効##cena", &ena, DebugTheme::kAccentGreen))
                 col->SetEnabled(ena);
-            ImGui::PopStyleColor();
-            ImGui::SameLine(120.f);
-            ImGui::PushStyleColor(ImGuiCol_CheckMark, DebugTheme::kAccentBlue);
-            if (ImGui::Checkbox("表示##cvis", &vis))
+            badgeCols.Next(1);
+            if (ThemedToggle("表示##cvis", &vis, DebugTheme::kAccentBlue))
                 col->SetVisible(vis);
-            ImGui::PopStyleColor();
 
-            ImGui::SameLine(240.f);
+            badgeCols.Next(2);
             StatusBadge(colliding ? "衝突中" : "待機",
                         colliding ? DebugTheme::kAccentRed : DebugTheme::kAccentGreen);
         }

@@ -211,6 +211,7 @@
     <ClCompile Include="Engine\Utility\Collider\type\SphereCollider.cpp" />
     <ClCompile Include="Engine\utility\debug\imgui\ImGuiManager.cpp" />
     <ClCompile Include="Engine\Utility\Debug\ImGui\ImGuiNotification.cpp" />
+    <ClCompile Include="Engine\Utility\Debug\ImGui\ShaderEditorWindow.cpp" />
     <ClCompile Include="Engine\Utility\Debug\ImGui\ImGuizmoManager.cpp" />
     <ClCompile Include="Engine\Utility\Graphics\PipeLine\ComputePipeLineManager.cpp" />
     <ClCompile Include="Engine\3d\Object\Base\BaseObjectManager.cpp" />
@@ -398,6 +399,8 @@
     <ClInclude Include="Engine\Utility\Collider\type\SphereCollider.h" />
     <ClInclude Include="Engine\utility\debug\imgui\ImGuiManager.h" />
     <ClInclude Include="Engine\Utility\Debug\ImGui\ImGuiNotification.h" />
+    <ClInclude Include="Engine\Utility\Debug\ImGui\ShaderEditorWindow.h" />
+    <ClInclude Include="Engine\Utility\Debug\ImGui\ImGuiExtras.h" />
     <ClInclude Include="Engine\Utility\Debug\ImGui\ImGuizmoManager.h" />
     <ClInclude Include="Engine\Utility\Graphics\PipeLine\ComputePipeLineManager.h" />
     <ClInclude Include="Engine\3d\Object\Base\BaseObjectManager.h" />

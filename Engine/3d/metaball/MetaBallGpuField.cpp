@@ -82,13 +82,18 @@ void MetaBallGpuField::Initialize(const std::string &name, uint32_t maxBallCount
     const uint32_t sampleCount = maxGridSamples_ * maxGridSamples_ * maxGridSamples_;
     densityResource_ = pDxCommon_->CreateBufferResource(sizeof(float) * sampleCount, true);
     densityResource_->SetName(L"MetaBallGpuDensity");
-    densityUavIndex_ = pSrvManager_->Allocate();
+    // SrvManager は「Allocate() が返した番号 r に対し、実際に書き込むのは r+1」という規約で
+    // 運用されている（エンジン内の他の確保箇所はすべて + 1 している）。
+    // ここだけ素の r に書いていたため、r に書き込み済みだった別のリソースの
+    // ディスクリプタを潰していた。シーンを作り直すと ImGui のフォントアトラスが
+    // ちょうどこの枠に当たり、GUI が丸ごと見えなくなる不具合になっていた。
+    densityUavIndex_ = pSrvManager_->Allocate() + 1;
     pSrvManager_->CreateUAVStructuredBuffer(densityUavIndex_, densityResource_.Get(), sampleCount, sizeof(float));
 
     // ---- 出力: 頂点数カウンタ ----
     counterResource_ = pDxCommon_->CreateBufferResource(sizeof(uint32_t) * 4, true);
     counterResource_->SetName(L"MetaBallGpuCounter");
-    counterUavIndex_ = pSrvManager_->Allocate();
+    counterUavIndex_ = pSrvManager_->Allocate() + 1; // +1 規約（上のコメント参照）
     pSrvManager_->CreateUAVStructuredBuffer(counterUavIndex_, counterResource_.Get(), 4, sizeof(uint32_t));
 
     // 定数はルート定数で渡すので、バッファは持たない
@@ -170,7 +175,7 @@ uint32_t MetaBallGpuField::EnsureTargetUav(ID3D12Resource *pVertexResource, uint
     // 頂点は uint の並びとして書く（VertexData 1 個 = 9 ワード）。
     // HLSL と C++ で構造体の詰め方が食い違わないよう、あえて素の uint 配列として扱う
     const uint32_t wordCount = vertexCount * 9;
-    const uint32_t uavIndex = pSrvManager_->Allocate();
+    const uint32_t uavIndex = pSrvManager_->Allocate() + 1; // +1 規約（Initialize のコメント参照）
     pSrvManager_->CreateUAVStructuredBuffer(uavIndex, pVertexResource, wordCount, sizeof(uint32_t));
     targetUavIndices_.emplace(pVertexResource, uavIndex);
     return uavIndex;

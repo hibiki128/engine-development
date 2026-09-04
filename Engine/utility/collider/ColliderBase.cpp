@@ -1,5 +1,8 @@
 #include "ColliderBase.h"
 #include "collider/CollisionManager.h"
+#ifdef USE_IMGUI
+#include "utility/debug/imgui/DebugUIHelper.h"
+#endif // USE_IMGUI
 
 namespace Hagine {
 ColliderBase::~ColliderBase()
@@ -109,8 +112,11 @@ void ColliderBase::ImGuiTagSettings()
     ImGui::Spacing();
 
     // タグ選択
-    ImGui::Text("タグ:");
-    ImGui::SameLine(120);
+    // ラベルは枠付きウィジェット（コンボ）と同じ高さに揃えないと、文字だけ上へずれる
+    const float tagLabelX = ImGui::GetCursorPosX();
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted("タグ:");
+    ImGui::SameLine(tagLabelX + LabelColumnWidth());
 
     auto &allTags = ColliderTagManager::GetInstance()->GetAllTags();
     std::vector<std::string> tagList(allTags.begin(), allTags.end());

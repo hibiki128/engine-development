@@ -13,6 +13,7 @@
 #ifdef USE_IMGUI
 #include "utility/debug/imgui/AssetDragDrop.h"
 #include <asset/AssetPath.h>
+#include <edit/play/PlayModeManager.h>
 #include <graphics/texture/TextureManager.h>
 #include <imgui_internal.h>
 #include <implot.h>
@@ -52,6 +53,16 @@ void BaseObject::Update() {
 
     // リジッドボディの物理を更新（重力・速度積分）。
     // 衝突解消（押し出し）はこの後の CollisionManager::Update のコールバックで行う。
+    //
+    // 一時停止・停止中は積分しない。CollisionManager::Update は止まるのに重力だけ
+    // 積分され続けると、押し戻す相手がいないままプレイヤーが床をすり抜けて落ちていく
+    // （＝物理と衝突解消は必ず同じ条件で止める）。
+#ifdef USE_IMGUI
+    const bool updateGameWorld = PlayModeManager::GetInstance()->ShouldUpdateGame();
+#else
+    const bool updateGameWorld = true;
+#endif // USE_IMGUI
+    if (updateGameWorld)
     {
         HAGINE_CPU_PROFILE("Update/Objects/Phys");
         UpdatePhysics(Frame::DeltaTime());

@@ -216,9 +216,23 @@
     <PropertyGroup>
       <_ATGFXCPath>$(WindowsSDK_ExecutablePath_x64.Split(';')[0])</_ATGFXCPath>
       <_ATGFXCPath>$(_ATGFXCPath.Replace("x64",""))</_ATGFXCPath>
+      <!-- [Hagine patch] SDK のパスは "C:\Program Files (x86)\..." のように括弧を含む。
+           Split()/Replace() を通すと MSBuild が括弧を %28 %29 にエスケープしたままにするため、
+           EnvironmentVariables でそのまま渡すと CompileShaders.cmd から fxc.exe を見つけられず、
+           bare "fxc.exe" にフォールバックして MSB3073 (exit 9009) で必ず失敗する。
+           ここで元に戻しておく。 -->
+      <_ATGFXCPath>$([MSBuild]::Unescape('$(_ATGFXCPath)'))</_ATGFXCPath>
       <_ATGFXCPath Condition="'$(_ATGFXCPath)' != '' and !HasTrailingSlash('$(_ATGFXCPath)')">$(_ATGFXCPath)\</_ATGFXCPath>
     </PropertyGroup>
-    <Exec Condition="!Exists('Shaders/Compiled/BC6HEncode_EncodeBlockCS.inc')" WorkingDirectory="$(ProjectDir)Shaders" Command="CompileShaders" EnvironmentVariables="WindowsSdkVerBinPath=$(_ATGFXCPath)" />
+    <!-- [Hagine patch] 元は Command="CompileShaders"（拡張子なし・相対）だったが、
+         リポジトリのパスに日本語が含まれると Exec が作る一時バッチの文字コードの都合で
+         作業ディレクトリへ移れず、スクリプトを見つけられずに MSB3073 (exit 9009) になる。
+         フルパス＋拡張子で呼び、UseUtf8Encoding も明示して回避する。 -->
+    <Exec Condition="!Exists('Shaders/Compiled/BC6HEncode_EncodeBlockCS.inc')"
+          WorkingDirectory="$(ProjectDir)Shaders"
+          Command="call &quot;$(ProjectDir)Shaders\CompileShaders.cmd&quot;"
+          UseUtf8Encoding="Always"
+          EnvironmentVariables="WindowsSdkVerBinPath=$(_ATGFXCPath)" />
     <PropertyGroup>
       <_ATGFXCPath />
     </PropertyGroup>

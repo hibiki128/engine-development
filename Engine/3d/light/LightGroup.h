@@ -601,7 +601,7 @@ class LightGroup
 
     // 名前入力欄のバッファ。編集中に外から書き換えると入力が消えるので、
     // 対象が変わったときだけ現在名を流し込む
-    char nameEditBuffer_[128] = "";
+    std::string nameEditBuffer_; // 名前編集の一時バッファ（imgui_stdlib で std::string を直接編集）
     std::string nameEditOwner_;
 
     std::unique_ptr<DataHandler> lightDataHandler_ = nullptr; // JSONハンドラー

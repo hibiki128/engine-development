@@ -1002,7 +1002,7 @@ void LightGroup::DrawLightListPanel(float height)
         const bool selected = (selectedKind_ == SelectionKind::Directional);
         ImGui::PushID("dirLight");
         bool active = isDirectionalLight_;
-        if (ImGui::Checkbox("##on", &active))
+        if (ThemedToggle("##on", &active, DebugTheme::kAccentYellow))
         {
             isDirectionalLight_ = active;
         }
@@ -1035,7 +1035,7 @@ void LightGroup::DrawLightListPanel(float height)
         ImGui::PushID("point");
         ImGui::PushID(i);
         bool active = entry.gpu.active != 0;
-        if (ImGui::Checkbox("##on", &active))
+        if (ThemedToggle("##on", &active, DebugTheme::kAccentYellow))
         {
             entry.gpu.active = active;
         }
@@ -1084,7 +1084,7 @@ void LightGroup::DrawLightListPanel(float height)
         ImGui::PushID("spot");
         ImGui::PushID(i);
         bool active = entry.gpu.active != 0;
-        if (ImGui::Checkbox("##on", &active))
+        if (ThemedToggle("##on", &active, DebugTheme::kAccentYellow))
         {
             entry.gpu.active = active;
         }
@@ -1265,14 +1265,14 @@ void LightGroup::DrawPointProperties(int index)
     const std::string owner = std::format("P{}", index);
     if (nameEditOwner_ != owner)
     {
-        std::snprintf(nameEditBuffer_, sizeof(nameEditBuffer_), "%s", entry.name.c_str());
+        nameEditBuffer_ = entry.name;
         nameEditOwner_ = owner;
     }
     ImGui::SetNextItemWidth(-1);
-    if (ImGui::InputText("##name", nameEditBuffer_, sizeof(nameEditBuffer_), ImGuiInputTextFlags_EnterReturnsTrue))
+    if (ImGui::InputText("##name", &nameEditBuffer_, ImGuiInputTextFlags_EnterReturnsTrue))
     {
         entry.name = MakeUniqueLightName(nameEditBuffer_, index, -1);
-        std::snprintf(nameEditBuffer_, sizeof(nameEditBuffer_), "%s", entry.name.c_str());
+        nameEditBuffer_ = entry.name;
         SyncGizmoTargets(); // ギズモの登録名も変わるので付け直す
         SyncSelectionToGizmo();
     }
@@ -1286,7 +1286,7 @@ void LightGroup::DrawPointProperties(int index)
 
         LabeledRow("有効", "この光源の有効 / 無効", [&] {
             bool active = entry.gpu.active != 0;
-            if (ImGui::Checkbox("##active", &active))
+            if (ThemedToggle("##active", &active, DebugTheme::kAccentYellow))
                 entry.gpu.active = active;
         });
         LabeledRow("位置", "シーン上のギズモでも動かせます", [&] {
@@ -1364,14 +1364,14 @@ void LightGroup::DrawSpotProperties(int index)
     const std::string owner = std::format("S{}", index);
     if (nameEditOwner_ != owner)
     {
-        std::snprintf(nameEditBuffer_, sizeof(nameEditBuffer_), "%s", entry.name.c_str());
+        nameEditBuffer_ = entry.name;
         nameEditOwner_ = owner;
     }
     ImGui::SetNextItemWidth(-1);
-    if (ImGui::InputText("##name", nameEditBuffer_, sizeof(nameEditBuffer_), ImGuiInputTextFlags_EnterReturnsTrue))
+    if (ImGui::InputText("##name", &nameEditBuffer_, ImGuiInputTextFlags_EnterReturnsTrue))
     {
         entry.name = MakeUniqueLightName(nameEditBuffer_, -1, index);
-        std::snprintf(nameEditBuffer_, sizeof(nameEditBuffer_), "%s", entry.name.c_str());
+        nameEditBuffer_ = entry.name;
         SyncGizmoTargets();
         SyncSelectionToGizmo();
     }
@@ -1388,7 +1388,7 @@ void LightGroup::DrawSpotProperties(int index)
 
         LabeledRow("有効", "この光源の有効 / 無効", [&] {
             bool active = entry.gpu.active != 0;
-            if (ImGui::Checkbox("##active", &active))
+            if (ThemedToggle("##active", &active, DebugTheme::kAccentYellow))
                 entry.gpu.active = active;
         });
         LabeledRow("位置", "シーン上のギズモでも動かせます", [&] {
