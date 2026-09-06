@@ -500,6 +500,8 @@ void Framework::LoadResource()
     pTextureManager_->LoadAllTextures();
 
     pTextureManager_->LoadFontTexture("NotoSansJP-Medium.ttf", 100);
+    pTextureManager_->LoadFontTexture("213-niimi-hitoriccoA-Regular.otf", 60);
+    pTextureManager_->LoadFontTexture("Buildingsandundertherailwaytracksfree_ver.otf", 60);
 
     ImGuiNotification::Post("全ての基本リソースを読み込みました", {0.2f, 0.8f, 0.2f, 1.0f});
     Logger::Info("All base resources loaded.");
