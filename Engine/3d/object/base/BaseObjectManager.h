@@ -209,6 +209,23 @@ class BaseObjectManager
     void ShowObjectHierarchy(BaseObject *pObject, int depth);
 
     /// <summary>
+    /// このオブジェクトに付いている光源・パーティクルを階層に並べる
+    /// </summary>
+    /// <param name="parentName">親の名前</param>
+    /// <param name="depth">インデントの深さ</param>
+    void ShowAttachChildrenOf(const std::string &parentName, int depth);
+
+    /// <summary>
+    /// どのオブジェクトにも付いていない光源・パーティクルをルートに並べる
+    /// </summary>
+    void ShowRootAttachNodes();
+
+    /// <summary>
+    /// 種類をまたいだ親子付けのドラッグ＆ドロップ結果を適用する（ツリー描画後に呼ぶ）
+    /// </summary>
+    void ApplyPendingAttachRequest();
+
+    /// <summary>
     /// 親子関係を設定
     /// </summary>
     /// <param name="childName">子オブジェクト名</param>

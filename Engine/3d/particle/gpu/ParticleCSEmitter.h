@@ -178,6 +178,13 @@ class ParticleCSEmitter
     /// <summary>親子付けを解除する（現在のワールド位置・向きにその場で留まる）</summary>
     void ClearParent() { pParentTransform_ = nullptr; }
 
+    /// <summary>
+    /// このエミッターの親子付け登録名を返す（3Dオブジェクトの名前と衝突しないよう接頭辞が付く）
+    /// </summary>
+    /// <param name="emitterName">エミッター名</param>
+    /// <returns>std::string: 親子付けの登録名</returns>
+    static std::string AttachName(const std::string &emitterName) { return "パーティクル/" + emitterName; }
+
     const WorldTransform *GetParentTransform() const { return pParentTransform_; }
 
     /// <summary>
@@ -653,6 +660,8 @@ class ParticleCSEmitter
 
     // ImGuizmo へ登録するか（実行時インスタンスは false。Initialize より前に決めること）
     bool registerGizmo_ = true;
+    // 親子付け（AttachmentManager）へ登録済みか。破棄時の解除判定に使う
+    bool attachRegistered_ = false;
     // 実際に ImGuizmo へ登録済みか。デストラクタでの解除判定に使う
     // （registerGizmo_ は Initialize 後にも変更されうるので、そちらは判定に使えない）
     bool gizmoRegistered_ = false;

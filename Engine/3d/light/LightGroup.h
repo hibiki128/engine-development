@@ -239,6 +239,22 @@ class LightGroup
     void UnregisterGizmoTargets();
 
     /// <summary>
+    /// 種類をまたいだ親子付け（AttachmentManager）へ光源を登録し直す。
+    /// ギズモと違い Release でも必要なので、こちらは USE_IMGUI に依存しない。
+    /// </summary>
+    void SyncAttachTargets();
+
+  public:
+    /// <summary>
+    /// 光源の親子付け登録名を返す（3Dオブジェクトと衝突しないよう接頭辞が付く）
+    /// </summary>
+    /// <param name="lightName">光源の名前</param>
+    /// <returns>std::string: 親子付けの登録名</returns>
+    static std::string AttachName(const std::string &lightName);
+
+  private:
+
+    /// <summary>
     /// ライトのギズモ登録名（ポイントライト本体）
     /// </summary>
     std::string PointGizmoName(int index) const;
@@ -327,6 +343,10 @@ class LightGroup
 
     SelectionKind selectedKind_ = SelectionKind::Directional; // 一覧で選択中の種類
     int selectedIndex_ = -1;                                  // 一覧で選択中の添字（Point/Spot のとき有効）
+
+    // 親子付けの登録を作り直すか判定するための、前回の光源数
+    size_t lastAttachPointCount_ = 0;
+    size_t lastAttachSpotCount_ = 0;
     char listFilter_[128] = "";                               // 一覧の絞り込み文字列
 
     // 名前入力欄のバッファ。編集中に外から書き換えると入力が消えるので、

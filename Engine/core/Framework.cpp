@@ -9,6 +9,7 @@
 #include <camera/CameraManager.h>
 #include <object/Object3dInstancing.h>
 #include <particle/gpu/ParticleCSSpawner.h>
+#include <attachment/AttachmentManager.h>
 #include <light/ToonSettings.h>
 #include <shadow/ShadowMap.h>
 #include <iterator>
@@ -285,6 +286,7 @@ void Framework::Finalize()
     pAudio_->Finalize();
     pLightGroup_->Finalize();
     ToonSettings::GetInstance()->Finalize();
+    AttachmentManager::GetInstance()->Finalize();
     pMotionEditor_->Finalize();
     pParticleEditor_->Finalize();
     pParticleCSFieldManager_->Finalize();
@@ -471,6 +473,12 @@ void Framework::Update()
     {
         HAGINE_CPU_PROFILE("Update/Collision");
         pCollisionManager_->Update();
+    }
+    {
+        // オブジェクトのワールド行列が確定した後に、種類をまたいだ親子付けを解決する。
+        // 光源やパーティクルの位置をここで親に合わせるので、ライト更新より前に行う。
+        HAGINE_CPU_PROFILE("Update/Attachment");
+        AttachmentManager::GetInstance()->Update();
     }
     {
         HAGINE_CPU_PROFILE("Update/Light");

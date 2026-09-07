@@ -4,6 +4,7 @@
 #include <cctype>
 #include <graphics/pipeline/PipelineManager.h>
 #include <format>
+#include <attachment/AttachmentManager.h>
 #include <light/ToonSettings.h>
 #include <line/LineRenderer.h>
 #include <render/deferred/DeferredRenderer.h>
@@ -20,6 +21,8 @@ namespace {
 constexpr const char *kGizmoPrefix = "光源/";
 // スポットライトの向きハンドルにつける接尾辞
 constexpr const char *kGizmoAimSuffix = " (向き)";
+// 親子付けの登録名につける接頭辞（3Dオブジェクトの名前と衝突させないため）
+constexpr const char *kAttachPrefix = "光源/";
 } // namespace
 
 // ===================================================
@@ -70,6 +73,14 @@ void LightGroup::Update(const ViewProjection &viewProjection)
         SyncGizmoTargets();
     }
 #endif
+
+    // コードから光源が増減した場合も親子付けの登録を追従させる
+    if (lastAttachPointCount_ != pointLights_.GetCount() || lastAttachSpotCount_ != spotLights_.GetCount())
+    {
+        lastAttachPointCount_ = pointLights_.GetCount();
+        lastAttachSpotCount_ = spotLights_.GetCount();
+        SyncAttachTargets();
+    }
 
     // ギズモで動かされた向きハンドルをスポットライトの向きへ反映する
     spotLights_.UpdateAimPoints();
@@ -221,6 +232,9 @@ void LightGroup::UnregisterGizmoTargets()
 
 void LightGroup::SyncGizmoTargets()
 {
+    // 親子付けの登録も同じタイミングで作り直す（こちらは Release でも動かす）
+    SyncAttachTargets();
+
 #ifdef USE_IMGUI
     // std::vector の再確保でポインタが変わるため、登録は毎回作り直す
     UnregisterGizmoTargets();
@@ -255,6 +269,43 @@ void LightGroup::SyncGizmoTargets()
         gizmoNames_.push_back(aimName);
     }
 #endif
+}
+
+void LightGroup::SyncAttachTargets()
+{
+    // 種類をまたいだ親子付け（光源をプレイヤーに付ける等）の対象として登録し直す。
+    // std::vector の再確保でポインタが変わるため、ギズモと同じくライトの増減・改名のたびに呼ぶ。
+    // ギズモと違い Release でも要る処理なので USE_IMGUI では囲まない。
+    AttachmentManager *attachment = AttachmentManager::GetInstance();
+    attachment->UnregisterKind(AttachKind::Light);
+
+    std::vector<PointLightGroup::Entry> &points = pointLights_.GetEntries();
+    for (PointLightGroup::Entry &entry : points)
+    {
+        AttachTarget target;
+        target.kind = AttachKind::Light;
+        target.name = AttachName(entry.name);
+        target.position = &entry.gpu.position;
+        attachment->Register(target);
+    }
+
+    std::vector<SpotLightGroup::Entry> &spots = spotLights_.GetEntries();
+    for (SpotLightGroup::Entry &entry : spots)
+    {
+        AttachTarget target;
+        target.kind = AttachKind::Light;
+        target.name = AttachName(entry.name);
+        target.position = &entry.gpu.position;
+        // スポットは向きも親の回転に追従させたいので渡しておく
+        target.direction = &entry.gpu.direction;
+        attachment->Register(target);
+    }
+}
+
+std::string LightGroup::AttachName(const std::string &lightName)
+{
+    // 3Dオブジェクトと名前がぶつからないよう、光源であることが分かる接頭辞を付ける
+    return std::string(kAttachPrefix) + lightName;
 }
 
 void LightGroup::SyncSelectionToGizmo()
