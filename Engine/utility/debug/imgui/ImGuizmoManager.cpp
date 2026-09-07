@@ -32,7 +32,20 @@ void ImGuizmoManager::Finalize()
 
 void ImGuizmoManager::BeginFrame()
 {
-    ImGuizmo::BeginFrame();
+    // ImGuizmo::BeginFrame() はあえて呼ばない。
+    //
+    // あれは「メインビューポート全面を覆う "gizmo" という ImGui ウィンドウを作り、
+    // その描画リストにギズモを描く」ための仕組み。だがこのエンジンは Update() の頭で
+    // ImGuizmo::SetDrawlist() を呼び、シーンウィンドウの描画リストへ直接描いている。
+    // つまり全面ウィンドウの描画リストは毎フレーム上書きされて一度も使われない。
+    //
+    // そのうえ ImGuiConfigFlags_ViewportsEnable が有効だと、この全面ウィンドウが
+    // 独立したOSウィンドウ（クラス "ImGui Platform" / タイトル "gizmo"）として切り出され、
+    // ゲーム画面のクライアント領域を真っ黒な板で覆ってしまう。
+    // 呼ばないのが正しい。
+    //
+    // ※ この関数自体はフレーム先頭のフックとして呼び出し側に残してある。
+    //   将来ギズモ用に毎フレームの初期化が要るようになったらここへ書くこと。
 }
 
 void ImGuizmoManager::SetViewProjection(ViewProjection *pViewProjection)
