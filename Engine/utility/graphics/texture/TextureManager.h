@@ -73,6 +73,24 @@ class TextureManager
     void LoadTexture(const std::string &filePath);
 
     /// <summary>
+    /// フレームの区切りを知らせる。差し替えで退避したリソースのうち、
+    /// GPUが使い終わったものをここで解放する。毎フレーム1回呼ぶこと
+    /// </summary>
+    void EndFrame();
+
+    /// <summary>
+    /// 読み込み済みテクスチャの中身をファイルから読み直す。
+    /// SRVインデックスは据え置きなので、既にこのテクスチャを参照しているスプライトは
+    /// そのまま新しい絵に切り替わる。未ロードのパスなら LoadTexture と同じ動きをする。
+    ///
+    /// LoadAllTextures() が起動時に images 配下を丸ごと読み込むため、
+    /// 実行中にPNGを書き換えても LoadTexture では中身が更新されない。
+    /// テキストのPNGを作り直した直後など、ファイルを書き換えたときはこちらを呼ぶこと。
+    /// </summary>
+    /// <param name="filePath">images ルートからの相対パス</param>
+    void ReloadTexture(const std::string &filePath);
+
+    /// <summary>
     /// images ルート配下のテクスチャを再帰的に全て読み込む
     /// </summary>
     void LoadAllTextures();
@@ -150,13 +168,43 @@ class TextureManager
         D3D12_GPU_DESCRIPTOR_HANDLE srvHandleGPU; // 描画コマンドに必要なGPUハンドル
     };
 
+    /// <summary>
+    /// 画像ファイルを読み、必要ならミップマップまで作って返す
+    /// </summary>
+    /// <param name="fullPath">実パス</param>
+    /// <param name="outImage">読み込んだ画像（出力）</param>
+    /// <returns>bool: 読み込めたら true</returns>
+    bool LoadImageFile(const std::string &fullPath, DirectX::ScratchImage &outImage);
+
     // ファイルパスをキーとするテクスチャデータのマップ
     std::unordered_map<std::string, TextureData> textureDatas_;
 
     // 動的テクスチャ（メモリから毎回書き換える用途）。キーで固定SRVインデックスを保持する。
     std::unordered_map<std::string, TextureData> dynamicTextures_;
-    // 動的テクスチャ更新時に差し替えた旧リソースを数世代分保持し、GPU使用中の解放を避ける
-    std::vector<Microsoft::WRL::ComPtr<ID3D12Resource>> retiredDynamicResources_;
+    /// <summary>
+    /// 差し替えで捨てたリソースと、それを捨てたフレーム番号
+    /// </summary>
+    struct RetiredResource
+    {
+        Microsoft::WRL::ComPtr<ID3D12Resource> resource; // 捨てたリソース
+        uint64_t frame = 0;                              // 捨てたときのフレーム番号
+    };
+
+    // テクスチャ差し替え時の旧リソース。GPUが使い終わるまで解放しない
+    std::vector<RetiredResource> retiredResources_;
+
+    // EndFrame() で進むフレーム番号
+    uint64_t frameCounter_ = 0;
+
+    // 退避したリソースを解放するまでに待つフレーム数。
+    // コマンドリストは記録した次のフレームで実行されるので、
+    // フレームバッファ数（2）より余裕を持たせておく
+    static constexpr uint64_t kRetireFrames = 4;
+
+    /// <summary>
+    /// 差し替えた旧リソースを退避させる（GPUが使い終わるまで持っておく）
+    /// </summary>
+    void RetireResources(TextureData &data);
 
     // MakeFontKey() で生成したキーをキーとするフォントデータのマップ
     std::unordered_map<std::string, FontData> fontDatas_;

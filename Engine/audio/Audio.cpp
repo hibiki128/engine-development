@@ -1,6 +1,7 @@
 #include "Audio.h"
 #include "utility/debug/imgui/ImGuiNotification.h"
 #include <debug/log/Logger.h>
+#include <algorithm>
 #include <cassert>
 #include <cmath>
 #include <cstring>
@@ -54,6 +55,9 @@ void Audio::Initialize(const std::string &directoryPath)
 
     hr = XAudio2Create(&xAudio2_, 0, XAUDIO2_DEFAULT_PROCESSOR);
     hr = xAudio2_->CreateMasteringVoice(&pMasterVoice_);
+
+    // 設定から読み込んだマスター音量を、生成し直した直後のマスターボイスにも掛け直す
+    SetMasterVolume(masterVolume_);
 }
 
 uint32_t Audio::LoadWave(const std::string &filename)
@@ -215,6 +219,16 @@ void Audio::StopWave(uint32_t soundIndex)
         {
             ++it;
         }
+    }
+}
+
+void Audio::SetMasterVolume(float volume)
+{
+    // XAudio2 のマスターボイスへ直接掛けるので、個々の音の音量設定には触れない
+    masterVolume_ = std::clamp(volume, 0.0f, 1.0f);
+    if (pMasterVoice_)
+    {
+        pMasterVoice_->SetVolume(masterVolume_);
     }
 }
 
@@ -541,13 +555,11 @@ void Audio::Debug()
         const float knobSize = 64.0f;
         ImGui::SetCursorPosX(ImGui::GetCursorPosX() +
                              (ImGui::GetContentRegionAvail().x - knobSize) * 0.5f);
-        if (ThemedKnob("音量##master", &debugMasterVolume_, 0.0f, 1.0f, "%.2f",
+        float masterVolume = masterVolume_;
+        if (ThemedKnob("音量##master", &masterVolume, 0.0f, 1.0f, "%.2f",
                        DebugTheme::kAccentBlue, knobSize))
         {
-            if (pMasterVoice_)
-            {
-                pMasterVoice_->SetVolume(debugMasterVolume_);
-            }
+            SetMasterVolume(masterVolume);
         }
     }
 
