@@ -76,6 +76,21 @@ class Material {
     void ClearNormalMap();
 
     /// <summary>
+    /// このマテリアルにトゥーンシェーディングを適用してよいかを設定する。
+    /// 実際にトゥーンで描かれるのは、全体設定（ToonSettings）もONのときだけ。
+    /// </summary>
+    /// <param name="enable">適用してよいなら true</param>
+    void SetEnableToon(bool enable) {
+        materialData_.enableToon = enable;
+        UpdateGPUData();
+    }
+
+    /// <summary>
+    /// トゥーンシェーディングを適用してよいマテリアルか
+    /// </summary>
+    bool GetEnableToon() const { return materialData_.enableToon; }
+
+    /// <summary>
     /// 法線の強さを設定
     /// </summary>
     void SetNormalStrength(float strength) {

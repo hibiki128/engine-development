@@ -37,6 +37,13 @@ float Luminance(float3 v)
 Texture2D<float4> gTexture : register(t0);
 SamplerState gSampler : register(s0);
 
+// 輪郭の出しかたの調整。C++側の OutlineEdgeParams::Data と並びを合わせること
+cbuffer OutlineParameter : register(b0)
+{
+    float edgeStrength; // 検出した輪郭を何倍して縁取るか（0で輪郭なし）
+    float3 pad;
+}
+
 struct PixelShaderOutput
 {
     float4 color : SV_TARGET0;
@@ -62,7 +69,7 @@ PixelShaderOutput main(VertexShaderOutput input)
     }
     
     float weight = length(difference);
-    weight = saturate(weight * 6.0f);
+    weight = saturate(weight * 6.0f * edgeStrength);
     
     PixelShaderOutput output;
     output.color.rgb = (1.0f - weight) * gTexture.Sample(gSampler, input.texcoord).rgb;

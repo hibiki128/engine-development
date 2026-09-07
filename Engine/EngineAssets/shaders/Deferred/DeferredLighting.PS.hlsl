@@ -1,5 +1,6 @@
 #include "../OffScreen/FullScreen.hlsli"
 #include "Deferred.hlsli"
+#include "../Object/Toon.hlsli"
 
 // ============================================================
 // ディファードのライティングパス
@@ -53,6 +54,7 @@ ConstantBuffer<DeferredConstants> gConstants : register(b0);
 ConstantBuffer<DirectionalLightGPU> gDirectionalLight : register(b1);
 ConstantBuffer<SpotLightsGPU> gSpotLights : register(b2);
 ConstantBuffer<ShadowDataGPU> gShadowData : register(b3);
+ConstantBuffer<ToonSettings> gToon : register(b4);
 
 Texture2D<float4> gAlbedo : register(t0);
 Texture2D<float4> gNormal : register(t1);
@@ -109,6 +111,8 @@ float4 main(VertexShaderOutput input) : SV_TARGET
     const float shininess = normalSample.w;
     const float environmentCoefficient = materialSample.r * DEFERRED_ENV_COEFF_RANGE;
     const bool enableLighting = materialSample.g > 0.5f;
+    // G-Buffer の b にマテリアル側のトゥーン適用フラグが載っている
+    const bool useToon = materialSample.b > 0.5f;
 
     const float2 uv = (float2(pixel) + 0.5f) / float2(gConstants.screenSize);
     const float3 worldPosition = ReconstructWorldPosition(uv, deviceDepth, gConstants.invViewProjection);
@@ -136,6 +140,73 @@ float4 main(VertexShaderOutput input) : SV_TARGET
     {
         // ライティング無効のマテリアルはアルベドをそのまま出す（影だけ乗る）
         return float4(albedo * shadowFactor, outputAlpha);
+    }
+
+    // ── トゥーン（セル）シェーディング ──────────────────
+    // 全体設定とマテリアル側の両方がONのときだけ段階的な陰影で描く。
+    // 数式は前方描画（Object3d.PS）と同じ Toon.hlsli を使っているので絵が一致する。
+    if (gToon.enabled >= 0.5f && useToon)
+    {
+        float3 toonColor = float3(0.0f, 0.0f, 0.0f);
+        // 主光源の量子化後の明るさ。リムを光の当たる側だけに出すためのマスクに使う
+        float mainBand = 0.0f;
+
+        // 平行光源が物体の基本色を作る（影側は shadeColor で着色される）
+        if (gDirectionalLight.active != 0)
+        {
+            toonColor += ToonMainLight(albedo, normal, normalize(-gDirectionalLight.direction), toEye,
+                                       gDirectionalLight.color.rgb, gDirectionalLight.intensity,
+                                       shadowFactor, shininess, gToon, mainBand);
+        }
+
+        // 点光源はタイルに残ったものだけ。明るい側にだけ足す
+        {
+            const uint2 toonTile = uint2(pixel) / DEFERRED_TILE_SIZE;
+            const uint toonTileIndex = toonTile.y * gConstants.tileCount.x + toonTile.x;
+            const uint toonBase = toonTileIndex * DEFERRED_TILE_STRIDE;
+            const uint toonLightCount = gTileLightIndices[toonBase];
+
+            for (uint tli = 0; tli < toonLightCount; ++tli)
+            {
+                const PointLightGPU light = gPointLights[gTileLightIndices[toonBase + 1u + tli]];
+                float3 toLight = light.position - worldPosition;
+                float dist = length(toLight);
+                if (dist > light.radius)
+                {
+                    continue;
+                }
+                float3 lightDir = toLight / max(dist, 1e-6f);
+                float factor = pow(saturate(-dist / light.radius + 1.0f), light.decay);
+                toonColor += ToonAddLight(albedo, normal, lightDir, toEye, light.color,
+                                          light.intensity, factor, shininess, gToon);
+            }
+        }
+
+        // スポットライト
+        for (int tsi = 0; tsi < min(gSpotLights.count, MAX_SPOT_LIGHTS_DEFERRED); tsi++)
+        {
+            SpotLightGPU spotLight = gSpotLights.lights[tsi];
+            if (spotLight.active == 0)
+            {
+                continue;
+            }
+            float3 spotDirOnSurface = normalize(worldPosition - spotLight.position);
+            float cosAngle = dot(spotDirOnSurface, spotLight.direction);
+            float falloff = saturate((cosAngle - spotLight.cosAngle) / (1.0f - spotLight.cosAngle));
+            float dist = length(spotLight.position - worldPosition);
+            float attenuation = pow(saturate(-dist / spotLight.distance + 1.0f), spotLight.decay);
+            toonColor += ToonAddLight(albedo, normal, -spotDirOnSurface, toEye, spotLight.color.rgb,
+                                      spotLight.intensity, attenuation * falloff, shininess, gToon);
+        }
+
+        // 輪郭の光は光源ごとではなく最後に1回だけ足す
+        toonColor += ToonRimLight(normal, toEye, mainBand, gToon);
+
+        // 環境マッピングは従来どおり（係数0なら何も足されない）
+        float3 toonReflected = reflect(-toEye, normal);
+        toonColor += gEnvironmentTexture.Sample(gSampler, toonReflected).rgb * environmentCoefficient;
+
+        return float4(toonColor, outputAlpha);
     }
 
     float3 color = float3(0.0f, 0.0f, 0.0f);

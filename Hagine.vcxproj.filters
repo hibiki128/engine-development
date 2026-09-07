@@ -312,6 +312,18 @@
     <ClCompile Include="Engine\3d\Light\LightGroup.cpp">
       <Filter>Engine\3d\Light</Filter>
     </ClCompile>
+    <ClCompile Include="Engine\3d\Light\DirectionalLight.cpp">
+      <Filter>Engine\3d\Light</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\3d\Light\PointLightGroup.cpp">
+      <Filter>Engine\3d\Light</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\3d\Light\SpotLightGroup.cpp">
+      <Filter>Engine\3d\Light</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\3d\Light\ToonSettings.cpp">
+      <Filter>Engine\3d\Light</Filter>
+    </ClCompile>
     <ClCompile Include="Engine\3d\Line\DrawLine3D.cpp">
       <Filter>Engine\3d\Line</Filter>
     </ClCompile>
@@ -744,6 +756,24 @@
       <Filter>Engine\3d\camera\projection</Filter>
     </ClInclude>
     <ClInclude Include="Engine\3d\Light\LightGroup.h">
+      <Filter>Engine\3d\Light</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\3d\Light\DirectionalLight.h">
+      <Filter>Engine\3d\Light</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\3d\Light\LightTypes.h">
+      <Filter>Engine\3d\Light</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\3d\Light\LightUIHelper.h">
+      <Filter>Engine\3d\Light</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\3d\Light\PointLightGroup.h">
+      <Filter>Engine\3d\Light</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\3d\Light\SpotLightGroup.h">
+      <Filter>Engine\3d\Light</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\3d\Light\ToonSettings.h">
       <Filter>Engine\3d\Light</Filter>
     </ClInclude>
     <ClInclude Include="Engine\3d\Line\DrawLine3D.h">

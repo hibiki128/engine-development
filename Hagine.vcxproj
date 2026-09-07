@@ -239,6 +239,10 @@
     <ClCompile Include="Engine\3d\Animation\Bone.cpp" />
     <ClCompile Include="Engine\3d\Animation\Animator.cpp" />
     <ClCompile Include="Engine\3d\Light\LightGroup.cpp" />
+    <ClCompile Include="Engine\3d\Light\DirectionalLight.cpp" />
+    <ClCompile Include="Engine\3d\Light\PointLightGroup.cpp" />
+    <ClCompile Include="Engine\3d\Light\SpotLightGroup.cpp" />
+    <ClCompile Include="Engine\3d\Light\ToonSettings.cpp" />
     <ClCompile Include="Engine\3d\Line\DrawLine3D.cpp" />
     <ClCompile Include="Engine\Frame\Frame.cpp" />
     <ClCompile Include="Engine\Input\Mouse.cpp" />
@@ -422,6 +426,12 @@
     <ClInclude Include="Engine\3d\Animation\Bone.h" />
     <ClInclude Include="Engine\3d\Animation\Animator.h" />
     <ClInclude Include="Engine\3d\Light\LightGroup.h" />
+    <ClInclude Include="Engine\3d\Light\DirectionalLight.h" />
+    <ClInclude Include="Engine\3d\Light\LightTypes.h" />
+    <ClInclude Include="Engine\3d\Light\LightUIHelper.h" />
+    <ClInclude Include="Engine\3d\Light\PointLightGroup.h" />
+    <ClInclude Include="Engine\3d\Light\SpotLightGroup.h" />
+    <ClInclude Include="Engine\3d\Light\ToonSettings.h" />
     <ClInclude Include="Engine\3d\Line\DrawLine3D.h" />
     <ClInclude Include="Engine\3d\Model\ModelStructs.h" />
     <ClInclude Include="Engine\Frame\Frame.h" />

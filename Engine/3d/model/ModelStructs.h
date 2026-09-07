@@ -62,6 +62,11 @@ struct MaterialData
     std::string normalMapFilePath{};     // 法線マップのパス（未設定なら albedo を流用）
     uint32_t normalMapIndex = 0;         // 法線マップのテクスチャインデックス
     bool hasNormalMapTexture = false;    // 法線マップ画像を明示設定したか
+
+    // ── トゥーンシェーディング ─────────────────────
+    // 全体設定（ToonSettings）がONのとき、このマテリアルにも適用してよいか。
+    // 地面やエフェクトだけ従来の陰影で残したいときに個別で落とす。
+    bool enableToon = true;
 };
 
 /// <summary>
@@ -79,7 +84,8 @@ struct MaterialDataGPU
     int32_t enableProceduralNormal{}; // 手続き的法線有効
     float normalStrength{};           // 法線の強さ
     float proceduralScale{};          // 手続きノイズのスケール
-    float padding2[2]{};              // パディング（16バイト境界合わせ）
+    int32_t enableToon{};             // トゥーン適用フラグ
+    float padding2{};                 // パディング（16バイト境界合わせ）
 };
 
 /// <summary>
