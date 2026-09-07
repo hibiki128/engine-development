@@ -38,7 +38,8 @@ struct Material
     int enableProceduralNormal; // 手続き的法線有効
     float normalStrength;       // 法線の強さ
     float proceduralScale;      // 手続きノイズのスケール
-    float2 padding2; // 16バイト境界に合わせるためのパディング
+    int enableToon;             // このマテリアルにトゥーンを適用してよいか（実際に効くかは全体設定と併せて判定）
+    float padding2; // 16バイト境界に合わせるためのパディング
 };
 
 struct DirectionalLight

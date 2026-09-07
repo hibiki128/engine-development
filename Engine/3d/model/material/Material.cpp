@@ -50,6 +50,7 @@ size_t Material::ComputeDrawSignature() const {
     mix(materialData_.enableProceduralNormal ? 1u : 0u);
     mixFloat(materialData_.normalStrength);
     mixFloat(materialData_.proceduralScale);
+    mix(materialData_.enableToon ? 1u : 0u);
     return hash;
 }
 
@@ -67,6 +68,7 @@ void Material::Draw(const Vector4 color, bool lighting) {
     pMaterialDataGPU_->enableProceduralNormal = materialData_.enableProceduralNormal ? 1 : 0;
     pMaterialDataGPU_->normalStrength = materialData_.normalStrength;
     pMaterialDataGPU_->proceduralScale = materialData_.proceduralScale;
+    pMaterialDataGPU_->enableToon = materialData_.enableToon ? 1 : 0;
 
     ID3D12GraphicsCommandList *pCommandList = pDxCommon_->GetCommandList().Get();
 
@@ -149,6 +151,7 @@ void Material::UpdateGPUData() {
         pMaterialDataGPU_->enableProceduralNormal = materialData_.enableProceduralNormal ? 1 : 0;
         pMaterialDataGPU_->normalStrength = materialData_.normalStrength;
         pMaterialDataGPU_->proceduralScale = materialData_.proceduralScale;
+        pMaterialDataGPU_->enableToon = materialData_.enableToon ? 1 : 0;
     }
 }
 

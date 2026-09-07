@@ -9,6 +9,7 @@
 #include <camera/CameraManager.h>
 #include <object/Object3dInstancing.h>
 #include <particle/gpu/ParticleCSSpawner.h>
+#include <light/ToonSettings.h>
 #include <shadow/ShadowMap.h>
 #include <iterator>
 #ifdef USE_IMGUI
@@ -187,6 +188,9 @@ void Framework::Initialize()
     ///--------LightGroup------------
     pLightGroup_ = LightGroup::GetInstance();
     pLightGroup_->Initialize();
+    // トゥーンシェーディングのつまみ。前方描画とディファードの両方へ同じ値を配る
+    ToonSettings::GetInstance()->Initialize();
+    ToonSettings::GetInstance()->LoadData("ToonData");
     ///------------------------------
 
     ///-------DeferredRenderer-------
@@ -280,6 +284,7 @@ void Framework::Finalize()
     pSrvManager_->Finalize();
     pAudio_->Finalize();
     pLightGroup_->Finalize();
+    ToonSettings::GetInstance()->Finalize();
     pMotionEditor_->Finalize();
     pParticleEditor_->Finalize();
     pParticleCSFieldManager_->Finalize();
@@ -470,6 +475,7 @@ void Framework::Update()
     {
         HAGINE_CPU_PROFILE("Update/Light");
         LightGroup::GetInstance()->Update(*pSceneManager_->GetBaseScene()->GetViewProjection());
+        ToonSettings::GetInstance()->Update();
     }
     {
         HAGINE_CPU_PROFILE("Update/Input");

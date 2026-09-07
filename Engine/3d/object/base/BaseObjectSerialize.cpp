@@ -263,6 +263,7 @@ void BaseObject::SaveMaterials() {
         objectData_->Save<bool>(prefix + "enableProceduralNormal", md.enableProceduralNormal);
         objectData_->Save<float>(prefix + "proceduralScale", md.proceduralScale);
         objectData_->Save<float>(prefix + "normalStrength", md.normalStrength);
+        objectData_->Save<bool>(prefix + "enableToon", md.enableToon);
 
         // UV（タイリング・オフセット・回転）
         objectData_->Save<Vector2>(prefix + "uvSize", md.uvSize);
@@ -297,6 +298,8 @@ void BaseObject::LoadMaterials() {
         md.enableProceduralNormal = objectData_->Load<bool>(prefix + "enableProceduralNormal", md.enableProceduralNormal);
         md.proceduralScale = objectData_->Load<float>(prefix + "proceduralScale", md.proceduralScale);
         mat->SetNormalStrength(objectData_->Load<float>(prefix + "normalStrength", md.normalStrength));
+        // 後から足した項目なので、キーが無い既存データでは現在値（既定は適用する）のままにする
+        md.enableToon = objectData_->Load<bool>(prefix + "enableToon", md.enableToon);
 
         // UV（タイリング・オフセット・回転）。uvTransform は Draw で毎フレーム組み直される
         md.uvSize = objectData_->Load<Vector2>(prefix + "uvSize", md.uvSize);

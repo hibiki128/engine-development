@@ -1,4 +1,5 @@
 #include"object3d.hlsli"
+#include"Toon.hlsli"
 
 ConstantBuffer<Material> gMaterial : register(b0);
 ConstantBuffer<DirectionalLight> gDirectionalLight : register(b1);
@@ -6,6 +7,7 @@ ConstantBuffer<Camera> gCamera : register(b2);
 ConstantBuffer<PointLights> gPointLights : register(b3);
 ConstantBuffer<SpotLights> gSpotLights : register(b4);
 ConstantBuffer<ShadowData> gShadowData : register(b5);
+ConstantBuffer<ToonSettings> gToon : register(b6);
 SamplerState gSampler : register(s0);
 SamplerComparisonState gShadowSampler : register(s1);
 Texture2D<float4> gTexture : register(t0);
@@ -159,6 +161,76 @@ PixelShaderOutput main(VertexShaderOutput input)
         if (dot(normalize(input.normal), viewDir) < 0.0f)
         {
             input.normal = -input.normal;
+        }
+
+        // ── トゥーン（セル）シェーディング ──────────────────
+        // 全体設定とマテリアル側の両方がONのときだけ、段階的な陰影で描く。
+        // 数式は Toon.hlsli にまとめてあり、ディファードのライティングパスと共通。
+        if (gToon.enabled >= 0.5f && gMaterial.enableToon != 0)
+        {
+            const float3 N = normalize(input.normal);
+            const float3 albedo = (gMaterial.color * textureColor).rgb;
+
+            float3 toonColor = float3(0.0f, 0.0f, 0.0f);
+            // 主光源の量子化後の明るさ。リムを光の当たる側だけに出すためのマスクに使う
+            float mainBand = 0.0f;
+
+            // 平行光源が物体の基本色を作る（影側は shadeColor で着色される）
+            if (gDirectionalLight.active != 0)
+            {
+                toonColor += ToonMainLight(albedo, N, normalize(-gDirectionalLight.direction), viewDir,
+                                           gDirectionalLight.color.rgb, gDirectionalLight.intensity,
+                                           shadowFactor, gMaterial.shininess, gToon, mainBand);
+            }
+
+            // 点光源・スポットライトは「明るい側にだけ足す」。
+            // 影の色まで光源ごとに足すと、光源が増えるほど影が明るくなってしまうため。
+            for (int pi = 0; pi < min(gPointLights.count, MAX_POINT_LIGHTS); pi++)
+            {
+                PointLight pointLight = gPointLights.lights[pi];
+                if (pointLight.active == 0)
+                {
+                    continue;
+                }
+                float3 toLight = pointLight.position - input.worldPosition;
+                float dist = length(toLight);
+                float3 lightDir = toLight / max(dist, 1e-6f);
+                float factor = pow(saturate(-dist / pointLight.radius + 1.0f), pointLight.decay);
+                toonColor += ToonAddLight(albedo, N, lightDir, viewDir, pointLight.color.rgb,
+                                          pointLight.intensity, factor, gMaterial.shininess, gToon);
+            }
+
+            for (int si = 0; si < min(gSpotLights.count, MAX_SPOT_LIGHTS); si++)
+            {
+                SpotLight spotLight = gSpotLights.lights[si];
+                if (spotLight.active == 0)
+                {
+                    continue;
+                }
+                float3 spotDirOnSurface = normalize(input.worldPosition - spotLight.position);
+                float cosAngle = dot(spotDirOnSurface, spotLight.direction);
+                float falloff = saturate((cosAngle - spotLight.cosAngle) / (1.0f - spotLight.cosAngle));
+                float dist = length(spotLight.position - input.worldPosition);
+                float attenuation = pow(saturate(-dist / spotLight.distance + 1.0f), spotLight.decay);
+                toonColor += ToonAddLight(albedo, N, -spotDirOnSurface, viewDir, spotLight.color.rgb,
+                                          spotLight.intensity, attenuation * falloff, gMaterial.shininess, gToon);
+            }
+
+            // 輪郭の光は光源ごとではなく最後に1回だけ足す
+            toonColor += ToonRimLight(N, viewDir, mainBand, gToon);
+
+            // 環境マッピングは従来どおり（係数0なら何も足されない）
+            float3 reflectedVector = reflect(-viewDir, N);
+            toonColor += gEngironmentTexture.Sample(gSampler, reflectedVector).rgb * gMaterial.environmentCoefficient;
+
+            output.color.rgb = toonColor;
+            output.color.a = gMaterial.color.a * textureColor.a;
+
+            if (textureColor.a == 0.0f || output.color.a == 0.0f)
+            {
+                discard;
+            }
+            return output;
         }
 
         output.color.rgb = float3(0.0f, 0.0f, 0.0f);

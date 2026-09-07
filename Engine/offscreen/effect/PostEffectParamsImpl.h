@@ -48,6 +48,75 @@ struct ComputeData
 };
 } // namespace SeparableBlur
 
+// ------------------------------------------------------------
+//  ルートパラメータ番号の解決
+// ------------------------------------------------------------
+// ポストエフェクトのルートシグネチャはシェーダーのリフレクションから組まれており、
+// 並びは「b# → t#」になっている（b0=0番, t0=1番, t1=2番 …）。
+// 以前の「t0=0番, b0=1番」という並びとは入れ替わっているので、番号を直書きすると
+// b0 のつもりで t0 のテーブルへ差してしまい、そのエフェクトだけ描画されなくなる。
+// 番号は必ずここを通して引くこと。
+namespace RootParam {
+
+/// <summary>
+/// そのシェーダーモードのポストエフェクト用ルートシグネチャを取得する
+/// </summary>
+/// <param name="mode">シェーダーモード</param>
+/// <returns>const ShaderRootSignature*: 未生成なら nullptr</returns>
+inline const ShaderRootSignature *Get(ShaderMode mode)
+{
+    return PipelineManager::GetInstance()->GetReflectedRootSignature(PipelineType::Render, mode);
+}
+
+/// <summary>
+/// b0（エフェクトのパラメータ）をバインドする。
+/// シェーダーが b0 を使っていなければ何もしない（未使用のレジスタはリフレクションから落ちるため）。
+/// </summary>
+/// <param name="pCommandList">コマンドリスト</param>
+/// <param name="mode">シェーダーモード</param>
+/// <param name="resource">定数バッファ</param>
+inline void BindCBV(ID3D12GraphicsCommandList *pCommandList, ShaderMode mode,
+                    const Microsoft::WRL::ComPtr<ID3D12Resource> &resource)
+{
+    const ShaderRootSignature *rs = Get(mode);
+    if (!rs || !resource)
+    {
+        return;
+    }
+    const UINT rootIndex = rs->GetCbvIndex(0);
+    if (rootIndex == UINT_MAX)
+    {
+        return;
+    }
+    pCommandList->SetGraphicsRootConstantBufferView(rootIndex, resource->GetGPUVirtualAddress());
+}
+
+/// <summary>
+/// t# のデスクリプタテーブルをバインドする。
+/// t0（入力画像）は描画側が差すので、ここで扱うのは t1 以降の追加テクスチャ。
+/// </summary>
+/// <param name="pCommandList">コマンドリスト</param>
+/// <param name="mode">シェーダーモード</param>
+/// <param name="shaderRegister">t# の番号</param>
+/// <param name="handle">差すデスクリプタのGPUハンドル</param>
+inline void BindSRV(ID3D12GraphicsCommandList *pCommandList, ShaderMode mode,
+                    UINT shaderRegister, D3D12_GPU_DESCRIPTOR_HANDLE handle)
+{
+    const ShaderRootSignature *rs = Get(mode);
+    if (!rs || handle.ptr == 0)
+    {
+        return;
+    }
+    const UINT rootIndex = rs->GetSrvIndex(shaderRegister);
+    if (rootIndex == UINT_MAX)
+    {
+        return;
+    }
+    pCommandList->SetGraphicsRootDescriptorTable(rootIndex, handle);
+}
+
+} // namespace RootParam
+
 } // namespace PostEffectParamsHelper
 
 #ifdef USE_IMGUI
@@ -154,7 +223,7 @@ class MonochromeParams : public IPostEffectParams
     ShaderMode GetMode() const override { return ShaderMode::Monochrome; }
     void Apply(ID3D12GraphicsCommandList *pCommandList, SrvManager *, DirectXCommon *) override
     {
-        pCommandList->SetGraphicsRootConstantBufferView(1, resource_->GetGPUVirtualAddress());
+        PostEffectParamsHelper::RootParam::BindCBV(pCommandList, GetMode(), resource_);
     }
     void DrawUI() override
     {
@@ -203,7 +272,7 @@ class VignetteParams : public IPostEffectParams
 
     void Apply(ID3D12GraphicsCommandList *pCommandList, SrvManager *, DirectXCommon *) override
     {
-        pCommandList->SetGraphicsRootConstantBufferView(1, resource_->GetGPUVirtualAddress());
+        PostEffectParamsHelper::RootParam::BindCBV(pCommandList, GetMode(), resource_);
     }
 
     void DrawUI() override
@@ -268,7 +337,7 @@ class SmoothParams : public IPostEffectParams
     ShaderMode GetMode() const override { return ShaderMode::Smooth; }
     void Apply(ID3D12GraphicsCommandList *pCommandList, SrvManager *, DirectXCommon *) override
     {
-        pCommandList->SetGraphicsRootConstantBufferView(1, resource_->GetGPUVirtualAddress());
+        PostEffectParamsHelper::RootParam::BindCBV(pCommandList, GetMode(), resource_);
     }
 
     // ---- コンピュートシェーダー版 ----
@@ -388,7 +457,7 @@ class GaussianParams : public IPostEffectParams
     ShaderMode GetMode() const override { return ShaderMode::Gauss; }
     void Apply(ID3D12GraphicsCommandList *pCommandList, SrvManager *, DirectXCommon *) override
     {
-        pCommandList->SetGraphicsRootConstantBufferView(1, resource_->GetGPUVirtualAddress());
+        PostEffectParamsHelper::RootParam::BindCBV(pCommandList, GetMode(), resource_);
     }
 
     // ---- コンピュートシェーダー版 ----
@@ -517,7 +586,7 @@ class OutlineEdgeParams : public IPostEffectParams
     ShaderMode GetMode() const override { return ShaderMode::Outline; }
     void Apply(ID3D12GraphicsCommandList *pCommandList, SrvManager *, DirectXCommon *) override
     {
-        pCommandList->SetGraphicsRootConstantBufferView(1, resource_->GetGPUVirtualAddress());
+        PostEffectParamsHelper::RootParam::BindCBV(pCommandList, GetMode(), resource_);
     }
     void DrawUI() override
     {
@@ -574,9 +643,16 @@ class OutlineDepthParams : public IPostEffectParams
         pComputeData_->projectionInverse = mat;
     }
 
-    void Apply(ID3D12GraphicsCommandList *pCommandList, SrvManager *, DirectXCommon *) override
+    void Apply(ID3D12GraphicsCommandList *pCommandList, SrvManager *, DirectXCommon *pDxCommon) override
     {
-        pCommandList->SetGraphicsRootConstantBufferView(1, resource_->GetGPUVirtualAddress());
+        PostEffectParamsHelper::RootParam::BindCBV(pCommandList, GetMode(), resource_);
+        // t1: シーンの深度。CS版が使えないときのPS版フォールバックで必要になる
+        // （差さずに描くと t1 が未設定のまま描画され、輪郭がまったく出ない）
+        if (pDxCommon)
+        {
+            PostEffectParamsHelper::RootParam::BindSRV(pCommandList, GetMode(), 1,
+                                                       pDxCommon->GetDepthGPUHandle());
+        }
     }
 
     // ---- コンピュートシェーダー版 ----
@@ -742,7 +818,7 @@ class RadialBlurParams : public IPostEffectParams
     ShaderMode GetMode() const override { return ShaderMode::Blur; }
     void Apply(ID3D12GraphicsCommandList *pCommandList, SrvManager *, DirectXCommon *) override
     {
-        pCommandList->SetGraphicsRootConstantBufferView(1, resource_->GetGPUVirtualAddress());
+        PostEffectParamsHelper::RootParam::BindCBV(pCommandList, GetMode(), resource_);
     }
     void DrawUI() override
     {
@@ -796,7 +872,11 @@ class CinematicParams : public IPostEffectParams
     ShaderMode GetMode() const override { return ShaderMode::Cinematic; }
     void Apply(ID3D12GraphicsCommandList *pCommandList, SrvManager *, DirectXCommon *) override
     {
-        pCommandList->SetGraphicsRootConstantBufferView(1, resource_->GetGPUVirtualAddress());
+        // 解像度はグラデーションのアスペクト補正に使う。
+        // 固定値のままだと解像度を変えたときにグラデーションが歪むので毎回入れ直す。
+        pData_->resolution = {static_cast<float>(WinApp::GetVirtualWidth()),
+                              static_cast<float>(WinApp::GetVirtualHeight())};
+        PostEffectParamsHelper::RootParam::BindCBV(pCommandList, GetMode(), resource_);
     }
     void DrawUI() override
     {
@@ -833,15 +913,16 @@ class CinematicParams : public IPostEffectParams
 class DissolveParams : public IPostEffectParams
 {
   public:
+    // HLSL(Dissolve.PS.hlsl の DissolveParams)のパッキングに合わせること。
+    // float3 は 16 バイト境界をまたげないので gEdgeColor は 16 から始まり、
+    // 続く gInvert は 28 に来る。ここへ余分なパディングを挟むと反転フラグが読まれなくなる。
     struct Data
     {
-        float threshold = 0.5f;
-        float edgeWidth = 0.05f;
-        float pad[2] = {};
-        Vector3 edgeColor = {1.0f, 0.5f, 0.0f};
-        float pad2 = 0.0f;
-        int invert = 0;
-        float pad3[3] = {};
+        float threshold = 0.5f;  // 0
+        float edgeWidth = 0.05f; // 4
+        float pad[2] = {};       // 8  （float3 を 16 へ送るための詰め物）
+        Vector3 edgeColor = {1.0f, 0.5f, 0.0f}; // 16
+        int invert = 0;                         // 28
     };
 
     void Initialize(DirectXCommon *pDxCommon) override
@@ -852,16 +933,18 @@ class DissolveParams : public IPostEffectParams
         TextureManager::GetInstance()->LoadTexture(maskTexturePath_);
     }
     ShaderMode GetMode() const override { return ShaderMode::Dissolve; }
-    void Apply(ID3D12GraphicsCommandList *pCommandList, SrvManager *srv, DirectXCommon *pDxCommon) override
+    void Apply(ID3D12GraphicsCommandList *pCommandList, SrvManager *srv, DirectXCommon *) override
     {
-        pCommandList->SetGraphicsRootConstantBufferView(1, resource_->GetGPUVirtualAddress());
+        PostEffectParamsHelper::RootParam::BindCBV(pCommandList, GetMode(), resource_);
         // t1: ノイズ(マスク)テクスチャをバインドする。
-        // ルートシグネチャは t0=画面 / b0=パラメータ / t1=マスク の3パラメータ構成。
+        // t0（画面）は描画側が差すので、ここで面倒を見るのは t1 だけ。
         if (srv)
         {
             auto *tm = TextureManager::GetInstance();
             tm->LoadTexture(maskTexturePath_); // 未ロードなら読む（ロード済みは即return）
-            srv->SetGraphicsRootDescriptorTable(2, tm->GetTextureIndexByFilePath(maskTexturePath_));
+            PostEffectParamsHelper::RootParam::BindSRV(
+                pCommandList, GetMode(), 1,
+                srv->GetGPUDescriptorHandle(tm->GetTextureIndexByFilePath(maskTexturePath_)));
         }
     }
     void DrawUI() override
@@ -937,7 +1020,7 @@ class RandomParams : public IPostEffectParams
     void UpdateTime(float dt) override { pData_->time += dt; }
     void Apply(ID3D12GraphicsCommandList *pCommandList, SrvManager *, DirectXCommon *) override
     {
-        pCommandList->SetGraphicsRootConstantBufferView(1, resource_->GetGPUVirtualAddress());
+        PostEffectParamsHelper::RootParam::BindCBV(pCommandList, GetMode(), resource_);
     }
     void DrawUI() override {}
     void Save(DataHandler *, const std::string &) const override {}
@@ -979,7 +1062,7 @@ class FocusLineParams : public IPostEffectParams
     void UpdateTime(float dt) override { pData_->time += dt; }
     void Apply(ID3D12GraphicsCommandList *pCommandList, SrvManager *, DirectXCommon *) override
     {
-        pCommandList->SetGraphicsRootConstantBufferView(1, resource_->GetGPUVirtualAddress());
+        PostEffectParamsHelper::RootParam::BindCBV(pCommandList, GetMode(), resource_);
     }
     void DrawUI() override
     {
@@ -1044,13 +1127,13 @@ class PixelateParams : public IPostEffectParams
     ShaderMode GetMode() const override { return ShaderMode::Pixelate; }
     void Apply(ID3D12GraphicsCommandList *pCommandList, SrvManager *, DirectXCommon *) override
     {
-        pCommandList->SetGraphicsRootConstantBufferView(1, resource_->GetGPUVirtualAddress());
+        PostEffectParamsHelper::RootParam::BindCBV(pCommandList, GetMode(), resource_);
     }
     void DrawUI() override
     {
 #ifdef USE_IMGUI
         // ブロックサイズはピクセル単位、中心座標はUV空間（0-1）
-        ImGui::DragFloat("ブロックサイズ", &pData_->blockSize, 0.001f, 0.001f, 1.0f);
+        ImGui::DragFloat("ブロックサイズ(px)", &pData_->blockSize, 0.5f, 1.0f, 64.0f, "%.0f");
         ImGui::DragFloat("中心X", &pData_->centerX, 0.01f, 0.0f, 1.0f);
         ImGui::DragFloat("中心Y", &pData_->centerY, 0.01f, 0.0f, 1.0f);
 #endif
@@ -1103,7 +1186,7 @@ class RetroParams : public IPostEffectParams
     void UpdateTime(float dt) override { pData_->time += dt; }
     void Apply(ID3D12GraphicsCommandList *pCommandList, SrvManager *, DirectXCommon *) override
     {
-        pCommandList->SetGraphicsRootConstantBufferView(1, resource_->GetGPUVirtualAddress());
+        PostEffectParamsHelper::RootParam::BindCBV(pCommandList, GetMode(), resource_);
     }
     void DrawUI() override
     {
@@ -1184,7 +1267,7 @@ class BloomParams : public IPostEffectParams
     ShaderMode GetMode() const override { return ShaderMode::Bloom; }
     void Apply(ID3D12GraphicsCommandList *pCommandList, SrvManager *, DirectXCommon *) override
     {
-        pCommandList->SetGraphicsRootConstantBufferView(1, resource_->GetGPUVirtualAddress());
+        PostEffectParamsHelper::RootParam::BindCBV(pCommandList, GetMode(), resource_);
     }
 
     // ---- コンピュートシェーダー版 ----
@@ -1287,12 +1370,14 @@ class ShockwaveParams : public IPostEffectParams
     }
     void Apply(ID3D12GraphicsCommandList *pCommandList, SrvManager *, DirectXCommon *) override
     {
-        // 専用RootSig: [0]=srcRT(Renderer側で設定済), [1]=flareTex, [2]=cbuffer
+        // t0=画面（描画側が設定）, t1=フレア, b0=パラメータ。
+        // ルートパラメータ番号はリフレクション由来なので必ず引いてから差す。
         // GetSrvHandleGPU は内部 prepend しないのでフルパス(＝マップキー)で渡す
         const std::string fullPath = AssetPath::Image(kFlareTexPath_);
-        auto flareGpu = TextureManager::GetInstance()->GetSrvHandleGPU(fullPath);
-        pCommandList->SetGraphicsRootDescriptorTable(1, flareGpu);
-        pCommandList->SetGraphicsRootConstantBufferView(2, resource_->GetGPUVirtualAddress());
+        PostEffectParamsHelper::RootParam::BindSRV(
+            pCommandList, GetMode(), 1,
+            TextureManager::GetInstance()->GetSrvHandleGPU(fullPath));
+        PostEffectParamsHelper::RootParam::BindCBV(pCommandList, GetMode(), resource_);
     }
     void DrawUI() override
     {

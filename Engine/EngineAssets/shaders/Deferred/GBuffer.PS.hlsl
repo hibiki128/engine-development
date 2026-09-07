@@ -135,10 +135,12 @@ GBufferOutput main(VertexShaderOutput input)
     GBufferOutput output;
     output.albedo = float4(baseColor.rgb, baseColor.a);
     output.normal = float4(normalize(normal), gMaterial.shininess);
+    // b にトゥーン適用フラグを載せる。実際にトゥーンで描くかは
+    // ライティングパス側で全体設定と突き合わせて決める
     output.material = float4(
         saturate(gMaterial.environmentCoefficient / DEFERRED_ENV_COEFF_RANGE),
         gMaterial.enableLighting != 0 ? 1.0f : 0.0f,
-        0.0f,
+        gMaterial.enableToon != 0 ? 1.0f : 0.0f,
         1.0f);
     return output;
 }

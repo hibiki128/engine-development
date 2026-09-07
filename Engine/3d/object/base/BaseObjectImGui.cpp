@@ -5,6 +5,7 @@
 #include "collider/CollisionManager.h"
 #include "debug/profiler/CpuProfiler.h"
 #include "frame/Frame.h"
+#include "light/ToonSettings.h"
 #include "model/material/Material.h"
 #include "object/Object3dInstancing.h"
 #include "scene/SceneManager.h"
@@ -485,6 +486,26 @@ void BaseObject::DebugObject() {
             // Blend mode
             if (ImGui::TreeNodeEx("ブレンドモード##bm", ImGuiTreeNodeFlags_SpanAvailWidth)) {
                 ShowBlendModeCombo(blendMode_);
+                ImGui::TreePop();
+            }
+
+            // トゥーンシェーディング（全体設定がONのときだけ効く）
+            if (ImGui::TreeNodeEx("トゥーン##toonmat", ImGuiTreeNodeFlags_SpanAvailWidth)) {
+                if (Material *mat = GetMaterial(static_cast<uint32_t>(selMat))) {
+                    MaterialData &md = mat->GetMaterialData();
+                    ImGui::PushStyleColor(ImGuiCol_CheckMark, DebugTheme::kAccentPurple);
+                    ImGui::Checkbox("トゥーンを適用##toonmatchk", &md.enableToon);
+                    ImGui::PopStyleColor();
+                    ImGui::SetItemTooltip("このマテリアルをセル画風の陰影で描くかどうか。\n"
+                                          "地面やエフェクトだけ従来の陰影で残したいときに外します");
+
+                    const bool globalOn = ToonSettings::GetInstance()->IsEnabled();
+                    ImGui::PushStyleColor(ImGuiCol_Text, globalOn ? DebugTheme::kTextDim : DebugTheme::kAccentOrange);
+                    ImGui::TextWrapped(globalOn
+                                           ? "全体設定はONです"
+                                           : "全体設定がOFFなので、ここをONにしても効きません（ライトの設定画面で切り替えられます）");
+                    ImGui::PopStyleColor();
+                }
                 ImGui::TreePop();
             }
 

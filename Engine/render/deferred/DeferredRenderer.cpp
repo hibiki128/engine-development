@@ -5,6 +5,7 @@
 #include "graphics/pipeline/PipelineManager.h"
 #include "graphics/srv/SrvManager.h"
 #include "light/LightGroup.h"
+#include "light/ToonSettings.h"
 #include "shadow/ShadowMap.h"
 #include "skybox/SkyBox.h"
 #include <MyMath.h>
@@ -281,6 +282,7 @@ void DeferredRenderer::RenderLighting()
     pCommandList->SetGraphicsRootConstantBufferView(rootSignature->GetCbvIndex(1), lightGroup->GetDirectionalLightAddress());
     pCommandList->SetGraphicsRootConstantBufferView(rootSignature->GetCbvIndex(2), lightGroup->GetSpotLightsAddress());
     pCommandList->SetGraphicsRootConstantBufferView(rootSignature->GetCbvIndex(3), shadowMap->GetShadowDataGpuAddress());
+    pCommandList->SetGraphicsRootConstantBufferView(rootSignature->GetCbvIndex(4), ToonSettings::GetInstance()->GetGpuAddress());
 
     pSrvManager_->SetGraphicsRootDescriptorTable(rootSignature->GetSrvIndex(0), gBuffers_[0].srvIndex);
     pSrvManager_->SetGraphicsRootDescriptorTable(rootSignature->GetSrvIndex(1), gBuffers_[1].srvIndex);
