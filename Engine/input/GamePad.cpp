@@ -172,6 +172,9 @@ void GamePad::SetVibration(WORD leftMotor, WORD rightMotor)
 {
     if (!isConnected_)
         return;
+    // 振動オフのときは鳴らさない。停止（0,0）だけは通す
+    if (!isVibrationEnabled_ && (leftMotor != 0 || rightMotor != 0))
+        return;
 
     XINPUT_VIBRATION vibration;
     vibration.wLeftMotorSpeed = leftMotor;
@@ -184,6 +187,16 @@ void GamePad::StopVibration()
     SetVibration(0, 0);
 }
 
+void GamePad::SetVibrationEnabled(bool enabled)
+{
+    isVibrationEnabled_ = enabled;
+    if (!isVibrationEnabled_)
+    {
+        // 設定を切った瞬間に鳴りっぱなしにならないよう止める
+        StopVibration();
+    }
+}
+
 // ===== デッドゾーン設定 =====
 
 void GamePad::SetLeftStickDeadZone(float deadZone)
@@ -194,6 +207,11 @@ void GamePad::SetLeftStickDeadZone(float deadZone)
 void GamePad::SetRightStickDeadZone(float deadZone)
 {
     rightStickDeadZone_ = std::clamp(deadZone, 0.0f, 1.0f);
+}
+
+void GamePad::SetStickSensitivity(float sensitivity)
+{
+    stickSensitivity_ = std::max(sensitivity, 0.01f);
 }
 
 // ===== プライベート関数 =====
@@ -210,9 +228,10 @@ float GamePad::ApplyDeadZone(SHORT value, float deadZone) const
         return 0.0f;
     }
 
-    // デッドゾーンを超えた部分を0-1の範囲に再マッピング
+    // デッドゾーンを超えた部分を0-1の範囲に再マッピングし、感度の倍率を掛ける
     float sign = (normalizedValue > 0.0f) ? 1.0f : -1.0f;
     float remappedValue = (absValue - deadZone) / (1.0f - deadZone);
+    remappedValue *= stickSensitivity_;
 
     return sign * std::clamp(remappedValue, 0.0f, 1.0f);
 }

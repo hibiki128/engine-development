@@ -20,6 +20,10 @@ class GamePad
     float leftStickDeadZone_;  // 左スティックのデッドゾーン
     float rightStickDeadZone_; // 右スティックのデッドゾーン
 
+    // 感度・振動設定（ゲーム側の設定画面から書き換える）
+    float stickSensitivity_ = 1.0f; // スティック入力に掛ける倍率
+    bool isVibrationEnabled_ = true; // 振動を鳴らすか
+
   public:
     /// <summary>
     /// 初期化
@@ -123,6 +127,18 @@ class GamePad
     /// </summary>
     void StopVibration();
 
+    /// <summary>
+    /// 振動の有効・無効を設定する。無効にした瞬間に鳴っている振動も止める
+    /// </summary>
+    /// <param name="enabled">振動を鳴らすか</param>
+    void SetVibrationEnabled(bool enabled);
+
+    /// <summary>
+    /// 振動が有効か
+    /// </summary>
+    /// <returns>bool: 有効なら true</returns>
+    bool IsVibrationEnabled() const { return isVibrationEnabled_; }
+
     // ===== デッドゾーン設定 =====
 
     /// <summary>
@@ -136,6 +152,33 @@ class GamePad
     /// </summary>
     /// <param name="deadZone">デッドゾーン (0.0f ~ 1.0f)</param>
     void SetRightStickDeadZone(float deadZone);
+
+    /// <summary>
+    /// 左スティックのデッドゾーンを取得
+    /// </summary>
+    /// <returns>float: デッドゾーン (0.0f ~ 1.0f)</returns>
+    float GetLeftStickDeadZone() const { return leftStickDeadZone_; }
+
+    /// <summary>
+    /// 右スティックのデッドゾーンを取得
+    /// </summary>
+    /// <returns>float: デッドゾーン (0.0f ~ 1.0f)</returns>
+    float GetRightStickDeadZone() const { return rightStickDeadZone_; }
+
+    // ===== 感度設定 =====
+
+    /// <summary>
+    /// スティック感度を設定する。デッドゾーン適用後の値に掛かる倍率で、
+    /// 倍率を上げると同じ倒し具合でも最大入力に届きやすくなる
+    /// </summary>
+    /// <param name="sensitivity">倍率 (0.0f より大きい値)</param>
+    void SetStickSensitivity(float sensitivity);
+
+    /// <summary>
+    /// スティック感度を取得する
+    /// </summary>
+    /// <returns>float: 倍率</returns>
+    float GetStickSensitivity() const { return stickSensitivity_; }
 
     // ===== 接続状態 =====
 

@@ -19,23 +19,10 @@
 namespace Hagine {
 uint32_t TextureManager::kSRVIndexTop = 1;
 
-void TextureManager::LoadTexture(const std::string &filePath)
+bool TextureManager::LoadImageFile(const std::string &fullPath, DirectX::ScratchImage &outImage)
 {
-    // 相対パスから実パス(＝マップキー)を作る。debug/配下はエンジン、それ以外はアプリのルート。
-    std::string newFilePath = AssetPath::Image(filePath);
-
-    // 読み込み済みテクスチャを検索
-    if (textureDatas_.contains(newFilePath))
-    {
-        return;
-    }
-
-    // テクスチャ枚数上限をチェック
-    assert(pSrvManager_->CanAllocate());
-
-    // テクスチャファイルを読んでプログラムで扱えるようにする
     DirectX::ScratchImage image{};
-    std::wstring filePathW = StringUtility::ConvertString(newFilePath);
+    const std::wstring filePathW = StringUtility::ConvertString(fullPath);
     HRESULT hr;
     if (filePathW.ends_with(L".dds"))
     {
@@ -51,35 +38,71 @@ void TextureManager::LoadTexture(const std::string &filePath)
     {
         char hrText[16] = {};
         snprintf(hrText, sizeof(hrText), "0x%08X", static_cast<unsigned int>(hr));
-        Logger::Error("Failed to load texture: \"" + newFilePath + "\" (HRESULT=" + hrText + "). The file may be missing or its format unsupported.");
+        Logger::Error("Failed to load texture: \"" + fullPath + "\" (HRESULT=" + hrText + "). The file may be missing or its format unsupported.");
         assert(SUCCEEDED(hr));
+        return false;
+    }
+
+    // 圧縮フォーマットはそのまま、それ以外はミップマップを作る
+    if (DirectX::IsCompressed(image.GetMetadata().format))
+    {
+        outImage = std::move(image);
+        return true;
+    }
+
+    DirectX::ScratchImage mipImages{};
+    hr = DirectX::GenerateMipMaps(image.GetImages(), image.GetImageCount(), image.GetMetadata(), DirectX::TEX_FILTER_SRGB, 4, mipImages);
+    outImage = SUCCEEDED(hr) ? std::move(mipImages) : std::move(image);
+    return true;
+}
+
+void TextureManager::RetireResources(TextureData &data)
+{
+    // 直前のリソースはGPUが参照中の可能性があるため、すぐには捨てずフレーム番号を付けて取っておく。
+    // 「直近N個だけ残す」だと1フレームでまとめて差し替えたときに古い方から即解放されてしまい、
+    // まだ実行されていないコマンドリストが参照していると即座にデバイスが飛ぶ
+    if (data.resource)
+        retiredResources_.push_back({data.resource, frameCounter_});
+    if (data.intermediateResource)
+        retiredResources_.push_back({data.intermediateResource, frameCounter_});
+}
+
+void TextureManager::EndFrame()
+{
+    ++frameCounter_;
+
+    // 退避してから kRetireFrames 経ったものは、GPUが使い終わっているとみなして解放する
+    std::erase_if(retiredResources_, [this](const RetiredResource &retired) {
+        return retired.frame + kRetireFrames <= frameCounter_;
+    });
+}
+
+void TextureManager::LoadTexture(const std::string &filePath)
+{
+    // 相対パスから実パス(＝マップキー)を作る。debug/配下はエンジン、それ以外はアプリのルート。
+    std::string newFilePath = AssetPath::Image(filePath);
+
+    // 読み込み済みテクスチャを検索
+    if (textureDatas_.contains(newFilePath))
+    {
         return;
     }
 
-    DirectX::ScratchImage *imageToUse = &image; // 初期値はオリジナルのイメージ
+    // テクスチャ枚数上限をチェック
+    assert(pSrvManager_->CanAllocate());
 
-    // ミニマップの作成
-    DirectX::ScratchImage mipImages{};
-    if (DirectX::IsCompressed(image.GetMetadata().format))
+    DirectX::ScratchImage image{};
+    if (!LoadImageFile(newFilePath, image))
     {
-        mipImages = std::move(image);
-    }
-    else
-    {
-        hr = DirectX::GenerateMipMaps(image.GetImages(), image.GetImageCount(), image.GetMetadata(), DirectX::TEX_FILTER_SRGB, 4, mipImages);
-    }
-
-    if (SUCCEEDED(hr))
-    {
-        imageToUse = &mipImages; // ミップマップが生成された場合はこれを使用
+        return;
     }
 
     // テクスチャデータを追加して書き込む
     TextureData &textureData = textureDatas_[newFilePath];
 
-    textureData.metadata = imageToUse->GetMetadata();
+    textureData.metadata = image.GetMetadata();
     textureData.resource = pDxCommon_->CreateTextureResource(textureData.metadata);
-    textureData.intermediateResource = pDxCommon_->UploadTextureData(textureData.resource, *imageToUse);
+    textureData.intermediateResource = pDxCommon_->UploadTextureData(textureData.resource, image);
 
     textureData.srvIndex = pSrvManager_->Allocate() + kSRVIndexTop;
     textureData.srvHandleCPU = pSrvManager_->GetCPUDescriptorHandle(textureData.srvIndex);
@@ -87,6 +110,35 @@ void TextureManager::LoadTexture(const std::string &filePath)
 
     pSrvManager_->CreateSRVforTexture2D(textureData.srvIndex, textureData.resource.Get(), textureData.metadata, UINT(textureData.metadata.mipLevels));
     ImGuiNotification::Post("テクスチャを読み込みました: " + filePath, {0.2f, 0.8f, 0.8f, 1.0f});
+}
+
+void TextureManager::ReloadTexture(const std::string &filePath)
+{
+    const std::string fullPath = AssetPath::Image(filePath);
+
+    auto it = textureDatas_.find(fullPath);
+    if (it == textureDatas_.end())
+    {
+        // まだ読み込んでいないなら普通に読む
+        LoadTexture(filePath);
+        return;
+    }
+
+    DirectX::ScratchImage image{};
+    if (!LoadImageFile(fullPath, image))
+    {
+        return; // 読めなければ今のテクスチャを残しておく
+    }
+
+    TextureData &textureData = it->second;
+    RetireResources(textureData);
+
+    // SRVインデックスは据え置きのまま中身だけ差し替えるので、参照している側は何もしなくてよい
+    textureData.metadata = image.GetMetadata();
+    textureData.resource = pDxCommon_->CreateTextureResource(textureData.metadata);
+    textureData.intermediateResource = pDxCommon_->UploadTextureData(textureData.resource, image);
+
+    pSrvManager_->CreateSRVforTexture2D(textureData.srvIndex, textureData.resource.Get(), textureData.metadata, UINT(textureData.metadata.mipLevels));
 }
 
 D3D12_GPU_DESCRIPTOR_HANDLE TextureManager::UpdateDynamicTexture(const std::string &key, const uint8_t *rgba, int width, int height)
@@ -109,18 +161,7 @@ D3D12_GPU_DESCRIPTOR_HANDLE TextureManager::UpdateDynamicTexture(const std::stri
     }
     TextureData &data = it->second;
 
-    // 直前のリソースはGPUが参照中の可能性があるため、すぐには捨てず数世代保持する
-    if (data.resource)
-        retiredDynamicResources_.push_back(data.resource);
-    if (data.intermediateResource)
-        retiredDynamicResources_.push_back(data.intermediateResource);
-    constexpr size_t kMaxRetired = 8; // NumFramesInFlight より十分大きく取る
-    if (retiredDynamicResources_.size() > kMaxRetired)
-    {
-        retiredDynamicResources_.erase(
-            retiredDynamicResources_.begin(),
-            retiredDynamicResources_.end() - kMaxRetired);
-    }
+    RetireResources(data);
 
     // メタデータを手動で組み立てる。スプライトはWIC FORCE_SRGBで読み込まれるため、
     // 見た目を一致させる目的でプレビューもSRGBとして扱う。
@@ -291,7 +332,7 @@ void TextureManager::Finalize()
         pSrvManager_->Free(pair.second.srvIndex - kSRVIndexTop);
     }
     dynamicTextures_.clear();
-    retiredDynamicResources_.clear();
+    retiredResources_.clear();
 }
 
 uint32_t TextureManager::GetTextureIndexByFilePath(const std::string &filePath)

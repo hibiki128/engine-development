@@ -469,6 +469,10 @@ void Framework::Update()
         HAGINE_CPU_PROFILE("Update/Sprites");
         pSpriteManager_->UpdateAll(Frame::DeltaTime());
     }
+    {
+        // テクスチャ差し替えで退避したリソースを、GPUが使い終わった頃に解放する
+        pTextureManager_->EndFrame();
+    }
     if (updateGameWorld)
     {
         HAGINE_CPU_PROFILE("Update/Collision");

@@ -121,6 +121,18 @@ class Audio
     void SetVolume(uint32_t soundIndex, float volume);
 
     /// <summary>
+    /// マスター音量を設定する。鳴っている音・これから鳴る音すべてにまとめて掛かる
+    /// </summary>
+    /// <param name="volume">音量 (0.0f 〜 1.0f)</param>
+    void SetMasterVolume(float volume);
+
+    /// <summary>
+    /// マスター音量を取得する
+    /// </summary>
+    /// <returns>float: 音量 (0.0f 〜 1.0f)</returns>
+    float GetMasterVolume() const { return masterVolume_; }
+
+    /// <summary>
     /// 今再生中の音の振幅[0,1]を返す（再生中ボイスのPCMを再生位置でRMSサンプリング）。
     /// 複数再生中は最も大きい振幅を返す。何も再生していなければ0。
     /// パーティクルの音声振動など、再生に影響しない読み取り専用の用途に使う。
@@ -172,6 +184,7 @@ class Audio
     //------------------------------------------------------------------
     Microsoft::WRL::ComPtr<IXAudio2> xAudio2_;
     IXAudio2MasteringVoice *pMasterVoice_ = nullptr;
+    float masterVolume_ = 1.0f; // マスター音量（ゲーム設定から書き換える）
     std::string directoryPath_;
     std::array<SoundData, kMaxSoundData> soundDatas_;
     size_t soundDataIndex_ = 0;
@@ -192,7 +205,6 @@ class Audio
     int debugSelectedFile_ = -1;                     // リスト選択インデックス
     float debugVolume_ = 1.0f;                       // 再生ボリューム
     bool debugLoop_ = false;                         // ループフラグ
-    float debugMasterVolume_ = 1.0f;                 // マスター音量
     std::map<std::string, uint32_t> debugLoadedMap_; // ファイル名 → soundIndex
 
     // 波形プレビュー用キャッシュ（再構築は選択音が変わったときだけ）

@@ -749,7 +749,9 @@ std::string TextRenderer::RenderTextToFile(
                                 GUID_ContainerFormatPng, wFilePath.c_str());
     assert(SUCCEEDED(hr));
 
-    TextureManager::GetInstance()->LoadTexture(loadPath);
+    // 起動時の LoadAllTextures が前回のPNGを読み込んでいることがあるので、
+    // 作り直した内容を必ず反映させるために読み直す
+    TextureManager::GetInstance()->ReloadTexture(loadPath);
 
     return loadPath;
 }
@@ -1000,7 +1002,8 @@ std::string TextRenderer::RenderCharacterAtlasToFile(
                                 GUID_ContainerFormatPng, wFilePath.c_str());
     assert(SUCCEEDED(hr));
 
-    TextureManager::GetInstance()->LoadTexture(loadPath);
+    // テキスト側と同様、作り直した内容を反映させるために読み直す
+    TextureManager::GetInstance()->ReloadTexture(loadPath);
 
     return loadPath;
 }
