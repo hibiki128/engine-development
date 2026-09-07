@@ -157,6 +157,47 @@ Vector3 EaseOutElasticAmplitude(float t, float totaltime, const Vector3 &amplitu
 Vector3 EaseInOutElasticAmplitude(float t, float totaltime, const Vector3 &amplitude, float period);
 
 /// ===================================================
+/// ループする振幅（ずっと揺らし続ける用）
+/// ===================================================
+///
+/// EaseOutElasticAmplitude 系は「一度弾んで減衰して止まる」ための関数なので、
+/// アイドル中ずっとぷにぷにさせたい用途には向かない（すぐ 0 に収束してしまう）。
+/// ここのループ版は減衰しないので、経過時間を足し続けるだけで揺れ続ける。
+
+/// <summary>
+/// 減衰しない弾性振動。EaseOutElasticAmplitude の「ずっと続く」版。
+/// period 秒ごとに1往復し、-amplitude 〜 +amplitude を行き来する。
+/// </summary>
+/// <param name="time">経過時間（秒）。リセットせず足し続けてよい</param>
+/// <param name="amplitude">振れ幅</param>
+/// <param name="period">1往復にかかる時間（秒）。0以下なら 0 を返す</param>
+/// <param name="sharpness">0で素のサイン波。上げるほど跳ねるような、山の立った揺れになる（0〜1）</param>
+/// <param name="phase">位相のずらし（1.0で1周期ぶん）。複数箇所をずらして揺らしたいときに使う</param>
+/// <returns>float: -amplitude 〜 +amplitude の値</returns>
+float LoopElasticAmplitude(float time, float amplitude, float period, float sharpness = 0.0f, float phase = 0.0f);
+
+/// <summary>
+/// 常にぷにぷにと伸び縮みし続けるスケールを作る（EaseAmplitudeScale のループ版）。
+///
+/// 縦に伸びたら横が縮む、という潰れ方をするので、止まっていても生きている感じが出る。
+/// 毎フレーム「基準スケール」と「増え続ける経過時間」を渡すだけでよい。
+///
+/// 使用例:
+///   puniTime_ += Frame::DeltaTime();
+///   transform.scale_ = Hagine::LoopAmplitudeScale(baseScale_, puniTime_, 0.08f, 1.2f);
+/// </summary>
+/// <param name="initScale">基準スケール（揺れの中心）</param>
+/// <param name="time">経過時間（秒）。リセットせず足し続けてよい</param>
+/// <param name="amplitude">伸び縮みの大きさ</param>
+/// <param name="period">1往復にかかる時間（秒）</param>
+/// <param name="sharpness">0で素のサイン波。上げるほど跳ねるような揺れになる（0〜1）</param>
+/// <param name="phase">位相のずらし（1.0で1周期ぶん）</param>
+/// <returns>T: 揺らしたあとのスケール</returns>
+template <typename T>
+T LoopAmplitudeScale(const T &initScale, float time, float amplitude, float period,
+                     float sharpness = 0.0f, float phase = 0.0f);
+
+/// ===================================================
 /// 各種イージング関数（種類は EasingType に対応）
 /// ApplyEasing で type に応じた関数へ振り分ける
 /// ===================================================

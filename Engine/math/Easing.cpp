@@ -281,6 +281,61 @@ T EaseAmplitudeScale(const T &initScale, const float &easeT, const float &totalT
     return newScale;
 }
 
+float LoopElasticAmplitude(float time, float amplitude, float period, float sharpness, float phase)
+{
+    if (period <= 0.0f)
+    {
+        return 0.0f;
+    }
+
+    // period 秒で 1 周するようにして、位相をずらす
+    const float theta = ((time / period) + phase) * (2.0f * std::numbers::pi_v<float>);
+    const float wave = std::sinf(theta);
+
+    // sharpness を上げると山が立ち、素のサイン波よりも「跳ねている」感じになる。
+    // 絶対値を 1 未満の指数で持ち上げてから符号を戻すことで、頂点付近が広く・
+    // ゼロ交差が急な波形になる。
+    const float clampedSharpness = (sharpness < 0.0f) ? 0.0f : ((sharpness > 1.0f) ? 1.0f : sharpness);
+    if (clampedSharpness <= 0.0f)
+    {
+        return amplitude * wave;
+    }
+
+    const float exponent = 1.0f / (1.0f + clampedSharpness * 3.0f);
+    const float sign = (wave >= 0.0f) ? 1.0f : -1.0f;
+    const float sharpened = sign * std::powf(std::fabsf(wave), exponent);
+
+    return amplitude * LerpE(wave, sharpened, clampedSharpness);
+}
+
+template <typename T>
+T LoopAmplitudeScale(const T &initScale, float time, float amplitude, float period, float sharpness, float phase)
+{
+    // 揺れ幅は EaseAmplitudeScale と同じ符号の付け方にして、
+    // 「縦に伸びたら横が縮む」潰れ方（スカッシュ＆ストレッチ）になるようにする
+    const float offset = LoopElasticAmplitude(time, amplitude, period, sharpness, phase);
+
+    T newScale = initScale;
+
+    if constexpr (std::is_same<T, float>::value)
+    {
+        newScale = initScale - offset;
+    }
+    else if constexpr (std::is_same<T, Vector2>::value)
+    {
+        newScale.x = initScale.x - offset;
+        newScale.y = initScale.y + offset;
+    }
+    else if constexpr (std::is_same<T, Vector3>::value)
+    {
+        newScale.x = initScale.x - offset;
+        newScale.y = initScale.y + offset;
+        newScale.z = initScale.z - offset;
+    }
+
+    return newScale;
+}
+
 // EaseInSine 関数
 template <typename T>
 T EaseInSine(const T &start, const T &end, float x, float totalX)
@@ -700,6 +755,10 @@ T EaseInOutElastic(const T &start, const T &end, float x, float totalX)
 template Vector3 EaseAmplitudeScale<Vector3>(const Vector3 &initScale, const float &easeT, const float &easeTime, const float &amplitude, const float &period);
 template Vector2 EaseAmplitudeScale<Vector2>(const Vector2 &initScale, const float &easeT, const float &easeTime, const float &amplitude, const float &period);
 template float EaseAmplitudeScale<float>(const float &initScale, const float &easeT, const float &easeTime, const float &amplitude, const float &period);
+
+template Vector3 LoopAmplitudeScale<Vector3>(const Vector3 &initScale, float time, float amplitude, float period, float sharpness, float phase);
+template Vector2 LoopAmplitudeScale<Vector2>(const Vector2 &initScale, float time, float amplitude, float period, float sharpness, float phase);
+template float LoopAmplitudeScale<float>(const float &initScale, float time, float amplitude, float period, float sharpness, float phase);
 //*******************************************************************************************************************************************************************
 // Sine**************************************************************************************************************************************************************
 //*******************************************************************************************************************************************************************

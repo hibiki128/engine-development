@@ -245,4 +245,118 @@ class GameParamHub
     std::function<void()> confirmAction_;   ///< OK時に実行する処理
 };
 
+/// <summary>
+/// オーナー（出所ラベル）を握ったまま GameParamHub へ登録するための小さな入れ物。
+///
+/// 毎回 owner を書かずに済み、破棄されるときに自分が登録したぶんを自動で解除する。
+/// GameParamHub は生ポインタを持ち続けるので、解除し忘れは即クラッシュにつながる。
+/// これをメンバに持たせておけば、デストラクタで Unregister を書く必要がなくなる。
+///
+/// 使用例:
+///   class Player {
+///       Hagine::GameParamOwner params_{"Player"}; // 生成時にオーナーを決める
+///       void Init() {
+///           params_.Register("移動速度", &speed_);
+///           params_.Register("色", &color_, {.isColor = true});
+///       }
+///   };
+///
+/// オーナー名が後から決まる場合（IDを含めたい等）は既定構築して SetOwner() を呼ぶこと。
+/// </summary>
+class GameParamOwner
+{
+  public:
+    /// <summary>
+    /// オーナー未設定で作る。使う前に SetOwner() を呼ぶこと
+    /// </summary>
+    GameParamOwner() = default;
+
+    /// <summary>
+    /// オーナーを指定して作る
+    /// </summary>
+    /// <param name="owner">出所ラベル（例:"Player"）。ハブの未分類リストでグループ名になる</param>
+    explicit GameParamOwner(std::string owner) : owner_(std::move(owner)) {}
+
+    /// <summary>
+    /// 登録済みのパラメータを解除する
+    /// </summary>
+    ~GameParamOwner() { Unregister(); }
+
+    // 同じオーナー名の入れ物が2つあると解除のタイミングが読めなくなるのでコピーは禁止。
+    // ムーブは所有権が移るだけなので許可する。
+    GameParamOwner(const GameParamOwner &) = delete;
+    GameParamOwner &operator=(const GameParamOwner &) = delete;
+
+    GameParamOwner(GameParamOwner &&other) noexcept
+        : owner_(std::move(other.owner_)), registered_(other.registered_)
+    {
+        other.owner_.clear();
+        other.registered_ = false;
+    }
+
+    GameParamOwner &operator=(GameParamOwner &&other) noexcept
+    {
+        if (this != &other)
+        {
+            Unregister();
+            owner_ = std::move(other.owner_);
+            registered_ = other.registered_;
+            other.owner_.clear();
+            other.registered_ = false;
+        }
+        return *this;
+    }
+
+    /// <summary>
+    /// オーナー名を決める（既に登録済みなら、先に古いぶんを解除する）
+    /// </summary>
+    /// <param name="owner">出所ラベル</param>
+    void SetOwner(std::string owner)
+    {
+        if (owner_ == owner)
+        {
+            return;
+        }
+        Unregister();
+        owner_ = std::move(owner);
+    }
+
+    /// <summary>
+    /// オーナー名を取得する
+    /// </summary>
+    const std::string &GetOwner() const { return owner_; }
+
+    /// <summary>
+    /// パラメータを登録する。オーナーは生成時（または SetOwner）に決めたものが使われる
+    /// </summary>
+    /// <param name="name">パラメータ表示名</param>
+    /// <param name="ptr">対象変数のポインタ</param>
+    /// <param name="opts">表示オプション（省略可）</param>
+    void Register(const std::string &name, GameParamHub::ParamPtr ptr, const GameParamHub::Options &opts = {})
+    {
+        if (owner_.empty())
+        {
+            return; // オーナー未設定。SetOwner を呼び忘れている
+        }
+        GameParamHub::GetInstance()->Register(owner_, name, ptr, opts);
+        registered_ = true;
+    }
+
+    /// <summary>
+    /// このオーナーで登録したパラメータをすべて解除する
+    /// </summary>
+    void Unregister()
+    {
+        if (registered_ && !owner_.empty())
+        {
+            GameParamHub::GetInstance()->Unregister(owner_);
+        }
+        registered_ = false;
+    }
+
+  private:
+    std::string owner_;      ///< 出所ラベル
+    bool registered_ = false; ///< 1件でも登録したか（何も登録していないなら解除も要らない）
+};
+
 } // namespace Hagine
