@@ -1,5 +1,6 @@
 #define NOMINMAX
 #include "ParticleCSEmitter.h"
+#include <attachment/AttachmentManager.h>
 #include "ParticleCSFieldManager.h"
 #include "ParticleCSGroupManager.h"
 #include <graphics/pipeline/ComputePipelineManager.h>
@@ -68,6 +69,13 @@ ParticleCSEmitter::~ParticleCSEmitter()
     gizmoRegistered_ = false;
 #endif // USE_IMGUI
 
+    // 親子付けの登録も外す（ギズモと違い Release でも登録している）
+    if (attachRegistered_)
+    {
+        AttachmentManager::GetInstance()->Unregister(AttachName(name_));
+        attachRegistered_ = false;
+    }
+
     // 保有していた独立グループを破棄せず再利用プールへ返却する。
     // これにより弾・ヒット等の高頻度スポーンでもバッファが累積しない。
     // 注意: group は Finalize 順序によっては既に破棄済みの場合がある。
@@ -108,6 +116,18 @@ void ParticleCSEmitter::Initialize(const std::string &name)
         gizmoRegistered_ = true;
     }
 #endif
+
+    // 種類をまたいだ親子付けの対象として登録する（オブジェクトに付けられるようにする）。
+    // ギズモと同じく、量産される実行時インスタンスは登録しない。
+    if (registerGizmo_ && pEmitterMeshData_)
+    {
+        AttachTarget target;
+        target.kind = AttachKind::Particle;
+        target.name = AttachName(name_);
+        target.position = &pEmitterMeshData_->translate;
+        AttachmentManager::GetInstance()->Register(target);
+        attachRegistered_ = true;
+    }
 }
 
 void ParticleCSEmitter::Initialize(const std::string &name, const std::string &modelPath)

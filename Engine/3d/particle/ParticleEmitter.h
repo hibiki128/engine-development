@@ -333,6 +333,17 @@ class ParticleEmitter
     bool isAuto_ = false;           // 自動発生フラグ
     bool isGizmoSelectable_ = true; // ギズモ選択可能フラグ
     bool gizmoRegistered_ = false;  // ImGuizmo へ登録済みか（デストラクタでの解除判定に使う）
+    bool attachRegistered_ = false; // 親子付け（AttachmentManager）へ登録済みか
+
+  public:
+    /// <summary>
+    /// このエミッターの親子付け登録名を返す（3Dオブジェクトの名前と衝突しないよう接頭辞が付く）
+    /// </summary>
+    /// <param name="emitterName">エミッター名</param>
+    /// <returns>std::string: 親子付けの登録名</returns>
+    static std::string AttachName(const std::string &emitterName) { return "パーティクル/" + emitterName; }
+
+  private:
 
     std::string name_;             // パーティクルの名前
     std::string drawGroup_ = "3D"; // 描画グループ＝描画ステージ（既定は3D）

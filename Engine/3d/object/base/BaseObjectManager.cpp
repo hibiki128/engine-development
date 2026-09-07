@@ -1,4 +1,5 @@
 #include "BaseObjectManager.h"
+#include <attachment/AttachmentManager.h>
 #include "SpriteManager.h"
 #include <2d/ui/UIAnimator.h>
 #include <metaball/MetaBallGroupManager.h>
@@ -71,6 +72,15 @@ void BaseObjectManager::RegisterExternal(BaseObject *obj)
 #ifdef USE_IMGUI
     ImGuizmoManager::GetInstance()->AddTarget(name, obj);
 #endif
+    // 種類をまたいだ親子付け（光源やパーティクルを付ける）の対象として登録する。
+    // ギズモと違い Release でも要るので USE_IMGUI では囲まない。
+    {
+        AttachTarget target;
+        target.kind = AttachKind::Object;
+        target.name = name;
+        target.worldTransform = obj->GetWorldTransform();
+        AttachmentManager::GetInstance()->Register(target);
+    }
     MotionEditor::GetInstance()->Register(obj);
     objects_.emplace(name, obj);
     ImGuiNotification::Post("オブジェクトを追加しました: " + name, {0.4f, 0.8f, 1.0f, 1.0f});
@@ -92,9 +102,8 @@ void BaseObjectManager::DetachRegistrations(BaseObject *obj, const std::string &
 {
 #ifdef USE_IMGUI
     ImGuizmoManager::GetInstance()->RemoveTarget(name);
-#else
-    (void)name;
 #endif
+    AttachmentManager::GetInstance()->Unregister(name);
     if (obj)
     {
         MotionEditor::GetInstance()->Unregister(obj);
@@ -216,6 +225,9 @@ void BaseObjectManager::SaveAll()
             obj->SaveParentChildRelationship();
         }
     }
+    // 種類をまたいだ親子付け（光源・パーティクル）はオブジェクト単位では持てないので、
+    // シーンごとに1ファイルへまとめて保存する
+    AttachmentManager::GetInstance()->Save("SceneData/" + sceneName_, "Attachments");
     ImGuiNotification::Post("全オブジェクトを保存しました", {0.2f, 0.8f, 0.2f, 1.0f});
 }
 
@@ -287,6 +299,9 @@ void BaseObjectManager::LoadAll(std::string sceneName)
 
     // 全オブジェクト読み込み後に親子関係を復元
     LoadAllParentChildRelationships();
+    // 種類をまたいだ親子付けも読み直す。リンクは名前で解決されるので、
+    // 相手（光源・パーティクル）の読み込みがこの後になっても構わない
+    AttachmentManager::GetInstance()->Load("SceneData/" + sceneName, "Attachments");
     ImGuiNotification::Post("シーンを読み込みました: " + sceneName, {0.2f, 0.8f, 0.8f, 1.0f});
 }
 
@@ -487,6 +502,170 @@ std::string g_dndReparentParent; // ドロップ先の親（空文字 = ルー�
 bool g_dndReparentRequested = false;
 } // namespace
 
+namespace {
+// 種類をまたいだ親子付け（光源・パーティクル）のドラッグ＆ドロップ結果。
+// オブジェクト同士と同じく、ツリー描画中に構造を変えないようフレーム末へ持ち越す
+std::string g_attachChild;  // 子にする対象の登録名
+std::string g_attachParent; // 親にする対象の登録名（空文字 = 解除）
+bool g_attachRequested = false;
+
+#ifdef USE_IMGUI
+/// <summary>
+/// 光源・パーティクルのノードを描く（自分にぶら下がる子があれば再帰する）
+/// </summary>
+/// <param name="attachName">親子付けの登録名</param>
+/// <param name="depth">インデントの深さ</param>
+void ShowAttachNode(const std::string &attachName, int depth)
+{
+    AttachmentManager *attachment = AttachmentManager::GetInstance();
+    const AttachTarget *target = attachment->FindTarget(attachName);
+    if (!target)
+    {
+        return;
+    }
+
+    const std::vector<std::string> children = attachment->GetChildNames(attachName);
+
+    const std::string indent(depth * 2, ' ');
+    const std::string displayName = indent + attachName;
+
+    ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_OpenOnDoubleClick;
+    if (children.empty())
+    {
+        flags |= ImGuiTreeNodeFlags_Leaf;
+    }
+
+    // 種類が一目で分かるよう色を分ける
+    const ImVec4 color = (target->kind == AttachKind::Light) ? DebugTheme::kAccentYellow : DebugTheme::kAccentPurple;
+    ImGui::PushStyleColor(ImGuiCol_Text, color);
+    const bool nodeOpen = ImGui::TreeNodeEx(displayName.c_str(), flags);
+    ImGui::PopStyleColor();
+
+    // ドラッグ元
+    if (ImGui::BeginDragDropSource(ImGuiDragDropFlags_None))
+    {
+        ImGui::SetDragDropPayload("ATTACH_NODE", attachName.c_str(), attachName.size() + 1);
+        ImGui::Text("移動: %s", attachName.c_str());
+        ImGui::EndDragDropSource();
+    }
+    // ドロップ先: このノードを親にする（相手が光源でもオブジェクトでも受ける）
+    if (ImGui::BeginDragDropTarget())
+    {
+        if (const ImGuiPayload *p = ImGui::AcceptDragDropPayload("ATTACH_NODE"))
+        {
+            g_attachChild = static_cast<const char *>(p->Data);
+            g_attachParent = attachName;
+            g_attachRequested = true;
+        }
+        if (const ImGuiPayload *p = ImGui::AcceptDragDropPayload("OBJ_NODE"))
+        {
+            g_attachChild = static_cast<const char *>(p->Data);
+            g_attachParent = attachName;
+            g_attachRequested = true;
+        }
+        ImGui::EndDragDropTarget();
+    }
+
+    // 右クリックメニュー
+    if (ImGui::BeginPopupContextItem((attachName + "##attachctx").c_str()))
+    {
+        ImGui::TextDisabled("%s", attachName.c_str());
+        ImGui::Separator();
+        const std::string parentName = attachment->GetParentName(attachName);
+        if (ImGui::MenuItem("親子付けを解除", nullptr, false, !parentName.empty()))
+        {
+            g_attachChild = attachName;
+            g_attachParent.clear();
+            g_attachRequested = true;
+        }
+        ImGui::EndPopup();
+    }
+
+    if (nodeOpen)
+    {
+        for (const std::string &childName : children)
+        {
+            ShowAttachNode(childName, depth + 1);
+        }
+        ImGui::TreePop();
+    }
+}
+#endif // USE_IMGUI
+} // namespace
+
+void BaseObjectManager::ShowAttachChildrenOf(const std::string &parentName, int depth)
+{
+#ifdef USE_IMGUI
+    for (const std::string &childName : AttachmentManager::GetInstance()->GetChildNames(parentName))
+    {
+        ShowAttachNode(childName, depth);
+    }
+#else
+    (void)parentName;
+    (void)depth;
+#endif // USE_IMGUI
+}
+
+void BaseObjectManager::ShowRootAttachNodes()
+{
+#ifdef USE_IMGUI
+    AttachmentManager *attachment = AttachmentManager::GetInstance();
+    for (AttachKind kind : {AttachKind::Light, AttachKind::Particle})
+    {
+        for (const std::string &name : attachment->GetTargetNames(kind))
+        {
+            // 親を持つものは親のノードの下に出るので、ここではルートのものだけ
+            if (attachment->GetParentName(name).empty())
+            {
+                ShowAttachNode(name, 0);
+            }
+        }
+    }
+#endif // USE_IMGUI
+}
+
+void BaseObjectManager::ApplyPendingAttachRequest()
+{
+#ifdef USE_IMGUI
+    if (!g_attachRequested)
+    {
+        return;
+    }
+
+    AttachmentManager *attachment = AttachmentManager::GetInstance();
+    if (g_attachParent.empty())
+    {
+        attachment->Detach(g_attachChild);
+        ImGuiNotification::Post("親子付けを解除しました: " + g_attachChild, {0.82f, 0.58f, 0.36f, 1.0f});
+    }
+    else
+    {
+        // 3Dオブジェクトを子にする場合、オブジェクト同士の親子付けと二重に効いてしまうので先に外す
+        if (BaseObject *childObject = GetObjectByName(g_attachChild))
+        {
+            if (childObject->GetParent())
+            {
+                childObject->DetachParent();
+            }
+        }
+
+        if (attachment->Attach(g_attachChild, g_attachParent))
+        {
+            ImGuiNotification::Post(g_attachChild + " を " + g_attachParent + " に付けました",
+                                    {0.45f, 0.68f, 0.52f, 1.0f});
+        }
+        else
+        {
+            ImGuiNotification::Post("親子付けできません（循環参照など）", {0.82f, 0.58f, 0.36f, 1.0f});
+        }
+    }
+
+    g_attachRequested = false;
+    g_attachChild.clear();
+    g_attachParent.clear();
+#endif // USE_IMGUI
+}
+
 void BaseObjectManager::ShowParentChildHierarchy()
 {
 #ifdef USE_IMGUI
@@ -525,6 +704,9 @@ void BaseObjectManager::ShowParentChildHierarchy()
             }
         }
 
+        // どのオブジェクトにも付いていない光源・パーティクルもルートに並べる
+        ShowRootAttachNodes();
+
         // 余白へのドロップでルート（親なし）へ解除できるようにする
         ImVec2 dropAvail = ImGui::GetContentRegionAvail();
         ImGui::Dummy(ImVec2(dropAvail.x, dropAvail.y > 8.0f ? dropAvail.y : 8.0f));
@@ -535,6 +717,12 @@ void BaseObjectManager::ShowParentChildHierarchy()
                 g_dndReparentChild = static_cast<const char *>(p->Data);
                 g_dndReparentParent.clear();
                 g_dndReparentRequested = true;
+            }
+            if (const ImGuiPayload *p = ImGui::AcceptDragDropPayload("ATTACH_NODE"))
+            {
+                g_attachChild = static_cast<const char *>(p->Data);
+                g_attachParent.clear();
+                g_attachRequested = true;
             }
             ImGui::EndDragDropTarget();
         }
@@ -567,6 +755,13 @@ void BaseObjectManager::ShowParentChildHierarchy()
             g_dndReparentChild.clear();
             g_dndReparentParent.clear();
         }
+
+        // 種類をまたいだ親子付けも同じタイミングで適用する
+        ApplyPendingAttachRequest();
+
+        // 組み合わせを選んで細かく設定するためのパネル
+        ImGui::Spacing();
+        AttachmentManager::GetInstance()->DrawImGui();
     }
 #endif // USE_IMGUI
 }
@@ -585,7 +780,7 @@ void BaseObjectManager::ShowObjectHierarchy(BaseObject *obj, int depth)
     ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_OpenOnDoubleClick;
 
     // 子がない場合は葉ノードフラグを追加
-    if (obj->GetChildren()->empty())
+    if (obj->GetChildren()->empty() && !AttachmentManager::GetInstance()->HasChildren(obj->GetName()))
     {
         flags |= ImGuiTreeNodeFlags_Leaf;
     }
@@ -608,6 +803,13 @@ void BaseObjectManager::ShowObjectHierarchy(BaseObject *obj, int depth)
             g_dndReparentChild = static_cast<const char *>(p->Data);
             g_dndReparentParent = obj->GetName();
             g_dndReparentRequested = true;
+        }
+        // 光源・パーティクルを重ねたらこのオブジェクトに付ける
+        if (const ImGuiPayload *p = ImGui::AcceptDragDropPayload("ATTACH_NODE"))
+        {
+            g_attachChild = static_cast<const char *>(p->Data);
+            g_attachParent = obj->GetName();
+            g_attachRequested = true;
         }
         ImGui::EndDragDropTarget();
     }
@@ -678,6 +880,8 @@ void BaseObjectManager::ShowObjectHierarchy(BaseObject *obj, int depth)
         {
             ShowObjectHierarchy(pChild, depth + 1);
         }
+        // このオブジェクトに付いている光源・パーティクルも同じ階層に並べる
+        ShowAttachChildrenOf(obj->GetName(), depth + 1);
         ImGui::TreePop();
     }
 #endif // USE_IMGUI

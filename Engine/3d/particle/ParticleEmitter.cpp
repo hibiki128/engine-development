@@ -1,5 +1,6 @@
 #define NOMINMAX
 #include "ParticleEmitter.h"
+#include <attachment/AttachmentManager.h>
 #include "Frame.h"
 #include "line/LineRenderer.h"
 #include <render/deferred/DeferredRenderer.h>
@@ -29,6 +30,13 @@ ParticleEmitter::~ParticleEmitter()
         gizmoRegistered_ = false;
     }
 #endif // USE_IMGUI
+
+    // 親子付けの登録も外す（ギズモと違い Release でも登録している）
+    if (attachRegistered_)
+    {
+        AttachmentManager::GetInstance()->Unregister(AttachName(name_));
+        attachRegistered_ = false;
+    }
 }
 
 void ParticleEmitter::Initialize(std::string name)
@@ -56,6 +64,16 @@ void ParticleEmitter::Initialize(std::string name)
     ImGuizmoManager::GetInstance()->SetCategory(name_, GizmoCategory::Particle);
     gizmoRegistered_ = true;
 #endif
+
+    // 種類をまたいだ親子付けの対象として登録する（オブジェクトに付けられるようにする）
+    {
+        AttachTarget target;
+        target.kind = AttachKind::Particle;
+        target.name = AttachName(name_);
+        target.worldTransform = &transform_;
+        AttachmentManager::GetInstance()->Register(target);
+        attachRegistered_ = true;
+    }
 }
 
 void ParticleEmitter::Update()

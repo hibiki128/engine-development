@@ -31,6 +31,9 @@
     <Filter Include="Engine\3d\camera\projection">
       <UniqueIdentifier>{B0154A1B-B887-4B65-2D61-486D7C2C9B56}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Engine\3d\attachment">
+      <UniqueIdentifier>{8B2C41D7-5A6E-4F19-9C33-7E1A2D4B6F80}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Engine\3d\Light">
       <UniqueIdentifier>{1FE9D53E-A09E-9E03-62F6-E8AD8DC44413}</UniqueIdentifier>
     </Filter>
@@ -311,6 +314,9 @@
     </ClCompile>
     <ClCompile Include="Engine\3d\Light\LightGroup.cpp">
       <Filter>Engine\3d\Light</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\3d\attachment\AttachmentManager.cpp">
+      <Filter>Engine\3d\attachment</Filter>
     </ClCompile>
     <ClCompile Include="Engine\3d\Light\DirectionalLight.cpp">
       <Filter>Engine\3d\Light</Filter>
@@ -757,6 +763,9 @@
     </ClInclude>
     <ClInclude Include="Engine\3d\Light\LightGroup.h">
       <Filter>Engine\3d\Light</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\3d\attachment\AttachmentManager.h">
+      <Filter>Engine\3d\attachment</Filter>
     </ClInclude>
     <ClInclude Include="Engine\3d\Light\DirectionalLight.h">
       <Filter>Engine\3d\Light</Filter>
