@@ -1,6 +1,8 @@
 #include "ModelManager.h"
 #include <asset/AssetPath.h>
 #include "utility/debug/imgui/ImGuiNotification.h"
+#include <cstdint>
+#include <cstring>
 #include <fstream>
 #include <functional>
 #include <sstream>
@@ -44,30 +46,65 @@ void ModelManager::LoadModel(const std::string &filePath)
 
 std::string ModelManager::CreatePrimitiveModel(PrimitiveType type, std::string texPath)
 {
+    // 形は PrimitiveType だけで決まる（テクスチャとマテリアルは Object3d 側が1体ずつ持つ）。
+    // なので同じ形はモデル実体を共有する。共有すると2つ効く:
+    //   ・頂点／インデックスバッファが形ごとに1本で済む。
+    //     以前は呼ぶたびに作っていて、しかもプリミティブのモデルは RemoveModel されないので、
+    //     シーンを読み込み直すたびに置きっぱなしのモデルが増え続けていた
+    //   ・Object3dInstancing がモデルのポインタでバッチをまとめるので、
+    //     同じ形のオブジェクトが1回の描画にまとまるようになる
+    const std::string key = MakePrimitiveKey(type);
+    if (models_.find(key) != models_.end())
+    {
+        return key;
+    }
+
     std::unique_ptr<Model> model = std::make_unique<Model>();
     model->Initialize(pModelCommon_);
     model->CreatePrimitiveModel(type, texPath);
     model->SetSrv(pSrvManager_);
-    // モデルのユニークな識別子を生成
-    static int modelIndex = 0;
-    std::string uniqueKey = "PrimitiveModel_" + std::to_string(modelIndex++);
-    // モデルをmapコンテナに格納する
-    models_.insert(std::make_pair(uniqueKey, std::move(model)));
-    ImGuiNotification::Post("プリミティブモデルを作成しました: " + uniqueKey, {0.4f, 0.8f, 1.0f, 1.0f});
-    return uniqueKey;
+    models_.insert(std::make_pair(key, std::move(model)));
+    ImGuiNotification::Post("プリミティブモデルを作成しました: " + key, {0.4f, 0.8f, 1.0f, 1.0f});
+    return key;
 }
 
 std::string ModelManager::CreatePrimitiveModel(PrimitiveType type, std::string texPath, const PrimitiveParams &params)
 {
+    // パラメータ版も形が同じなら共有する。分割数のスライダーを動かすと毎フレーム呼ばれるので、
+    // 作り捨てにすると触っただけモデルが積み上がっていた
+    const std::string key = MakePrimitiveKey(type, params);
+    if (models_.find(key) != models_.end())
+    {
+        return key;
+    }
+
     std::unique_ptr<Model> model = std::make_unique<Model>();
     model->Initialize(pModelCommon_);
     model->CreatePrimitiveModel(type, texPath, params);
     model->SetSrv(pSrvManager_);
-    // パラメータ版は頻繁に作り直されるので通知は出さない（ユニークキーのみ生成）
-    static int paramModelIndex = 0;
-    std::string uniqueKey = "PrimitiveParamModel_" + std::to_string(paramModelIndex++);
-    models_.insert(std::make_pair(uniqueKey, std::move(model)));
-    return uniqueKey;
+    models_.insert(std::make_pair(key, std::move(model)));
+    // パラメータ版は頻繁に呼ばれるので通知は出さない
+    return key;
+}
+
+std::string ModelManager::MakePrimitiveKey(PrimitiveType type)
+{
+    // 「.」を含めないこと。FindModel が拡張子で gltf 判定をしているため
+    return "PrimitiveModel_" + std::to_string(static_cast<int>(type));
+}
+
+std::string ModelManager::MakePrimitiveKey(PrimitiveType type, const PrimitiveParams &params)
+{
+    // 形が変わる値だけをキーに混ぜる。小数はビット列にして、
+    // 表示桁で丸めた別の形が同じキーにならないようにする
+    auto bits = [](float value) {
+        uint32_t raw = 0;
+        std::memcpy(&raw, &value, sizeof(raw));
+        return std::to_string(raw);
+    };
+    return "PrimitiveParamModel_" + std::to_string(static_cast<int>(type)) + "_" +
+           std::to_string(params.divide) + "_" + std::to_string(params.heightDivide) + "_" +
+           bits(params.ringOuterRadius) + "_" + bits(params.ringInnerRadius);
 }
 
 std::string ModelManager::CreateDynamicModel(uint32_t vertexCapacity, uint32_t indexCapacity)

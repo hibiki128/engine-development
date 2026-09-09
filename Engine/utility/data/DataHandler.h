@@ -40,18 +40,44 @@ class DataHandler
     {
         std::string filePath = folderPath_ + "/" + fileName_;
         std::ifstream inFile(filePath);
-        if (inFile.is_open())
+        if (!inFile.is_open())
         {
-            try
-            {
-                inFile >> cachedJson_;
-            }
-            catch (const json::exception &e)
-            {
-                // ファイルは開けたが中身が壊れている（JSONとして不正な）ケース
-                Logger::Error("Failed to parse JSON: \"" + filePath + "\". " + e.what());
-            }
+            return;
+        }
+
+        try
+        {
+            inFile >> cachedJson_;
+        }
+        catch (const json::exception &e)
+        {
+            // ファイルは開けたが中身が壊れている（JSONとして不正な）ケース。
+            //
+            // ここで何もせずに帰ると cachedJson_ が空のまま残り、以降の Save で
+            // 積んだぶんだけを Flush が丸ごと上書きしてしまう。つまり
+            // 「1文字壊れていただけのファイル」が、次の保存で中身ごと消える。
+            // そうならないよう、壊れたファイルは .broken.json へ退避してから
+            // 空の状態でやり直す（退避したほうを直せば手で戻せる）。
             inFile.close();
+            cachedJson_ = json::object();
+
+            std::error_code error{};
+            const std::string backupPath = filePath + ".broken";
+            fs::remove(backupPath, error);
+            fs::rename(filePath, backupPath, error);
+            Logger::Error("Failed to parse JSON: \"" + filePath + "\". " + e.what() +
+                          (error ? " (退避に失敗)"
+                                 : " 壊れたファイルは \"" + backupPath + "\" へ退避した"));
+            return;
+        }
+
+        inFile.close();
+
+        // 読めたが中身がオブジェクトでない（null や配列）場合も、Save/Load が期待する形と違う。
+        // そのまま使うと Save で例外になるので、空のオブジェクトから始める
+        if (!cachedJson_.is_object())
+        {
+            cachedJson_ = json::object();
         }
     }
 
