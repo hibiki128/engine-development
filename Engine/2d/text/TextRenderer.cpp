@@ -1,5 +1,6 @@
 #define NOMINMAX
 #include "TextRenderer.h"
+#include "debug/log/Logger.h"
 #include "../SpriteCommon.h"
 #include "../SpriteManager.h"
 #include <asset/AssetPath.h>
@@ -200,6 +201,51 @@ void TextRenderer::UpdateImGui()
         else
         {
             ImGui::TextDisabled("フォントがありません。TextureManager::LoadFontTexture()を呼んでください。");
+        }
+
+        // --- フォントの解像度 ---
+        // ここで焼いたピクセル数が、そのまま生成される文字画像の高さになる。
+        // 画面で拡大して使うなら大きく取っておくとぼやけない
+        if (!fontKeys.empty())
+        {
+            ImGui::SeparatorText("フォントの解像度");
+
+            const std::string &selectedKey = fontKeys[imguiFontIndex_];
+            const TextureManager::FontData *selectedFont =
+                TextureManager::GetInstance()->GetFontData(selectedKey);
+            const int currentSize = selectedFont ? static_cast<int>(selectedFont->fontSize) : 0;
+
+            // 選んでいるフォントが変わったら、入力欄も今のサイズへ合わせ直す
+            if (imguiFontSizeSource_ != selectedKey)
+            {
+                imguiFontSizeSource_ = selectedKey;
+                imguiFontSize_ = currentSize;
+            }
+
+            ImGui::Text("いまのサイズ: %d px", currentSize);
+            ImGui::DragInt("焼き直すサイズ", &imguiFontSize_, 1.0f, 8, 512, "%d px");
+            if (ImGui::IsItemHovered())
+            {
+                ImGui::SetTooltip("生成される文字画像の高さ（ピクセル）。アトラスは自動で広がるので、フォントごとに上限を調べる必要はありません");
+            }
+
+            if (ImGui::Button("このサイズで焼き直す"))
+            {
+                // キーは "<ファイル名>_<サイズ>"。最後の '_' より前がファイル名
+                const size_t separator = selectedKey.rfind('_');
+                if (separator != std::string::npos)
+                {
+                    TextureManager::GetInstance()->ReloadFontTexture(
+                        selectedKey.substr(0, separator), static_cast<float>(imguiFontSize_));
+                    imguiFontSizeSource_.clear(); // キーが変わるので次のフレームで取り直す
+                }
+            }
+            ImGui::SameLine();
+            ImGui::TextDisabled("(?)");
+            if (ImGui::IsItemHovered())
+            {
+                ImGui::SetTooltip("焼き直すと、これ以降に作る文字画像がこの解像度になります。既に Assets/images/Text にある画像は作り直されないので、全部そろえたいときはフォルダを空にしてから起動し直してください");
+            }
         }
 
         ImGui::DragFloat2("座標", imguiPosition_, 1.0f);
@@ -512,6 +558,11 @@ std::vector<uint8_t> TextRenderer::BuildTextRGBA(
     const TextureManager::FontData *fontData = TextureManager::GetInstance()->GetFontData(fontKey);
     if (fontData == nullptr || fontData->ttfBuffer == nullptr)
     {
+        // ここで落ちるのはたいてい「LoadFontTexture に渡したサイズ」と
+        // 「使う側が組み立てたキーのサイズ」が食い違っているとき。
+        // 呼び出し側からは原因が見えないので、キー名をそのまま出しておく
+        Logger::Error("Font not loaded for key: \"" + fontKey +
+                      "\". LoadFontTexture() のサイズと、キーを作るときのサイズが一致しているか確認すること");
         return {};
     }
 
@@ -519,6 +570,7 @@ std::vector<uint8_t> TextRenderer::BuildTextRGBA(
     stbtt_fontinfo fontInfo;
     if (!stbtt_InitFont(&fontInfo, fontData->ttfBuffer->data(), 0))
     {
+        Logger::Error("Failed to init font for key: \"" + fontKey + "\".");
         return {};
     }
 
