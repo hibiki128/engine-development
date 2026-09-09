@@ -383,7 +383,9 @@ void ParticleCSEmitter::LoadSetting()
         settings.angularVelocityMin = data->Load<Vector3>(prefix + "angularVelocityMin", {0.0f, 0.0f, 0.0f});
         settings.angularVelocityMax = data->Load<Vector3>(prefix + "angularVelocityMax", {0.0f, 0.0f, 0.0f});
 
-        group->SetBillboard(data->Load(prefix + "enableBillboard", true));
+        // 保存側は uint32_t なので読み出しも uint32_t で受ける。bool で受けると、
+        // 保存済みの 1 / 0 が毎回 type_error になっていた（他のフラグと同じ書き方にそろえる）
+        group->SetBillboard(data->Load<uint32_t>(prefix + "enableBillboard", 1) != 0);
 
         // ★ 速度ストレッチ設定のロード
         group->GetPerView()->enableVelocityStretch = data->Load<uint32_t>(prefix + "enableVelocityStretch", 0);

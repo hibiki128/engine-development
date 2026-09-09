@@ -81,6 +81,21 @@ class ModelManager
     /// </summary>
     void RemoveModel(const std::string &key);
 
+    /// <summary>
+    /// プリミティブモデルの共有キー（同じ形なら同じキー＝同じ実体になる）
+    /// </summary>
+    /// <param name="type">プリミティブの種類</param>
+    /// <returns>std::string: models_ のキー</returns>
+    static std::string MakePrimitiveKey(PrimitiveType type);
+
+    /// <summary>
+    /// パラメータ指定のプリミティブモデルの共有キー（形が変わる値だけを混ぜる）
+    /// </summary>
+    /// <param name="type">プリミティブの種類</param>
+    /// <param name="params">形状パラメータ</param>
+    /// <returns>std::string: models_ のキー</returns>
+    static std::string MakePrimitiveKey(PrimitiveType type, const PrimitiveParams &params);
+
   public:
     std::unordered_map<std::string, std::unique_ptr<Model>> models_;
 
