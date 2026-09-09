@@ -4,6 +4,7 @@
 #include "utility/scene/SceneRegistry.h"
 #include <2d/ui/UIAnimator.h>
 #include <debug/profiler/CpuProfiler.h>
+#include <debug/profiler/GpuProfiler.h>
 #include <debug/log/Logger.h>
 #include <Frame.h>
 #include <camera/CameraManager.h>
@@ -298,6 +299,7 @@ void Framework::Finalize()
     pBaseObjectManager_->Finalize();
     CameraManager::GetInstance()->Finalize();      // カメラが持つ定数バッファの解放
     Object3dInstancing::GetInstance()->Finalize(); // インスタンシング用アップロードバッファの解放
+    GpuProfiler::GetInstance()->Finalize();        // クエリヒープと読み戻しバッファの解放
     pDxCommon_->Finalize();
 }
 

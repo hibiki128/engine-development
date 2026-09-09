@@ -10,6 +10,29 @@
 
 namespace Hagine {
 
+void GpuProfiler::Finalize()
+{
+    // Map したままだと解放できない。Unmap してから手放す
+    if (readbackGraphics_ && pMappedGraphics_)
+    {
+        readbackGraphics_->Unmap(0, nullptr);
+    }
+    if (readbackCompute_ && pMappedCompute_)
+    {
+        readbackCompute_->Unmap(0, nullptr);
+    }
+    pMappedGraphics_ = nullptr;
+    pMappedCompute_ = nullptr;
+
+    readbackGraphics_.Reset();
+    readbackCompute_.Reset();
+    queryHeap_.Reset();
+
+    pDxCommon_ = nullptr;
+    // 次に使われたら作り直せるようにしておく
+    initialized_ = false;
+}
+
 GpuProfiler *GpuProfiler::GetInstance()
 {
     static GpuProfiler instance;
