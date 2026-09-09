@@ -223,28 +223,55 @@ void TextureManager::LoadFontTexture(const std::string &fontFilePath, float font
     // stb_truetypeでグレースケールのグリフアトラスをベイクする
     // ベイク対象: ASCII 32('space') 〜 127 の96文字
     FontData fontData{};
-    fontData.atlasWidth = atlasWidth;
-    fontData.atlasHeight = atlasHeight;
 
-    std::vector<uint8_t> grayscaleBitmap(static_cast<size_t>(atlasWidth * atlasHeight));
     constexpr int kFirstChar = 32; // ' '(スペース)
     constexpr int kCharCount = 96; // ASCII 127まで
+    constexpr int kMaxAtlasSide = 4096; // これ以上は広げない
 
-    const int bakeResult = stbtt_BakeFontBitmap(
-        ttfBuffer.data(), 0,
-        fontSize,
-        grayscaleBitmap.data(), atlasWidth, atlasHeight,
-        kFirstChar, kCharCount,
-        fontData.charData.data());
-
-    // bakeResultが負の場合はアトラスサイズが不足している
-    if (bakeResult <= 0)
+    // 同じフォントサイズでも、字面の大きさはフォントごとに違う。
+    // 固定のアトラスに焼こうとすると「このフォントなら何ピクセルまで入るか」を
+    // 一つずつ手で探すことになるので、入らなければ倍に広げて焼き直す。
+    // こうしておけば、どのフォントにも同じフォントサイズを渡せる
+    std::vector<uint8_t> grayscaleBitmap;
+    int bakedWidth = atlasWidth;
+    int bakedHeight = atlasHeight;
+    int bakeResult = 0;
+    while (true)
     {
-        Logger::Error("Failed to bake font atlas: \"" + fontFilePath + "\". The atlas size (" +
-                      std::to_string(atlasWidth) + "x" + std::to_string(atlasHeight) + ") is too small for the requested font size.");
-        assert(bakeResult > 0);
-        return;
+        grayscaleBitmap.assign(static_cast<size_t>(bakedWidth) * static_cast<size_t>(bakedHeight), 0);
+        bakeResult = stbtt_BakeFontBitmap(
+            ttfBuffer.data(), 0,
+            fontSize,
+            grayscaleBitmap.data(), bakedWidth, bakedHeight,
+            kFirstChar, kCharCount,
+            fontData.charData.data());
+
+        if (bakeResult > 0)
+        {
+            break;
+        }
+
+        if (bakedWidth >= kMaxAtlasSide || bakedHeight >= kMaxAtlasSide)
+        {
+            Logger::Error("Failed to bake font atlas: \"" + fontFilePath +
+                          "\". Font size " + std::to_string(static_cast<int>(fontSize)) +
+                          " does not fit even in " + std::to_string(kMaxAtlasSide) + "x" +
+                          std::to_string(kMaxAtlasSide) + ".");
+            assert(bakeResult > 0);
+            return;
+        }
+
+        bakedWidth *= 2;
+        bakedHeight *= 2;
+        Logger::Info("Font atlas enlarged to " + std::to_string(bakedWidth) + "x" +
+                     std::to_string(bakedHeight) + " for \"" + fontFilePath +
+                     "\" (size " + std::to_string(static_cast<int>(fontSize)) + ").");
     }
+
+    atlasWidth = bakedWidth;
+    atlasHeight = bakedHeight;
+    fontData.atlasWidth = atlasWidth;
+    fontData.atlasHeight = atlasHeight;
 
     // アトラスのグレースケールピクセルをCPU側でも保持する（テキストテクスチャ合成用）
     fontData.atlasPixels = grayscaleBitmap;
@@ -387,6 +414,47 @@ const TextureManager::FontData *TextureManager::GetFontData(const std::string &f
         return &it->second;
     }
     return nullptr;
+}
+
+void TextureManager::ReloadFontTexture(const std::string &fontFilePath, float fontSize)
+{
+    // 前のフレームで投入したコマンドがまだアトラスを参照している可能性があるので、
+    // GPU の完了を待ってから解放する
+    DirectXCommon::GetInstance()->WaitForGPU();
+
+    // 同じフォントの読み込み済みぶんを外す（キーは "<ファイル名>_<サイズ>"）
+    const std::string prefix = fontFilePath + "_";
+    for (auto it = fontDatas_.begin(); it != fontDatas_.end();)
+    {
+        if (it->first.compare(0, prefix.size(), prefix) == 0)
+        {
+            pSrvManager_->Free(it->second.srvIndex - kSRVIndexTop);
+            it = fontDatas_.erase(it);
+        }
+        else
+        {
+            ++it;
+        }
+    }
+
+    LoadFontTexture(fontFilePath, fontSize);
+    Logger::Info("Font reloaded: \"" + fontFilePath + "\" at size " +
+                 std::to_string(static_cast<int>(fontSize)) +
+                 ". 既に作ってある文字画像は作り直しが必要です（Assets/images/Text）");
+}
+
+std::string TextureManager::FindFontKey(const std::string &fontFilePath) const
+{
+    // キーは "<ファイル名>_<サイズ>" の形。サイズは問わずに前方一致で探す
+    const std::string prefix = fontFilePath + "_";
+    for (const auto &[key, data] : fontDatas_)
+    {
+        if (key.compare(0, prefix.size(), prefix) == 0)
+        {
+            return key;
+        }
+    }
+    return {};
 }
 
 std::string TextureManager::MakeFontKey(const std::string &fontFilePath, float fontSize)

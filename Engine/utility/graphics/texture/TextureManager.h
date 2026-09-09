@@ -105,6 +105,17 @@ class TextureManager
     void LoadFontTexture(const std::string &fontFilePath, float fontSize, int atlasWidth = 512, int atlasHeight = 512);
 
     /// <summary>
+    /// 読み込み済みのフォントを、別のサイズで読み込み直す。
+    ///
+    /// 生成される文字画像の解像度はここで決めたサイズになるので、
+    /// 調整UIから触って見た目を確かめたいとき用。
+    /// 同じフォントの古いぶんは解放してから焼き直す
+    /// </summary>
+    /// <param name="fontFilePath">フォントのファイル名（fonts ルートからの相対）</param>
+    /// <param name="fontSize">新しいサイズ（ピクセル）</param>
+    void ReloadFontTexture(const std::string &fontFilePath, float fontSize);
+
+    /// <summary>
     /// ファイルパスとフォントサイズからSRVインデックスを取得する
     /// </summary>
     uint32_t GetTextureIndexByFilePath(const std::string &filePath);
@@ -143,6 +154,18 @@ class TextureManager
     /// fontFilePath と fontSize の組み合わせで一意なキーを作る
     /// </summary>
     static std::string MakeFontKey(const std::string &fontFilePath, float fontSize);
+
+    /// <summary>
+    /// 読み込み済みフォントのキーを、ファイル名だけで引く。
+    ///
+    /// キーは「ファイル名＋サイズ」なので、使う側がサイズを覚えていないと引けない。
+    /// つまり LoadFontTexture に渡す数字と、使う側が持っている数字の2箇所を
+    /// 常に一致させる必要があり、片方だけ変えると無言で引けなくなる。
+    /// これを使えばサイズを書く場所が LoadFontTexture の1箇所で済む
+    /// </summary>
+    /// <param name="fontFilePath">フォントのファイル名（fonts ルートからの相対）</param>
+    /// <returns>std::string: 見つかったキー。読み込まれていなければ空文字</returns>
+    std::string FindFontKey(const std::string &fontFilePath) const;
 
     /// <summary>
     /// ロード済みフォントのキー一覧を返す（TextRendererのUI用）

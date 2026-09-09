@@ -171,6 +171,10 @@ class TextRenderer
     char imguiSpriteName_[128] = {};
     char imguiText_[256] = {};
     int imguiFontIndex_ = 0;
+    // 焼き直し用のフォントサイズ（調整UIの入力欄）。
+    // どのフォントの値を入れてあるかを覚えておき、選び直されたら取り直す
+    int imguiFontSize_ = 0;
+    std::string imguiFontSizeSource_;
     float imguiPosition_[2] = {0.0f, 0.0f};
     float imguiColor_[4] = {1.0f, 1.0f, 1.0f, 1.0f};
     bool imguiOutlineEnabled_ = false;
