@@ -7,11 +7,60 @@
 #include <vector>
 
 namespace Hagine {
+namespace {
+
+/// <summary>六角形のマスク画像（白で描いてあるので色はマテリアル側で付く）</summary>
+constexpr const char *kCellTexturePath = "debug/hexagon.png";
+
+/// <summary>正六角形の 幅 ÷ 高さ。尖った頂点が上下に来る向きなので sqrt(3)/2</summary>
+constexpr float kHexWidthRatio = 0.86602540f;
+
+/// <summary>
+/// 画像の高さに対する六角形の高さの割合（黒フチが切れないよう少し内側に描いてある）。
+/// 画像は正方形で、六角形の縦横比はその中に描き込んである。
+/// なのでスプライトは縦横おなじ倍率で拡大すること（横をさらに縮めると正六角形でなくなる）
+/// </summary>
+constexpr float kTextureFillRatio = 250.0f / 256.0f;
+
+/// <summary>
+/// 継ぎ目を消すための余裕。ちょうど敷き詰める寸法だと辺が接するだけで
+/// 隙間が見えることがあるので、少しだけ重ねる
+/// </summary>
+constexpr float kSeamMargin = 1.03f;
+
+} // namespace
+
 void SceneTransition::Finalize()
 {
-    transitionSprite_.reset();
-    instanceSizes_.clear();
+    colorSprites_.clear();
+    cellsByColor_.clear();
+    cells_.clear();
     sprite_.reset();
+}
+
+void SceneTransition::SetColors(const std::vector<Vector4> &colors)
+{
+    if (colors.empty())
+    {
+        return;
+    }
+    colors_ = colors;
+
+    // 色ごとのスプライトを用意し直す。色数が変わることもあるので作り直す
+    colorSprites_.clear();
+    colorSprites_.reserve(colors_.size());
+    for (const Vector4 &color : colors_)
+    {
+        auto sprite = std::make_unique<Sprite>();
+        // 六角形のマスク画像。白で描いてあるので、マテリアル色がそのまま出る
+        sprite->Initialize(kCellTexturePath, {0.0f, 0.0f}, color, {0.5f, 0.5f});
+        // 行列はこちらが全インスタンスぶん入れるので、スプライト側に上書きさせない
+        sprite->SetUseExternalTransforms(true);
+        colorSprites_.push_back(std::move(sprite));
+    }
+
+    ShuffleCells();
+    UpdateTransitionInstances();
 }
 
 void SceneTransition::Initialize()
@@ -29,30 +78,70 @@ void SceneTransition::Initialize()
     isEnd_ = false;
     useTransition_ = true; // デフォルトはトランジションを使用
 
-    // インスタンシング用の初期化
-    rows_ = 15;                                      // 縦方向のスプライト数
-    cols_ = 23;                                      // 横方向のスプライト数
-    float size = 0.0f;                               // 初期サイズを 0.0f に設定
-    Vector4 defaultColor = {1.0f, 1.0f, 1.0f, 1.0f}; // スプライトの初期色
+    // 六角形のマスを敷き詰め、色ごとのスプライトを用意する。
+    // SetColors はスプライトの作り直しと色の割り振りまで面倒を見る
+    BuildCells();
+    SetColors(colors_);
+}
 
-    // インスタンシング用Spriteを作成
-    transitionSprite_ = std::make_unique<Sprite>();
-    transitionSprite_->Initialize("debug/black1x1.png", {0, 0}, defaultColor, {0.5f, 0.5f});
-    transitionSprite_->SetSize(Vector2(size, size));
+void SceneTransition::BuildCells()
+{
+    const float screenWidth = static_cast<float>(WinApp::GetVirtualWidth());
+    const float screenHeight = static_cast<float>(WinApp::GetVirtualHeight());
 
-    // インスタンス数を設定
-    totalInstances_ = rows_ * cols_;
-    transitionSprite_->SetInstanceCount(totalInstances_);
+    // 正六角形（尖った頂点が上下）の敷き詰め。
+    // 高さ h の正六角形は幅が h*sqrt(3)/2 で、縦は h*3/4 ごとに重ねると隙間なく並ぶ。
+    // 1行おきに半マスずらすのがハニカムの形
+    const float hexWidth = cellSize_ * kHexWidthRatio;
+    const float stepX = hexWidth;
+    const float stepY = cellSize_ * 0.75f;
 
-    // 各インスタンスのサイズを保存する配列を初期化
-    instanceSizes_.resize(rows_);
-    for (int row = 0; row < rows_; ++row)
+    // 画面のふちが欠けないよう、上下左右に1マスぶん余分に置く
+    const int cols = static_cast<int>(screenWidth / stepX) + 3;
+    const int rows = static_cast<int>(screenHeight / stepY) + 3;
+
+    cells_.clear();
+    cells_.reserve(static_cast<size_t>(rows) * static_cast<size_t>(cols));
+    for (int row = 0; row < rows; ++row)
     {
-        instanceSizes_[row].resize(cols_, size);
+        // 奇数行は半マスずらす
+        const float offsetX = (row % 2 == 0) ? 0.0f : stepX * 0.5f;
+        for (int col = 0; col < cols; ++col)
+        {
+            Cell cell{};
+            cell.center = {col * stepX + offsetX - stepX, row * stepY - stepY};
+            cells_.push_back(cell);
+        }
+    }
+}
+
+void SceneTransition::ShuffleCells()
+{
+    if (colors_.empty())
+    {
+        return;
     }
 
-    // 初期の変換行列を設定
-    UpdateTransitionInstances();
+    std::uniform_int_distribution<int> colorPick(0, static_cast<int>(colors_.size()) - 1);
+    std::uniform_real_distribution<float> delayPick(0.0f, maxDelay_);
+
+    cellsByColor_.assign(colors_.size(), {});
+    for (int index = 0; index < static_cast<int>(cells_.size()); ++index)
+    {
+        Cell &cell = cells_[static_cast<size_t>(index)];
+        cell.colorIndex = colorPick(random_);
+        // 埋まる順番はマスごとにばらばら。左上から順に、ではなく散らばって埋まる
+        cell.delay = delayPick(random_);
+        cell.size = 0.0f;
+        cellsByColor_[static_cast<size_t>(cell.colorIndex)].push_back(index);
+    }
+
+    // 色ごとのインスタンス数を、その色に割り振られたマスの数へ合わせる
+    for (size_t colorIndex = 0; colorIndex < colorSprites_.size(); ++colorIndex)
+    {
+        const size_t count = (colorIndex < cellsByColor_.size()) ? cellsByColor_[colorIndex].size() : 0;
+        colorSprites_[colorIndex]->SetInstanceCount(static_cast<uint32_t>(count));
+    }
 }
 
 void SceneTransition::Update()
@@ -89,8 +178,11 @@ void SceneTransition::Draw()
         return;
     }
 
-    // インスタンシング描画で一度に全てのスプライトを描画
-    transitionSprite_->Draw();
+    // 色ごとに1回。同じ色のマスはインスタンシングでまとめて描かれる
+    for (const std::unique_ptr<Sprite> &sprite : colorSprites_)
+    {
+        sprite->Draw();
+    }
 }
 
 void SceneTransition::Debug()
@@ -172,123 +264,84 @@ void SceneTransition::DefaultFadeOut()
     sprite_->SetAlpha(alpha);           // アルファ値を設定
 }
 
+float SceneTransition::CalcCellSize(float localTime) const
+{
+    // cellSize_ は「画面に出る六角形の高さ」。画像の中では少し内側に描いてあるので、
+    // その割合で割り戻したものがスプライト（正方形の板）の大きさになる
+    const float fullSize = cellSize_ / kTextureFillRatio * kSeamMargin;
+
+    // 伸びきるまでの時間。遅れの最大値を引いておくことで、
+    // いちばん遅く始まったマスも counter_ が duration_ に届くまでに埋まりきる
+    const float growTime = (std::max)(0.01f, duration_ - maxDelay_);
+
+    if (localTime <= 0.0f)
+    {
+        return 0.0f; // まだ順番待ち
+    }
+    if (localTime >= growTime)
+    {
+        return fullSize; // 埋まりきった
+    }
+    return EaseInSine<float>(0.0f, fullSize, localTime / growTime, 1.0f);
+}
+
 void SceneTransition::ReverseFadeIn()
 {
-    // 遅延の最大値（秒）
-    const float maxDelay = 0.3f;
-    bool needsUpdate = false;
-
-    for (int row = 0; row < rows_; ++row)
+    // マスごとの遅れは ShuffleCells がばらばらに決めてある。
+    // なので左上から順ではなく、画面のあちこちから埋まっていく
+    for (Cell &cell : cells_)
     {
-        for (int col = 0; col < cols_; ++col)
-        {
-            // 位置に基づいて遅延を計算（左上から右下へ）
-            float delay = (static_cast<float>(row + col) / static_cast<float>(rows_ + cols_ - 2)) * maxDelay;
-            // カウンターから遅延を引いた値を使用
-            float localTime = counter_ - delay;
-            float newSize = 0.0f; // 毎フレーム初期化
-
-            if (localTime >= 0.0f && localTime <= duration_)
-            {
-                // イージング関数で0 → 80に拡大
-                float progress = localTime / duration_;
-                newSize = EaseInSine<float>(0.0f, 80.0f, progress, 0.4f);
-            }
-            else if (localTime > duration_)
-            {
-                // 最大サイズに到達したら固定
-                newSize = 80.0f;
-            }
-            else
-            {
-                // 遅延待ち中は初期サイズを維持
-                newSize = 0.0f;
-            }
-
-            // 常に更新（サイズが変わらなくても）
-            instanceSizes_[row][col] = newSize;
-            needsUpdate = true;
-        }
+        cell.size = CalcCellSize(counter_ - cell.delay);
     }
 
-    // 毎フレーム更新
-    if (needsUpdate)
-    {
-        UpdateTransitionInstances();
-    }
+    UpdateTransitionInstances();
 }
 
 void SceneTransition::ReverseFadeOut()
 {
-    // 遅延の最大値（秒）
-    const float maxDelay = 0.3f;
-    bool needsUpdate = false;
-
-    for (int row = 0; row < rows_; ++row)
+    // 明けるときは counter_ が減っていくので、埋めたときと同じ式でそのまま縮む。
+    // 遅れも同じものを使うため、最後に埋まったマスから先に消えていく
+    for (Cell &cell : cells_)
     {
-        for (int col = 0; col < cols_; ++col)
-        {
-            // 位置に基づいて遅延を計算（右下から左上へ）
-            // (rows-1-row)と(cols-1-col)で座標を反転
-            float delay = (static_cast<float>((rows_ - 1 - row) + (cols_ - 1 - col)) / static_cast<float>(rows_ + cols_ - 2)) * maxDelay;
-
-            // カウンターから遅延を引いた値を使用
-            float localTime = counter_ - delay;
-            float newSize = instanceSizes_[row][col];
-
-            if (localTime >= 0.0f && localTime <= duration_)
-            {
-                // counter_が1→0で変化
-                float progress = localTime / duration_;
-                newSize = EaseInSine<float>(0.0f, 80.0f, progress, 0.4f);
-                needsUpdate = true;
-            }
-            else if (localTime > duration_)
-            {
-                // サイズが 0 に到達したら固定
-                newSize = 0.0f;
-            }
-            else if (localTime < 0.0f)
-            {
-                // 遅延待ち中も0サイズを維持
-                newSize = 0.0f;
-            }
-
-            if (instanceSizes_[row][col] != newSize)
-            {
-                instanceSizes_[row][col] = newSize;
-                needsUpdate = true;
-            }
-        }
+        cell.size = CalcCellSize(counter_ - cell.delay);
     }
 
-    if (needsUpdate)
-    {
-        UpdateTransitionInstances();
-    }
+    UpdateTransitionInstances();
 }
 
 void SceneTransition::UpdateTransitionInstances()
 {
-    int instanceIndex = 0;
-    for (int row = 0; row < rows_; ++row)
-    {
-        for (int col = 0; col < cols_; ++col)
-        {
-            Vector2 position = {col * 80.0f, row * 80.0f};
-            float size = instanceSizes_[row][col];
+    // 射影は毎回同じなので、マスごとに作り直さず1回で済ませる
+    const Matrix4x4 viewMatrix = MakeIdentity4x4();
+    const Matrix4x4 projectionMatrix = MakeOrthographicMatrix(
+        0.0f, 0.0f, float(WinApp::GetVirtualWidth()), float(WinApp::GetVirtualHeight()), 0.0f, 100.0f);
+    const Matrix4x4 viewProjection = viewMatrix * projectionMatrix;
 
-            Transform transform{{size, size, 1.0f}, {0.0f, 0.0f, 0.0f}, {position.x, position.y, 0.0f}};
+    // 色ごとに、その色のマスだけを詰めて入れる
+    for (size_t colorIndex = 0; colorIndex < colorSprites_.size(); ++colorIndex)
+    {
+        if (colorIndex >= cellsByColor_.size())
+        {
+            continue;
+        }
+
+        Sprite *sprite = colorSprites_[colorIndex].get();
+        const std::vector<int> &indices = cellsByColor_[colorIndex];
+        for (size_t slot = 0; slot < indices.size(); ++slot)
+        {
+            const Cell &cell = cells_[static_cast<size_t>(indices[slot])];
+
+            // 画像が正方形で六角形の形はその中に描いてあるので、縦横おなじ倍率で拡大する
+            Transform transform{{cell.size, cell.size, 1.0f},
+                                {0.0f, 0.0f, 0.0f},
+                                {cell.center.x, cell.center.y, 0.0f}};
             Matrix4x4 worldMatrix = MakeAffineMatrix(transform.scale, transform.rotate, transform.translate);
-            Matrix4x4 viewMatrix = MakeIdentity4x4();
-            Matrix4x4 projectionMatrix = MakeOrthographicMatrix(0.0f, 0.0f, float(WinApp::GetVirtualWidth()), float(WinApp::GetVirtualHeight()), 0.0f, 100.0f);
 
             TransformationMatrix transformMatrix;
-            transformMatrix.WVP = worldMatrix * viewMatrix * projectionMatrix;
+            transformMatrix.WVP = worldMatrix * viewProjection;
             transformMatrix.World = worldMatrix;
 
-            transitionSprite_->SetInstanceTransform(instanceIndex, transformMatrix);
-            instanceIndex++;
+            sprite->SetInstanceTransform(static_cast<uint32_t>(slot), transformMatrix);
         }
     }
 }
@@ -304,14 +357,8 @@ void SceneTransition::Reset()
     isEnd_ = false;
     sprite_->SetAlpha(0.0f); // 最初の透明状態に戻す
 
-    // 全インスタンスのサイズを0にリセット
-    for (int row = 0; row < rows_; ++row)
-    {
-        for (int col = 0; col < cols_; ++col)
-        {
-            instanceSizes_[row][col] = 0.0f;
-        }
-    }
+    // 色と埋まる順番を引き直す。切り替えのたびに違う模様になる
+    ShuffleCells();
     UpdateTransitionInstances();
 }
 } // namespace Hagine

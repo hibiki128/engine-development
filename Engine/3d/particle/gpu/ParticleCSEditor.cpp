@@ -18,6 +18,41 @@ namespace Hagine {
 void ParticleCSEditor::Finalize()
 {
     emitters_.clear();
+
+    // プレビュー窓のGPUリソースを手放す。
+    // このクラスはシングルトンなので、ここで解放しないと終了時のリークチェックまで
+    // 描画先・深度・線のVB・CB が残り続ける（プレビューを一度も開いていなければ
+    // Initialize の時点で作られているぶんがそのまま残る）
+    if (previewGridVB_ && pPreviewGridMapped_)
+    {
+        previewGridVB_->Unmap(0, nullptr);
+    }
+    if (previewWireVB_ && pPreviewWireMapped_)
+    {
+        previewWireVB_->Unmap(0, nullptr);
+    }
+    if (previewLineCB_ && pPreviewLineCBData_)
+    {
+        previewLineCB_->Unmap(0, nullptr);
+    }
+    if (previewPerViewCB_ && pPreviewPerViewData_)
+    {
+        previewPerViewCB_->Unmap(0, nullptr);
+    }
+    pPreviewGridMapped_ = nullptr;
+    pPreviewWireMapped_ = nullptr;
+    pPreviewLineCBData_ = nullptr;
+    pPreviewPerViewData_ = nullptr;
+
+    previewColorResource_.Reset();
+    previewDepthResource_.Reset();
+    previewGridVB_.Reset();
+    previewWireVB_.Reset();
+    previewLineCB_.Reset();
+    previewPerViewCB_.Reset();
+
+    // 次に使われたら作り直せるようにしておく
+    previewInitialized_ = false;
 }
 
 void ParticleCSEditor::Initialize()

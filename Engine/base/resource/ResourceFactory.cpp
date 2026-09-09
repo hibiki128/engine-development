@@ -2,9 +2,37 @@
 #include "DXDevice.h"
 #include "DirectXTex/d3dx12.h"
 #include "cassert"
+#include <cstdint>
+#include <cwchar>
 #include <vector>
 
 namespace Hagine {
+
+namespace {
+
+/// <summary>
+/// 作ったリソースに名前を付ける。
+///
+/// D3D12 の終了時リーク報告（ReportLiveObjects）は、名前を付けていないリソースを
+/// アドレスだけで並べるので、何が残っているのか追いようがない。
+/// リソースの入口はこのファイルの4つだけなので、ここで種別と通し番号を振っておく。
+/// SetName はデバッグレイヤー向けの情報で、動作にも速度にも影響しない。
+/// </summary>
+/// <param name="resource">名前を付ける対象</param>
+/// <param name="category">種別（"Buffer" など）</param>
+void NameResource(ID3D12Resource *resource, const wchar_t *category)
+{
+    if (!resource)
+    {
+        return;
+    }
+    static uint32_t serial = 0;
+    wchar_t name[64]{};
+    swprintf_s(name, L"%s_%u", category, serial++);
+    resource->SetName(name);
+}
+
+} // namespace
 
 void ResourceFactory::Initialize(DXDevice *pDevice)
 {
@@ -43,6 +71,7 @@ Microsoft::WRL::ComPtr<ID3D12Resource> ResourceFactory::CreateBufferResource(siz
                                                              IID_PPV_ARGS(&resource));
         assert(SUCCEEDED(hr));
 
+        NameResource(resource.Get(), L"Buffer");
         return resource;
     }
     else
@@ -66,6 +95,7 @@ Microsoft::WRL::ComPtr<ID3D12Resource> ResourceFactory::CreateBufferResource(siz
         HRESULT hr = pDevice_->Get()->CreateCommittedResource(&defaultHeapProperties, D3D12_HEAP_FLAG_NONE,
                                                              &resourceDesc, D3D12_RESOURCE_STATE_COMMON, nullptr, IID_PPV_ARGS(&resource));
         assert(SUCCEEDED(hr));
+        NameResource(resource.Get(), L"Buffer");
         return resource;
     }
 }
@@ -98,6 +128,7 @@ Microsoft::WRL::ComPtr<ID3D12Resource> ResourceFactory::CreateTextureResource(co
         nullptr,                        // Clear最適値。使わないのでnullptr
         IID_PPV_ARGS(&resource));       // 作成するResourceポインタへのポインタ
     assert(SUCCEEDED(hr));
+    NameResource(resource.Get(), L"Texture");
     return resource;
 }
 
@@ -131,6 +162,7 @@ Microsoft::WRL::ComPtr<ID3D12Resource> ResourceFactory::CreateRenderTextureResou
                                                          IID_PPV_ARGS(&resource));
     assert(SUCCEEDED(hr));
 
+    NameResource(resource.Get(), L"RenderTexture");
     return resource;
 }
 
@@ -168,6 +200,7 @@ Microsoft::WRL::ComPtr<ID3D12Resource> ResourceFactory::CreateDepthStencilTextur
         IID_PPV_ARGS(&resource));         // 作成するResourceポインタへのポインタ
     assert(SUCCEEDED(hr));
 
+    NameResource(resource.Get(), L"DepthStencil");
     return resource;
 }
 

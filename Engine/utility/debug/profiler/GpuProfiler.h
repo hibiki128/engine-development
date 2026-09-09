@@ -51,6 +51,13 @@ class GpuProfiler
     void SetEnabled(bool e) { enabled_ = e; }
     bool IsEnabled() const { return enabled_; }
 
+    /// <summary>
+    /// 持っているGPUリソースを解放する（アプリの終了処理から呼ぶ）。
+    /// シングルトンは静的領域にあるので、ここで手放さないと
+    /// リークチェックが走る時点までクエリヒープと読み戻しバッファが残り続ける
+    /// </summary>
+    void Finalize();
+
   private:
     GpuProfiler() = default;
     ~GpuProfiler() = default;
