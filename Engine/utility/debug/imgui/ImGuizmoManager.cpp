@@ -174,6 +174,10 @@ void ImGuizmoManager::Update(const ImVec2 &scenePosition, const ImVec2 &sceneSiz
         // 矩形選択のドラッグ判定を先に回す。
         // しきい値未満のドラッグはクリック扱いになり、下の単体選択がそのまま働く。
         HandleBoxSelection(scenePosition, sceneSize, sceneHovered);
+        if (sceneClickConsumed_)
+        {
+            clickSelectRequested_ = false;
+        }
         HandleMouseSelection(scenePosition, sceneSize, sceneHovered);
         HandleHotkeys(sceneHovered);
     }
@@ -190,6 +194,10 @@ void ImGuizmoManager::Update(const ImVec2 &scenePosition, const ImVec2 &sceneSiz
         // スプライト用正射影 VP を使うためシーン情報を渡す
         DisplayGizmo(scenePosition, sceneSize);
     }
+
+    // 移動スナップの刻みを見せる（掴んでいる間だけ）
+    DrawSnapGrid();
+    sceneClickConsumed_ = false;
 }
 
 // ---- DisplayGizmo -----------------------------------------------------

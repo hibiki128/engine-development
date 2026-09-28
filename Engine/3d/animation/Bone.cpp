@@ -1,6 +1,8 @@
 #include "Bone.h"
 #include <MyMath.h>
 #include "Animator.h"
+#include "BlendSpace.h"
+#include <algorithm>
 
 namespace Hagine {
 void Bone::Initialize(ModelData modelData)
@@ -9,22 +11,32 @@ void Bone::Initialize(ModelData modelData)
     skeleton_ = CreateSkeleton(modelData.rootNode);
 }
 
-void Bone::Update(const Animation &animation, float animationTime)
+void Bone::Update(const Animation &animation, float animationTime, const BlendSpacePose *blendSpace)
 {
     // 指定された時間のアニメーションデータをボーンのトランスフォームに適用
     ApplyAnimation(animation, animationTime);
+    if (blendSpace)
+    {
+        ApplyBlendSpace(*blendSpace);
+    }
 
     CalculateMatrices();
 }
 
 void Bone::UpdateLayered(const Animation &baseAnimation, float baseTime,
                          const Animation &layerAnimation, float layerTime,
-                         const std::vector<uint8_t> &mask, float weight)
+                         const std::vector<uint8_t> &mask, float weight,
+                         const BlendSpacePose *blendSpace)
 {
     // まず全身へ基準アニメーション（下半身側＝移動モーション）を適用し、
     // そのあとマスク対象のジョイントだけレイヤー側で上書きする。
     // 階層行列の計算は上書き後に一度だけ行えばよい
     ApplyAnimation(baseAnimation, baseTime);
+    if (blendSpace)
+    {
+        // 移動のブレンドスペースも「基準」側（上半身レイヤーの下）に入る
+        ApplyBlendSpace(*blendSpace);
+    }
     ApplyLayer(layerAnimation, layerTime, mask, weight);
 
     CalculateMatrices();
@@ -204,6 +216,83 @@ void Bone::ApplyLayer(const Animation &animation, float animationTime,
             joint.transform.translate = Lerp(joint.transform.translate, translate, t);
             joint.transform.rotate = Quaternion::Slerp(joint.transform.rotate, rotate, t);
             joint.transform.scale = Lerp(joint.transform.scale, scale, t);
+        }
+    }
+}
+
+void Bone::ApplyBlendSpace(const BlendSpacePose &pose)
+{
+    if (!pose.space || pose.weight <= 0.0f)
+    {
+        return;
+    }
+    const std::vector<AnimationBlendSpace::Source> &sources = pose.space->GetSources();
+    const std::vector<float> &weights = pose.space->GetWeights();
+    std::vector<float> times;
+    pose.space->GetSampleTimes(times);
+    const size_t count = (std::min)(sources.size(), weights.size());
+    const float overall = (std::min)(pose.weight, 1.0f);
+    constexpr float kIgnoreWeight = 1.0e-4f; // これより軽いクリップは計算しない
+
+    for (Joint &joint : skeleton_.joints)
+    {
+        Vector3 translate = {0.0f, 0.0f, 0.0f};
+        Vector3 scale = {0.0f, 0.0f, 0.0f};
+        Quaternion rotate(0.0f, 0.0f, 0.0f, 0.0f);
+        Quaternion reference;
+        bool hasReference = false;
+        float total = 0.0f;
+
+        for (size_t i = 0; i < count; ++i)
+        {
+            const float w = weights[i];
+            if (w <= kIgnoreWeight)
+            {
+                continue;
+            }
+            auto it = sources[i].animation.nodeAnimations.find(joint.name);
+            if (it == sources[i].animation.nodeAnimations.end())
+            {
+                continue;
+            }
+            const NodeAnimation &node = it->second;
+            Quaternion r = Animator::CalculateValue(node.rotate, times[i]);
+            // q と -q は同じ回転。向きを揃えてから足さないと、混ぜた結果が潰れる
+            if (!hasReference)
+            {
+                reference = r;
+                hasReference = true;
+            }
+            else if (r.Dot(reference) < 0.0f)
+            {
+                r = -r;
+            }
+            translate = translate + Animator::CalculateValue(node.translate, times[i]) * w;
+            scale = scale + Animator::CalculateValue(node.scale, times[i]) * w;
+            rotate += r * w;
+            total += w;
+        }
+        if (total <= 0.0f)
+        {
+            continue;
+        }
+
+        translate = translate / total;
+        scale = scale / total;
+        rotate = rotate.Normalize();
+
+        if (overall >= 1.0f)
+        {
+            joint.transform.translate = translate;
+            joint.transform.rotate = rotate;
+            joint.transform.scale = scale;
+        }
+        else
+        {
+            // 他のクリップとの切り替え中は、今の姿勢と混ぜる
+            joint.transform.translate = Lerp(joint.transform.translate, translate, overall);
+            joint.transform.rotate = Quaternion::Slerp(joint.transform.rotate, rotate, overall);
+            joint.transform.scale = Lerp(joint.transform.scale, scale, overall);
         }
     }
 }

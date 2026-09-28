@@ -12,6 +12,7 @@
 namespace Hagine {
 
 class WorldTransform;
+class ShaderRootSignature;
 class BaseObject;
 
 /// <summary>
@@ -35,6 +36,11 @@ class ParticleCSEmitter
     /// デストラクタ（保有する独立グループを再利用プールへ返却しバッファ累積を防ぐ）
     /// </summary>
     ~ParticleCSEmitter();
+
+    // SRVインデックスと生存一覧への登録を持つので、コピーすると同じ番号を二重に返すことになる。
+    // 実際どこでも unique_ptr でしか持っていないが、間違って増やせないようにしておく
+    ParticleCSEmitter(const ParticleCSEmitter &) = delete;
+    ParticleCSEmitter &operator=(const ParticleCSEmitter &) = delete;
 
     /// <summary>
     /// 初期化
@@ -103,10 +109,57 @@ class ParticleCSEmitter
             pEmitterMeshData_->frequency = frequency;
     }
     void SetActive(bool isActive) { isActive_ = isActive; }
-    void SetAuto(bool isAuto) { isAuto_ = isAuto; }
+    /// <summary>
+    /// 自動発生の ON/OFF。**OFF→ON になった瞬間に発生の立ち上がりをやり直す**
+    /// （毎フレーム true を入れ続けても、最初の1回しか立ち上がらない）
+    /// </summary>
+    void SetAuto(bool isAuto)
+    {
+        if (isAuto && !isAuto_)
+        {
+            RestartEmitRamp();
+        }
+        isAuto_ = isAuto;
+    }
     bool GetAuto() const { return isAuto_; }
+
+    /// ==============================================
+    /// 発生の立ち上がり（スポーン率のフェードイン）
+    ///
+    /// 出し始めた瞬間に最大数がドッと出るのを避けるための仕組み。
+    /// 「溜め始めたら徐々に気が強くなる」のような、**量そのものが増えていく**表現に使う。
+    /// 各グループの emitCount に 0→1 の係数を掛けるだけなので、
+    /// 1エミッターに複数グループをぶら下げていても全部まとめて立ち上がる。
+    /// ==============================================
+
+    /// <summary>
+    /// 発生開始から最大の発生数になるまでの秒数。0 で従来どおり最初から最大
+    /// </summary>
+    /// <param name="seconds">立ち上がりにかける秒数</param>
+    void SetEmitRampTime(float seconds) { emitRampTime_ = (seconds < 0.0f) ? 0.0f : seconds; }
+    float GetEmitRampTime() const { return emitRampTime_; }
+
+    /// <summary>
+    /// 発生数へ掛ける係数を直接指定する（0〜1）。
+    /// 立ち上がりを自前で制御したい場合や、途中で絞りたい場合に使う。
+    /// SetEmitRampTime による自動の立ち上がりが動いている間は、そちらに上書きされる
+    /// </summary>
+    /// <param name="scale">発生数の倍率（0=出さない / 1=設定どおり）</param>
+    void SetEmitRateScale(float scale)
+    {
+        emitRateScale_ = (scale < 0.0f) ? 0.0f : ((scale > 1.0f) ? 1.0f : scale);
+    }
+    float GetEmitRateScale() const { return emitRateScale_; }
+
+    /// <summary>
+    /// 発生の立ち上がりを最初からやり直す。
+    /// 立ち上がりの途中で呼ばれた場合は、控えてある元の発生数を保ったままやり直す
+    /// （縮んだ値を控え直して二重に小さくならないようにするため）
+    /// </summary>
+    void RestartEmitRamp();
     // エミッターのワイヤーフレーム描画の表示・非表示を切り替える
     void SetVisible(bool isVisible) { isVisible_ = isVisible; }
+    bool GetVisible() const { return isVisible_; }
 
     bool IsGizmoSelectable() const { return isGizmoSelectable_; }
     void SetGizmoSelectable(bool selectable) { isGizmoSelectable_ = selectable; }
@@ -119,6 +172,23 @@ class ParticleCSEmitter
         for (auto &group : particleGroups_)
         {
             group->GetSettingsData()->enableGravity = enable;
+        }
+    }
+
+    /// <summary>
+    /// 放射状初速の中心を設定する（全グループへ反映）。
+    ///
+    /// `radialVelocityCenter` は**ワールド座標**で、ギャザーや渦のように
+    /// エミッター位置から自動で解決されない（そちらは Offset を持つが、こちらは持たない）。
+    /// そのため動く場所で「その場から外へ弾ける」を作るには、
+    /// エミッターを置いた座標をここへ毎回入れる必要がある。
+    /// </summary>
+    /// <param name="center">放射の中心（ワールド座標。ふつうはエミッターと同じ位置）</param>
+    void SetRadialVelocityCenter(const Vector3 &center)
+    {
+        for (auto &group : particleGroups_)
+        {
+            group->GetSettingsData()->radialVelocityCenter = center;
         }
     }
 
@@ -364,10 +434,9 @@ class ParticleCSEmitter
     void SetEmitOnlyOnFieldContact(bool enable) { emitOnlyOnFieldContact_ = enable; }
     bool GetEmitOnlyOnFieldContact() const { return emitOnlyOnFieldContact_; }
 
-    // フィールドグループID（このIDと一致するフィールドのみ影響を受ける）
-    // -1 = 全フィールドから影響を受ける（デフォルト）
-    void SetFieldGroupId(int32_t id) { fieldGroupId_ = id; }
-    int32_t GetFieldGroupId() const { return fieldGroupId_; }
+    // 受けるフィールドのレイヤー（bit i = レイヤー i+1）。フィールド側のレイヤーと1つでも重なれば影響を受ける
+    void SetFieldLayers(uint32_t layers) { fieldLayers_ = layers; }
+    uint32_t GetFieldLayers() const { return fieldLayers_; }
     bool GetActive() const { return isActive_; }
 
     Vector3 GetAnchorPoint() const
@@ -404,6 +473,9 @@ class ParticleCSEmitter
     }
 
     size_t GetTotalAliveParticles();
+
+    /// <summary>ぶら下がっているグループ（診断・統計表示用。中身の追加・削除はしないこと）</summary>
+    const std::vector<ParticleCSGroup *> &GetParticleGroups() const { return particleGroups_; }
 
     // グループごとの統計情報
     struct GroupStatistics
@@ -449,6 +521,13 @@ class ParticleCSEmitter
     /// <param name="includePreviewOnly">エディタのプレビュー専用エミッターも含めるか</param>
     /// <returns>std::vector&lt;EmitterStatistics&gt;: エミッターごとの統計</returns>
     static std::vector<EmitterStatistics> GetAllEmitterStatistics(bool includePreviewOnly = false);
+
+    /// <summary>
+    /// 生きている全エミッターから、指定の名前のグループを外す（グループの定義を消す前に呼ぶ）
+    /// </summary>
+    /// <param name="groupName">外すグループの名前</param>
+    /// <returns>int: 外したエミッターの数</returns>
+    static int DetachGroupFromAll(const std::string &groupName);
 
   private:
     /// ==============================================
@@ -513,6 +592,15 @@ class ParticleCSEmitter
     /// <param name="group">対象グループ</param>
     /// <param name="meshIndex">メッシュ番号（引数バッファ内のオフセットに対応）</param>
     void ExecuteIndirectDraw(ParticleCSGroup *group, size_t meshIndex);
+
+    /// <summary>
+    /// ソフトパーティクル用の深度（t1）をピクセルシェーダーへ差す。
+    /// 複製がまだ無いフレームは、同じ形のディスクリプタであれば何でも良いので
+    /// 本体テクスチャを差しておく（gMaterial.enableSoftParticle が 0 なので読まれない）。
+    /// </summary>
+    /// <param name="rootSignature">GPUパーティクルのルートシグネチャ</param>
+    /// <param name="fallbackSrvIndex">複製が無いときに差す代わりのSRV番号</param>
+    void BindSceneDepthForPixel(const ShaderRootSignature *rootSignature, uint32_t fallbackSrvIndex);
 
   public:
     /// ---- バッチ非同期コンピュート用 2フェーズ API ----
@@ -583,6 +671,13 @@ class ParticleCSEmitter
     /// <summary>発生源メッシュのエッジ情報を生成</summary>
     void CreateModelEdges();
 
+
+    /// <summary>
+    /// 発生源メッシュ用に確保したSRVインデックスを SrvManager へ返す。
+    /// **渡すのは予約番号なので -1 する**（+1規約）
+    /// </summary>
+    void FreeMeshSrvIndices();
+
   private:
     /// ==============================================
     /// private variables
@@ -604,6 +699,13 @@ class ParticleCSEmitter
     // 「今フレーム処理するか」フラグ。生存0かつ発生なしのアイドルグループを一括スキップする。
     // particleGroups_ と同じ順序・サイズ。DrawCompute 冒頭で毎フレーム再計算する。
     std::vector<uint8_t> groupActive_;
+
+    // 最後に発生してからアイドル判定を止めておく残りフレーム数。
+    // 生存数は GPU からの読み戻しで1〜2フレーム遅れるため、EmitOnce() で1回だけ出した直後は
+    // 「生存0・発生なし」に見えて更新が丸ごと省かれ、出したばかりの粒子が失われてしまう。
+    // 読み戻しが追いつくまでは必ず処理する（出し続けるエミッターは毎フレーム発生するので影響なし）
+    int recentEmitFrames_ = 0;
+    static constexpr int kRecentEmitHoldFrames = 4;
 
     Microsoft::WRL::ComPtr<ID3D12Resource> triangleInfoResource_ = nullptr;
     TriangleInfo *pTriangleInfoData_ = nullptr;
@@ -637,12 +739,22 @@ class ParticleCSEmitter
     int groupNum_ = 0;
 
     bool isAuto_ = false;
+    // 発生の立ち上がり。emitRampTime_ 秒かけて emitRateScale_ を 0→1 へ上げる。
+    // 0 のときは何もしない（＝従来どおり最初から最大の発生数）
+    float emitRampTime_ = 0.0f;
+    float emitRampTimer_ = 0.0f;
+    // 係数は EmitterMesh の CB（emitRateScale）でシェーダーへ渡す。
+    // ★グループ設定の emitCount を書き換えてはいけない。作者が決めた値が壊れるうえ、
+    //   「emitCount が 0 のグループはディスパッチごと省く」最適化に引っかかって
+    //   係数が 0 の瞬間にグループが止まり、二度と復帰しなくなる（実際に踏んだ）
+    float emitRateScale_ = 1.0f;
     bool isActive_ = false;
     bool isVisible_ = true;
     bool isGizmoSelectable_ = true;
     bool emitOnce_ = false;
     bool receiveFields_ = true;
-    int32_t fieldGroupId_ = -1;           // -1=全フィールド対象, 0以上=同じIDのフィールドのみ対象
+    uint32_t fieldLayers_ = 0xFFFFFFFFu;  // 受けるフィールドのレイヤー（既定は全部）
+    int sectionOpenRequest_ = 0;          // エディタの見出しを「すべて開く(1)／閉じる(-1)」要求。描いたら 0 に戻す
     bool emitOnlyOnFieldContact_ = false; // true=フィールド接触部分にのみEmit（数・間隔はフィールド側が管理）
 
     // ---- 向きの解決（ビルボード）----

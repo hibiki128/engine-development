@@ -24,7 +24,7 @@ void ModelAnimation::Initialize(const std::string &directorypath, const std::str
     }
 }
 
-void ModelAnimation::Update(bool loop)
+void ModelAnimation::Update(bool loop, const BlendSpacePose *blendSpace)
 {
     // アニメーションデータがある場合は、現在のアニメーション時間を更新
     if (modelData_.hasAnimations)
@@ -66,11 +66,11 @@ void ModelAnimation::Update(bool loop)
 
             bone_->UpdateLayered(baseAnimation, animator_->GetAnimationTime(),
                                  layerAnimation, layerAnimator_->GetAnimationTime(),
-                                 layerMask_, layerWeight_);
+                                 layerMask_, layerWeight_, blendSpace);
         }
         else
         {
-            bone_->Update(baseAnimation, animator_->GetAnimationTime());
+            bone_->Update(baseAnimation, animator_->GetAnimationTime(), blendSpace);
         }
 
         // 計算されたボーン行列を元に、シェーダーに送るパレット行列を更新

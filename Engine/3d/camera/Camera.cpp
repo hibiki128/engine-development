@@ -9,6 +9,10 @@
 #include <random>
 #ifdef USE_IMGUI
 #include <imgui.h>
+// DebugUIHelper.h は ImGui:: を使うので imgui.h の後に include する
+#include "utility/debug/imgui/DebugUIHelper.h"
+#include <format>
+#include <icon/IconsFontAwesome5.h>
 #endif // USE_IMGUI
 
 namespace Hagine {
@@ -431,9 +435,23 @@ Vector3 Camera::CalcLookAtRotation(const Vector3 &target) const
     return result;
 }
 
+namespace {
+float gShakeScale = 1.0f; // 画面の揺れ全体の倍率（オプション）
+} // namespace
+
+void Camera::SetShakeScale(float scale)
+{
+    gShakeScale = (std::max)(scale, 0.0f);
+}
+
+float Camera::GetShakeScale()
+{
+    return gShakeScale;
+}
+
 void Camera::ApplyToViewProjection()
 {
-    viewProjection_.translation_ = position_ + shakeOffset_;
+    viewProjection_.translation_ = position_ + shakeOffset_ * gShakeScale;
     viewProjection_.eulerRotation_ = rotation_;
     viewProjection_.quaternionRotation_ = quaternion_;
     viewProjection_.isUseQuaternion_ = useQuaternion_;
@@ -441,14 +459,14 @@ void Camera::ApplyToViewProjection()
 
     // 外部演出（画面揺れ）のずれはビュー行列へ直接足す。
     // カメラの位置・向きそのものは動かさないので、演出が終われば元の絵に戻る。
-    if (externalOffset_.LengthSq() > 0.0f || externalPitch_ != 0.0f)
+    if ((externalOffset_.LengthSq() > 0.0f || externalPitch_ != 0.0f) && gShakeScale > 0.0f)
     {
-        viewProjection_.matView_.m[3][0] += externalOffset_.x;
-        viewProjection_.matView_.m[3][1] += externalOffset_.y;
-        viewProjection_.matView_.m[3][2] += externalOffset_.z;
+        viewProjection_.matView_.m[3][0] += externalOffset_.x * gShakeScale;
+        viewProjection_.matView_.m[3][1] += externalOffset_.y * gShakeScale;
+        viewProjection_.matView_.m[3][2] += externalOffset_.z * gShakeScale;
         if (externalPitch_ != 0.0f)
         {
-            viewProjection_.matView_ = MakeRotateXMatrix(externalPitch_) * viewProjection_.matView_;
+            viewProjection_.matView_ = MakeRotateXMatrix(externalPitch_ * gShakeScale) * viewProjection_.matView_;
         }
         viewProjection_.TransferMatrix();
     }
@@ -470,25 +488,48 @@ void Camera::DrawImGui()
 #ifdef USE_IMGUI
     ImGui::PushID(name_.c_str());
 
+    static const float kZero3[3] = {0.0f, 0.0f, 0.0f};
+    ImGui::PushItemWidth(-80.0f);
     ImGui::DragFloat3("位置##camerapos", &position_.x, 0.1f);
+    FloatNContextMenu("##cameraposMenu", &position_.x, 3, kZero3);
     Vector3 rotationDegrees = {radiansToDegrees(rotation_.x), radiansToDegrees(rotation_.y), radiansToDegrees(rotation_.z)};
-    if (ImGui::DragFloat3("回転(度)##camerarot", &rotationDegrees.x, 0.5f))
+    bool rotationChanged = ImGui::DragFloat3("回転(度)##camerarot", &rotationDegrees.x, 0.5f);
+    rotationChanged |= FloatNContextMenu("##camerarotMenu", &rotationDegrees.x, 3, kZero3);
+    if (rotationChanged)
     {
         rotation_ = {degreesToRadians(rotationDegrees.x), degreesToRadians(rotationDegrees.y), degreesToRadians(rotationDegrees.z)};
         useQuaternion_ = false;
     }
+    ImGui::SetItemTooltip("X = 上下（プラスで下を向く） / Y = 左右 / Z = 傾き");
 
     float fov = GetFovYDegrees();
-    if (ImGui::DragFloat("画角(度)##camerafov", &fov, 0.5f, 1.0f, 179.0f))
+    if (ImGui::SliderFloat("画角(度)##camerafov", &fov, 10.0f, 120.0f, "%.1f°"))
     {
         SetFovYDegrees(fov);
     }
+    ImGui::PopItemWidth();
+    // よく使う画角（狭いほど望遠で、奥行きが詰まって見える）
+    for (float preset : {30.0f, 45.0f, 60.0f, 75.0f, 90.0f})
+    {
+        const std::string label = std::format("{:.0f}°##fovPreset", preset);
+        if (ImGui::SmallButton(label.c_str()))
+        {
+            SetFovYDegrees(preset);
+        }
+        ImGui::SameLine();
+    }
+    ImGui::TextDisabled("(?)");
+    ImGui::SetItemTooltip("小さいほど望遠（奥行きが詰まる）、大きいほど広角（手前が大きく歪む）");
+    ImGui::PushItemWidth(-80.0f);
     ImGui::DragFloat("近面##cameranear", &viewProjection_.nearZ_, 0.01f, 0.001f, 100.0f);
+    ImGui::SetItemTooltip("これより近い物は映らない。小さすぎると遠くの物がちらつく");
     ImGui::DragFloat("遠面##camerafar", &viewProjection_.farZ_, 1.0f, 1.0f, 100000.0f);
+    ImGui::SetItemTooltip("これより遠い物は映らない");
+    ImGui::PopItemWidth();
 
     if (hasTarget_ || pTargetTransform_)
     {
-        ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), "注視中");
+        ImGui::TextColored(DebugTheme::kAccentCyan, ICON_FA_CROSSHAIRS " 注視中");
         ImGui::SameLine();
         if (ImGui::SmallButton("解除##cameracleartarget"))
         {
@@ -497,7 +538,7 @@ void Camera::DrawImGui()
     }
     if (workPlaying_)
     {
-        ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.4f, 1.0f), "カメラワーク再生中 (%zu/%zu)", workIndex_ + 1, workKeys_.size());
+        ImGui::TextColored(DebugTheme::kAccentYellow, ICON_FA_FILM " カメラワーク再生中 (%zu/%zu)", workIndex_ + 1, workKeys_.size());
         ImGui::SameLine();
         if (ImGui::SmallButton("停止##camerastopwork"))
         {
@@ -505,12 +546,13 @@ void Camera::DrawImGui()
         }
     }
 
-    if (ImGui::Button("保存##camerasave"))
+    if (PrimaryButton(ICON_FA_SAVE " 保存##camerasave"))
     {
         Save();
     }
+    ImGui::SetItemTooltip("コードからは CameraManager::Find(名前)->Load() で呼び出せます");
     ImGui::SameLine();
-    if (ImGui::Button("読み込み##cameraload"))
+    if (NeutralButton(ICON_FA_UPLOAD " 読み込み##cameraload"))
     {
         Load();
     }

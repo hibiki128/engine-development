@@ -5,7 +5,9 @@
 #include "ParticleStruct.h"
 #include "ParticleCommon.h"
 #include <transform/WorldTransform.h>
+#include <array>
 #include <list>
+#include <render/RenderView.h>
 
 namespace Hagine {
 
@@ -19,6 +21,17 @@ class ParticleGroup
     /// ===================================================
     /// public method
     /// ===================================================
+
+    /// <summary>
+    /// デストラクタ。確保したSRVインデックスを SrvManager へ返す
+    /// </summary>
+    ~ParticleGroup();
+
+    // SRVインデックスを持つので、コピーすると同じ番号を二重に返すことになる。
+    // 複製は CreateParticleGroupCopy が「作り直す」形なので C++ のコピーは要らない
+    ParticleGroup() = default;
+    ParticleGroup(const ParticleGroup &) = delete;
+    ParticleGroup &operator=(const ParticleGroup &) = delete;
 
     /// <summary>
     /// 初期化
@@ -61,6 +74,23 @@ class ParticleGroup
     Microsoft::WRL::ComPtr<ID3D12Resource> GetVertexResource() { return vertexResource_; }                      // 頂点リソースを取得
     Microsoft::WRL::ComPtr<ID3D12Resource> GetmaterialResource() { return materialResource_; }                  // マテリアルリソースを取得
 
+    /// <summary>
+    /// カメラビュー窓（RenderView 1〜）用のインスタンシングバッファ。
+    /// メインと同じバッファに書くと、GPU が読む前にメインの値で上書きされてしまうので分ける
+    /// </summary>
+    struct ViewInstancing
+    {
+        Microsoft::WRL::ComPtr<ID3D12Resource> resource;
+        ParticleForGPU *data = nullptr;
+        uint32_t srvIndex = 0;
+        uint32_t count = 0;
+    };
+
+    /// <summary>
+    /// ビュー用のインスタンシングバッファを取得する（無ければ作る）
+    /// </summary>
+    ViewInstancing &AcquireViewInstancing(int view);
+
   private:
     /// ===================================================
     /// private method
@@ -88,6 +118,7 @@ class ParticleGroup
 
     static std::unordered_map<std::string, ModelData> modelCache_; // モデルのキャッシュ
     static const uint32_t kNumMaxInstance = 10000;                 // 最大インスタンス数の制限
+    std::array<ViewInstancing, RenderView::kMaxViews> viewInstancing_{}; // カメラビュー窓用（使われたら作る）
 
     // 頂点バッファ
     Microsoft::WRL::ComPtr<ID3D12Resource> vertexResource_ = nullptr; // バッファリソース

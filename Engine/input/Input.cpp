@@ -76,6 +76,13 @@ void Input::Update()
     keyboard_->Acquire();
     keyboard_->GetDeviceState(sizeof(key_), key_.data());
 
+    // 音楽エディタのようにPCキーボードを丸ごと使う画面では、取得直後に全キーを伏せる。
+    // 各 PushKey 側で判定を足すより、ここ1か所で潰したほうが取りこぼしがない
+    if (keyboardSuspended_)
+    {
+        key_.fill(0);
+    }
+
     // マウスの更新
     mouse_->Update();
     // ゲームパッドの更新

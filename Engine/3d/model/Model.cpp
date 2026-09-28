@@ -7,6 +7,7 @@
 #include "sstream"
 #include <algorithm>
 #include <debug/log/Logger.h>
+#include <render/raytracing/RaytracingScene.h>
 #include <shadow/ShadowMap.h>
 #include <skybox/SkyBox.h>
 
@@ -199,7 +200,7 @@ void Model::CalcLocalBounds()
 
 void Model::Update()
 {
-    if (isGltf_ && pAnimator_ && modelData_.hasAnimations && modelData_.hasBones)
+    if (IsSkinned())
     {
         pSkin_->UpdateInputVertices(modelData_);
 
@@ -220,9 +221,19 @@ void Model::Update()
 
         pSkin_->ExecuteSkinning(pCommandList);
 
-        // UAV → VERTEX
+        // ── レイトレーシングの加速構造へ、今のポーズを載せる ──
+        // ここが「スキニングの実行順と噛み合わせる」場所。出力頂点バッファは今 UAV 状態で、
+        // 加速構造は NON_PIXEL_SHADER_RESOURCE でしか読めないので、
+        // BLAS を作るときだけそちらを経由してから頂点バッファ状態へ戻す
+        D3D12_RESOURCE_STATES stateBeforeVertex = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+        if (RaytracingScene::GetInstance()->BuildSkinnedBlas(this))
+        {
+            stateBeforeVertex = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
+        }
+
+        // → VERTEX
         barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
-        barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+        barrier.Transition.StateBefore = stateBeforeVertex;
         barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER;
         pCommandList->ResourceBarrier(1, &barrier);
 
@@ -256,7 +267,7 @@ void Model::Draw(const std::vector<std::unique_ptr<Material>> &materials, std::v
         pCommandList->IASetIndexBuffer(&indexBufferView);
 
         // 頂点バッファ設定 - アニメーション有無で使用するバッファを切り替え
-        if (isGltf_ && pAnimator_ && modelData_.hasAnimations && modelData_.hasBones)
+        if (IsSkinned())
         {
             // スキニング後の頂点バッファのみを使用
             D3D12_VERTEX_BUFFER_VIEW vbv = pSkin_->GetOutputVertexBufferView();
@@ -324,7 +335,7 @@ void Model::DrawShadow(uint32_t instanceCount)
         pCommandList->IASetIndexBuffer(&indexBufferView);
 
         INT vertexOffset = 0;
-        if (isGltf_ && pAnimator_ && modelData_.hasAnimations && modelData_.hasBones)
+        if (IsSkinned())
         {
             D3D12_VERTEX_BUFFER_VIEW vbv = pSkin_->GetOutputVertexBufferView();
             pCommandList->IASetVertexBuffers(0, 1, &vbv);

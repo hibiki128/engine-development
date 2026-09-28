@@ -185,6 +185,13 @@ class Camera
     /// <param name="strength">揺れ幅（ワールド単位）</param>
     void Shake(float duration, float strength);
 
+    /// <summary>
+    /// 画面の揺れ全体の倍率（オプション画面の設定。0で揺らさない）。
+    /// Shake と SetExternalOffset（ゲーム側の揺れ演出）の両方に掛かる
+    /// </summary>
+    static void SetShakeScale(float scale);
+    static float GetShakeScale();
+
     /// <summary>揺れを即座に止める</summary>
     void StopShake();
 

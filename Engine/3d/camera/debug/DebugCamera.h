@@ -38,12 +38,32 @@ class DebugCamera
     bool GetActive() { return isActive_; }
 
     /// <summary>
+    /// 有効にする直前までアクティブだったカメラ（メイン）。使っていなければ nullptr
+    /// </summary>
+    Camera *GetPreviousCamera() const { return isActive_ ? pPreviousCamera_ : nullptr; }
+
+    /// <summary>
     /// カメラのアクティブ状態を設定する
     /// 有効にするとデバッグカメラへ、無効に戻すと元のカメラへ切り替わる
     /// （実際の切り替えは Update で行われる）
     /// </summary>
     /// <param name="active">有効にするか</param>
     void SetActive(bool active) { isActive_ = active; }
+
+    /// <summary>
+    /// キー移動の速さ（シーンビューのツールバーから変える）
+    /// </summary>
+    float GetMoveSpeed() const { return moveZspeed_; }
+    void SetMoveSpeed(float speed) { moveZspeed_ = speed; }
+
+    /// <summary>今の視点（位置とオイラー角）。カメラのブックマークに使う</summary>
+    const Vector3 &GetViewPosition() const { return translation_; }
+    const Vector3 &GetViewRotation() const { return eulerRotation_; }
+
+    /// <summary>
+    /// 視点を直接置く（ブックマークの呼び出し）。回転はオイラー角（ラジアン）
+    /// </summary>
+    void SetView(const Vector3 &position, const Vector3 &rotation);
 
   public:
     // ===================================================
@@ -86,6 +106,9 @@ class DebugCamera
     bool useKey_ = true;                                          // キー操作の有効状態
     bool useMouse_ = false;                                       // マウス操作の有効状態
     bool isActive_ = false;                                       // カメラ自体のアクティブ状態
+    bool hasPendingView_ = false;                                 // SetView で置く視点があるか
+    Vector3 pendingViewPosition_ = {0.0f, 0.0f, 0.0f};            // SetView で置く位置
+    Vector3 pendingViewRotation_ = {0.0f, 0.0f, 0.0f};            // SetView で置く回転
     bool isUseQuaternion_ = false;                                // クォータニオン計算の利用フラグ
 };
 } // namespace Hagine

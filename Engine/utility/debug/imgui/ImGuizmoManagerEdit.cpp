@@ -10,9 +10,11 @@
 #include <edit/undo/UndoRedoManager.h>
 #include "WinApp.h"
 #include <format>
+#include <icon/IconsFontAwesome5.h>
 #include <imgui.h>
 // DebugUIHelper.h は ImVec4 / ImGui:: を使うので imgui.h の後に include する
 #include "DebugUIHelper.h"
+#include "ImGuizmoManagerInternal.h"
 
 // =======================================================================
 // ImGuizmoManager: 一括編集（整列・等間隔・接地・複製・貼り付け・削除）
@@ -21,26 +23,8 @@
 namespace Hagine {
 // ---- 整列・等間隔配置・地面スナップ ------------------------------------
 
-namespace {
-// ボタン1発で完了する一括操作を Undo 履歴へ積むためのヘルパー。
-// ImGuiUndoTracker は「ウィジェット編集ジェスチャ」を追う仕組みなので、
-// こうした即時実行のコマンドは Copy/Paste と同様に明示的に Push する。
-template <typename Operation>
-void RunAsUndoableCommand(const std::string &label, Operation &&operation)
-{
-    nlohmann::json before = BaseObjectManager::GetInstance()->CaptureUndoState();
-    operation();
-    nlohmann::json after = BaseObjectManager::GetInstance()->CaptureUndoState();
-    if (before == after)
-    {
-        return; // 何も変わらなかったら履歴を汚さない
-    }
-    auto [diffBefore, diffAfter] = MakeTopLevelJsonDiff(before, after);
-    UndoRedoManager::GetInstance()->Push(std::make_unique<JsonStateCommand>(
-        label, std::move(diffBefore), std::move(diffAfter),
-        [](const nlohmann::json &s) { BaseObjectManager::GetInstance()->RestoreUndoState(s); }));
-}
-} // namespace
+using GizmoInternal::PostUndoToast;
+using GizmoInternal::RunAsUndoableCommand;
 
 std::vector<GizmoTarget *> ImGuizmoManager::CollectMovableSelection()
 {
@@ -384,6 +368,8 @@ void ImGuizmoManager::PasteObjects()
         UndoRedoManager::GetInstance()->Push(std::make_unique<JsonStateCommand>(
             "オブジェクト貼り付け", std::move(diffBefore), std::move(diffAfter),
             [](const nlohmann::json &s) { BaseObjectManager::GetInstance()->RestoreUndoState(s); }));
+        // メニューやボタンから呼ばれたとき、ジェスチャの終わりに同じ差分が二重に積まれないようにする
+        BaseObjectManager::GetInstance()->SkipUndoGesture();
     }
 
     ImGuiNotification::Post("オブジェクトを貼り付けました", {0.4f, 0.8f, 1.0f, 1.0f});
@@ -415,10 +401,170 @@ void ImGuizmoManager::DuplicateSelectedObjects()
         UndoRedoManager::GetInstance()->Push(std::make_unique<JsonStateCommand>(
             "オブジェクト複製", std::move(diffBefore), std::move(diffAfter),
             [](const nlohmann::json &s) { BaseObjectManager::GetInstance()->RestoreUndoState(s); }));
+        // メニューやボタンから呼ばれたとき、ジェスチャの終わりに同じ差分が二重に積まれないようにする
+        BaseObjectManager::GetInstance()->SkipUndoGesture();
     }
 
-    ImGuiNotification::Post("オブジェクトを複製しました: " + std::to_string(sources.size()) + "個",
-                            {0.4f, 0.8f, 1.0f, 1.0f});
+    PostUndoToast("オブジェクトを複製しました: " + std::to_string(sources.size()) + "個", {0.4f, 0.8f, 1.0f, 1.0f});
+}
+
+// モデルを置いて選択状態にする
+std::string ImGuizmoManager::PlaceModel(const std::string &modelPath, const Vector3 &position)
+{
+    std::string createdName;
+    RunAsUndoableCommand("モデル配置", [&] {
+        if (BaseObject *created = BaseObjectManager::GetInstance()->CreateObjectFromModel(modelPath, position))
+        {
+            createdName = created->GetName();
+        }
+    });
+    if (createdName.empty())
+    {
+        return {};
+    }
+    pinnedName_.clear();
+    SelectOnly(createdName);
+    UpdateFilteredNames();
+    return createdName;
+}
+
+// 選択中の物を、重心が指定の場所に来るようまとめて動かす（並びは保つ）
+void ImGuizmoManager::MoveSelectionTo(const Vector3 &position)
+{
+    std::vector<GizmoTarget *> targets = CollectMovableSelection();
+    if (targets.empty())
+    {
+        return;
+    }
+    Vector3 center = {0.0f, 0.0f, 0.0f};
+    for (GizmoTarget *target : targets)
+    {
+        center = center + target->GetWorldPosition();
+    }
+    center = center / static_cast<float>(targets.size());
+    const Vector3 offset = position - center;
+    RunAsUndoableCommand("選択を移動", [&] {
+        for (GizmoTarget *target : targets)
+        {
+            SetTargetWorldPosition(*target, target->GetWorldPosition() + offset);
+        }
+    });
+}
+
+// ---- プレハブとのつながり ------------------------------------------------
+
+void ImGuizmoManager::ApplyInstanceToPrefab(const std::string &instanceName)
+{
+    BaseObjectManager *manager = BaseObjectManager::GetInstance();
+    BaseObject *root = manager->GetObjectByName(instanceName);
+    if (!root || root->GetPrefabSource().empty())
+    {
+        return;
+    }
+    const std::string prefabName = root->GetPrefabSource();
+    if (!manager->ApplyInstanceToPrefab(instanceName))
+    {
+        ImGuiNotification::Post("プレハブへ反映できませんでした: " + prefabName, {0.80f, 0.46f, 0.46f, 1.0f});
+        return;
+    }
+    // 他にも同じプレハブから置いた物があれば、置き直すと反映されることを知らせる
+    const int others = manager->CountPrefabInstances(prefabName) - 1;
+    ImGuiNotification::Post(others > 0 ? std::format("プレハブ「{}」へ反映しました（ほかに {} 個あります。置き直すと同じ内容になります）", prefabName, others)
+                                       : std::format("プレハブ「{}」へ反映しました", prefabName),
+                            {0.45f, 0.68f, 0.52f, 1.0f});
+}
+
+void ImGuizmoManager::RevertInstanceToPrefab(const std::string &instanceName)
+{
+    std::string newRoot;
+    RunAsUndoableCommand("プレハブで置き直す", [&] { newRoot = BaseObjectManager::GetInstance()->RevertInstanceToPrefab(instanceName); });
+    if (newRoot.empty())
+    {
+        ImGuiNotification::Post("プレハブで置き直せませんでした（プレハブのファイルが無い可能性があります）", {0.80f, 0.46f, 0.46f, 1.0f});
+        return;
+    }
+    pinnedName_.clear();
+    SelectOnly(newRoot);
+    UpdateFilteredNames();
+    PostUndoToast("プレハブの内容で置き直しました: " + newRoot, {0.45f, 0.68f, 0.52f, 1.0f});
+}
+
+void ImGuizmoManager::DrawPrefabLinkMenuItems(BaseObject *pObject)
+{
+    if (!pObject)
+    {
+        return;
+    }
+    const std::string name = pObject->GetName();
+    const std::string &prefab = pObject->GetPrefabSource();
+    if (prefab.empty())
+    {
+        if (ImGui::MenuItem(ICON_FA_BOX " プレハブとして保存..."))
+        {
+            OpenPrefabSaveDialog(name);
+        }
+        return;
+    }
+    ImGui::TextDisabled(ICON_FA_BOX " プレハブ: %s", prefab.c_str());
+    if (ImGui::MenuItem(ICON_FA_UPLOAD " プレハブへ反映（上書き保存）"))
+    {
+        ApplyInstanceToPrefab(name);
+    }
+    ImGui::SetItemTooltip("今の見た目・コライダー・子の配置で、プレハブのファイルを上書きします");
+    if (ImGui::MenuItem(ICON_FA_UNDO " プレハブの内容で置き直す"))
+    {
+        RevertInstanceToPrefab(name);
+    }
+    ImGui::SetItemTooltip("位置はそのままで、プレハブの状態に戻します（Ctrl+Z で取り消せます）");
+    if (ImGui::MenuItem(ICON_FA_UNLINK " プレハブとのつながりを外す"))
+    {
+        RunAsUndoableCommand("プレハブのリンク解除", [&] { pObject->SetPrefabSource(""); });
+    }
+    if (ImGui::MenuItem(ICON_FA_BOX " 別のプレハブとして保存..."))
+    {
+        OpenPrefabSaveDialog(name);
+    }
+}
+
+// プリミティブを指定の場所に置いて選択状態にする
+std::string ImGuizmoManager::PlacePrimitive(PrimitiveType type, const std::string &baseName, const Vector3 &position)
+{
+    std::string createdName;
+    RunAsUndoableCommand("プリミティブ配置", [&] {
+        if (BaseObject *created = BaseObjectManager::GetInstance()->CreatePrimitiveObject(type, baseName))
+        {
+            createdName = created->GetName();
+            created->GetLocalPosition() = position;
+            created->GetWorldTransform()->UpdateMatrix();
+        }
+    });
+    if (createdName.empty())
+    {
+        return {};
+    }
+    pinnedName_.clear();
+    SelectOnly(createdName);
+    UpdateFilteredNames();
+    return createdName;
+}
+
+// プレハブを置いて、置いた根を選択状態にする
+std::string ImGuizmoManager::PlacePrefab(const std::string &prefabName, const Vector3 &position)
+{
+    std::string rootName;
+    RunAsUndoableCommand("プレハブ配置", [&] {
+        rootName = BaseObjectManager::GetInstance()->InstantiatePrefab(prefabName, position);
+    });
+    if (rootName.empty())
+    {
+        ImGuiNotification::Post("プレハブを置けませんでした: " + prefabName, {0.82f, 0.46f, 0.46f, 1.0f});
+        return {};
+    }
+    pinnedName_.clear();
+    SelectOnly(rootName);
+    UpdateFilteredNames();
+    PostUndoToast("プレハブを置きました: " + rootName, {0.45f, 0.68f, 0.52f, 1.0f});
+    return rootName;
 }
 
 // 選択中の全エントリを削除する
@@ -456,6 +602,8 @@ void ImGuizmoManager::DeleteSelectedObjects()
         UndoRedoManager::GetInstance()->Push(std::make_unique<JsonStateCommand>(
             "オブジェクト削除", std::move(diffBefore), std::move(diffAfter),
             [](const nlohmann::json &s) { BaseObjectManager::GetInstance()->RestoreUndoState(s); }));
+        // メニューやボタンから呼ばれたとき、ジェスチャの終わりに同じ差分が二重に積まれないようにする
+        BaseObjectManager::GetInstance()->SkipUndoGesture();
     }
 
     UpdateFilteredNames();
@@ -465,7 +613,7 @@ void ImGuizmoManager::DeleteSelectedObjects()
     overlapCandidates_.clear();
     overlapCycleIndex_ = 0;
 
-    ImGuiNotification::Post("選択オブジェクトを削除しました: " + std::to_string(count) + "個", {0.9f, 0.7f, 0.2f, 1.0f});
+    PostUndoToast("選択オブジェクトを削除しました: " + std::to_string(count) + "個", {0.9f, 0.7f, 0.2f, 1.0f});
 }
 
 } // namespace Hagine

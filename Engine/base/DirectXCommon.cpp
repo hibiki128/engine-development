@@ -1,8 +1,123 @@
 #include "DirectXCommon.h"
+#include "DXCommandList.h"
+#include "DXCommandQueue.h"
+#include "DXDevice.h"
+#include "DXSwapChain.h"
+#include "FrameRateLimiter.h"
+#include "graphics/dsv/DsvManager.h"
+#include "graphics/rtv/RtvManager.h"
+#include "ResourceFactory.h"
+#include "ShaderCompiler.h"
 #include "cassert"
+#include <debug/capture/CaptureManager.h>
 #include <graphics/srv/SrvManager.h>
 
 namespace Hagine {
+
+// ---- 生成・破棄（部品の定義が見えるここで行う）----
+DirectXCommon::DirectXCommon()
+{
+    static_assert(kFrameCount == DXCommandList::kFrameCount, "DirectXCommon::kFrameCount を DXCommandList と合わせること");
+}
+DirectXCommon::~DirectXCommon() = default;
+
+DirectXCommon *DirectXCommon::GetInstance()
+{
+    static DirectXCommon instance;
+    return &instance;
+}
+
+// ---- 部品へ中継するゲッター（ヘッダーから移した）----
+D3D12_CPU_DESCRIPTOR_HANDLE DirectXCommon::GetRTVCPUDescriptorHandle(uint32_t index)
+{
+    return rtvManager_->GetCPUHandle(index);
+}
+
+D3D12_GPU_DESCRIPTOR_HANDLE DirectXCommon::GetRTVGPUDescriptorHandle(uint32_t index)
+{
+    return rtvManager_->GetGPUHandle(index);
+}
+
+D3D12_CPU_DESCRIPTOR_HANDLE DirectXCommon::GetDSVCPUDescriptorHandle(uint32_t index)
+{
+    return dsvManager_->GetCPUHandle(index);
+}
+
+D3D12_GPU_DESCRIPTOR_HANDLE DirectXCommon::GetDSVGPUDescriptorHandle(uint32_t index)
+{
+    return dsvManager_->GetGPUHandle(index);
+}
+
+Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> DirectXCommon::GetCommandList()
+{
+    return directCommandList_->GetComPtr();
+}
+
+Microsoft::WRL::ComPtr<ID3D12Device> DirectXCommon::GetDevice()
+{
+    return dxDevice_->GetComPtr();
+}
+
+ID3D12Device5 *DirectXCommon::GetDevice5()
+{
+    return dxDevice_->GetDevice5();
+}
+
+ID3D12GraphicsCommandList4 *DirectXCommon::GetCommandList4()
+{
+    return directCommandList_->Get4();
+}
+
+bool DirectXCommon::IsRaytracingSupported() const
+{
+    return dxDevice_->IsRaytracingSupported();
+}
+
+IDxcUtils *DirectXCommon::GetDxcUtils()
+{
+    return shaderCompiler_->GetDxcUtils();
+}
+
+IDxcCompiler3 *DirectXCommon::GetDxcCompiler()
+{
+    return shaderCompiler_->GetDxcCompiler();
+}
+
+size_t DirectXCommon::GetBackBufferCount() const
+{
+    return swapChain_->GetBackBufferCount();
+}
+
+IDXGISwapChain4 *DirectXCommon::GetSwapChain()
+{
+    return swapChain_->Get();
+}
+
+Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> DirectXCommon::GetRTVDescriptorHeap()
+{
+    return rtvManager_->GetHeap();
+}
+
+Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> DirectXCommon::GetComputeCommandList()
+{
+    return computeCommandList_->GetComPtr();
+}
+
+ID3D12CommandQueue *DirectXCommon::GetCommandQueue()
+{
+    return directQueue_->Get();
+}
+
+ID3D12CommandQueue *DirectXCommon::GetComputeCommandQueue()
+{
+    return computeQueue_->Get();
+}
+
+Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> DirectXCommon::CreateDescriptorHeap(D3D12_DESCRIPTOR_HEAP_TYPE heapType, UINT numDescriptors, bool shaderVisible)
+{
+    return dxDevice_->CreateDescriptorHeap(heapType, numDescriptors, shaderVisible);
+}
+
 
 #pragma comment(lib, "d3d12.lib")
 #pragma comment(lib, "dxgi.lib")
@@ -112,6 +227,11 @@ void DirectXCommon::CreateOffscreenSRV()
     SrvManager::GetInstance()->CreateSRVforRenderTexture(offScreenSrvIndex_, offScreenResource_.Get());
     offScreenSrvHandleCPU_ = SrvManager::GetInstance()->GetCPUDescriptorHandle(offScreenSrvIndex_);
     offScreenSrvHandleGPU_ = SrvManager::GetInstance()->GetGPUDescriptorHandle(offScreenSrvIndex_);
+
+    // ブルームの合成がシーンへ直接足し込むための UAV（+1規約で確保する）
+    offScreenUavIndex_ = SrvManager::GetInstance()->Allocate() + 1;
+    SrvManager::GetInstance()->CreateUAVforTexture2D(offScreenUavIndex_, offScreenResource_.Get(),
+                                                     kSceneColorFormat);
 }
 
 void DirectXCommon::CreateDepthSRV()
@@ -136,14 +256,21 @@ void DirectXCommon::RenderTargetViewInitialize()
     }
 
     //=================RenderTextureResource用のRTV（slot 2）======================
-    clearColorValue_.Format = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
+    // シーンは HDR（リニアFP16）で描く。1.0 を超える明るさを残したまま
+    // ポストエフェクトへ渡し、チェーンの出口でトーンマップして見える範囲へ収める。
+    clearColorValue_.Format = kSceneColorFormat;
     clearColorValue_.Color[0] = 0.1f;  // 赤成分 (非常に暗い)
     clearColorValue_.Color[1] = 0.25f; // 緑成分 (非常に暗い)
     clearColorValue_.Color[2] = 0.5f;  // 青成分 (少し強め)
     clearColorValue_.Color[3] = 1.0f;  // アルファ値 (完全な不透明)
-    offScreenResource_ = resourceFactory_->CreateRenderTextureResource(WinApp::GetVirtualWidth(), WinApp::GetVirtualHeight(), clearColorValue_.Format, clearColorValue_);
+    // allowUAV: ブルームの合成がコンピュートから直接足し込むため。
+    // SRV と UAV は同時にバインドできないので、シーンへ加算するパスは
+    // このテクスチャを UAV として読み書きする（BloomPass を参照）
+    offScreenResource_ = resourceFactory_->CreateRenderTextureResource(WinApp::GetVirtualWidth(), WinApp::GetVirtualHeight(), clearColorValue_.Format, clearColorValue_, /*allowUAV=*/true);
 
-    rtvManager_->Create(2, offScreenResource_.Get(), rtvDesc);
+    D3D12_RENDER_TARGET_VIEW_DESC sceneRtvDesc = rtvDesc;
+    sceneRtvDesc.Format = kSceneColorFormat;
+    rtvManager_->Create(2, offScreenResource_.Get(), sceneRtvDesc);
 }
 
 D3D12_CPU_DESCRIPTOR_HANDLE DirectXCommon::CreateAdditionalRTV(ID3D12Resource *resource, int index)
@@ -198,6 +325,50 @@ void DirectXCommon::PreDraw()
     pCommandList->RSSetScissorRects(1, &scissorRect_);
 }
 
+void DirectXCommon::CaptureDepthForRead()
+{
+    // 申告が無ければ複製も確保もしない（ソフトパーティクルを使わないゲームは完全に無料）。
+    // 申告は各グループの Update から来るのでフレーム頭に立ち、ここで下ろす
+    const bool requested = depthCaptureRequested_;
+    depthCaptureRequested_ = false;
+    if (!requested || !depthStencilResource_)
+    {
+        return;
+    }
+
+    // 初回だけ複製先を作る。ソフトパーティクルを使わないゲームでは1枚も確保しない
+    if (!depthCopyResource_)
+    {
+        depthCopyResource_ = resourceFactory_->CreateDepthStencilTextureResource(WinApp::GetVirtualWidth(),
+                                                                                 WinApp::GetVirtualHeight());
+        if (!depthCopyResource_)
+        {
+            return;
+        }
+        depthCopyResource_->SetName(L"DepthCopyForSoftParticle");
+        depthCopySrvIndex_ = SrvManager::GetInstance()->Allocate() + 1;
+        SrvManager::GetInstance()->CreateSRVforDepth(depthCopySrvIndex_, depthCopyResource_.Get());
+        // 作った直後は DEPTH_WRITE なので、以降の往復に合わせて読み取り状態へ寄せておく
+        BarrierTransition(depthCopyResource_.Get(), D3D12_RESOURCE_STATE_DEPTH_WRITE, kDepthReadState,
+                          D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES);
+    }
+
+    ID3D12GraphicsCommandList *pCommandList = directCommandList_->Get();
+
+    // 本体は描画中 DEPTH_WRITE。コピー元へ落としてから複製し、すぐ戻す。
+    // CopyResource はリソース丸ごとを扱うので、深度面(0)だけでなくステンシル面(1)も一緒に遷移させる
+    constexpr UINT kAll = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+    BarrierTransition(depthStencilResource_.Get(), D3D12_RESOURCE_STATE_DEPTH_WRITE,
+                      D3D12_RESOURCE_STATE_COPY_SOURCE, kAll);
+    BarrierTransition(depthCopyResource_.Get(), kDepthReadState, D3D12_RESOURCE_STATE_COPY_DEST, kAll);
+
+    pCommandList->CopyResource(depthCopyResource_.Get(), depthStencilResource_.Get());
+
+    BarrierTransition(depthCopyResource_.Get(), D3D12_RESOURCE_STATE_COPY_DEST, kDepthReadState, kAll);
+    BarrierTransition(depthStencilResource_.Get(), D3D12_RESOURCE_STATE_COPY_SOURCE,
+                      D3D12_RESOURCE_STATE_DEPTH_WRITE, kAll);
+}
+
 void DirectXCommon::TransitionDepthBarrier()
 {
     BarrierTransition(depthStencilResource_.Get(), kDepthReadState, D3D12_RESOURCE_STATE_DEPTH_WRITE);
@@ -229,6 +400,10 @@ void DirectXCommon::PostDraw()
 
     // 画面を表示（VSync 待ち）
     swapChain_->Present();
+
+    // スクリーンショット・連番録画はここで読み出す。
+    // Present より前だと、まだGPUが描き終わっていない絵を撮ってしまう
+    CaptureManager::GetInstance()->EndFrame();
 
     // ---- ダブルバッファフェンス管理 ----
     // 現フレームスロットに完了シグナルを送る
@@ -323,7 +498,8 @@ void DirectXCommon::TransitionSRVBarrier()
     directCommandList_->Get()->ResourceBarrier(1, &barrier_);
 }
 
-void DirectXCommon::BarrierTransition(ID3D12Resource *pResource, D3D12_RESOURCE_STATES Before, D3D12_RESOURCE_STATES After)
+void DirectXCommon::BarrierTransition(ID3D12Resource *pResource, D3D12_RESOURCE_STATES Before, D3D12_RESOURCE_STATES After,
+                                      UINT subresource)
 {
     // 今回のバリアはTransition
     barrier_.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
@@ -331,6 +507,8 @@ void DirectXCommon::BarrierTransition(ID3D12Resource *pResource, D3D12_RESOURCE_
     barrier_.Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
     // バリアを張る対象のリソース
     barrier_.Transition.pResource = pResource;
+    // 対象のサブリソース
+    barrier_.Transition.Subresource = subresource;
     // 遷移前(現在)のResourceState
     barrier_.Transition.StateBefore = Before;
     // 遷移後のResourceState
@@ -421,6 +599,11 @@ IDxcBlob *DirectXCommon::CompileShaderWithReflection(const std::wstring &filePat
                                                      ID3D12ShaderReflection **ppReflection)
 {
     return shaderCompiler_->CompileWithReflection(filePath, profile, ppReflection);
+}
+
+bool DirectXCommon::TryCompileShader(const std::wstring &filePath, const wchar_t *profile, std::string *outError)
+{
+    return shaderCompiler_->TryCompile(filePath, profile, outError);
 }
 
 Microsoft::WRL::ComPtr<ID3D12Resource> DirectXCommon::CreateBufferResource(size_t sizeInBytes, bool isUAV)

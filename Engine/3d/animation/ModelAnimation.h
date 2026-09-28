@@ -9,6 +9,8 @@
 /// Animator、Bone、Skinを統合してモデルのアニメーションを制御する
 /// </summary>
 namespace Hagine {
+struct BlendSpacePose;
+
 class ModelAnimation
 {
   public:
@@ -27,7 +29,8 @@ class ModelAnimation
     /// 更新処理
     /// </summary>
     /// <param name="loop">ループ再生フラグ</param>
-    void Update(bool loop);
+    /// <param name="blendSpace">通常のアニメーションの上に重ねるブレンドスペース（無ければ nullptr）</param>
+    void Update(bool loop, const BlendSpacePose *blendSpace = nullptr);
 
     /// <summary>
     /// アニメーション再生

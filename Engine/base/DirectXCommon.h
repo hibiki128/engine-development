@@ -1,14 +1,8 @@
 #pragma once
-#include "DXCommandList.h"
-#include "DXCommandQueue.h"
-#include "DXDevice.h"
-#include "DXSwapChain.h"
+// 部品クラス（DXDevice など）のヘッダーはここでは読まない（前方宣言だけにする）。
+// このヘッダーは 200 本以上の .cpp が読むので、部品のヘッダーを1つ触っただけで
+// ほぼ全体が再コンパイルになっていた。部品を直接使う処理は DirectXCommon.cpp に置く。
 #include "DirectXTex/DirectXTex.h"
-#include "FrameRateLimiter.h"
-#include "graphics/dsv/DsvManager.h"
-#include "graphics/rtv/RtvManager.h"
-#include "ResourceFactory.h"
-#include "ShaderCompiler.h"
 #include "WinApp.h"
 #include "d3d12.h"
 #include "dxcapi.h"
@@ -18,7 +12,34 @@
 #include <memory>
 #include <type/Vector4.h>
 
+// シェーダーのリフレクション（d3d12shader.h）は使う .cpp だけが読む
+struct ID3D12ShaderReflection;
+
 namespace Hagine {
+class DXDevice;
+class ResourceFactory;
+class DXCommandQueue;
+class DXCommandList;
+class DXSwapChain;
+class RtvManager;
+class DsvManager;
+class ShaderCompiler;
+class FrameRateLimiter;
+
+/// <summary>
+/// シーンを描き込む先（オフスクリーン／ポストエフェクトのチェーン／最終結果テクスチャ）の
+/// フォーマット。リニア空間のFP16＝HDR。
+///
+/// 8bit sRGB では明るさが 1.0 で頭打ちになり、「光っているものの芯だけがとても明るい」
+/// という情報が捨てられてしまう。そうなるとブルームは白くつぶれるだけになり、
+/// 露出やトーンマップも効かせようがない。
+/// 1.0 を超える値のまま持ち回り、ポストエフェクトのチェーン出口でトーンマップして
+/// 0〜1 に収める（shaders/OffScreen/ToneMap.PS.hlsl）。
+/// UI はトーンマップ後の最終結果テクスチャへ描くので、UIの色は影響を受けない。
+///
+/// ここを変えるときは、オフスクリーンへ描くすべてのPSOの RTVFormats も一緒に変えること。
+/// </summary>
+inline constexpr DXGI_FORMAT kSceneColorFormat = DXGI_FORMAT_R16G16B16A16_FLOAT;
 
 /// <summary>
 /// DirectX基盤の統括クラス（ファサード）
@@ -28,8 +49,9 @@ namespace Hagine {
 class DirectXCommon
 {
   private:
-    DirectXCommon() = default;
-    ~DirectXCommon() = default;
+    // 部品を unique_ptr で持つので、生成・破棄は部品の定義が見える .cpp で行う
+    DirectXCommon();
+    ~DirectXCommon();
     DirectXCommon(DirectXCommon &) = delete;
     DirectXCommon &operator=(DirectXCommon &) = delete;
 
@@ -38,11 +60,7 @@ class DirectXCommon
     /// シングルトンインスタンスの取得
     /// </summary>
     /// <returns></returns>
-    static DirectXCommon *GetInstance()
-    {
-        static DirectXCommon instance;
-        return &instance;
-    }
+    static DirectXCommon *GetInstance();
 
     /// <summary>
     /// 終了
@@ -126,6 +144,17 @@ class DirectXCommon
     IDxcBlob *CompileShaderWithReflection(const std::wstring &filePath, const wchar_t *profile,
                                           ID3D12ShaderReflection **ppReflection);
 
+    /// <summary>
+    /// コンパイルが通るかだけを確かめる（失敗しても止まらない）
+    /// シェーダーのホットリロードで、作り直す前に安全かどうかを見るのに使う
+    /// </summary>
+    /// <param name="filePath">CompilerするShaderファイルへのパス</param>
+    /// <param name="profile">Compilerに使用するProfile</param>
+    /// <param name="outError">失敗したときのDXCのメッセージ（省略可）</param>
+    /// <returns>bool: コンパイルが通れば true</returns>
+    bool TryCompileShader(const std::wstring &filePath, const wchar_t *profile,
+                          std::string *outError = nullptr);
+
     // Resourceの作成
     Microsoft::WRL::ComPtr<ID3D12Resource> CreateBufferResource(size_t sizeInBytes, bool isUAV = false);
 
@@ -149,49 +178,63 @@ class DirectXCommon
     /// <param name="pResource"></param>
     /// <param name="Before"></param>
     /// <param name="After"></param>
-    void BarrierTransition(ID3D12Resource *pResource, D3D12_RESOURCE_STATES Before, D3D12_RESOURCE_STATES After);
+    /// <param name="subresource">遷移させるサブリソース。既定は0番（深度ステンシルなら深度面、テクスチャなら最上位ミップ）だけ。
+    /// リソース丸ごとを扱う CopyResource の前後では D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES を渡すこと
+    /// （深度ステンシルはステンシル面が1番にあり、0番だけでは遷移しきれない）</param>
+    void BarrierTransition(ID3D12Resource *pResource, D3D12_RESOURCE_STATES Before, D3D12_RESOURCE_STATES After,
+                           UINT subresource = 0);
     D3D12_CPU_DESCRIPTOR_HANDLE CreateAdditionalRTV(ID3D12Resource *resource, int index);
 #pragma region getter
     /// <summary>
     /// RTVの指定番号のCPUデスクリプタハンドルを取得する
     /// </summary>
-    D3D12_CPU_DESCRIPTOR_HANDLE GetRTVCPUDescriptorHandle(uint32_t index) { return rtvManager_->GetCPUHandle(index); }
+    D3D12_CPU_DESCRIPTOR_HANDLE GetRTVCPUDescriptorHandle(uint32_t index);
 
     /// <summary>
     /// RTVの指定番号のGPUデスクリプタハンドルを取得する
     /// </summary>
-    D3D12_GPU_DESCRIPTOR_HANDLE GetRTVGPUDescriptorHandle(uint32_t index) { return rtvManager_->GetGPUHandle(index); }
+    D3D12_GPU_DESCRIPTOR_HANDLE GetRTVGPUDescriptorHandle(uint32_t index);
 
     /// <summary>
     /// DSVの指定番号のCPUデスクリプタハンドルを取得する
     /// </summary>
-    D3D12_CPU_DESCRIPTOR_HANDLE GetDSVCPUDescriptorHandle(uint32_t index) { return dsvManager_->GetCPUHandle(index); }
+    D3D12_CPU_DESCRIPTOR_HANDLE GetDSVCPUDescriptorHandle(uint32_t index);
 
     /// <summary>
     /// DSVの指定番号のGPUデスクリプタハンドルを取得する
     /// </summary>
-    D3D12_GPU_DESCRIPTOR_HANDLE GetDSVGPUDescriptorHandle(uint32_t index) { return dsvManager_->GetGPUHandle(index); }
+    D3D12_GPU_DESCRIPTOR_HANDLE GetDSVGPUDescriptorHandle(uint32_t index);
 
     /// <summary>
     /// コマンドリストの取得
     /// </summary>
-    Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> GetCommandList() { return directCommandList_->GetComPtr(); }
+    Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> GetCommandList();
 
     /// <summary>
     /// デバイスの取得
     /// </summary>
-    Microsoft::WRL::ComPtr<ID3D12Device> GetDevice() { return dxDevice_->GetComPtr(); }
+    Microsoft::WRL::ComPtr<ID3D12Device> GetDevice();
+
+    /// <summary>
+    /// レイトレーシング用のデバイス／コマンドリストを取得する。
+    /// どちらも非対応環境では nullptr を返すので、使う前に IsRaytracingSupported() を見ること
+    /// </summary>
+    ID3D12Device5 *GetDevice5();
+    ID3D12GraphicsCommandList4 *GetCommandList4();
+
+    /// <summary>
+    /// インラインレイトレーシング（RayQuery）が使えるか
+    /// </summary>
+    /// <returns>bool: 使えるなら true</returns>
+    bool IsRaytracingSupported() const;
 
     /// <summary>
     /// DescriptorHeapの作成
     /// </summary>
-    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> CreateDescriptorHeap(D3D12_DESCRIPTOR_HEAP_TYPE heapType, UINT numDescriptors, bool shaderVisible)
-    {
-        return dxDevice_->CreateDescriptorHeap(heapType, numDescriptors, shaderVisible);
-    }
+    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> CreateDescriptorHeap(D3D12_DESCRIPTOR_HEAP_TYPE heapType, UINT numDescriptors, bool shaderVisible);
     ID3D12Resource *GetOffScreenResource() { return offScreenResource_.Get(); }
-    IDxcUtils *GetDxcUtils() { return shaderCompiler_->GetDxcUtils(); }
-    IDxcCompiler3 *GetDxcCompiler() { return shaderCompiler_->GetDxcCompiler(); }
+    IDxcUtils *GetDxcUtils();
+    IDxcCompiler3 *GetDxcCompiler();
 
     Vector4 GetClearColor() const
     {
@@ -204,34 +247,57 @@ class DirectXCommon
     }
 
     // バックバッファの数を取得
-    size_t GetBackBufferCount() const { return swapChain_->GetBackBufferCount(); }
+    size_t GetBackBufferCount() const;
 
     D3D12_GPU_DESCRIPTOR_HANDLE GetOffScreenGPUHandle() { return offScreenSrvHandleGPU_; }
     D3D12_CPU_DESCRIPTOR_HANDLE GetOffScreenCPUHandle() { return offScreenSrvHandleCPU_; }
     uint32_t GetOffScreenSrvIndex() { return offScreenSrvIndex_; }
+    /// <summary>シーンのカラーターゲットへコンピュートから書き込むためのUAV番号（ブルームの合成が使う）</summary>
+    uint32_t GetOffScreenUavIndex() const { return offScreenUavIndex_; }
 
     D3D12_GPU_DESCRIPTOR_HANDLE GetDepthGPUHandle() { return depthSrvHandleGPU_; }
     D3D12_CPU_DESCRIPTOR_HANDLE GetDepthCPUHandle() { return depthSrvHandleCPU_; }
     uint32_t GetDepthSrvIndex() { return depthSrvIndex_; }
+
+    /// <summary>
+    /// 深度バッファを読み取り用のテクスチャへ複製する。
+    ///
+    /// ソフトパーティクル（粒が地物へ刺さった断面を消す）のように、
+    /// **描画の最中に深度を読みたい**ときに使う。
+    /// 深度バッファそのものは描画中 DEPTH_WRITE のままなので直接は読めず、
+    /// 読み取り専用DSVへ差し替える手もあるが、複製の方が扱いが単純で事故が少ない。
+    /// パーティクルを描く直前に1回だけ呼ぶこと
+    /// </summary>
+    void CaptureDepthForRead();
+
+    /// <summary>
+    /// 「このフレームは深度の複製が要る」と申告する。
+    /// ソフトパーティクルを使うグループが Update で呼ぶ。申告が無いフレームは
+    /// CaptureDepthForRead が何もしないので、使わないゲームでは複製も確保もされない
+    /// </summary>
+    void RequestDepthCapture() { depthCaptureRequested_ = true; }
+
+    /// <summary>CaptureDepthForRead で複製した深度のSRV番号（R24_UNORM_X8 として読む）</summary>
+    uint32_t GetDepthCopySrvIndex() const { return depthCopySrvIndex_; }
     D3D12_CLEAR_VALUE GetClearColorValue() const { return clearColorValue_; }
-    IDXGISwapChain4 *GetSwapChain() { return swapChain_->Get(); }
+    IDXGISwapChain4 *GetSwapChain();
     // バックバッファへの最終合成に使うビューポート／シザー（レターボックス済み）
     const D3D12_VIEWPORT &GetPresentViewport() const { return presentViewport_; }
     const D3D12_RECT &GetPresentScissorRect() const { return presentScissorRect_; }
     // オフスクリーン描画用のビューポート／シザー（仮想解像度固定）
     const D3D12_VIEWPORT &GetRenderViewport() const { return viewport_; }
     const D3D12_RECT &GetRenderScissorRect() const { return scissorRect_; }
-    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> GetRTVDescriptorHeap() { return rtvManager_->GetHeap(); }
+    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> GetRTVDescriptorHeap();
     /// 深度ステンシルリソースを取得（ディファードのライトカリング／ライティングが読むため）
     ID3D12Resource *GetDepthStencilResource() { return depthStencilResource_.Get(); }
 
     // ---- 非同期コンピュートキュー API ----
     /// コンピュートコマンドリストを取得
-    Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> GetComputeCommandList() { return computeCommandList_->GetComPtr(); }
+    Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> GetComputeCommandList();
     /// Direct(graphics) コマンドキューを取得（GPUタイムスタンプ周波数取得などに使用）
-    ID3D12CommandQueue *GetCommandQueue() { return directQueue_->Get(); }
+    ID3D12CommandQueue *GetCommandQueue();
     /// Compute コマンドキューを取得（GPUタイムスタンプ周波数取得などに使用）
-    ID3D12CommandQueue *GetComputeCommandQueue() { return computeQueue_->Get(); }
+    ID3D12CommandQueue *GetComputeCommandQueue();
     /// コンピュートコマンドをGPUに送信し完了フェンスを発行する
     void ExecuteComputeCommands();
     /// Direct Queue が Compute Queue の完了を GPU 側で待機する（CPU はブロックしない）
@@ -295,7 +361,9 @@ class DirectXCommon
     D3D12_CLEAR_VALUE clearColorValue_{};
 
     // ---- フレーム同期（ダブルバッファ）----
-    UINT64 fenceValues_[DXCommandList::kFrameCount] = {}; // フレームごとの最終 Signal 値
+    // 同時に進めるフレーム数（DXCommandList::kFrameCount と同じ値。.cpp の static_assert で確かめている）
+    static constexpr UINT kFrameCount = 2;
+    UINT64 fenceValues_[kFrameCount] = {}; // フレームごとの最終 Signal 値
     UINT frameIndex_ = 0;                                 // 現在の描画フレームスロット（0 or 1）
 
     // ビューポート（オフスクリーン描画用・仮想解像度固定）
@@ -311,10 +379,15 @@ class DirectXCommon
 
     // オフスクリーン・深度のSRVハンドル
     uint32_t offScreenSrvIndex_ = 0;
+    uint32_t offScreenUavIndex_ = 0; // ブルームの合成がシーンへ足し込むためのUAV
     D3D12_CPU_DESCRIPTOR_HANDLE offScreenSrvHandleCPU_{}; // SRV作成時に必要なCPUハンドル
     D3D12_GPU_DESCRIPTOR_HANDLE offScreenSrvHandleGPU_{}; // 描画コマンドに必要なGPUハンドル
 
     uint32_t depthSrvIndex_ = 0;
+    // 描画中に深度を読むための複製（ソフトパーティクル用）。必要になった最初のフレームで作る
+    Microsoft::WRL::ComPtr<ID3D12Resource> depthCopyResource_;
+    uint32_t depthCopySrvIndex_ = 0;
+    bool depthCaptureRequested_ = false; // このフレームに複製要求があったか
     D3D12_CPU_DESCRIPTOR_HANDLE depthSrvHandleCPU_{}; // SRV作成時に必要なCPUハンドル
     D3D12_GPU_DESCRIPTOR_HANDLE depthSrvHandleGPU_{}; // 描画コマンドに必要なGPUハンドル
 };

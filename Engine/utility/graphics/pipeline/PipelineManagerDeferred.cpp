@@ -175,7 +175,7 @@ Microsoft::WRL::ComPtr<ID3D12PipelineState> PipelineManager::CreateDeferredLight
     desc.BlendState = blendDesc;
     desc.RasterizerState = rasterizerDesc;
     desc.NumRenderTargets = 1;
-    desc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB; // オフスクリーンRTと同じ
+    desc.RTVFormats[0] = kSceneColorFormat; // オフスクリーンRTと同じ
     desc.DepthStencilState = depthStencilDesc;
     desc.DSVFormat = DXGI_FORMAT_UNKNOWN;
     desc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;

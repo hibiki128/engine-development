@@ -15,6 +15,14 @@
 #include <utility/debug/imgui/ImGuizmoManager.h>
 #endif
 
+#ifdef USE_IMGUI
+#include <edit/undo/ImGuiUndoTracker.h>
+namespace {
+// UI の編集ジェスチャを Undo 履歴へ積むトラッカー。シングルトンなので1つでよい。
+// ヘッダーのメンバーにすると Undo 関連のヘッダーが 100 本以上の .cpp へ広がるので、ここに置く
+Hagine::ImGuiUndoTracker g_undoTracker;
+} // namespace
+#endif // USE_IMGUI
 namespace Hagine {
 namespace {
 // ギズモ登録名の接頭辞。オブジェクトやスプライトと名前が衝突しないよう名前空間を分ける
@@ -23,6 +31,9 @@ constexpr const char *kGizmoPrefix = "光源/";
 constexpr const char *kGizmoAimSuffix = " (向き)";
 // 親子付けの登録名につける接頭辞（3Dオブジェクトの名前と衝突させないため）
 constexpr const char *kAttachPrefix = "光源/";
+// スナップショットで平行光源を指す予約キー。
+// 点光源・スポットは名前をそのままキーにするので、ユーザーが付けられない文字から始める
+constexpr const char *kDirectionalKey = "#directional";
 } // namespace
 
 // ===================================================
@@ -37,6 +48,11 @@ void LightGroup::Finalize()
     directionalLight_.Finalize();
     pointLights_.Finalize();
     spotLights_.Finalize();
+    for (auto &resource : viewCameraResources_)
+    {
+        resource.Reset();
+    }
+    pViewCameraData_ = {};
 
     cameraForGPUResource_.Reset();
     pCameraForGPUData_ = nullptr;
@@ -60,6 +76,20 @@ void LightGroup::CreateCamera()
 
 void LightGroup::Update(const ViewProjection &viewProjection)
 {
+    // カメラビュー窓の描画中は、そのビュー用のカメラ位置だけ書く。
+    // 点光源・スポットライトの表はメインの描画のものをそのまま使う（ここで書くとメインまで変わる）
+    if (RenderView::IsExtra())
+    {
+        const int view = RenderView::Current();
+        if (!viewCameraResources_[view])
+        {
+            viewCameraResources_[view] = pDxCommon_->CreateBufferResource(sizeof(CameraForGPU));
+            viewCameraResources_[view]->Map(0, nullptr, reinterpret_cast<void **>(&pViewCameraData_[view]));
+        }
+        pViewCameraData_[view]->worldPosition = viewProjection.translation_;
+        return;
+    }
+
     pCameraForGPUData_->worldPosition = viewProjection.translation_;
     cameraPosition_ = viewProjection.translation_;
 
@@ -102,8 +132,12 @@ void LightGroup::Draw()
     pCommandList->SetGraphicsRootConstantBufferView(
         rootSignature->GetCbvIndex(1, D3D12_SHADER_VISIBILITY_PIXEL), directionalLight_.GetGpuAddress());
 
+    const int view = RenderView::Current();
+    const D3D12_GPU_VIRTUAL_ADDRESS cameraAddress = (view != 0 && viewCameraResources_[view])
+                                                        ? viewCameraResources_[view]->GetGPUVirtualAddress()
+                                                        : cameraForGPUResource_->GetGPUVirtualAddress();
     pCommandList->SetGraphicsRootConstantBufferView(
-        rootSignature->GetCbvIndex(2, D3D12_SHADER_VISIBILITY_PIXEL), cameraForGPUResource_->GetGPUVirtualAddress());
+        rootSignature->GetCbvIndex(2, D3D12_SHADER_VISIBILITY_PIXEL), cameraAddress);
 
     pCommandList->SetGraphicsRootConstantBufferView(
         rootSignature->GetCbvIndex(3, D3D12_SHADER_VISIBILITY_PIXEL), pointLights_.GetConstantBufferAddress());
@@ -401,7 +435,7 @@ void LightGroup::DrawImGui()
     if (syncGizmoSelection_ && !ImGuizmoManager::GetInstance()->IsCategoryEnabled(GizmoCategory::Light))
     {
         ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kAccentOrange);
-        ImGui::TextWrapped("※ ギズモの「操作対象フィルタ」で【ライト】がOFFのため、シーン上では掴めません");
+        ImGui::TextWrapped("※ シーンのクリック対象で【ライト】がOFFのため、シーンのクリックでは選べません（一覧から選べば動かせます。ツールバーの電球か Alt+4 で切替）");
         ImGui::PopStyleColor();
     }
 
@@ -488,9 +522,7 @@ void LightGroup::DrawLightListPanel(float height)
 
     // ---- 追加ボタン ----
     const float buttonWidth = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
-    ImGui::PushStyleColor(ImGuiCol_Button, DebugTheme::kBgGreen);
-    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.45f, 0.68f, 0.52f, 0.40f));
-    if (ImGui::Button("＋ 点光源", ImVec2(buttonWidth, 0.0f)))
+    if (ConfirmButton("＋ 点光源", ImVec2(buttonWidth, 0.0f)))
     {
         const int added = pointLights_.Add(MakeUniqueLightName("点光源1"));
         if (added >= 0)
@@ -517,7 +549,6 @@ void LightGroup::DrawLightListPanel(float height)
     }
     ImGui::SetItemTooltip("円錐状に照らす光源を追加します（上限 32個）");
     ImGui::EndDisabled();
-    ImGui::PopStyleColor(2);
 
     // ---- 絞り込み ----
     ImGui::SetNextItemWidth(-1);
@@ -734,21 +765,15 @@ void LightGroup::DrawSaveLoadSection()
 
     // 保存・読込（通知は SaveLightData / LoadLightData 側で投稿する）
     const float buttonWidth = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
-    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.20f, 0.42f, 0.58f, 0.85f));
-    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.26f, 0.52f, 0.70f, 0.95f));
-    if (ImGui::Button("セーブ", ImVec2(buttonWidth, 0.0f)))
+    if (PrimaryButton("セーブ", ImVec2(buttonWidth, 0.0f)))
     {
         SaveLightData(std::string(saveFileName));
     }
-    ImGui::PopStyleColor(2);
     ImGui::SameLine();
-    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.20f, 0.48f, 0.40f, 0.85f));
-    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.26f, 0.60f, 0.50f, 0.95f));
-    if (ImGui::Button("ロード", ImVec2(buttonWidth, 0.0f)))
+    if (ConfirmButton("ロード", ImVec2(buttonWidth, 0.0f)))
     {
         LoadLightData(std::string(saveFileName));
     }
-    ImGui::PopStyleColor(2);
 #endif // USE_IMGUI
 }
 
@@ -788,6 +813,219 @@ void LightGroup::LoadLightData(const std::string &fileName)
 
     ImGuiNotification::Post("ライトデータを読み込みました: " + fileName, {0.2f, 0.8f, 0.8f, 1.0f});
 }
+
+#ifdef USE_IMGUI
+// ===================================================
+// Undo / Play モードのスナップショット
+// ===================================================
+
+void LightGroup::UpdateImGui()
+{
+    // 光源はライト設定ウィンドウを閉じていてもシーン上のギズモで掴める。
+    // そのため追跡はウィンドウの表示状態と切り離し、ImGui フレームの最後で毎フレーム回す
+    // （ImGuiUndoTracker は IsAnyItemActive を見るので、ここに置けばウィジェット編集も拾える）。
+    g_undoTracker.Begin([this] { return CaptureUndoState(); });
+    g_undoTracker.End(
+        "光源編集",
+        [this] { return CaptureUndoState(); },
+        [](const nlohmann::json &state) { LightGroup::GetInstance()->RestoreUndoState(state); },
+        ImGuizmo::IsUsing());
+}
+
+nlohmann::json LightGroup::CaptureUndoState() const
+{
+    nlohmann::json state = nlohmann::json::object();
+
+    // 平行光源は1つしか無く名前も持たないので、他とぶつからない予約キーに入れる
+    state[kDirectionalKey] = directionalLight_.CaptureState();
+
+    for (const PointLightGroup::Entry &entry : pointLights_.GetEntries())
+    {
+        nlohmann::json s = nlohmann::json::object();
+        s["kind"] = "point";
+        s["active"] = entry.gpu.active != 0;
+        s["color"] = entry.gpu.color;
+        s["position"] = entry.gpu.position;
+        s["intensity"] = entry.gpu.intensity;
+        s["radius"] = entry.gpu.radius;
+        s["decay"] = entry.gpu.decay;
+        s["halfLambert"] = entry.gpu.HalfLambert;
+        s["blinnPhong"] = entry.gpu.BlinnPhong;
+        state[entry.name] = std::move(s);
+    }
+
+    for (const SpotLightGroup::Entry &entry : spotLights_.GetEntries())
+    {
+        nlohmann::json s = nlohmann::json::object();
+        s["kind"] = "spot";
+        s["active"] = entry.gpu.active != 0;
+        s["color"] = entry.gpu.color;
+        s["position"] = entry.gpu.position;
+        s["direction"] = entry.gpu.direction;
+        s["intensity"] = entry.gpu.intensity;
+        s["distance"] = entry.gpu.distance;
+        s["cosAngle"] = entry.gpu.cosAngle;
+        s["decay"] = entry.gpu.decay;
+        s["halfLambert"] = entry.gpu.HalfLambert;
+        s["blinnPhong"] = entry.gpu.BlinnPhong;
+        // aimPoint は position・direction・distance から毎フレーム作り直されるので積まない
+        state[entry.name] = std::move(s);
+    }
+
+    return state;
+}
+
+void LightGroup::RestoreUndoState(const nlohmann::json &state)
+{
+    if (!state.is_object())
+    {
+        return;
+    }
+
+    // 復元は人の操作ではないので、内部で飛ぶ「追加しました」等のトーストは止める
+    ImGuiNotification::ScopedMute mute;
+
+    std::vector<PointLightGroup::Entry> &points = pointLights_.GetEntries();
+    std::vector<SpotLightGroup::Entry> &spots = spotLights_.GetEntries();
+
+    // 名前から今の添字を引く。増減のたびに作り直す
+    auto FindPoint = [&points](const std::string &name) {
+        for (int i = 0; i < static_cast<int>(points.size()); ++i)
+        {
+            if (points[i].name == name)
+                return i;
+        }
+        return -1;
+    };
+    auto FindSpot = [&spots](const std::string &name) {
+        for (int i = 0; i < static_cast<int>(spots.size()); ++i)
+        {
+            if (spots[i].name == name)
+                return i;
+        }
+        return -1;
+    };
+
+    bool countChanged = false;
+
+    for (auto it = state.begin(); it != state.end(); ++it)
+    {
+        const std::string &name = it.key();
+
+        if (name == kDirectionalKey)
+        {
+            // 平行光源は消せないので null は無視する
+            if (!it.value().is_null())
+            {
+                directionalLight_.RestoreState(it.value());
+            }
+            continue;
+        }
+
+        // null = この光源は存在しない状態へ戻す（削除）
+        if (it.value().is_null())
+        {
+            const int pointIndex = FindPoint(name);
+            if (pointIndex >= 0)
+            {
+                pointLights_.Remove(pointIndex);
+                countChanged = true;
+                continue;
+            }
+            const int spotIndex = FindSpot(name);
+            if (spotIndex >= 0)
+            {
+                spotLights_.Remove(spotIndex);
+                countChanged = true;
+            }
+            continue;
+        }
+
+        const nlohmann::json &s = it.value();
+        const std::string kind = s.value("kind", std::string("point"));
+
+        if (kind == "spot")
+        {
+            int index = FindSpot(name);
+            if (index < 0)
+            {
+                // 削除のUndo。名前はスナップショット時点で一意なのでそのまま使う
+                index = spotLights_.Add(name);
+                if (index < 0)
+                {
+                    continue; // 上限で追加できなかった
+                }
+                spots[index].name = name;
+                countChanged = true;
+            }
+            SpotLightGroup::Entry &entry = spots[index];
+            entry.gpu.active = s.value("active", entry.gpu.active != 0) ? 1 : 0;
+            if (s.contains("color"))
+            {
+                entry.gpu.color = s["color"].get<Vector4>();
+            }
+            if (s.contains("position"))
+            {
+                entry.gpu.position = s["position"].get<Vector3>();
+            }
+            if (s.contains("direction"))
+            {
+                entry.gpu.direction = s["direction"].get<Vector3>();
+            }
+            entry.gpu.intensity = s.value("intensity", entry.gpu.intensity);
+            entry.gpu.distance = s.value("distance", entry.gpu.distance);
+            entry.gpu.cosAngle = s.value("cosAngle", entry.gpu.cosAngle);
+            entry.gpu.decay = s.value("decay", entry.gpu.decay);
+            entry.gpu.HalfLambert = s.value("halfLambert", entry.gpu.HalfLambert);
+            entry.gpu.BlinnPhong = s.value("blinnPhong", entry.gpu.BlinnPhong);
+            // 向きハンドルを戻した向きへ張り直す。
+            // これをしないと「前フレームから動いた＝ギズモで掴まれた」と誤判定され、
+            // 次の UpdateAimPoints が古いハンドル位置から direction を上書きしてしまう
+            entry.aimPoint = entry.gpu.position + entry.gpu.direction * entry.gpu.distance;
+            entry.prevAim = entry.aimPoint;
+            continue;
+        }
+
+        int index = FindPoint(name);
+        if (index < 0)
+        {
+            index = pointLights_.Add(name);
+            if (index < 0)
+            {
+                continue;
+            }
+            points[index].name = name;
+            countChanged = true;
+        }
+        PointLightGroup::Entry &entry = points[index];
+        entry.gpu.active = s.value("active", entry.gpu.active != 0) ? 1 : 0;
+        if (s.contains("color"))
+        {
+            entry.gpu.color = s["color"].get<Vector4>();
+        }
+        if (s.contains("position"))
+        {
+            entry.gpu.position = s["position"].get<Vector3>();
+        }
+        entry.gpu.intensity = s.value("intensity", entry.gpu.intensity);
+        entry.gpu.radius = s.value("radius", entry.gpu.radius);
+        entry.gpu.decay = s.value("decay", entry.gpu.decay);
+        entry.gpu.HalfLambert = s.value("halfLambert", entry.gpu.HalfLambert);
+        entry.gpu.BlinnPhong = s.value("blinnPhong", entry.gpu.BlinnPhong);
+    }
+
+    if (countChanged)
+    {
+        // std::vector の再確保でポインタが変わっているので、ギズモと親子付けを登録し直す。
+        // 選択中の添字も指す先がずれているため、いったん平行光源へ戻す
+        selectedKind_ = SelectionKind::Directional;
+        selectedIndex_ = -1;
+        nameEditOwner_.clear();
+        SyncGizmoTargets();
+        SyncSelectionToGizmo();
+    }
+}
+#endif // USE_IMGUI
 
 // ===================================================
 // デバッグ描画

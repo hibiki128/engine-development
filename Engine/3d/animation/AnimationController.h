@@ -1,4 +1,5 @@
 #pragma once
+#include <memory>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -6,6 +7,11 @@
 namespace Hagine {
 class Object3d;
 class Animator;
+class AnimationBlendSpace;
+struct BlendSpacePoint;
+struct Vector2;
+enum class BlendSpaceMode;
+class DataHandler;
 
 /// <summary>
 /// アニメーションクリップ定義
@@ -51,10 +57,42 @@ class AnimationController
 
     /// <summary>
     /// 登録済みクリップを名前で再生（補間あり）
-    /// 同一クリップ再生時は何もしない
+    /// 同一クリップ再生時は何もしない。ブレンドスペースの名前を渡すとブレンドスペースを再生する
     /// </summary>
-    /// <param name="name">クリップ名</param>
+    /// <param name="name">クリップ名（またはブレンドスペース名）</param>
     void Play(const std::string &name);
+
+    /// <summary>
+    /// ブレンドスペースを登録する（例: 待機を中心・前後左右の走りを周りに置いた「移動」）。
+    /// 点の clipName は RegisterClip 済みのクリップ名を使う
+    /// </summary>
+    /// <param name="name">識別名</param>
+    /// <param name="mode">重みの決め方</param>
+    /// <param name="points">点の並び</param>
+    /// <param name="fadeDuration">他のクリップとの切り替えにかける時間（秒）</param>
+    void RegisterBlendSpace(const std::string &name, BlendSpaceMode mode,
+                            const std::vector<BlendSpacePoint> &points, float fadeDuration = 0.25f);
+
+    /// <summary>
+    /// ブレンドスペースを再生し、パラメータを渡す（毎フレーム呼んでよい）
+    /// </summary>
+    /// <param name="name">ブレンドスペース名</param>
+    /// <param name="parameter">パラメータ（例: 右方向の速さ・前方向の速さ）</param>
+    void PlayBlendSpace(const std::string &name, const Vector2 &parameter);
+
+    /// <summary>
+    /// ブレンドスペースが登録済みかを取得
+    /// </summary>
+    /// <param name="name">ブレンドスペース名</param>
+    /// <returns>bool: 登録済みなら true</returns>
+    bool HasBlendSpace(const std::string &name) const;
+
+    /// <summary>
+    /// ブレンドスペースを名前で取得する
+    /// </summary>
+    /// <param name="name">ブレンドスペース名</param>
+    /// <returns>AnimationBlendSpace*: 見つからなければ nullptr</returns>
+    AnimationBlendSpace *FindBlendSpace(const std::string &name) const;
 
     /// <summary>
     /// 登録済みクリップを名前で即時再生（補間なし）
@@ -68,7 +106,7 @@ class AnimationController
     /// </summary>
     /// <param name="filePath">アニメーションファイルパス</param>
     /// <param name="loop">ループ再生するか</param>
-    /// <param name="speed">再生速度倍率</param>
+    /// <param name="speed">再生速度倍率（登録済みクリップではクリップ固有の速度に掛ける）</param>
     /// <param name="blendDuration">補間時間（秒）</param>
     void PlayFile(const std::string &filePath, bool loop = false,
                   float speed = 1.0f, float blendDuration = 0.15f);
@@ -209,6 +247,30 @@ class AnimationController
     /// </summary>
     void DrawKeyframeImGui();
 
+    /// <summary>
+    /// ImGuiのブレンドスペース部を描画する（点の配置図・重み・点の編集）
+    /// </summary>
+    void DrawBlendSpaceImGui();
+
+    /// <summary>
+    /// ブレンドスペースの点を、クリップ名からファイルを引いて読み込み直す
+    /// </summary>
+    /// <param name="space">対象</param>
+    /// <param name="points">新しい点の並び</param>
+    void RebuildBlendSpace(AnimationBlendSpace &space, const std::vector<BlendSpacePoint> &points);
+
+    /// <summary>
+    /// ブレンドスペースを再生中なら、通常クリップへ切り替えるために止める
+    /// </summary>
+    /// <param name="fadeDuration">切り替えにかける時間（秒）</param>
+    void StopBlendSpaceForClip(float fadeDuration);
+
+    /// <summary>
+    /// ブレンドスペースの設定をクリップ設定のファイルへ書く / 読む
+    /// </summary>
+    void SaveBlendSpaces(DataHandler &data) const;
+    void LoadBlendSpaces(DataHandler &data);
+
   private:
     /// ===================================================
     /// private variables
@@ -231,7 +293,13 @@ class AnimationController
     float globalSpeed_ = 1.0f;      // 全体速度倍率
     bool paused_ = false;           // 一時停止中フラグ
 
+    // ブレンドスペース（登録順）。Object3d と共有するので shared_ptr
+    std::vector<std::shared_ptr<AnimationBlendSpace>> blendSpaces_;
+    std::string currentBlendSpaceName_; // 再生中のブレンドスペース名（無ければ空）
+    bool blendSpacePreview_ = false;    // エディタの配置図でパラメータを動かしている間 true（ゲーム側の値を無視）
+
     // ImGui編集用の状態
+    int selectedBlendSpace_ = 0; // ブレンドスペース編集で選択中の番号
     int selectedNodeIndex_ = 0; // キーフレーム編集で選択中のノード
     int selectedChannel_ = 0;   // 0:Translate 1:Rotate 2:Scale
 };

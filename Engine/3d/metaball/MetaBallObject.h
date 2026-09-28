@@ -117,6 +117,12 @@ class MetaBallObject : public BaseObject
     /// </summary>
     bool HasInspectorMaterial() const override { return false; }
 
+    /// <summary>
+    /// 自分のモデルは描かないが、融合した表面はレイトレに積まれないので、
+    /// 代わりに個々の球を加速構造へ積んで影・反射を出す（従来どおり）
+    /// </summary>
+    bool IsRaytracingVisible() const override { return true; }
+
     /// ===================================================
     /// シリアライズ（メッシュではなく要素リストを保存する）
     /// ===================================================

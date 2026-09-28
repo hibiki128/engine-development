@@ -117,6 +117,15 @@ class DeferredRenderer
     uint32_t GetTileCountX() const { return tileCountX_; }
     uint32_t GetTileCountY() const { return tileCountY_; }
 
+    /// <summary>
+    /// 法線＋光沢度の G-Buffer リソースを取得する。
+    /// SSR のように、ポストエフェクト側で自前のSRVを作って読みたい場合に使う。
+    /// 中身が有効なのは「このフレームに G-Buffer パスを通した後」だけなので、
+    /// 使う前に IsEnabled() を確認すること
+    /// </summary>
+    /// <returns>ID3D12Resource*: 法線G-Bufferのリソース</returns>
+    ID3D12Resource *GetNormalGBufferResource() const { return gBuffers_[1].resource.Get(); }
+
   private:
     /// ===================================================
     /// private struct
@@ -140,7 +149,9 @@ class DeferredRenderer
         float nearZ;                   // nearクリップ
         float farZ;                    // farクリップ
         uint32_t pointLightCapacity;   // ライトバッファの容量（GPU生成分の溢れを切り捨てる上限）
-        float padding;
+        float ssaoStrength;            // SSAO（接地の陰り）の効かせ具合。0 で無効
+        uint32_t useRtShadow;          // 1 でシャドウマップの代わりにRTの影マスクを使う
+        float deferredPadding[3];      // 16バイト境界合わせ
     };
 
     /// <summary>

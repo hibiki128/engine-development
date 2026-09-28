@@ -1,5 +1,11 @@
 #include "PostEffectRenderer.h"
 #include <graphics/pipeline/ComputeEffectPipeline.h>
+#include <graphics/texture/TextureManager.h>
+#include <render/ToneMapSettings.h>
+#include <render/deferred/DeferredRenderer.h>
+#include <render/raytracing/RaytracingScene.h>
+#include <shadow/ShadowMap.h>
+#include <skybox/SkyBox.h>
 #include <algorithm>
 
 namespace Hagine {
@@ -105,6 +111,51 @@ D3D12_GPU_DESCRIPTOR_HANDLE PostEffectRenderer::BuildComputeSrvTable(const std::
         case ComputeInput::SceneDepth:
             pSrvManager_->CreateSRVforDepth(slotIndex, pDxCommon_->GetDepthStencilResource());
             break;
+        case ComputeInput::ShadowMap:
+            // シャドウパスの終わりに GENERIC_READ へ移してあるので、CSからそのまま読める
+            pSrvManager_->CreateSRVforShadowDepth(slotIndex, ShadowMap::GetInstance()->GetDepthResource());
+            break;
+        case ComputeInput::GBufferNormal:
+        {
+            // ディファードが無効だと G-Buffer の中身が無い。
+            // SRV を作らないとテーブルに穴が空くので、代わりに深度を差しておき、
+            // 実際に使うかどうかは定数バッファのフラグで判断させる
+            DeferredRenderer *deferred = DeferredRenderer::GetInstance();
+            if (deferred->IsEnabled())
+            {
+                pSrvManager_->CreateSRVforRenderTexture(slotIndex, deferred->GetNormalGBufferResource(),
+                                                        DXGI_FORMAT_UNKNOWN);
+            }
+            else
+            {
+                pSrvManager_->CreateSRVforDepth(slotIndex, pDxCommon_->GetDepthStencilResource());
+            }
+            break;
+        }
+        case ComputeInput::Tlas:
+            // ここへ来る時点で TLAS は組めている（DispatchComputeEffect が先に確かめている）。
+            // ポストエフェクトはシーン描画の後なので、スキンのBLASももう出来ている
+            pSrvManager_->CreateSRVforTlas(slotIndex, RaytracingScene::GetInstance()->GetTlasGpuAddress());
+            break;
+        case ComputeInput::EnvironmentCube:
+        {
+            TextureManager *pTextureManager = TextureManager::GetInstance();
+            const std::string &cubePath = SkyBox::GetInstance()->GetTextureFilePath();
+            ID3D12Resource *pCubeResource =
+                cubePath.empty() ? nullptr : pTextureManager->GetTextureResource(cubePath);
+            if (pCubeResource)
+            {
+                const DirectX::TexMetadata &metaData = pTextureManager->GetMetaData(cubePath);
+                pSrvManager_->CreateSRVforTextureCube(slotIndex, pCubeResource, metaData.format,
+                                                      static_cast<UINT>(metaData.mipLevels));
+            }
+            else
+            {
+                // スカイボックス未設定。穴を空けないよう深度で埋める（使う側がフラグで判断）
+                pSrvManager_->CreateSRVforDepth(slotIndex, pDxCommon_->GetDepthStencilResource());
+            }
+            break;
+        }
         }
     }
 
@@ -183,6 +234,29 @@ bool PostEffectRenderer::DispatchComputeEffect(const EffectSlot &slot,
         return false; // このエフェクトはCS版を持たない
     }
 
+    // 加速構造を要求するエフェクトは、それが組めないフレームでは走らせない。
+    // 加速構造のSRVは他の物で代用できない（テーブルに穴が空くか、型の違う物を差すことになる）ので、
+    // 素通しのフォールバックへ落とすのが唯一安全な扱い
+    {
+        const std::vector<ComputeInput> inputs = slot.params->GetComputeInputs();
+        const bool needsTlas = std::find(inputs.begin(), inputs.end(), ComputeInput::Tlas) != inputs.end();
+        if (needsTlas)
+        {
+            RaytracingScene *pScene = RaytracingScene::GetInstance();
+            if (!pScene->IsAvailable())
+            {
+                return false;
+            }
+            // 要求を出しておく。組めるようになるのは次のフレームから
+            pScene->RequestUse();
+            pScene->EnsureTlas();
+            if (!pScene->HasValidTlas())
+            {
+                return false;
+            }
+        }
+    }
+
     // 入力に深度が含まれるなら、深度は補間してはいけないのでポイントサンプラーを割り当てる。
     // s0 = 画像用の線形クランプ、s1 = 深度用のポイントクランプ、という並びで統一している。
     const std::vector<ShaderRootSignature::SamplerPreset> samplers = {
@@ -190,7 +264,9 @@ bool PostEffectRenderer::DispatchComputeEffect(const EffectSlot &slot,
         ShaderRootSignature::SamplerPreset::PointClamp,
     };
 
-    const ComputeEffectProgram *program = ComputeEffectPipeline::GetInstance()->Get(csFile, samplers);
+    // RayQuery を使うエフェクトだけ cs_6_5 を要求する（既定は cs_6_0）
+    const ComputeEffectProgram *program =
+        ComputeEffectPipeline::GetInstance()->Get(csFile, samplers, slot.params->GetComputeShaderProfile());
     if (!program)
     {
         return false; // コンパイル失敗などのときはPS版へフォールバック
@@ -271,15 +347,38 @@ void PostEffectRenderer::ResolveChainToFinalResult(int srcPingPong)
                                   D3D12_RESOURCE_STATE_RENDER_TARGET);
     pCommandList->OMSetRenderTargets(1, &finalResultRtvHandle_, false, nullptr);
 
-    // 書き込み先が sRGB なので、チェーン内用(FP16)とは別のPSOを使う。
-    // リニア→sRGB の変換はレンダーターゲット側のフォーマットが行う。
-    pPsoManager_->DrawCommonSetting(PipelineType::PresentCopy, BlendMode::Normal, ShaderMode::None);
-    pCommandList->SetGraphicsRootDescriptorTable(pPsoManager_->GetCurrentRootSignature()->GetSrvIndex(0), renderBuffer_.GetPingPongSrvHandleGPU(srcPingPong));
-    pCommandList->DrawInstanced(3, 1, 0, 0);
+    // チェーンを抜けた HDR を、ここで一度だけトーンマップして「見える範囲」へ収める。
+    // この後に重なる UI は影響を受けない
+    DrawToneMapped(renderBuffer_.GetPingPongSrvHandleGPU(srcPingPong));
 
     pDxCommon_->BarrierTransition(renderBuffer_.GetFinalResultResource().Get(),
                                   D3D12_RESOURCE_STATE_RENDER_TARGET,
                                   D3D12_RESOURCE_STATE_GENERIC_READ);
+}
+
+void PostEffectRenderer::DrawToneMapped(D3D12_GPU_DESCRIPTOR_HANDLE srcSrv)
+{
+    auto *pCommandList = pDxCommon_->GetCommandList().Get();
+
+    // 中間ステージでは前ステージの結果が既にトーンマップ済みなので、素通しのコピーにする。
+    // 二重に掛けると背景だけ暗く沈んでしまう
+    if (!applyToneMap_)
+    {
+        pPsoManager_->DrawCommonSetting(PipelineType::Render, BlendMode::Normal, ShaderMode::None);
+        pCommandList->SetGraphicsRootDescriptorTable(
+            pPsoManager_->GetCurrentRootSignature()->GetSrvIndex(0), srcSrv);
+        pCommandList->DrawInstanced(3, 1, 0, 0);
+        return;
+    }
+
+    ToneMapSettings::GetInstance()->Update();
+
+    pPsoManager_->DrawCommonSetting(PipelineType::ToneMap, BlendMode::Normal, ShaderMode::None);
+    const ShaderRootSignature *rootSignature = pPsoManager_->GetCurrentRootSignature();
+    pCommandList->SetGraphicsRootDescriptorTable(rootSignature->GetSrvIndex(0), srcSrv);
+    pCommandList->SetGraphicsRootConstantBufferView(rootSignature->GetCbvIndex(0),
+                                                    ToneMapSettings::GetInstance()->GetGpuAddress());
+    pCommandList->DrawInstanced(3, 1, 0, 0);
 }
 
 void PostEffectRenderer::DrawWithoutCopy(PostEffectChain &effectChain, float deltaTime)
@@ -323,8 +422,9 @@ void PostEffectRenderer::BlitToOffScreen(D3D12_GPU_DESCRIPTOR_HANDLE srcSrv)
     // PreRenderTexture() によりオフスクリーンは既に RENDER_TARGET 状態
     D3D12_CPU_DESCRIPTOR_HANDLE offScreenRtv = pDxCommon_->GetRTVCPUDescriptorHandle(2);
     pCommandList->OMSetRenderTargets(1, &offScreenRtv, false, &dsvHandle_);
-    // オフスクリーンは sRGB なので、チェーン内用(FP16)ではなく PresentCopy を使う
-    pPsoManager_->DrawCommonSetting(PipelineType::PresentCopy, BlendMode::Normal, ShaderMode::None);
+    // 前ステージの結果は既にトーンマップ済み（0〜1）なので、ここでは素通しでよい。
+    // オフスクリーンもチェーン内も同じリニアFP16なので、チェーン内用のコピーをそのまま使う
+    pPsoManager_->DrawCommonSetting(PipelineType::Render, BlendMode::Normal, ShaderMode::None);
     pCommandList->SetGraphicsRootDescriptorTable(pPsoManager_->GetCurrentRootSignature()->GetSrvIndex(0), srcSrv);
     pCommandList->DrawInstanced(3, 1, 0, 0);
     // オフスクリーンは RENDER_TARGET のまま（以降の3D描画のため）
@@ -344,10 +444,8 @@ void PostEffectRenderer::DrawToFinalResult()
     const float clearColor[4] = {cv.Color[0], cv.Color[1], cv.Color[2], cv.Color[3]};
     pCommandList->ClearRenderTargetView(finalResultRtvHandle_, clearColor, 0, nullptr);
 
-    // 書き込み先が sRGB の最終結果テクスチャなので、チェーン内用(FP16)ではなく PresentCopy を使う
-    pPsoManager_->DrawCommonSetting(PipelineType::PresentCopy, BlendMode::Normal, ShaderMode::None);
-    pCommandList->SetGraphicsRootDescriptorTable(pPsoManager_->GetCurrentRootSignature()->GetSrvIndex(0), pDxCommon_->GetOffScreenGPUHandle());
-    pCommandList->DrawInstanced(3, 1, 0, 0);
+    // エフェクトが1つも無いときも、HDR のままでは画面に出せないのでトーンマップは通す
+    DrawToneMapped(pDxCommon_->GetOffScreenGPUHandle());
 
     pDxCommon_->BarrierTransition(renderBuffer_.GetFinalResultResource().Get(),
                                  D3D12_RESOURCE_STATE_RENDER_TARGET,

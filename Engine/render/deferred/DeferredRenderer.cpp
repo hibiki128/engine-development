@@ -8,6 +8,10 @@
 #include "light/ToonSettings.h"
 #include "shadow/ShadowMap.h"
 #include "skybox/SkyBox.h"
+#include <debug/profiler/GpuProfiler.h>
+#include <render/raytracing/RtAoPass.h>
+#include <render/raytracing/RtShadowPass.h>
+#include <render/ssao/SsaoRenderer.h>
 #include <MyMath.h>
 #ifdef USE_IMGUI
 #include <utility/debug/imgui/DebugUIHelper.h>
@@ -158,6 +162,13 @@ void DeferredRenderer::UpdateConstants(const ViewProjection &viewProjection)
     pConstants_->nearZ = viewProjection.nearZ_;
     pConstants_->farZ = viewProjection.farZ_;
     pConstants_->pointLightCapacity = LightGroup::kMaxBufferedPointLights;
+    // SSAO が無効なら 0 を入れる。シェーダー側はこれを見て読み込みごと省く
+    SsaoRenderer *ssao = SsaoRenderer::GetInstance();
+    pConstants_->ssaoStrength = ssao->IsEnabled() ? ssao->GetStrength() : 0.0f;
+    // useRtShadow はここでは決められない。
+    // RT影パスを走らせるのは RenderLighting の中（G-Buffer が揃ってから）で、
+    // 「このフレームにマスクを作れたか」はその後でないと分からないため
+    pConstants_->useRtShadow = 0u;
 
     lastPointLightCount_ = pConstants_->pointLightCount;
 }
@@ -206,9 +217,13 @@ void DeferredRenderer::EndGBufferPass()
     }
     gBufferPassActive_ = false;
 
+    // NON_PIXEL も立てておく。ライティング(PS)だけなら PIXEL で足りるが、
+    // SSR のようなコンピュートのポストエフェクトが G-Buffer を読むので、
+    // PIXEL だけだとデバッグレイヤーが「状態が足りない」と言って止まる
     for (GBufferTarget &target : gBuffers_)
     {
-        TransitionGBuffer(target, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+        TransitionGBuffer(target, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE |
+                                      D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
     }
     // 深度をライトカリング(CS)とライティング(PS)から読めるようにする
     pDxCommon_->BarrierTransition(pDxCommon_->GetDepthStencilResource(),
@@ -270,6 +285,52 @@ void DeferredRenderer::RenderLighting()
     pCommandList->RSSetViewports(1, &viewport);
     pCommandList->RSSetScissorRects(1, &scissorRect);
 
+    // ライティングより前に遮蔽を求めておく（G-Buffer と深度はこの時点で読める状態）。
+    // RTの遮蔽を使うときは SSAO を回さない。結果を使わないので丸損になるため
+    RtAoPass *rtAo = RtAoPass::GetInstance();
+    if (!rtAo->IsEnabled())
+    {
+        SsaoRenderer::GetInstance()->Render(pDxCommon_->GetDepthStencilResource(), gBuffers_[1].resource.Get(),
+                                            pConstants_->invViewProjection, pConstants_->view,
+                                            pConstants_->projection);
+    }
+    else
+    {
+        const int gpuRtAo = GpuProfiler::GetInstance()->OpenGraphics(pCommandList, "RtAo");
+        rtAo->Render(pDxCommon_->GetDepthStencilResource(), gBuffers_[1].resource.Get(),
+                     pConstants_->invViewProjection);
+        GpuProfiler::GetInstance()->Close(pCommandList, gpuRtAo);
+    }
+
+    // レイトレーシングの影も同じタイミングで求める。
+    // 使うかどうかはライティング側が gConstants.useRtShadow を見て決める
+    RtShadowPass *rtShadow = RtShadowPass::GetInstance();
+    {
+        // レイ1本ぶんのコストが見えるよう、GPUプロファイラの区間で挟む
+        const int gpuRtShadow = GpuProfiler::GetInstance()->OpenGraphics(pCommandList, "RtShadow");
+        rtShadow->Render(pDxCommon_->GetDepthStencilResource(), gBuffers_[1].resource.Get(),
+                         pConstants_->invViewProjection,
+                         LightGroup::GetInstance()->GetDirectionalLightDirection());
+        GpuProfiler::GetInstance()->Close(pCommandList, gpuRtShadow);
+    }
+
+    // マスクを作れたフレームだけRTの影を使う。作れなければシャドウマップへ自動で戻る
+    pConstants_->useRtShadow = (rtShadow->IsEnabled() && rtShadow->HasValidMask()) ? 1u : 0u;
+
+    // 遮蔽の効かせ具合もここで決める（どちらのパスを走らせたかが確定するのがこの時点なので）。
+    // RTの遮蔽がONのフレームは SSAO を回していないので、SSAOの値へ戻してはいけない
+    if (rtAo->IsEnabled())
+    {
+        pConstants_->ssaoStrength = rtAo->HasValidResult() ? rtAo->GetStrength() : 0.0f;
+    }
+    else
+    {
+        SsaoRenderer *ssao = SsaoRenderer::GetInstance();
+        pConstants_->ssaoStrength = ssao->IsEnabled() ? ssao->GetStrength() : 0.0f;
+    }
+
+    // SSAO / RT影 のディスパッチでコンピュート用のパイプラインへ切り替わっているので、
+    // ここで描画用のPSO・ルートシグネチャを差し直す
     pPsoManager_->DrawCommonSetting(PipelineType::DeferredLighting);
 
     LightGroup *lightGroup = LightGroup::GetInstance();
@@ -293,6 +354,27 @@ void DeferredRenderer::RenderLighting()
 
     pCommandList->SetGraphicsRootShaderResourceView(rootSignature->GetSrvIndex(6), lightGroup->GetPointLightBufferAddress());
     pCommandList->SetGraphicsRootShaderResourceView(rootSignature->GetSrvIndex(7), tileLightBuffer_->GetGPUVirtualAddress());
+
+    // 遮蔽の結果（t8）。RTの遮蔽を作れたフレームはそちら、それ以外は SSAO。
+    // 無効なときも「遮蔽なし」のテクスチャを差しておく必要がある
+    // （読まれはしないが、差さないとバインドが欠ける）
+    const uint32_t occlusionSrv = (rtAo->HasValidResult() && rtAo->GetResultSrvIndex() != UINT32_MAX)
+                                      ? rtAo->GetResultSrvIndex()
+                                      : SsaoRenderer::GetInstance()->GetResultSrvIndex();
+    if (rootSignature->GetSrvIndex(8) != UINT_MAX)
+    {
+        pSrvManager_->SetGraphicsRootDescriptorTable(rootSignature->GetSrvIndex(8), occlusionSrv);
+    }
+
+    // RTの影マスク（t9）。使わないときも何か差しておかないとバインドが欠ける。
+    // 差し先が無い場合は SSAO の結果（＝全面1.0に近い）で代用する
+    if (rootSignature->GetSrvIndex(9) != UINT_MAX)
+    {
+        const uint32_t maskSrv = rtShadow->HasValidMask()
+                                     ? rtShadow->GetShadowMaskSrvIndex()
+                                     : occlusionSrv;
+        pSrvManager_->SetGraphicsRootDescriptorTable(rootSignature->GetSrvIndex(9), maskSrv);
+    }
 
     // 全画面三角形（頂点バッファ不要）
     pCommandList->DrawInstanced(3, 1, 0, 0);
@@ -347,6 +429,11 @@ void DeferredRenderer::DrawImGui()
     ImGui::Text("G-Buffer: %u x %u", width_, height_);
     ImGui::Text("タイル: %u x %u (%u px/タイル)", tileCountX_, tileCountY_, kTileSize);
 
+    // レイトレーシングの影（G-Buffer と深度を使うのでディファードとセットで置く）
+    ImGui::Separator();
+    SectionHeader("[ レイトレーシングの影 ]", DebugTheme::kAccentPurple);
+    RtShadowPass::GetInstance()->DrawImGui();
+
     LightGroup *lightGroup = LightGroup::GetInstance();
     const uint32_t totalLights = lightGroup->GetGpuTotalLightCount();
     ImGui::Text("ポイントライト: %u / %u", totalLights, LightGroup::kMaxBufferedPointLights);
@@ -361,6 +448,13 @@ void DeferredRenderer::DrawImGui()
     ImGui::Text("1タイルの上限: %u", kMaxLightsPerTile);
     ImGui::SetItemTooltip("1タイルに届く光源がこれを超えると先着順で切り捨てられます。\n"
                           "粒子光源が密集すると簡単に溢れるので、間引きと半径で調整してください。");
+
+    // 遮蔽は G-Buffer を使うので、ディファードの設定と同じ場所に置く。
+    // SSAO と RT の遮蔽は同じものを作るので並べて見せる（ONにできるのはどちらか一方）
+    ImGui::Separator();
+    SsaoRenderer::GetInstance()->DrawImGui();
+    ImGui::Separator();
+    RtAoPass::GetInstance()->DrawImGui();
 #endif
 }
 } // namespace Hagine

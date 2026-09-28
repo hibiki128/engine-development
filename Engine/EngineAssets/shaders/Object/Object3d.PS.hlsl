@@ -1,5 +1,6 @@
 #include"object3d.hlsli"
 #include"Toon.hlsli"
+#include"../Shadow/ShadowSample.hlsli"
 
 ConstantBuffer<Material> gMaterial : register(b0);
 ConstantBuffer<DirectionalLight> gDirectionalLight : register(b1);
@@ -91,24 +92,15 @@ float3 ProceduralTangentNormal(float2 worldXZ, float scale, float strength)
     return normalize(float3(-dhdx * strength, -dhdy * strength, 1.0f));
 }
 
-float SampleShadowPCF(float2 shadowUV, float shadowDepth)
-{
-    float2 texelSize = float2(1.0f / 2048.0f, 1.0f / 2048.0f);
-    float shadow = 0.0f;
-    [unroll]
-    for (int x = -1; x <= 1; x++)
-    {
-        [unroll]
-        for (int y = -1; y <= 1; y++)
-        {
-            shadow += gShadowMap.SampleCmpLevelZero(gShadowSampler, shadowUV + float2(x, y) * texelSize, shadowDepth);
-        }
-    }
-    return shadow / 9.0f;
-}
+// 影の引き方は ../Shadow/ShadowSample.hlsli に集約している（ディファードと共通）
 
 PixelShaderOutput main(VertexShaderOutput input)
 {
+    // カメラに近い物は網目状に抜いて透けさせる
+    if (CameraFadeDiscard(gMaterial.cameraFade, input.position.xy))
+    {
+        discard;
+    }
     float4 transformedUV = mul(float4(input.texcoord, 0.0f, 1.0f), gMaterial.uvTransform);
     // インスタンシング描画の個体色をテクスチャ色へ畳み込む（以降の gMaterial.color * textureColor が
     // そのまま「マテリアル色 × 個体色 × テクスチャ色」になる）。通常描画は白なので従来と同じ。
@@ -146,8 +138,12 @@ PixelShaderOutput main(VertexShaderOutput input)
             shadowUV.y >= 0.0f && shadowUV.y <= 1.0f &&
             projCoord.z >= 0.0f && projCoord.z <= 1.0f)
         {
-            float shadowDepth = projCoord.z - gShadowData.bias;
-            float shadow = SampleShadowPCF(shadowUV, shadowDepth);
+            // 面が光へどれだけ正面を向いているか。浅いほどバイアスを強める
+            const float ndotl = saturate(dot(normalize(input.normal), -normalize(gDirectionalLight.direction)));
+            float shadow = SampleShadowSoft(gShadowMap, gShadowSampler, shadowUV, projCoord.z, ndotl,
+                                            gShadowData.bias, gShadowData.normalBias,
+                                            gShadowData.softness, gShadowData.sampleCount,
+                                            gShadowData.mapSize, input.position.xy);
             shadowFactor = lerp(1.0f - gShadowData.strength, 1.0f, shadow);
         }
     }
@@ -366,6 +362,11 @@ PixelShaderOutput main(VertexShaderOutput input)
         output.color = gMaterial.color * textureColor;
         output.color.rgb *= shadowFactor;
     }
+
+    // 自己発光。ライトに当たっていなくても光る分なので、影も減衰も掛けずに最後に足す。
+    // 発光色はアルベドを流用する（ネオンや目の光は「その面の色」で光るため）。
+    // HDRなので 1 を超える値を出せて、そのままブルームが拾って滲む
+    output.color.rgb += gMaterial.color.rgb * textureColor.rgb * gMaterial.emissiveStrength;
 
     if (textureColor.a == 0.0f)
     {

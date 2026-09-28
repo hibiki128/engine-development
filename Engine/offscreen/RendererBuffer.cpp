@@ -37,8 +37,9 @@ void RenderBuffer::CreatePingPongBuffers()
     // ピンポンバッファはリニア空間の FP16 で持つ。
     //  ・sRGB フォーマットには UAV を作れないため、コンピュートシェーダーで書くには非sRGBが必須
     //  ・8bit だとエフェクトを重ねるたびに階調が落ちる（ブラー・ブルーム・DoFで顕著）
-    // シーンのオフスクリーンは sRGB のままなので、そこからの読み出しはハードウェアが
-    // リニアへ戻してくれる。逆に最終結果テクスチャ（sRGB）へ書き戻すときに再びエンコードされる。
+    //  ・1.0 を超える明るさをそのまま扱える（ブルームがここで効く）
+    // シーンのオフスクリーンも同じリニアFP16なので、途中で色空間の変換は起きない。
+    // 0〜1 に収めるのはチェーン出口のトーンマップだけが行う。
     D3D12_CLEAR_VALUE clearValue = pDxCommon_->GetClearColorValue();
     clearValue.Format = kPingPongFormat;
 
@@ -80,10 +81,13 @@ void RenderBuffer::CreatePingPongBuffers()
 
 void RenderBuffer::CreateFinalResultTexture()
 {
-    // 最終結果テクスチャは sRGB のまま据え置く。
-    // ここには UI（スプライト・パーティクル・シーン遷移）も直接描き込まれるため、
-    // FP16 にするとそれらのパイプラインまで別フォーマット版が必要になり波及が大きい。
-    // リニアFP16なのは「エフェクトのチェーン内だけ」で、チェーンの出口で sRGB へ書き戻す。
+    // 最終結果テクスチャもシーンと同じリニアFP16にする。
+    // ここには UI（スプライト・パーティクル・シーン遷移）も直接描き込まれるが、
+    // オフスクリーンとこのテクスチャの両方を同じフォーマットにそろえてあるので、
+    // それらのパイプラインは1種類のままでよい（片方だけ変えると別PSOが要る）。
+    //
+    // チェーン出口のトーンマップを通した後の「見える範囲（0〜1）の値」がここに入るので、
+    // UI はその上へ素直に重ねればよく、UIの色がトーンマップで変わることもない。
     finalResultResource_ = pDxCommon_->CreateRenderTextureResource(
         WinApp::GetVirtualWidth(),
         WinApp::GetVirtualHeight(),
@@ -105,7 +109,7 @@ void RenderBuffer::CreateFinalResultTexture()
 
     // RTVを作成
     D3D12_RENDER_TARGET_VIEW_DESC rtvDesc{};
-    rtvDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
+    rtvDesc.Format = kSceneColorFormat;
     rtvDesc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D;
 
     pDxCommon_->GetDevice()->CreateRenderTargetView(finalResultResource_.Get(), &rtvDesc, finalResultRtvHandle_);

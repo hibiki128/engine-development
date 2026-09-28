@@ -14,10 +14,28 @@
 #include "edit/motion/MotionEditor.h"
 #include "object/Object3dInstancing.h"
 #include <debug/log/Logger.h>
+#include <icon/IconsFontAwesome5.h>
+#include <debug/profiler/CpuProfiler.h>
 #include <browser/ShowFolder.h>
 #include "render/DrawGroupManager.h"
+#include <render/raytracing/RaytracingScene.h>
 
+#ifdef USE_IMGUI
+#include <edit/undo/ImGuiUndoTracker.h>
+namespace {
+// UI の編集ジェスチャを Undo 履歴へ積むトラッカー。シングルトンなので1つでよい。
+// ヘッダーのメンバーにすると Undo 関連のヘッダーが 100 本以上の .cpp へ広がるので、ここに置く
+Hagine::ImGuiUndoTracker g_undoTracker;
+} // namespace
+#endif // USE_IMGUI
 namespace Hagine {
+#ifdef USE_IMGUI
+void BaseObjectManager::SkipUndoGesture()
+{
+    g_undoTracker.SkipCurrentGesture();
+}
+#endif // USE_IMGUI
+
 void BaseObjectManager::Finalize()
 {
     RemoveAllObjects();
@@ -172,9 +190,51 @@ void BaseObjectManager::Update()
         obj->UpdateWorldTransformHierarchy();
     }
 
+    // 足IK（接地）はワールド行列が確定してから解く。
+    // 地面を探すレイがワールド空間なのと、書き換えたポーズを
+    // 加速構造（BLAS）とスキニングの両方に間に合わせる必要があるため、この位置。
+    // 足IKを持っていないオブジェクトでは即 return する
+    {
+        HAGINE_CPU_PROFILE("Update/Objects/FootIK");
+        for (auto &[name, obj] : objects_)
+        {
+            obj->SolveFootIk();
+            // 注視（頭を見る先へ向ける）も同じ「アニメーション後・スキニング前」で掛ける
+            obj->SolveLookAt();
+        }
+    }
+
     // メタボールはワールド行列が確定してから場を組み直す。
     // 中身が前フレームと同じならここは何もしない
     MetaBallGroupManager::GetInstance()->Update();
+
+    // レイトレーシングの加速構造へ積むのも、ワールド行列が確定したこの時点。
+    // 非対応環境やRT機能を使っていないときは Submit が即 return する。
+    //
+    // ただし TLAS を組むのはここではない。スキニングで動くモデルは描画フェーズに入って
+    // からポーズが確定する（＝BLASを作り直すのがその後）ので、TLAS はレイを飛ばす側が
+    // 使う直前に EnsureTlas() で組む
+    {
+        RaytracingScene *pRaytracingScene = RaytracingScene::GetInstance();
+        pRaytracingScene->BeginFrame();
+        if (pRaytracingScene->IsActive())
+        {
+            for (auto &[name, obj] : objects_)
+            {
+                // 非表示の物をレイトレの影・反射に残さない
+                if (!obj->IsRaytracingVisible())
+                {
+                    continue;
+                }
+                if (Object3d *obj3d = obj->GetObject3d())
+                {
+                    // 描画専用オフセット込みの行列を使う。
+                    // これを外すと、傾けて描いているキャラの影だけ傾かない
+                    pRaytracingScene->Submit(obj3d->GetModel(), obj->GetRenderWorldMatrix());
+                }
+            }
+        }
+    }
 }
 
 void BaseObjectManager::Draw(const ViewProjection &viewProjection)
@@ -191,22 +251,26 @@ void BaseObjectManager::Draw(const ViewProjection &viewProjection)
     instancing->Flush(viewProjection);
 
     // 融合したメタボールの表面はグループ単位で 1 回だけ描く。
-    // 個々の MetaBallObject は isModelDraw_ = false なので二重には出ない
-    MetaBallGroupManager::GetInstance()->Draw(viewProjection);
+    // 個々の MetaBallObject は isModelDraw_ = false なので二重には出ない。
+    // （カメラビュー窓では描かない。メタボールの定数バッファはメインの1組しか無い）
+    if (!RenderView::IsExtra())
+    {
+        MetaBallGroupManager::GetInstance()->Draw(viewProjection);
+    }
 }
 
 void BaseObjectManager::UpdateImGui()
 {
 #ifdef USE_IMGUI
     // オブジェクトへの編集ジェスチャ（ImGuiウィジェット・ギズモドラッグ）をUndo履歴として追跡する
-    undoTracker_.Begin([this] { return CaptureUndoState(); });
+    g_undoTracker.Begin([this] { return CaptureUndoState(); });
 
     DrawSceneSaveModel();
     DrawSceneLoadModel();
     DrawObjectCreationModel();
     DrawObjectLoadModel();
 
-    undoTracker_.End(
+    g_undoTracker.End(
         "オブジェクト編集",
         [this] { return CaptureUndoState(); },
         [](const nlohmann::json &s) { BaseObjectManager::GetInstance()->RestoreUndoState(s); },
@@ -500,6 +564,130 @@ namespace {
 std::string g_dndReparentChild;  // ドラッグされた子オブジェクト名
 std::string g_dndReparentParent; // ドロップ先の親（空文字 = ルートへ解除）
 bool g_dndReparentRequested = false;
+
+#ifdef USE_IMGUI
+// 階層ツリーの右クリックメニューで選んだ操作。削除・複製はツリーの構造を変えるので、
+// 親子付けと同じくツリーを描き終えてから適用する
+enum class HierarchyAction
+{
+    None,
+    Focus,
+    Duplicate,
+    Delete,
+};
+HierarchyAction g_hierarchyAction = HierarchyAction::None;
+std::string g_hierarchyActionTarget;
+
+// 階層ツリーの検索語
+char g_hierarchyFilter[128] = {};
+
+// 範囲選択・キー移動のため、ツリーに並んだ順（開いている行だけ）を覚えておく。
+// 今フレームの並びを集めながら、判定には前フレームの並びを使う（描き終えるまで全体が分からないため）
+std::vector<std::string> g_hierarchyVisibleOrder;
+std::vector<std::string> g_hierarchyVisibleOrderBuilding;
+std::string g_hierarchyAnchor; // Shift+クリックの起点（最後に普通にクリックした行）
+
+/// <summary>前フレームの並びで、from から to までをまとめて選ぶ</summary>
+void SelectHierarchyRange(const std::string &from, const std::string &to)
+{
+    auto itFrom = std::find(g_hierarchyVisibleOrder.begin(), g_hierarchyVisibleOrder.end(), from);
+    auto itTo = std::find(g_hierarchyVisibleOrder.begin(), g_hierarchyVisibleOrder.end(), to);
+    ImGuizmoManager *gizmo = ImGuizmoManager::GetInstance();
+    if (itFrom == g_hierarchyVisibleOrder.end() || itTo == g_hierarchyVisibleOrder.end())
+    {
+        gizmo->SelectOnly(to);
+        return;
+    }
+    if (itFrom > itTo)
+    {
+        std::swap(itFrom, itTo);
+    }
+    gizmo->SelectOnly(*itFrom);
+    for (auto it = itFrom; it != itTo + 1; ++it)
+    {
+        gizmo->AddToSelection(*it);
+    }
+}
+
+/// <summary>名前に検索語が含まれるか（英字の大文字小文字は区別しない）</summary>
+bool NameMatchesFilter(const std::string &name, const char *filter)
+{
+    if (!filter || filter[0] == '\0')
+    {
+        return true;
+    }
+    auto lower = [](std::string s) {
+        for (char &c : s)
+        {
+            if (c >= 'A' && c <= 'Z')
+            {
+                c = static_cast<char>(c - 'A' + 'a');
+            }
+        }
+        return s;
+    };
+    return lower(name).find(lower(filter)) != std::string::npos;
+}
+
+/// <summary>
+/// オブジェクトが検索語に当たるか。先頭に書くと探す対象を変えられる:
+///   t:タグ   … コライダーのタグ（t:Rock など）
+///   m:モデル … モデルのパス（m:gltf / m:rock など。プリミティブは "primitive"）
+///   それ以外 … 名前
+/// </summary>
+bool ObjectMatchesFilter(BaseObject *obj, const char *filter)
+{
+    if (!obj)
+    {
+        return false;
+    }
+    if (!filter || filter[0] == '\0')
+    {
+        return true;
+    }
+    const std::string text = filter;
+    if (text.rfind("t:", 0) == 0)
+    {
+        const std::string query = text.substr(2);
+        for (const auto &collider : obj->GetColliders())
+        {
+            if (collider && NameMatchesFilter(collider->GetTag(), query.c_str()))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+    if (text.rfind("m:", 0) == 0)
+    {
+        const std::string query = text.substr(2);
+        const std::string model = obj->IsPrimitive() ? std::string("primitive") : obj->GetModelPath();
+        return NameMatchesFilter(model, query.c_str());
+    }
+    return NameMatchesFilter(obj->GetName(), filter);
+}
+
+/// <summary>自分か子孫のどれかが検索語に当たるか（当たる子を持つ親も一覧に残す）</summary>
+bool SubtreeMatchesFilter(BaseObject *obj, const char *filter)
+{
+    if (!obj)
+    {
+        return false;
+    }
+    if (ObjectMatchesFilter(obj, filter))
+    {
+        return true;
+    }
+    for (BaseObject *child : *obj->GetChildren())
+    {
+        if (SubtreeMatchesFilter(child, filter))
+        {
+            return true;
+        }
+    }
+    return false;
+}
+#endif // USE_IMGUI
 } // namespace
 
 namespace {
@@ -673,29 +861,88 @@ void BaseObjectManager::ShowParentChildHierarchy()
     if (ImGui::CollapsingHeader("階層エディター", ImGuiTreeNodeFlags_DefaultOpen))
     {
 
-        // 親子付けは下のツリーで直感的に操作する（右クリックメニュー / ドラッグ&ドロップ）
-        ImGui::Separator();
-        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.72f, 0.80f, 0.92f, 1.0f));
-        ImGui::TextWrapped("親子付けの操作:");
-        ImGui::PopStyleColor();
-        ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kTextDim);
-        ImGui::BulletText("ノードを右クリック →「親を設定」「親子解除」");
-        ImGui::BulletText("右クリックメニューで「継承(位置/回転/スケール)」も切替可能");
-        ImGui::BulletText("ドラッグして別ノードに重ねても親子付け（余白へドロップで解除）");
-        ImGui::PopStyleColor();
+        // ---- 検索欄と操作の説明（説明は「？」にまとめて一覧の場所を広く取る）----
+        const float helpWidth = ImGui::GetFrameHeight();
+        ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - helpWidth - ImGui::GetStyle().ItemSpacing.x);
+        ImGui::InputTextWithHint("##hierarchyFilter", ICON_FA_SEARCH " 名前で絞り込み（t:タグ  m:モデル）", g_hierarchyFilter,
+                                 sizeof(g_hierarchyFilter));
+        if (ImGui::IsItemHovered())
+        {
+            ImGui::SetTooltip("名前の一部で絞り込みます\n"
+                              "t:Rock … コライダーのタグで探す\n"
+                              "m:gltf … モデルのパスで探す（プリミティブは m:primitive）\n"
+                              "Esc で検索語を消します");
+        }
+        if (ImGui::IsItemFocused() && ImGui::IsKeyPressed(ImGuiKey_Escape))
+        {
+            g_hierarchyFilter[0] = '\0';
+        }
+        ImGui::SameLine();
+        ImGui::TextDisabled(ICON_FA_QUESTION_CIRCLE);
+        ImGui::SetItemTooltip("クリック: 選択 / Ctrl+クリック: 選択に追加・解除 / Shift+クリック: 範囲選択\n"
+                              "↑↓: 選択を1行ずつ動かす（Shift で範囲を広げる）\n"
+                              "ダブルクリック: 選択してカメラを寄せる\n"
+                              "目のアイコン: 表示・非表示の切り替え\n"
+                              "右クリック: 親子付け・複製・削除など\n"
+                              "ドラッグして別の行に重ねると親子付け（余白へ落とすと解除）");
 
-        ImGui::Separator();
-        ImGui::Text("階層表示:");
-        ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kTextDim);
-        ImGui::TextUnformatted("（ノードをドラッグして別ノードに重ねると親子付け / 余白へドロップで解除）");
-        ImGui::PopStyleColor();
+        const std::vector<std::string> sortedNames = GetSortedObjectNames();
+        const bool filtering = g_hierarchyFilter[0] != '\0';
+        int shownCount = 0;
+        if (filtering)
+        {
+            for (const std::string &name : sortedNames)
+            {
+                shownCount += ObjectMatchesFilter(GetObjectByName(name), g_hierarchyFilter) ? 1 : 0;
+            }
+            ImGui::TextDisabled("%d / %d 件が一致", shownCount, static_cast<int>(sortedNames.size()));
+        }
+        else
+        {
+            ImGui::TextDisabled("%d 個のオブジェクト", static_cast<int>(sortedNames.size()));
+        }
 
-        // 階層構造を表示
-        ImGui::BeginChild("HierarchyView", ImVec2(0, 300), ImGuiChildFlags_Borders);
+        // 階層構造を表示（窓の高さに合わせて伸ばす。下の保存対象の欄のぶんは残す）
+        const float treeHeight = std::max(220.0f, ImGui::GetContentRegionAvail().y * 0.72f);
+        ImGui::BeginChild("HierarchyView", ImVec2(0, treeHeight), ImGuiChildFlags_Borders);
+        g_hierarchyVisibleOrderBuilding.clear();
+
+        // 一覧にフォーカスがある間は ↑↓ で選択を1行ずつ動かす（Shift を押していれば範囲を広げる）
+        if (ImGui::IsWindowFocused() && !ImGui::GetIO().WantTextInput && !g_hierarchyVisibleOrder.empty())
+        {
+            const int direction = ImGui::IsKeyPressed(ImGuiKey_DownArrow) ? 1 : (ImGui::IsKeyPressed(ImGuiKey_UpArrow) ? -1 : 0);
+            if (direction != 0)
+            {
+                ImGuizmoManager *gizmo = ImGuizmoManager::GetInstance();
+                // 今の選択のうち、並びの中で一番端（進む向きの先頭）にあるものから動かす
+                int current = -1;
+                for (int i = 0; i < static_cast<int>(g_hierarchyVisibleOrder.size()); ++i)
+                {
+                    if (gizmo->IsSelected(g_hierarchyVisibleOrder[i]))
+                    {
+                        if (current < 0 || direction > 0)
+                        {
+                            current = i;
+                        }
+                    }
+                }
+                const int next = std::clamp(current < 0 ? 0 : current + direction, 0, static_cast<int>(g_hierarchyVisibleOrder.size()) - 1);
+                const std::string &nextName = g_hierarchyVisibleOrder[next];
+                if (ImGui::GetIO().KeyShift && !g_hierarchyAnchor.empty())
+                {
+                    SelectHierarchyRange(g_hierarchyAnchor, nextName);
+                }
+                else
+                {
+                    gizmo->SelectOnly(nextName);
+                    g_hierarchyAnchor = nextName;
+                }
+            }
+        }
 
         // objects_ は unordered_map なので、そのまま回すと並び順がハッシュ順（実質ランダム）になり、
         // オブジェクトを増減させるたびに一覧の位置が変わってしまう。名前順に並べて安定させる。
-        for (const std::string &name : GetSortedObjectNames())
+        for (const std::string &name : sortedNames)
         {
             BaseObject *obj = GetObjectByName(name);
             if (obj && !obj->GetParent())
@@ -704,8 +951,11 @@ void BaseObjectManager::ShowParentChildHierarchy()
             }
         }
 
-        // どのオブジェクトにも付いていない光源・パーティクルもルートに並べる
-        ShowRootAttachNodes();
+        // どのオブジェクトにも付いていない光源・パーティクルもルートに並べる（検索中は出さない）
+        if (!filtering)
+        {
+            ShowRootAttachNodes();
+        }
 
         // 余白へのドロップでルート（親なし）へ解除できるようにする
         ImVec2 dropAvail = ImGui::GetContentRegionAvail();
@@ -728,6 +978,32 @@ void BaseObjectManager::ShowParentChildHierarchy()
         }
 
         ImGui::EndChild();
+
+        // 今フレームの並びを次のフレームの範囲選択・キー移動に使う
+        g_hierarchyVisibleOrder.swap(g_hierarchyVisibleOrderBuilding);
+
+        // 右クリックメニューの操作もツリー描画後に適用する
+        if (g_hierarchyAction != HierarchyAction::None)
+        {
+            ImGuizmoManager *gizmo = ImGuizmoManager::GetInstance();
+            gizmo->SelectOnly(g_hierarchyActionTarget);
+            switch (g_hierarchyAction)
+            {
+            case HierarchyAction::Focus:
+                gizmo->FocusOnSelection();
+                break;
+            case HierarchyAction::Duplicate:
+                gizmo->DuplicateSelectedObjects();
+                break;
+            case HierarchyAction::Delete:
+                gizmo->DeleteSelectedObjects();
+                break;
+            default:
+                break;
+            }
+            g_hierarchyAction = HierarchyAction::None;
+            g_hierarchyActionTarget.clear();
+        }
 
         // ドラッグ＆ドロップの結果をツリー描画後にまとめて適用する
         if (g_dndReparentRequested)
@@ -772,20 +1048,99 @@ void BaseObjectManager::ShowObjectHierarchy(BaseObject *obj, int depth)
 
     if (!obj)
         return;
+    (void)depth;
 
-    // インデントを設定
-    std::string indent(depth * 2, ' ');
-    std::string displayName = indent + obj->GetName();
+    // 検索中は、自分も子孫も当たらない枝ごと出さない
+    const bool filtering = g_hierarchyFilter[0] != '\0';
+    if (filtering && !SubtreeMatchesFilter(obj, g_hierarchyFilter))
+    {
+        return;
+    }
 
-    ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_OpenOnDoubleClick;
+    ImGuizmoManager *gizmo = ImGuizmoManager::GetInstance();
+    const std::string &name = obj->GetName();
+    const bool isSelected = gizmo->IsSelected(name);
+    const bool isVisible = obj->GetIsModelDraw();
+
+    // ダブルクリックは「開く」ではなく「カメラを寄せる」に使うので OpenOnDoubleClick は付けない。
+    // 右端の目のアイコンを重ねて置くので AllowOverlap を付ける
+    ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_SpanAvailWidth |
+                               ImGuiTreeNodeFlags_AllowOverlap | ImGuiTreeNodeFlags_FramePadding;
+    if (isSelected)
+    {
+        flags |= ImGuiTreeNodeFlags_Selected;
+    }
 
     // 子がない場合は葉ノードフラグを追加
-    if (obj->GetChildren()->empty() && !AttachmentManager::GetInstance()->HasChildren(obj->GetName()))
+    if (obj->GetChildren()->empty() && !AttachmentManager::GetInstance()->HasChildren(name))
     {
         flags |= ImGuiTreeNodeFlags_Leaf;
     }
+    // 検索中は当たった物が見えるよう、枝を開いておく
+    if (filtering)
+    {
+        ImGui::SetNextItemOpen(true, ImGuiCond_Always);
+    }
 
-    bool nodeOpen = ImGui::TreeNodeEx(displayName.c_str(), flags);
+    // 種類のアイコン（プリミティブ / メタボール / アニメーション付き / モデル）
+    const char *typeIcon = ICON_FA_SHAPES;
+    if (dynamic_cast<MetaBallObject *>(obj))
+    {
+        typeIcon = ICON_FA_CIRCLE;
+    }
+    else if (obj->IsPrimitive())
+    {
+        typeIcon = ICON_FA_CUBE;
+    }
+    else if (obj->GetObject3d() && obj->GetObject3d()->GetModel() && obj->GetObject3d()->GetHaveAnimation())
+    {
+        typeIcon = ICON_FA_RUNNING;
+    }
+    // プレハブから置いた物（の根）は箱のアイコン
+    if (!obj->GetPrefabSource().empty())
+    {
+        typeIcon = ICON_FA_BOX;
+    }
+
+    // 非表示の物は行ごと薄くする
+    if (!isVisible)
+    {
+        ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+    }
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(ImGui::GetStyle().FramePadding.x, 2.0f));
+    bool nodeOpen = ImGui::TreeNodeEx(name.c_str(), flags, "%s  %s", typeIcon, name.c_str());
+    ImGui::PopStyleVar();
+    if (!isVisible)
+    {
+        ImGui::PopStyleColor();
+    }
+
+    g_hierarchyVisibleOrderBuilding.push_back(name);
+
+    // クリックで選択（矢印で開閉したときは選択を変えない）。Ctrl で追加・解除、Shift で範囲
+    if (ImGui::IsItemClicked(ImGuiMouseButton_Left) && !ImGui::IsItemToggledOpen())
+    {
+        if (ImGui::GetIO().KeyShift && !g_hierarchyAnchor.empty())
+        {
+            SelectHierarchyRange(g_hierarchyAnchor, name);
+        }
+        else if (ImGui::GetIO().KeyCtrl)
+        {
+            gizmo->ToggleSelect(name);
+            g_hierarchyAnchor = name;
+        }
+        else
+        {
+            gizmo->SelectOnly(name);
+            g_hierarchyAnchor = name;
+        }
+    }
+    // ダブルクリックでカメラを寄せる
+    if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
+    {
+        g_hierarchyAction = HierarchyAction::Focus;
+        g_hierarchyActionTarget = name;
+    }
 
     // ドラッグ元: このノード
     if (ImGui::BeginDragDropSource(ImGuiDragDropFlags_None))
@@ -814,10 +1169,47 @@ void BaseObjectManager::ShowObjectHierarchy(BaseObject *obj, int depth)
         ImGui::EndDragDropTarget();
     }
 
-    // 右クリックメニュー: 親を設定 / 親子解除 / 親のSRT継承設定
+    // 右クリックメニュー: よく使う操作 / 親を設定 / 親子解除 / 親のSRT継承設定
     if (ImGui::BeginPopupContextItem((obj->GetName() + "##ctx").c_str()))
     {
         ImGui::TextDisabled("%s", obj->GetName().c_str());
+        ImGui::Separator();
+
+        if (ImGui::MenuItem(ICON_FA_CROSSHAIRS " 選択してカメラを寄せる", "ダブルクリック"))
+        {
+            g_hierarchyAction = HierarchyAction::Focus;
+            g_hierarchyActionTarget = name;
+        }
+        if (ImGui::MenuItem(isVisible ? ICON_FA_EYE_SLASH " 非表示にする" : ICON_FA_EYE " 表示する"))
+        {
+            obj->SetIsModelDraw(!isVisible);
+        }
+        if (ImGui::MenuItem(ICON_FA_CLONE " 複製", "Ctrl+D"))
+        {
+            g_hierarchyAction = HierarchyAction::Duplicate;
+            g_hierarchyActionTarget = name;
+        }
+        // プレハブの保存・反映・置き直し（ダイアログはギズモ側が毎フレーム描いている）
+        if (obj->GetPrefabSource().empty())
+        {
+            gizmo->DrawPrefabLinkMenuItems(obj);
+        }
+        else if (ImGui::BeginMenu((std::string(ICON_FA_BOX " プレハブ: ") + obj->GetPrefabSource()).c_str()))
+        {
+            gizmo->DrawPrefabLinkMenuItems(obj);
+            ImGui::EndMenu();
+        }
+        if (ImGui::MenuItem(ICON_FA_COPY " 名前をコピー"))
+        {
+            ImGui::SetClipboardText(name.c_str());
+        }
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.92f, 0.52f, 0.48f, 1.0f));
+        if (ImGui::MenuItem(ICON_FA_TRASH_ALT " 削除", "Delete"))
+        {
+            g_hierarchyAction = HierarchyAction::Delete;
+            g_hierarchyActionTarget = name;
+        }
+        ImGui::PopStyleColor();
         ImGui::Separator();
 
         if (ImGui::BeginMenu("親を設定"))
@@ -871,6 +1263,24 @@ void BaseObjectManager::ShowObjectHierarchy(BaseObject *obj, int depth)
         }
 
         ImGui::EndPopup();
+    }
+
+    // 右端の目のアイコン（表示・非表示の切り替え）。行に重ねて置く
+    {
+        const float buttonWidth = ImGui::GetFrameHeight();
+        ImGui::SameLine(ImGui::GetContentRegionMax().x - buttonWidth);
+        ImGui::PushID((name + "##vis").c_str());
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
+        ImGui::PushStyleColor(ImGuiCol_Text, isVisible ? ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled) : ImVec4(0.95f, 0.66f, 0.38f, 1.0f));
+        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(2.0f, 2.0f));
+        if (ImGui::Button(isVisible ? ICON_FA_EYE : ICON_FA_EYE_SLASH, ImVec2(buttonWidth, 0.0f)))
+        {
+            obj->SetIsModelDraw(!isVisible);
+        }
+        ImGui::PopStyleVar();
+        ImGui::PopStyleColor(2);
+        ImGui::SetItemTooltip(isVisible ? "表示中（クリックで隠す）" : "非表示（クリックで表示）");
+        ImGui::PopID();
     }
 
     if (nodeOpen)
@@ -1599,71 +2009,218 @@ nlohmann::json BaseObjectManager::CaptureUndoState()
 
     for (auto &[name, owned] : ownedObjects_)
     {
-        BaseObject *obj = owned.get();
-        if (!obj)
+        if (owned)
         {
-            continue;
+            state[name] = CaptureObjectState(owned.get());
         }
-
-        json s;
-        // 再生成に必要な情報
-        s["modelPath"] = obj->GetModelPath();
-        s["isPrimitive"] = obj->IsPrimitive();
-        s["primitiveType"] = static_cast<int>(obj->GetPrimitiveType());
-
-        // トランスフォーム
-        const WorldTransform *transform = obj->GetWorldTransform();
-        s["scale"] = transform->scale_;
-        s["rotation"] = transform->quaternionRotation_;
-        s["translation"] = transform->translation_;
-
-        // 親子関係・フラグ類
-        s["parent"] = obj->GetParentName();
-        s["shouldSave"] = obj->GetShouldSave();
-        s["isModelDraw"] = obj->GetIsModelDraw();
-        s["isLighting"] = obj->GetLighting();
-
-        // マテリアルごとのテクスチャと色
-        const int materialCount = obj->GetObject3d() ? static_cast<int>(obj->GetObject3d()->GetMaterialCount()) : 0;
-        const int textureCount = obj->IsPrimitive() ? (materialCount > 0 ? 1 : 0) : materialCount;
-        json textures = json::array();
-        json colors = json::array();
-        for (int i = 0; i < textureCount; ++i)
-        {
-            textures.push_back(obj->GetTexturePath(i));
-        }
-        for (int i = 0; i < materialCount; ++i)
-        {
-            colors.push_back(obj->GetColor(i));
-        }
-        s["textures"] = textures;
-        s["colors"] = colors;
-
-        // メタボールはモデルファイルを持たないので、modelPath だけでは作り直せない。
-        // 要素リストとグループ名まで残しておく（削除の Undo・貼り付けの Redo に必要）
-        if (const MetaBallObject *metaBall = dynamic_cast<const MetaBallObject *>(obj))
-        {
-            json elements = json::array();
-            for (const MetaBallElement &element : metaBall->GetElements())
-            {
-                json e;
-                e["position"] = element.position;
-                e["shape"] = static_cast<int>(element.shape);
-                e["radius"] = element.radius;
-                e["stiffness"] = element.stiffness;
-                e["negative"] = element.negative;
-                e["axis"] = element.axis;
-                e["enabled"] = element.enabled;
-                e["radiusScale"] = element.radiusScale;
-                elements.push_back(e);
-            }
-            s["metaBallGroup"] = metaBall->GetGroupName();
-            s["metaBallElements"] = elements;
-        }
-
-        state[name] = s;
     }
     return state;
+}
+
+nlohmann::json BaseObjectManager::CaptureObjectState(BaseObject *obj) const
+{
+    using nlohmann::json;
+    json s;
+    if (!obj)
+    {
+        return s;
+    }
+
+    // 再生成に必要な情報
+    s["modelPath"] = obj->GetModelPath();
+    s["isPrimitive"] = obj->IsPrimitive();
+    s["primitiveType"] = static_cast<int>(obj->GetPrimitiveType());
+
+    // トランスフォーム
+    const WorldTransform *transform = obj->GetWorldTransform();
+    s["scale"] = transform->scale_;
+    s["rotation"] = transform->quaternionRotation_;
+    s["translation"] = transform->translation_;
+
+    // 親子関係・フラグ類
+    s["parent"] = obj->GetParentName();
+    s["shouldSave"] = obj->GetShouldSave();
+    s["isModelDraw"] = obj->GetIsModelDraw();
+    s["isLighting"] = obj->GetLighting();
+    s["prefabSource"] = obj->GetPrefabSource();
+
+    // マテリアルごとのテクスチャと色
+    const int materialCount = obj->GetObject3d() ? static_cast<int>(obj->GetObject3d()->GetMaterialCount()) : 0;
+    const int textureCount = obj->IsPrimitive() ? (materialCount > 0 ? 1 : 0) : materialCount;
+    json textures = json::array();
+    json colors = json::array();
+    for (int i = 0; i < textureCount; ++i)
+    {
+        textures.push_back(obj->GetTexturePath(i));
+    }
+    for (int i = 0; i < materialCount; ++i)
+    {
+        colors.push_back(obj->GetColor(i));
+    }
+    s["textures"] = textures;
+    s["colors"] = colors;
+
+    // コライダー（形状・タグ・マスク）。これが無いと、停止しても再生中に足した
+    // コライダーが残り、消したコライダーが戻らない
+    s["colliders"] = obj->CaptureColliderState();
+
+    // メタボールはモデルファイルを持たないので、modelPath だけでは作り直せない。
+    // 要素リストとグループ名まで残しておく（削除の Undo・貼り付けの Redo に必要）
+    if (const MetaBallObject *metaBall = dynamic_cast<const MetaBallObject *>(obj))
+    {
+        json elements = json::array();
+        for (const MetaBallElement &element : metaBall->GetElements())
+        {
+            json e;
+            e["position"] = element.position;
+            e["shape"] = static_cast<int>(element.shape);
+            e["radius"] = element.radius;
+            e["stiffness"] = element.stiffness;
+            e["negative"] = element.negative;
+            e["axis"] = element.axis;
+            e["enabled"] = element.enabled;
+            e["radiusScale"] = element.radiusScale;
+            elements.push_back(e);
+        }
+        s["metaBallGroup"] = metaBall->GetGroupName();
+        s["metaBallElements"] = elements;
+    }
+    return s;
+}
+
+BaseObject *BaseObjectManager::CreateObjectFromState(const std::string &name, const nlohmann::json &s)
+{
+    const std::string modelPath = s.value("modelPath", std::string());
+    const bool isPrimitive = s.value("isPrimitive", false);
+    // メタボールは modelName が目印になっているだけでモデルファイルは無い。
+    // 素の BaseObject として作ると "MetaBall" というモデルを読みに行ってしまう
+    const bool isMetaBall = (modelPath == kMetaBallModelTag);
+    std::unique_ptr<BaseObject> newObject =
+        isMetaBall ? std::unique_ptr<BaseObject>(std::make_unique<MetaBallObject>())
+                   : std::make_unique<BaseObject>();
+    newObject->Init(name);
+    if (isMetaBall)
+    {
+        // MetaBallObject::Init が動的モデルの生成とグループ登録まで済ませている
+    }
+    else if (!modelPath.empty())
+    {
+        newObject->CreateModel(modelPath);
+    }
+    else if (isPrimitive)
+    {
+        newObject->SetPrimitive(true);
+        newObject->CreatePrimitiveModel(
+            static_cast<PrimitiveType>(s.value("primitiveType", static_cast<int>(PrimitiveType::Count))));
+    }
+    else
+    {
+        return nullptr; // モデルもプリミティブも無い場合は再生成できない
+    }
+    AddObject(std::move(newObject));
+    return GetObjectByName(name);
+}
+
+void BaseObjectManager::ApplyObjectState(BaseObject *obj, const nlohmann::json &s)
+{
+    using nlohmann::json;
+    if (!obj || !s.is_object())
+    {
+        return;
+    }
+
+    // メタボールの要素リストとグループ名を戻す
+    if (MetaBallObject *metaBall = dynamic_cast<MetaBallObject *>(obj))
+    {
+        if (s.contains("metaBallGroup"))
+        {
+            metaBall->SetGroupName(s["metaBallGroup"].get<std::string>());
+        }
+        if (s.contains("metaBallElements") && s["metaBallElements"].is_array())
+        {
+            std::vector<MetaBallElement> elements;
+            elements.reserve(s["metaBallElements"].size());
+            for (const json &e : s["metaBallElements"])
+            {
+                MetaBallElement element{};
+                element.position = e.value("position", Vector3{});
+                element.shape = static_cast<MetaBallShape>(e.value("shape", 0));
+                element.radius = e.value("radius", 1.0f);
+                element.stiffness = e.value("stiffness", 1.0f);
+                element.negative = e.value("negative", false);
+                element.axis = e.value("axis", Vector3{});
+                element.enabled = e.value("enabled", true);
+                element.radiusScale = e.value("radiusScale", Vector3{1.0f, 1.0f, 1.0f});
+                elements.push_back(element);
+            }
+            metaBall->GetElements() = std::move(elements);
+            // 選択中の添字が要素数を超えたままになると、インスペクタが空振りする
+            if (metaBall->GetSelectedElementIndex() >= static_cast<int>(metaBall->GetElements().size()))
+            {
+                metaBall->SetSelectedElementIndex(static_cast<int>(metaBall->GetElements().size()) - 1);
+            }
+        }
+    }
+
+    // トランスフォーム適用
+    WorldTransform *transform = obj->GetWorldTransform();
+    if (s.contains("scale"))
+    {
+        transform->scale_ = s["scale"].get<Vector3>();
+    }
+    if (s.contains("rotation"))
+    {
+        transform->quaternionRotation_ = s["rotation"].get<Quaternion>();
+    }
+    if (s.contains("translation"))
+    {
+        transform->translation_ = s["translation"].get<Vector3>();
+    }
+
+    // フラグ類の適用
+    if (s.contains("shouldSave"))
+    {
+        obj->SetShouldSave(s["shouldSave"].get<bool>());
+    }
+    if (s.contains("isModelDraw"))
+    {
+        obj->SetIsModelDraw(s["isModelDraw"].get<bool>());
+    }
+    if (s.contains("isLighting"))
+    {
+        obj->GetLighting() = s["isLighting"].get<bool>();
+    }
+    if (s.contains("prefabSource"))
+    {
+        obj->SetPrefabSource(s["prefabSource"].get<std::string>());
+    }
+
+    // マテリアルごとのテクスチャと色の適用
+    const int materialCount = obj->GetObject3d() ? static_cast<int>(obj->GetObject3d()->GetMaterialCount()) : 0;
+    if (s.contains("textures") && s["textures"].is_array())
+    {
+        const json &textures = s["textures"];
+        const int textureCount = obj->IsPrimitive() ? (materialCount > 0 ? 1 : 0) : materialCount;
+        for (int i = 0; i < static_cast<int>(textures.size()) && i < textureCount; ++i)
+        {
+            obj->SetTexture(textures[i].get<std::string>(), i);
+        }
+    }
+    if (s.contains("colors") && s["colors"].is_array())
+    {
+        const json &colors = s["colors"];
+        for (int i = 0; i < static_cast<int>(colors.size()) && i < materialCount; ++i)
+        {
+            obj->SetColor(colors[i].get<Vector4>(), i);
+        }
+    }
+
+    // コライダーはモデルが揃ってから戻す
+    // （メッシュコライダーは obj3d_ のモデルから三角形を組み直すため）
+    if (s.contains("colliders"))
+    {
+        obj->RestoreColliderState(s["colliders"]);
+    }
 }
 
 void BaseObjectManager::RestoreUndoState(const nlohmann::json &state)
@@ -1673,6 +2230,9 @@ void BaseObjectManager::RestoreUndoState(const nlohmann::json &state)
     {
         return;
     }
+
+    // 復元は人が押した操作ではないので、追加・削除のトーストは止める（履歴には残る）
+    ImGuiNotification::ScopedMute mute;
 
     // ---- パス1: 削除・再生成・フィールド適用 ----
     for (auto it = state.begin(); it != state.end(); ++it)
@@ -1693,122 +2253,14 @@ void BaseObjectManager::RestoreUndoState(const nlohmann::json &state)
         // 存在しなければ所有オブジェクトとして再生成（削除のUndo）
         if (!obj)
         {
-            const std::string modelPath = s.value("modelPath", std::string());
-            const bool isPrimitive = s.value("isPrimitive", false);
-            // メタボールは modelName が目印になっているだけでモデルファイルは無い。
-            // 素の BaseObject として作ると "MetaBall" というモデルを読みに行ってしまう
-            const bool isMetaBall = (modelPath == kMetaBallModelTag);
-            std::unique_ptr<BaseObject> newObject =
-                isMetaBall ? std::unique_ptr<BaseObject>(std::make_unique<MetaBallObject>())
-                           : std::make_unique<BaseObject>();
-            newObject->Init(name);
-            if (isMetaBall)
-            {
-                // MetaBallObject::Init が動的モデルの生成とグループ登録まで済ませている
-            }
-            else if (!modelPath.empty())
-            {
-                newObject->CreateModel(modelPath);
-            }
-            else if (isPrimitive)
-            {
-                newObject->SetPrimitive(true);
-                newObject->CreatePrimitiveModel(
-                    static_cast<PrimitiveType>(s.value("primitiveType", static_cast<int>(PrimitiveType::Count))));
-            }
-            else
-            {
-                continue; // モデルもプリミティブも無い場合は再生成できない
-            }
-            AddObject(std::move(newObject));
-            obj = GetObjectByName(name);
+            obj = CreateObjectFromState(name, s);
             if (!obj)
             {
                 continue;
             }
         }
 
-        // メタボールの要素リストとグループ名を戻す
-        if (MetaBallObject *metaBall = dynamic_cast<MetaBallObject *>(obj))
-        {
-            if (s.contains("metaBallGroup"))
-            {
-                metaBall->SetGroupName(s["metaBallGroup"].get<std::string>());
-            }
-            if (s.contains("metaBallElements") && s["metaBallElements"].is_array())
-            {
-                std::vector<MetaBallElement> elements;
-                elements.reserve(s["metaBallElements"].size());
-                for (const json &e : s["metaBallElements"])
-                {
-                    MetaBallElement element{};
-                    element.position = e.value("position", Vector3{});
-                    element.shape = static_cast<MetaBallShape>(e.value("shape", 0));
-                    element.radius = e.value("radius", 1.0f);
-                    element.stiffness = e.value("stiffness", 1.0f);
-                    element.negative = e.value("negative", false);
-                    element.axis = e.value("axis", Vector3{});
-                    element.enabled = e.value("enabled", true);
-                    element.radiusScale = e.value("radiusScale", Vector3{1.0f, 1.0f, 1.0f});
-                    elements.push_back(element);
-                }
-                metaBall->GetElements() = std::move(elements);
-                // 選択中の添字が要素数を超えたままになると、インスペクタが空振りする
-                if (metaBall->GetSelectedElementIndex() >= static_cast<int>(metaBall->GetElements().size()))
-                {
-                    metaBall->SetSelectedElementIndex(static_cast<int>(metaBall->GetElements().size()) - 1);
-                }
-            }
-        }
-
-        // トランスフォーム適用
-        WorldTransform *transform = obj->GetWorldTransform();
-        if (s.contains("scale"))
-        {
-            transform->scale_ = s["scale"].get<Vector3>();
-        }
-        if (s.contains("rotation"))
-        {
-            transform->quaternionRotation_ = s["rotation"].get<Quaternion>();
-        }
-        if (s.contains("translation"))
-        {
-            transform->translation_ = s["translation"].get<Vector3>();
-        }
-
-        // フラグ類の適用
-        if (s.contains("shouldSave"))
-        {
-            obj->SetShouldSave(s["shouldSave"].get<bool>());
-        }
-        if (s.contains("isModelDraw"))
-        {
-            obj->SetIsModelDraw(s["isModelDraw"].get<bool>());
-        }
-        if (s.contains("isLighting"))
-        {
-            obj->GetLighting() = s["isLighting"].get<bool>();
-        }
-
-        // マテリアルごとのテクスチャと色の適用
-        const int materialCount = obj->GetObject3d() ? static_cast<int>(obj->GetObject3d()->GetMaterialCount()) : 0;
-        if (s.contains("textures") && s["textures"].is_array())
-        {
-            const json &textures = s["textures"];
-            const int textureCount = obj->IsPrimitive() ? (materialCount > 0 ? 1 : 0) : materialCount;
-            for (int i = 0; i < static_cast<int>(textures.size()) && i < textureCount; ++i)
-            {
-                obj->SetTexture(textures[i].get<std::string>(), i);
-            }
-        }
-        if (s.contains("colors") && s["colors"].is_array())
-        {
-            const json &colors = s["colors"];
-            for (int i = 0; i < static_cast<int>(colors.size()) && i < materialCount; ++i)
-            {
-                obj->SetColor(colors[i].get<Vector4>(), i);
-            }
-        }
+        ApplyObjectState(obj, s);
     }
 
     // ---- パス2: 親子関係の復元（全オブジェクトが揃ってから行う）----

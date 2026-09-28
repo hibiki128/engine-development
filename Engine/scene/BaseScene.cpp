@@ -94,15 +94,35 @@ void BaseScene::Draw()
 
 void BaseScene::AddSceneSetting()
 {
+#ifdef USE_IMGUI
+    ScenePanel().Draw();
+#endif // USE_IMGUI
 }
 
 void BaseScene::AddObjectSetting()
 {
+#ifdef USE_IMGUI
+    ObjectPanel().Draw();
+#endif // USE_IMGUI
 }
 
 void BaseScene::AddParticleSetting()
 {
 }
+
+#ifdef USE_IMGUI
+SettingsPanel &BaseScene::ScenePanel()
+{
+    static SettingsPanel panel("sceneSettings");
+    return panel;
+}
+
+SettingsPanel &BaseScene::ObjectPanel()
+{
+    static SettingsPanel panel("objectSettings");
+    return panel;
+}
+#endif // USE_IMGUI
 
 void BaseScene::DrawForOffScreen()
 {

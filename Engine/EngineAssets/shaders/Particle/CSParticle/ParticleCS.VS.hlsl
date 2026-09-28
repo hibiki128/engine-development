@@ -29,6 +29,8 @@ VertexShaderOutput main(VertexShaderInput input, uint instanceId : SV_InstanceID
         output.position = float4(0.0f, 0.0f, 0.0f, 0.0f); // クリップされる縮退頂点
         output.texcoord = float2(0.0f, 0.0f);
         output.color = float4(0.0f, 0.0f, 0.0f, 0.0f);
+            output.seed = 0.0f;
+            output.facing = 1.0f;
         return output;
     }
 
@@ -51,6 +53,8 @@ VertexShaderOutput main(VertexShaderInput input, uint instanceId : SV_InstanceID
             output.position = float4(0.0f, 0.0f, 0.0f, 0.0f); // クリップされる縮退頂点
             output.texcoord = float2(0.0f, 0.0f);
             output.color = float4(0.0f, 0.0f, 0.0f, 0.0f);
+            output.seed = 0.0f;
+            output.facing = 1.0f;
             return output;
         }
         float fadeRange = max(gPerView.distanceCullEnd - gPerView.distanceCullStart, 0.0001f);
@@ -77,6 +81,8 @@ VertexShaderOutput main(VertexShaderInput input, uint instanceId : SV_InstanceID
             output.position = float4(0.0f, 0.0f, 0.0f, 0.0f);
             output.texcoord = float2(0.0f, 0.0f);
             output.color = float4(0.0f, 0.0f, 0.0f, 0.0f);
+            output.seed = 0.0f;
+            output.facing = 1.0f;
             return output;
         }
         // 画面サイズ上限（縦横同率で縮小）
@@ -150,6 +156,7 @@ VertexShaderOutput main(VertexShaderInput input, uint instanceId : SV_InstanceID
     // ワールド×ビュープロジェクション。回転を使うグループのみ回転行列を合成する
     // （回転なしグループでは sincos×3＋行列積をスキップ＝全頂点ぶんの無駄を削減）。
     float4x4 wvp = mul(worldMatrix, gPerView.viewProjection);
+    float3x3 rot3 = float3x3(1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f);
     if (gPerView.enableRotation != 0)
     {
         float sx, cx, sy, cy, sz, cz;
@@ -163,9 +170,41 @@ VertexShaderOutput main(VertexShaderInput input, uint instanceId : SV_InstanceID
             0, 0, 0, 1
         );
         wvp = mul(rotXYZ, wvp);
+        rot3 = (float3x3) rotXYZ;
     }
     output.position = mul(input.position, wvp);
-    output.texcoord = input.texcoord;
+
+    // 縁の発光（shapeFresnel）用に、面がカメラを向いている度合いを頂点ごとに求める。
+    // 面の向きが意味を持つのはワールドに固定したメッシュだけなので、ビルボード系は常に正面(1)
+    output.facing = 1.0f;
+    if (gPerView.enableBillboard == 0 && gPerView.enableVelocityStretch == 0)
+    {
+        // 頂点は 回転 → 軸ごとのスケール の順で変換されるので、法線は回転後にスケールで割る（逆転置）
+        float3 worldPos = mul(input.position.xyz, rot3) * pScale + pTranslate;
+        float3 worldNormal = normalize(mul(input.normal, rot3) / max(abs(pScale), 1e-4f));
+        float3 toCamera = normalize(gPerView.cameraPosition - worldPos);
+        output.facing = abs(dot(worldNormal, toCamera));
+    }
+
+    // フリップブック: 1枚のテクスチャに並べたコマのうち、この粒が今出すべき1マスへ UV を寄せる。
+    // コマ番号は Emit/Update が scaleZ の空いている上位16bit へ詰めてある（帯域の追加なし）
+    if (gPerView.enableFlipbookDraw != 0u)
+    {
+        uint cols = max(gPerView.flipbookColsDraw, 1u);
+        uint rows = max(gPerView.flipbookRowsDraw, 1u);
+        uint frame = UnpackFlipbookFrame(dc.scaleZ) % (cols * rows);
+        float2 cell = float2(1.0f / float(cols), 1.0f / float(rows));
+        float2 origin = float2(float(frame % cols), float(frame / cols)) * cell;
+        output.texcoord = origin + input.texcoord * cell;
+    }
+    else
+    {
+        output.texcoord = input.texcoord;
+    }
+
+    // プロシージャル形状のゆらぎを粒ごとにずらす種。
+    // Emit/Update が scaleZ の上位16bitへ詰めた値（フリップブック時はコマ番号）をそのまま渡す
+    output.seed = float(UnpackFlipbookFrame(dc.scaleZ));
     output.color = pColor;
     return output;
 }

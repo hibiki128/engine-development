@@ -57,16 +57,19 @@ void ImGuizmoManager::DrawImGui()
         ImGui::BulletText("Tab : 重なったオブジェクトを順に選択");
         ImGui::BulletText("Ctrl+D : 複製 / Ctrl+C・Ctrl+V : コピー・貼り付け");
         ImGui::BulletText("空ドラッグ : 矩形選択（Ctrl 併用で選択に追加）");
+        ImGui::BulletText("右クリック : その場所に置く・選択の操作・視点のメニュー");
+        ImGui::BulletText("Shift+数字 / Ctrl+Shift+数字 : カメラのブックマークへ移動 / 保存");
+        ImGui::BulletText("Alt+1〜4 / Alt+0 : クリック対象をその種類だけ / すべてに");
         ImGui::TextDisabled("※ シーンウィンドウにマウスがある時だけ効きます");
     }
 
-    // ---- 操作対象フィルタ ----
+    // ---- シーンのクリック対象 ----
     // 4種類（オブジェクト/スプライト/パーティクル/ライト）が同時にあると掴みたい物を選びづらいので、
-    // チェックした種類だけを選択・マウスピック・ギズモ表示・デバッグ描画の対象にする。
+    // チェックした種類だけをシーン上のクリック・矩形選択の対象にする。
+    // シーンのツールバーと Alt+数字 からも切り替えられる。
     ImGui::Spacing();
-    SectionHeader("[ 操作対象フィルタ ]", DebugTheme::kAccentGreen);
-    ImGui::TextDisabled("チェックした種類だけ選択・操作できます");
-    bool filterChanged = false;
+    SectionHeader("[ シーンのクリック対象 ]", DebugTheme::kAccentGreen);
+    ImGui::TextDisabled("チェックした種類だけシーンのクリックで選べます（一覧からはいつでも選べます）");
 
     // 分類の表示名。追加時はここと GizmoCategory を対応させる
     static const char *kCategoryLabels[kGizmoCategoryCount] = {
@@ -77,37 +80,30 @@ void ImGuizmoManager::DrawImGui()
     {
         if (i > 0)
             ImGui::SameLine();
-        filterChanged |= ImGui::Checkbox(kCategoryLabels[i], &categoryEnabled_[i]);
+        bool enabled = categoryEnabled_[i];
+        if (ImGui::Checkbox(kCategoryLabels[i], &enabled))
+        {
+            SetCategoryEnabled(static_cast<GizmoCategory>(i), enabled);
+        }
     }
     ImGui::PopStyleColor();
 
     // 「この種類だけ」を素早く選べるショートカット
-    auto SoloCategory = [this](int index) {
-        for (int i = 0; i < kGizmoCategoryCount; ++i)
-            categoryEnabled_[i] = (i == index);
-    };
     if (ImGui::SmallButton("全部##catAll"))
     {
-        for (bool &e : categoryEnabled_)
-            e = true;
-        filterChanged = true;
+        EnableAllCategories();
     }
+    ImGui::SetItemTooltip("Alt+0");
     for (int i = 0; i < kGizmoCategoryCount; ++i)
     {
         ImGui::SameLine();
         ImGui::PushID(i);
         if (ImGui::SmallButton(std::format("{}のみ", kCategoryLabels[i]).c_str()))
         {
-            SoloCategory(i);
-            filterChanged = true;
+            SoloCategory(static_cast<GizmoCategory>(i));
         }
+        ImGui::SetItemTooltip("Alt+%d", i + 1);
         ImGui::PopID();
-    }
-    if (filterChanged)
-    {
-        // 無効化された種類の選択を解除し、一覧も更新する
-        PruneSelectionByFilter();
-        UpdateFilteredNames();
     }
 
     ImGui::Spacing();
@@ -167,6 +163,8 @@ void ImGuizmoManager::DrawImGui()
 
     ImGui::SetNextItemWidth(120.0f);
     ImGui::DragFloat("拡縮の刻み", &snapScale_, 0.01f, 0.01f, 10.0f, "%.2f");
+    AccentCheckbox("移動中に刻みのグリッドを描く", &showSnapGrid_, DebugTheme::kAccentYellow);
+    ImGui::SetItemTooltip("スナップONで移動ギズモを掴んでいる間、対象のまわりに刻み幅のマス目を描きます");
 
     ImGui::Spacing();
     SectionHeader("[ 整列・配置 ]", DebugTheme::kAccentPurple);
@@ -274,12 +272,20 @@ void ImGuizmoManager::DrawImGui()
 
     if (!selectedNames_.empty())
     {
-        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 0.6f, 1.0f));
-        ImGui::Text("オブジェクト詳細 (%s)", selectedNames_.begin()->c_str());
-        ImGui::PopStyleColor();
-        ImGui::Separator();
+        if (inspectorWindowOpen_)
+        {
+            // 詳細はインスペクタ窓に出ているので、ここに同じものを重ねない
+            DimText("詳細はインスペクタ窓に表示しています");
+        }
+        else
+        {
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 0.6f, 1.0f));
+            ImGui::Text("オブジェクト詳細 (%s)", selectedNames_.begin()->c_str());
+            ImGui::PopStyleColor();
+            ImGui::Separator();
 
-        ShowSelectedObjectImGui();
+            ShowSelectedObjectImGui();
+        }
 
         ImGui::Spacing();
         ImGui::Spacing();
@@ -367,11 +373,9 @@ void ImGuizmoManager::UpdateFilteredNames()
     filteredNames_.clear();
 
     std::vector<std::string> allNames;
+    // 一覧からはクリック対象フィルタに関係なく選べるよう、全種類を出す
     for (const auto &pair : transformMap_)
     {
-        // 操作対象フィルタで無効化された種類は一覧に出さない
-        if (!IsCategoryEnabled(pair.second.category))
-            continue;
         allNames.push_back(pair.first);
     }
     std::sort(allNames.begin(), allNames.end());

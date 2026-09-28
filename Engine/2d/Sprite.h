@@ -20,6 +20,17 @@ class Sprite
     /// ===================================================
 
     /// <summary>
+    /// デストラクタ。確保したSRVインデックスを SrvManager へ返す
+    /// </summary>
+    ~Sprite();
+
+    // SRVインデックスを持つので、コピーすると同じ番号を二重に返すことになる。
+    // 実際どこでも unique_ptr でしか持っていないが、間違って増やせないようにしておく
+    Sprite() = default;
+    Sprite(const Sprite &) = delete;
+    Sprite &operator=(const Sprite &) = delete;
+
+    /// <summary>
     /// 初期化
     /// </summary>
     /// <param name="textureFilePath">テクスチャファイルパス</param>

@@ -159,6 +159,28 @@ class UndoRedoManager
     size_t GetRedoCount() const { return redoStack_.size(); }         // Redo履歴数
 
     /// <summary>
+    /// 履歴の1件（履歴窓の表示用）
+    /// </summary>
+    struct HistoryItem
+    {
+        std::string label; // 操作名
+        std::string time;  // 積んだ時刻（HH:MM:SS）
+    };
+
+    /// <summary>取り消せる操作（index 0 が最も古い、末尾が直前の操作）</summary>
+    HistoryItem GetUndoItem(size_t index) const;
+
+    /// <summary>やり直せる操作（index 0 が次にやり直す操作）</summary>
+    HistoryItem GetRedoItem(size_t index) const;
+
+    /// <summary>
+    /// 取り消し済みの数が target になるまで Undo / Redo を繰り返す（履歴窓で行を押したとき）
+    /// </summary>
+    /// <param name="targetUndoCount">目標の Undo 履歴数（0 = 最初の状態）</param>
+    /// <returns>int: 実行した回数（負なら Undo、正なら Redo）</returns>
+    int JumpTo(size_t targetUndoCount);
+
+    /// <summary>
     /// 全履歴を破棄する（シーン切替時など）
     /// </summary>
     void Clear();
@@ -169,9 +191,16 @@ class UndoRedoManager
     UndoRedoManager(UndoRedoManager &) = delete;
     UndoRedoManager &operator=(UndoRedoManager &) = delete;
 
-    std::deque<std::unique_ptr<IUndoCommand>> undoStack_; // Undo履歴（末尾が最新）
-    std::deque<std::unique_ptr<IUndoCommand>> redoStack_; // Redo履歴（末尾が次のRedo）
-    bool isApplying_ = false;                             // Undo/Redo適用中の再Pushを防ぐフラグ
+    /// <summary>履歴に積んだ操作と、積んだ時刻</summary>
+    struct Entry
+    {
+        std::unique_ptr<IUndoCommand> command;
+        std::string time;
+    };
+
+    std::deque<Entry> undoStack_; // Undo履歴（末尾が最新）
+    std::deque<Entry> redoStack_; // Redo履歴（末尾が次のRedo）
+    bool isApplying_ = false;     // Undo/Redo適用中の再Pushを防ぐフラグ
 };
 
 /// <summary>

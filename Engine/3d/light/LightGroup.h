@@ -7,9 +7,13 @@
 #include "data/DataHandler.h"
 #include "wrl.h"
 #include <camera/projection/ViewProjection.h>
+#include <array>
 #include <memory>
+#include <render/RenderView.h>
 #include <string>
 #include <vector>
+#ifdef USE_IMGUI
+#endif // USE_IMGUI
 
 namespace Hagine {
 class DirectXCommon;
@@ -66,6 +70,28 @@ class LightGroup
     /// ImGuiによるデバッグ表示
     /// </summary>
     void DrawImGui();
+
+#ifdef USE_IMGUI
+    /// <summary>
+    /// 光源への編集ジェスチャ（ImGuiウィジェット・ギズモドラッグ）をUndo履歴として追跡する。
+    /// ライト設定ウィンドウを閉じていても掴めるので、ImGui フレームの最後で毎フレーム呼ぶこと
+    /// </summary>
+    void UpdateImGui();
+
+    /// <summary>
+    /// Undo と Play モードのスナップショット用に、全光源をJSON化する
+    /// （トップレベル = 光源名 → 状態。平行光源は1つしか無いので予約キーに入れる）
+    /// </summary>
+    /// <returns>nlohmann::json: 状態JSON</returns>
+    nlohmann::json CaptureUndoState() const;
+
+    /// <summary>
+    /// CaptureUndoState で得た状態（差分可）を適用する。
+    /// null のキーは光源の削除、存在しない名前は追加として扱う
+    /// </summary>
+    /// <param name="state">適用する状態JSON</param>
+    void RestoreUndoState(const nlohmann::json &state);
+#endif // USE_IMGUI
 
     /// <summary>
     /// ライトデータをJSONへ保存
@@ -252,10 +278,8 @@ class LightGroup
     /// <returns>std::string: 親子付けの登録名</returns>
     static std::string AttachName(const std::string &lightName);
 
-  private:
-
     /// <summary>
-    /// ライトのギズモ登録名（ポイントライト本体）
+    /// ライトのギズモ登録名（ポイントライト本体）。シーンのアイコンから選ぶときにも使う
     /// </summary>
     std::string PointGizmoName(int index) const;
 
@@ -264,6 +288,8 @@ class LightGroup
     /// </summary>
     std::string SpotGizmoName(int index) const;
     std::string SpotAimGizmoName(int index) const;
+
+  private:
 
     /// <summary>
     /// 一覧で選んだライトをギズモ側の選択にも反映する
@@ -331,6 +357,9 @@ class LightGroup
     // カメラ情報（陰影計算で視線ベクトルを求めるのに使う）
     Microsoft::WRL::ComPtr<ID3D12Resource> cameraForGPUResource_;
     CameraForGPU *pCameraForGPUData_ = nullptr;
+    // カメラビュー窓（RenderView 1〜）用のカメラ位置。使われたら作る
+    std::array<Microsoft::WRL::ComPtr<ID3D12Resource>, RenderView::kMaxViews> viewCameraResources_{};
+    std::array<CameraForGPU *, RenderView::kMaxViews> pViewCameraData_{};
     Vector3 cameraPosition_{}; // 優先度計算に使うカメラ位置（Updateで更新）
 
     // ギズモへ登録済みの名前一覧（解除するときに使う）
@@ -353,5 +382,8 @@ class LightGroup
     // 対象が変わったときだけ現在名を流し込む
     std::string nameEditBuffer_; // 名前編集の一時バッファ（imgui_stdlib で std::string を直接編集）
     std::string nameEditOwner_;
+
+#ifdef USE_IMGUI
+#endif                             // USE_IMGUI
 };
 } // namespace Hagine

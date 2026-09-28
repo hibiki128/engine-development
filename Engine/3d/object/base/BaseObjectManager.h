@@ -2,7 +2,6 @@
 #include "object/base/BaseObject.h"
 #include "unordered_map"
 #ifdef USE_IMGUI
-#include <edit/undo/ImGuiUndoTracker.h>
 #endif // USE_IMGUI
 namespace Hagine {
 
@@ -297,6 +296,95 @@ class BaseObjectManager
     /// </summary>
     /// <param name="state">適用する状態JSON</param>
     void RestoreUndoState(const nlohmann::json &state);
+
+    /// <summary>
+    /// 進行中の編集ジェスチャの追跡を捨てる。同じ変更を明示的に Undo 履歴へ積んだ直後に呼び、
+    /// ドラッグ＆ドロップ等のジェスチャ終わりに同じ差分が二重に積まれるのを防ぐ
+    /// </summary>
+    void SkipUndoGesture();
+
+    /// <summary>
+    /// 1体ぶんの編集可能状態をJSON化する（Undo・プレハブ共通の形式）
+    /// </summary>
+    /// <param name="pObject">対象オブジェクト</param>
+    /// <returns>nlohmann::json: 状態JSON（pObject が null なら空）</returns>
+    nlohmann::json CaptureObjectState(BaseObject *pObject) const;
+
+    /// <summary>
+    /// 状態JSONのモデル・プリミティブ情報からオブジェクトを作り、所有オブジェクトとして登録する。
+    /// トランスフォームなどの中身は ApplyObjectState で別に流し込む
+    /// </summary>
+    /// <param name="name">登録名（一意であること）</param>
+    /// <param name="state">CaptureObjectState の結果</param>
+    /// <returns>BaseObject*: 作ったオブジェクト（作れなければ nullptr）</returns>
+    BaseObject *CreateObjectFromState(const std::string &name, const nlohmann::json &state);
+
+    /// <summary>
+    /// 状態JSONのトランスフォーム・フラグ・マテリアル・コライダーを既存オブジェクトへ流し込む。
+    /// 親子関係（"parent"）は扱わない（相手が揃ってから呼び出し元で付ける）
+    /// </summary>
+    /// <param name="pObject">対象オブジェクト</param>
+    /// <param name="state">CaptureObjectState の結果</param>
+    void ApplyObjectState(BaseObject *pObject, const nlohmann::json &state);
+
+    /// ===================================================
+    /// プレハブ（BaseObjectPrefab.cpp）
+    /// ===================================================
+
+    /// <summary>
+    /// オブジェクトを子孫ごとプレハブとして保存する（jsons/Prefab/名前.json）。
+    /// 根の位置は原点に直して保存するので、置くときは置き場所がそのまま根の位置になる
+    /// </summary>
+    /// <param name="rootName">根にするオブジェクト名</param>
+    /// <param name="prefabName">プレハブ名（ファイル名。空なら根の名前）</param>
+    /// <returns>bool: 保存できたか</returns>
+    bool SavePrefab(const std::string &rootName, const std::string &prefabName);
+
+    /// <summary>
+    /// プレハブを読み込んでシーンに置く。名前は重複しないよう自動で振り直す
+    /// </summary>
+    /// <param name="prefabName">プレハブ名（拡張子なし）</param>
+    /// <param name="position">根を置くワールド座標</param>
+    /// <returns>std::string: 置いた根のオブジェクト名（失敗時は空）</returns>
+    std::string InstantiatePrefab(const std::string &prefabName, const Vector3 &position);
+
+    /// <summary>
+    /// 置いた物（プレハブの根）の今の内容で、元のプレハブを上書き保存する
+    /// </summary>
+    /// <param name="instanceName">置いた物の根の名前</param>
+    /// <returns>bool: 保存できたか（プレハブから置いた物でなければ false）</returns>
+    bool ApplyInstanceToPrefab(const std::string &instanceName);
+
+    /// <summary>
+    /// 置いた物を子ごと消して、元のプレハブの内容で同じ場所に置き直す（位置と親は保つ）
+    /// </summary>
+    /// <param name="instanceName">置いた物の根の名前</param>
+    /// <returns>std::string: 置き直した根の名前（失敗時は空）</returns>
+    std::string RevertInstanceToPrefab(const std::string &instanceName);
+
+    /// <summary>シーンに置かれている、そのプレハブ由来の物の数</summary>
+    int CountPrefabInstances(const std::string &prefabName) const;
+
+    /// <summary>保存済みプレハブの名前一覧（名前順）</summary>
+    std::vector<std::string> ListPrefabNames() const;
+
+    /// <summary>プレハブを削除する</summary>
+    bool DeletePrefab(const std::string &prefabName);
+
+    /// <summary>プレハブのファイルパス（jsons/Prefab/名前.json）</summary>
+    static std::string PrefabFilePath(const std::string &prefabName);
+
+    /// <summary>
+    /// 保存しておいたプレハブ1件の中身（オブジェクト数と根のモデル）。一覧の表示用
+    /// </summary>
+    struct PrefabInfo
+    {
+        int objectCount = 0;
+        std::string rootModel;
+    };
+
+    /// <summary>プレハブの中身を軽く読む（一覧のツールチップ用。読めなければ objectCount=0）</summary>
+    PrefabInfo PeekPrefab(const std::string &prefabName) const;
 #endif // USE_IMGUI
 
   private:
@@ -396,7 +484,6 @@ class BaseObjectManager
     bool showObjectLoadModal_ = false;     // オブジェクト読み込みモーダル表示フラグ
     std::string selectedJsonPath_;         // 選択中のJsonパス
 #ifdef USE_IMGUI
-    ImGuiUndoTracker undoTracker_; // オブジェクト編集のUndoトラッカー
 #endif                             // _DEBUG
 };
 } // namespace Hagine

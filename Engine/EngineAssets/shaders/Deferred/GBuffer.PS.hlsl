@@ -18,7 +18,7 @@ struct GBufferOutput
 {
     float4 albedo : SV_TARGET0;   // rgb=アルベド, a=アルファ
     float4 normal : SV_TARGET1;   // xyz=ワールド法線, w=光沢度
-    float4 material : SV_TARGET2; // r=環境係数/4, g=ライティング有効
+    float4 material : SV_TARGET2; // r=環境係数/4, g=ライティング有効, b=トゥーン適用, a=自己発光/8
 };
 
 // 画面空間微分からコタンジェントフレーム(TBN)を作る（Object3d.PS と同一）
@@ -92,6 +92,11 @@ float3 ProceduralTangentNormal(float2 worldXZ, float scale, float strength)
 
 GBufferOutput main(VertexShaderOutput input)
 {
+    // カメラに近い物は網目状に抜いて透けさせる（前方描画と同じ）
+    if (CameraFadeDiscard(gMaterial.cameraFade, input.position.xy))
+    {
+        discard;
+    }
     float4 transformedUV = mul(float4(input.texcoord, 0.0f, 1.0f), gMaterial.uvTransform);
     // インスタンシング描画の個体色を畳み込む（通常描画は白なので従来と同じ）
     float4 textureColor = gTexture.Sample(gSampler, transformedUV.xy) * input.instanceColor;
@@ -137,10 +142,11 @@ GBufferOutput main(VertexShaderOutput input)
     output.normal = float4(normalize(normal), gMaterial.shininess);
     // b にトゥーン適用フラグを載せる。実際にトゥーンで描くかは
     // ライティングパス側で全体設定と突き合わせて決める
+    // a は自己発光の強さ。GB2 は 0〜1 しか入らないのでレンジで割って詰める
     output.material = float4(
         saturate(gMaterial.environmentCoefficient / DEFERRED_ENV_COEFF_RANGE),
         gMaterial.enableLighting != 0 ? 1.0f : 0.0f,
         gMaterial.enableToon != 0 ? 1.0f : 0.0f,
-        1.0f);
+        saturate(gMaterial.emissiveStrength / DEFERRED_EMISSIVE_RANGE));
     return output;
 }

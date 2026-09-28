@@ -1,6 +1,8 @@
 #pragma once
 #include <chrono>
+#include <deque>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace Hagine {
@@ -49,6 +51,13 @@ class CpuProfiler
     /// 表示用: BeginFrame 間の実フレーム時間 ms（present 待ち込み）。
     double GetFrameWallMs() const { return smoothedWallMs_; }
 
+    /// スコープの開始・終了を記録する（CpuProfileScope から呼ばれる。フレームの記録用）
+    void RecordEvent(const char *label, std::chrono::high_resolution_clock::time_point begin,
+                     std::chrono::high_resolution_clock::time_point end, int depth);
+
+    /// ImGui 表示: フレームの記録（直近のフレームの棒グラフ・重いフレームの一覧・1フレームの中身の帯グラフ）
+    void DrawFrameCaptureImGui();
+
   private:
     CpuProfiler() = default;
     ~CpuProfiler() = default;
@@ -68,6 +77,27 @@ class CpuProfiler
         int order = 0;
     };
 
+    /// <summary>1フレームの中の1区間（HAGINE_CPU_PROFILE 1回ぶん）</summary>
+    struct Event
+    {
+        const char *label = nullptr; // マクロに渡した文字列リテラル
+        float startMs = 0.0f;        // フレームの頭からの開始時刻
+        float durationMs = 0.0f;     // かかった時間
+        int depth = 0;               // 入れ子の深さ（0が一番外）
+    };
+    /// <summary>記録した1フレーム</summary>
+    struct FrameRecord
+    {
+        uint64_t index = 0;        // 通し番号
+        float wallMs = 0.0f;       // フレーム全体の実時間（present 待ち込み）
+        std::vector<Event> events; // 中の区間
+    };
+
+    void FinishFrameRecord(float wallMs);
+    const FrameRecord *FindRecord(uint64_t index) const;
+    float GetSpikeThreshold() const;
+    void SaveCaptureToFile() const;
+
     std::vector<Sample> current_; // 当フレームの累積
     std::vector<Result> results_; // 表示用（EMA）
     int nextOrder_ = 0;
@@ -78,6 +108,21 @@ class CpuProfiler
     double smoothedWallMs_ = 0.0;
     std::chrono::high_resolution_clock::time_point lastBegin_{};
     bool hasLastBegin_ = false;
+
+    // ---- フレームの記録 ----
+    static constexpr size_t kMaxRecords = 300; // 直近これだけのフレームを持つ
+    static constexpr size_t kMaxSpikes = 30;   // 重いフレームはこれだけ別に取っておく
+    std::thread::id mainThread_{};             // 記録するのはフレームを回しているスレッドだけ
+    std::vector<Event> currentEvents_;         // 今のフレームの区間
+    std::deque<FrameRecord> records_;          // 直近のフレーム
+    std::deque<FrameRecord> spikes_;           // 重かったフレーム（古い順）
+    uint64_t frameCounter_ = 0;
+    bool recording_ = true;           // 記録するか
+    bool frozen_ = false;             // 一時停止（今の記録を見るために新しいフレームを入れない）
+    bool autoThreshold_ = true;       // しきい値を直近の中央値から自動で決める
+    float manualThresholdMs_ = 25.0f; // 手動のしきい値
+    uint64_t selectedFrame_ = 0;      // 詳しく見るフレームの通し番号（0 は未選択）
+    bool selectedIsSpike_ = false;    // 選んだのが重いフレームの一覧からか
 };
 
 /// <summary>

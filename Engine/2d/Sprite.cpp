@@ -7,6 +7,18 @@
 #include <MyMath.h>
 
 namespace Hagine {
+Sprite::~Sprite()
+{
+    // 確保したのは変換行列用の1つ。**渡すのは予約番号なので -1 する**（+1規約）。
+    // 解放は数フレーム後。GPU がまだ前のフレームでこのスロットを読んでいる最中に
+    // ディスクリプタを潰すと絵が壊れるため
+    if (pSrvManager_ && transformationMatrixSrvIndex_ != 0)
+    {
+        pSrvManager_->FreeDeferred(transformationMatrixSrvIndex_ - 1);
+        transformationMatrixSrvIndex_ = 0;
+    }
+}
+
 void Sprite::Initialize(const std::string &textureFilePath, Vector2 position, Vector4 color, Vector2 anchorpoint, bool isFlipX, bool isFlipY)
 {
     // 必要なマネージャクラスのインスタンスを取得し、テクスチャを読み込む
@@ -219,6 +231,11 @@ void Sprite::CreateTransformationMatrix()
 
     // SRVマネージャからスロットを確保し、ストラクチャードバッファ用のSRVを作成する
     pSrvManager_ = TextureManager::GetInstance()->GetSrvManager();
+    // Initialize を呼び直した場合は前の枠を捨ててから取り直す（上書きすると番号が迷子になる）
+    if (transformationMatrixSrvIndex_ != 0)
+    {
+        pSrvManager_->FreeDeferred(transformationMatrixSrvIndex_ - 1);
+    }
     transformationMatrixSrvIndex_ = pSrvManager_->Allocate() + 1;
     pSrvManager_->CreateSRVforStructuredBuffer(transformationMatrixSrvIndex_, transformationMatrixResource_.Get(), maxInstances, sizeof(TransformationMatrix));
 }

@@ -3,6 +3,12 @@ struct VertexShaderOutput
     float4 position : SV_POSITION;
     float2 texcoord : TEXCOORD0;
     float4 color : COLOR0;
+    // 粒ごとに固定の種。プロシージャル形状のゆらぎを粒ごとにずらすのに使う
+    // （フリップブック有効時はコマ番号が入る）。CPUパーティクル側は 0 を入れる
+    float seed : TEXCOORD1;
+    // 面がカメラを向いている度合い |dot(法線, 視線)|。1=正面 / 0=輪郭。
+    // 縁の発光（shapeFresnel）に使う。ビルボードやCPUパーティクルは 1 を入れる
+    float facing : TEXCOORD2;
 };
 
 struct Particle
@@ -94,6 +100,55 @@ uint PackScaleXY(float3 s)
 uint PackScaleZ(float3 s)
 {
     return f32tof16(s.z);
+}
+// DrawCore の scaleZ: 下位16bit=half(z) / **上位16bit=フリップブックのコマ番号**。
+// 空いていた上位16bitを使うので、フリップブックを足しても1粒あたりの帯域は増えない
+uint PackScaleZFrame(float3 s, uint frame)
+{
+    return f32tof16(s.z) | ((frame & 0xFFFFu) << 16);
+}
+uint UnpackFlipbookFrame(uint z)
+{
+    return z >> 16;
+}
+/// フリップブックのコマ番号を決める。
+///   mode 0: 寿命をコマ数で割って1周（爆発・着弾のように「1回再生して終わり」）
+///   mode 1: fps でループ（炎・オーラのように「ずっと動き続ける」）
+/// randomStart=1 なら粒ごとに開始コマをずらして、全部が同じ絵にならないようにする
+uint ComputeFlipbookFrame(uint cols, uint rows, uint mode, float fps, uint randomStart,
+                          float lifeRatio, float time, uint particleIndex)
+{
+    uint frameCount = max(cols * rows, 1u);
+    uint startOffset = 0u;
+    if (randomStart != 0u)
+    {
+        startOffset = (uint) (frac(sin(float(particleIndex) * 91.37f) * 43758.5453f) * float(frameCount));
+    }
+
+    uint frame;
+    if (mode == 0u)
+    {
+        // 寿命で1周。最後のコマで止まるよう frameCount-1 で丸める
+        frame = (uint) (saturate(lifeRatio) * float(frameCount - 1u) + 0.5f);
+    }
+    else
+    {
+        frame = (uint) (max(time, 0.0f) * max(fps, 0.0f));
+    }
+    return (frame + startOffset) % frameCount;
+}
+/// DrawCore の scaleZ 上位16bit へ詰める値を決める。
+///   フリップブック有効 → コマ番号
+///   無効              → プロシージャル形状のゆらぎ用の「粒ごとに固定の種」
+/// どちらも VS が同じ場所から読んで PS へ渡す
+uint ComputeParticleWord(uint enableFlipbook, uint cols, uint rows, uint mode, float fps, uint randomStart,
+                         float lifeRatio, float time, uint particleIndex)
+{
+    if (enableFlipbook != 0u)
+    {
+        return ComputeFlipbookFrame(cols, rows, mode, fps, randomStart, lifeRatio, time, particleIndex);
+    }
+    return (uint) (frac(sin(float(particleIndex) * 12.9898f) * 43758.5453f) * 65535.0f);
 }
 // z word（DrawCore は scaleZ、SimCore は initialScaleZ_isTrail）の下位16bitのみ参照。
 float3 UnpackScale3(uint xy, uint z)
@@ -194,6 +249,11 @@ struct PerView
     uint enableVelocityStretch;
     float velocityStretchFactor;
     uint enableRotation; // 1=回転あり / 0=回転なし（VSで回転行列計算をスキップ）
+    // ---- フリップブック（VSがUVをずらす）。C++ PerView と一致させること ----
+    uint enableFlipbookDraw;
+    uint flipbookColsDraw;
+    uint flipbookRowsDraw;
+    uint flipbookDrawPad;
     // ---- 描画カリング (overdraw 対策)。C++ PerView と一致させること ----
     float3 cameraPosition;     // 距離計算用カメラワールド座標
     uint enableDistanceCull;   // 1=距離フェード+カリング
@@ -221,6 +281,8 @@ struct EmitterMesh
     float3 anchorPoint;
     // 発生数ゲートの上書き値。0=通常(gSettings.emitCount)、>0=この値を発生数に使う（フィールド接触Emit用）
     uint emitCountOverride;
+    // 発生数へ掛ける係数[0,1]。発生の立ち上がり（スポーン率のフェードイン）。1.0 で従来どおり
+    float emitRateScale;
 };
 
 struct PerFrame
@@ -228,9 +290,12 @@ struct PerFrame
     float time;
     float deltaTime;
     int groupId;
-    // エミッターが影響を受けるフィールドグループID
-    // -1 = 全フィールド対象, 0以上 = 同IDのフィールドのみ対象
-    int emitterFieldGroupId;
+    // このグループが受けるフィールドの番号をビットで（レイヤーの一致判定は CPU で済ませてある）
+    uint fieldUpdateMask; // 粒子を動かす・変える効果を持つフィールド
+    uint fieldEmitMask;   // 今フレーム「この範囲から発生」するフィールド
+    uint perFramePad0;
+    uint perFramePad1;
+    uint perFramePad2;
 };
 
 struct ParticleCSSettings
@@ -358,51 +423,131 @@ struct ParticleCSSettings
     float frustumStretchFactor;  // 速度ストレッチ係数（0=無効）
     float frustumPad0;
     float4 frustumPlanes[6];     // left/right/bottom/top/near/far（内側で dot(n,p)+d が正）
+    // ---- フリップブック（スプライトシート）----
+    // 1枚のテクスチャに並べたコマを順に切り替えて絵として動かす。
+    // 「たくさんの点を飛ばす」のではなく「形のある絵を動かす」ための土台
+    uint enableFlipbook;
+    uint flipbookCols;        // 横のコマ数
+    uint flipbookRows;        // 縦のコマ数
+    uint flipbookMode;        // 0=寿命で1周 / 1=fps でループ
+    float flipbookFps;        // mode=1 のときのコマ送り速度
+    uint flipbookRandomStart; // 1=粒ごとに開始コマをずらす
+    float flipbookPad0;
+    float flipbookPad1;
+    // ---- プロシージャル形状（画像を使わずPSで形を作る）----
+    uint shapeMode;
+    float shapeEdge;
+    float shapeNoiseScale;
+    float shapeRimWidth;
+    float4 shapeRimColor;
+    float shapeSpeed;
+    float shapeSoftness;
+    // ---- ソフトパーティクル（背景に近いほど薄くして刺さった断面を消す）----
+    uint enableSoftParticle;
+    float softParticleFade;
+    // ---- UVスクロール ----
+    float2 uvScrollSpeed;
+    float shapeFresnel;     // 縁の発光（描画はマテリアルCB経由。ここでは参照しない）
+    float shapePad1;
     // ※ C++ ParticleCSSettings はこの後ろに CPU 専用メンバ（effectSpace / vortexAxisBase）を持つ。
     //   それらは CB 末尾に乗るだけでシェーダからは参照しない（渦の軸・目標は CPU 側で
     //   ワールド空間へ解決してから vortexAxis / vortexTarget / gatherTarget に入れて渡す）。
     //   ここまでのレイアウトが一致していれば良い。
 };
 
-// 【重要】このレイアウトは C++ 側 `struct ParticleFieldData`
-//   （Engine/3d/Particle/ParticleStruct.h）と**バイト単位で一致**させること（合計112バイト）。
+// 【重要】このレイアウトは C++ 側 `struct ParticleFieldGPU`
+//   （Engine/3d/particle/gpu/ParticleCSField.h）と**バイト単位で一致**させること（合計160バイト）。
 //   C++ 側には sizeof/offsetof の static_assert があり、ずれるとビルドで検出される。
-struct ParticleField
+struct ParticleFieldGPU
 {
-    // 1. Force（速度系）
-    float3 position;
-    float radius;
-    float3 direction;
-    float strength;
-    uint fieldType;
-    float falloff;
-    
-    float lifeTimeDrain;
-    uint enableLifeDrain;
-    
-    uint enableForceTrail;
-    float trailSpawnDistanceOverride;
-    
-    uint enableColorMultiply;
-    float4 colorMultiplier;
-    
-    uint enableSettingsOverride;
+    // 形（ワールド→ローカルの軸3本。回転行列を組まずに内積だけで済ませる）
+    float3 center;
+    uint shape;           // 0=球 1=箱 2=円柱
+    float3 axisX;
+    float boundRadiusSq;  // 形を包む球の半径²
+    float3 axisY;
+    float falloffStart;   // 芯の大きさ（0〜1）
+    float3 axisZ;
+    uint falloffCurve;    // 0=一定 1=直線 2=なめらか
+    float3 halfExtent;    // 球: x=半径 / 箱: 各軸の半分 / 円柱: x=半径 y=高さの半分
+    uint effectFlags;     // FE_*
 
-    // --- Emit時スポーン判定 ---
-    // 1 のとき、このフィールドの範囲内にEmit座標があるパーティクルのみ発生させる
-    uint enableEmitSpawn;
-    float emitSpawnLifeTimeMin;
-    float emitSpawnLifeTimeMax;
-    // 今フレームこのフィールドが発生させる粒子数（CPUが間隔タイマーから毎フレーム算出。
-    // バースト無しフレームは0）。Emit CS はこの値の累積和でスレッド→担当フィールドを決める。
-    uint emitSpawnCount;
+    // 力
+    float3 windVelocity;
+    float windResponse;
+    float vortexSpeed;
+    float vortexResponse;
+    float attractStrength;
+    float absorbRadius;
+    float dragPerSecond;
+    float lifeSpeed;
+    float sizeScale;
+    float trailSpawnDistance;
 
-    // グループID (-1=全エミッター対象, 0以上=同IDのエミッターのみ)
-    int groupId;
-    float groupIdPadding0;
-    float groupIdPadding1;
-    float groupIdPadding2;
+    // 見た目
+    float4 tint;
+
+    // 発生（Emit 用）
+    float emitLifeMin;
+    float emitLifeMax;
+    uint emitCount;
+    uint fieldPad0;
 };
+
+// 効果のビット。C++ 側 FieldEffectBits（ParticleCSField.h）と一致させること。
+static const uint FE_Wind = 1u << 0;
+static const uint FE_Attract = 1u << 1;
+static const uint FE_Vortex = 1u << 2;
+static const uint FE_Drag = 1u << 3;
+static const uint FE_Tint = 1u << 4;
+static const uint FE_Size = 1u << 5;
+static const uint FE_Life = 1u << 6;
+static const uint FE_Kill = 1u << 7;
+static const uint FE_Trail = 1u << 8;
+static const uint FE_Once = 1u << 9;
+
+// =============================================
+// フィールドの範囲判定と影響度。
+//   戻り値: 範囲内なら true。outInfluence に 0〜1（芯の内側=1、端=0 に向かって弱まる）
+//   outLocal: フィールドのローカル座標（渦の軸まわりの計算に使う）
+// =============================================
+bool EvaluateField(ParticleFieldGPU f, float3 worldPos, out float outInfluence, out float3 outLocal)
+{
+    outInfluence = 0.0f;
+    outLocal = float3(0.0f, 0.0f, 0.0f);
+    float3 d = worldPos - f.center;
+    // 形を包む球の外なら即座に外（ほとんどの粒子はここで抜ける）
+    if (dot(d, d) >= f.boundRadiusSq)
+        return false;
+
+    outLocal = float3(dot(d, f.axisX), dot(d, f.axisY), dot(d, f.axisZ));
+    // 中心=0、境界=1 の正規化距離
+    float n;
+    if (f.shape == 0u)
+    {
+        n = length(outLocal) / f.halfExtent.x;
+    }
+    else if (f.shape == 1u)
+    {
+        float3 q = abs(outLocal) / f.halfExtent;
+        n = max(q.x, max(q.y, q.z));
+    }
+    else
+    {
+        n = max(length(outLocal.xz) / f.halfExtent.x, abs(outLocal.y) / f.halfExtent.y);
+    }
+    if (n >= 1.0f)
+        return false;
+
+    float t = saturate((n - f.falloffStart) / max(1.0f - f.falloffStart, 1e-4f));
+    if (f.falloffCurve == 0u)
+        outInfluence = 1.0f;
+    else if (f.falloffCurve == 1u)
+        outInfluence = 1.0f - t;
+    else
+        outInfluence = 1.0f - smoothstep(0.0f, 1.0f, t);
+    return true;
+}
 
 // 一度きり設定上書きのビット定数。
 // C++ 側 FieldOverrideBits（ParticleCSFieldSettingOverride.h）と一致させること。

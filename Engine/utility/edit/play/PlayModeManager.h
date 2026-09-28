@@ -95,9 +95,11 @@ class PlayModeManager
     State state_ = State::Playing; // 既定は再生中（従来の挙動をそのまま保つ）
     bool stepRequested_ = false;   // このフレームだけ更新する
 
-    // 再生前の状態。編集対象（配置オブジェクト・スプライト）を JSON で控える。
+    // 再生前の状態。編集対象（配置オブジェクト・スプライト・光源）を JSON で控える。
+    // オブジェクトのスナップショットにはコライダーも入っている（BaseObjectManager 側）。
     nlohmann::json objectBaseline_;
     nlohmann::json spriteBaseline_;
+    nlohmann::json lightBaseline_;
     bool hasBaseline_ = false;
 };
 } // namespace Hagine

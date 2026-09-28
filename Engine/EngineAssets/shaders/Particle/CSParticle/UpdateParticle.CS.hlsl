@@ -25,7 +25,7 @@ RWStructuredBuffer<PDrawCore> gRenderCompact : register(u11);
 // GPU駆動カリング: 描画リストは生存リストと別カウンタ・別順序になる。
 RWStructuredBuffer<uint> gVisibleCounter : register(u12); // 描画リスト長(=instanceCount)
 RWStructuredBuffer<uint> gRenderSlot     : register(u13); // 描画順 -> 実 slot index
-StructuredBuffer<ParticleField> gFields : register(t0);
+StructuredBuffer<ParticleFieldGPU> gFields : register(t0);
 StructuredBuffer<ParticleFieldSettingsOverrideData> gFieldsOverride : register(t1);
 // 生存リスト間接ディスパッチ: 前フレームの out リスト = 今フレームの in（処理対象）。
 //   Update は全スロット走査をやめ、この in リストの tid 番目だけを sim する → O(生存数)。
@@ -33,134 +33,15 @@ StructuredBuffer<uint> gAliveListIn    : register(t2); // in: 処理対象 slot 
 StructuredBuffer<uint> gAliveCounterIn : register(t3); // in: リスト長
 
 // =============================================
-// フィールド適用結果
+// フィールド適用結果（色・大きさ・トレイルは後段で掛ける）
 // =============================================
 struct FieldEffectResult
 {
-    float3 velocity; // 更新後の速度
-    float lifeTimeDrain; // 今フレームで削る寿命量の合計
-    uint forceTrail; // 1ならトレイル強制生成
+    uint forceTrail;         // 1ならトレイル強制生成
     float trailDistOverride; // >0 なら trailSpawnDistance を上書き
-    float4 colorMultiplier; // 色乗算 (白=変化なし)
+    float4 colorMultiplier;  // 色乗算 (白=変化なし)
+    float sizeMultiplier;    // 大きさの倍率 (1=変化なし)
 };
-
-// =============================================
-// フィールド適用関数
-// =============================================
-FieldEffectResult ApplyFields(float3 velocity, float3 particlePos, float deltaTime)
-{
-    FieldEffectResult result;
-    result.velocity = velocity;
-    result.lifeTimeDrain = 0.0f;
-    result.forceTrail = 0;
-    result.trailDistOverride = 0.0f;
-    result.colorMultiplier = float4(1, 1, 1, 1);
-
-    for (uint fi = 0; fi < gFieldCB.fieldCount; fi++)
-    {
-        ParticleField f = gFields[fi];
-
-        // groupIdフィルタリング
-        // フィールドのgroupId==-1 → 全エミッターに影響
-        // エミッターのemitterFieldGroupId==-1 → 全フィールドから影響受ける
-        // それ以外は両者が一致するときのみ処理する
-        bool groupMatch = (f.groupId == -1) ||
-                          (gPerFrame.emitterFieldGroupId == -1) ||
-                          (f.groupId == gPerFrame.emitterFieldGroupId);
-        if (!groupMatch)
-            continue;
-
-        float3 toParticle = particlePos - f.position;
-        float distSq = dot(toParticle, toParticle);
-        float radiusSq = f.radius * f.radius;
-
-        // 影響範囲外はスキップ（sqrt不要）
-        if (distSq >= radiusSq)
-            continue;
-
-        float dist = sqrt(distSq); // 範囲内確定後のみsqrt
-        // 減衰係数 (端=0, 中心=1)。falloff は減衰指数として連続的に効く:
-        //   1.0=線形 / 2.0=二乗（端で弱い） / 0.5=平方根（広い範囲で強い）
-        // 旧実装は「1.0のみ線形・それ以外は全て二乗」でImGuiの中間値が無意味だった。
-        float t = 1.0f - saturate(dist / f.radius);
-        float influence = pow(t, max(f.falloff, 0.001f));
-
-        // =============================================
-        // 速度系エフェクト
-        // =============================================
-        if (f.fieldType == 0) // Wind: 一定方向に押す
-        {
-            // direction はC++側で正規化済みを想定（毎フレームGPUで割り算しない）
-            result.velocity += f.direction * f.strength * influence * deltaTime;
-        }
-        else if (f.fieldType == 1) // Attract: 中心に引き寄せる
-        {
-            if (dist > 0.001f)
-            {
-                float3 dir = -toParticle / dist;
-                result.velocity += dir * f.strength * influence * deltaTime;
-            }
-        }
-        else if (f.fieldType == 2) // Repel: 中心から押し出す
-        {
-            if (dist > 0.001f)
-            {
-                float3 dir = toParticle / dist;
-                result.velocity += dir * f.strength * influence * deltaTime;
-            }
-        }
-        else if (f.fieldType == 3) // Vortex: 渦巻き
-        {
-            if (dist > 0.001f)
-            {
-                // axis は C++側で正規化済みを想定
-                float3 tangent = cross(toParticle / dist, f.direction);
-                result.velocity += tangent * f.strength * influence * deltaTime;
-            }
-        }
-
-        // =============================================
-        // 寿命ドレイン
-        //   lifeTimeDrain [秒/秒] を influence で重み付けして加算。
-        //   複数フィールドが重なると合算される。
-        // =============================================
-        if (f.enableLifeDrain != 0)
-        {
-            result.lifeTimeDrain += f.lifeTimeDrain * influence * deltaTime;
-        }
-
-        // =============================================
-        // トレイル強制生成
-        //   フィールド内にいる間、トレイルを強制的にONにする。
-        //   最も強い influence を持つフィールドのオーバーライド距離を優先する。
-        // =============================================
-        if (f.enableForceTrail != 0)
-        {
-            result.forceTrail = 1;
-            // 上書き距離が指定されていれば、より小さい値（高頻度）を採用
-            if (f.trailSpawnDistanceOverride > 0.0f)
-            {
-                if (result.trailDistOverride <= 0.0f)
-                    result.trailDistOverride = f.trailSpawnDistanceOverride;
-                else
-                    result.trailDistOverride = min(result.trailDistOverride, f.trailSpawnDistanceOverride);
-            }
-        }
-
-        // =============================================
-        // カラー乗算
-        //   influence で白（変化なし）とターゲット色をブレンド。
-        //   複数フィールドは乗算合成される。
-        // =============================================
-        if (f.enableColorMultiply != 0)
-        {
-            float4 blendedColor = lerp(float4(1, 1, 1, 1), f.colorMultiplier, influence);
-            result.colorMultiplier *= blendedColor;
-        }
-    }
-
-    return result;
-}
 
 // =============================================
 // 一度きり設定上書き処理
@@ -244,6 +125,110 @@ void ApplySettingsOverride(inout Particle p, uint fi, uint particleIndex)
 
     // --- 書き換えたビットを記録 ---
     p.settingsOverrideFlags.x |= pending;
+}
+
+// =============================================
+// フィールド適用
+//   gPerFrame.fieldUpdateMask に立っているフィールドだけを1回のループで処理する
+//   （レイヤーの一致と「粒子に効く効果を持つか」は CPU で判定済み）。
+//   マスクはディスパッチ全体で同じなので、ループと効果の分岐はウェーブ内で揃う。
+//   速度・寿命・入った瞬間の変化はここで p に直接反映し、色・大きさ・トレイルは結果で返して後段で掛ける。
+// =============================================
+FieldEffectResult ApplyFields(inout Particle p, uint particleIndex, float deltaTime)
+{
+    FieldEffectResult result;
+    result.forceTrail = 0;
+    result.trailDistOverride = 0.0f;
+    result.colorMultiplier = float4(1, 1, 1, 1);
+    result.sizeMultiplier = 1.0f;
+
+    uint mask = gPerFrame.fieldUpdateMask;
+    [loop]
+    while (mask != 0u)
+    {
+        const uint fi = firstbitlow(mask);
+        mask &= mask - 1u;
+        const ParticleFieldGPU f = gFields[fi];
+
+        float w;
+        float3 local;
+        if (!EvaluateField(f, p.translate, w, local))
+            continue;
+
+        const uint fx = f.effectFlags;
+
+        // ---- 消す（入ったらすぐ）----
+        if (fx & FE_Kill)
+        {
+            p.currentTime = p.lifeTime;
+            continue;
+        }
+
+        // ---- 風: 粒子の速度を風の速度へなじませる（空気に流される動き）----
+        if (fx & FE_Wind)
+        {
+            const float k = 1.0f - exp(-f.windResponse * w * deltaTime);
+            p.velocity += (f.windVelocity - p.velocity) * k;
+        }
+
+        // ---- 引き寄せ / 押し出し ----
+        if (fx & FE_Attract)
+        {
+            const float3 toCenter = f.center - p.translate;
+            const float dist = length(toCenter);
+            if (f.absorbRadius > 0.0f && dist < f.absorbRadius)
+            {
+                // 中心に着いた粒子は消す（吸い込み）
+                p.currentTime = p.lifeTime;
+                continue;
+            }
+            if (dist > 1e-4f)
+                p.velocity += (toCenter / dist) * (f.attractStrength * w * deltaTime);
+        }
+
+        // ---- 渦: 形の Y 軸まわりの接線方向の速さを目標の速さへなじませる ----
+        //   接線方向の成分だけを寄せるので、半径方向・軸方向の動きはそのまま残る（外へ飛んでいかない）
+        if (fx & FE_Vortex)
+        {
+            const float3 radial = f.axisX * local.x + f.axisZ * local.z;
+            const float radialLength = length(radial);
+            if (radialLength > 1e-4f)
+            {
+                const float3 tangent = cross(f.axisY, radial / radialLength);
+                const float current = dot(p.velocity, tangent);
+                const float k = 1.0f - exp(-f.vortexResponse * w * deltaTime);
+                p.velocity += tangent * ((f.vortexSpeed - current) * k);
+            }
+        }
+
+        // ---- 抵抗 ----
+        if (fx & FE_Drag)
+            p.velocity *= exp(-f.dragPerSecond * w * deltaTime);
+
+        // ---- 寿命の進み ----
+        if (fx & FE_Life)
+            p.currentTime = min(p.currentTime + (f.lifeSpeed - 1.0f) * w * deltaTime, p.lifeTime);
+
+        // ---- 色・大きさ（後段で掛ける。複数重なれば掛け合わせ）----
+        if (fx & FE_Tint)
+            result.colorMultiplier *= lerp(float4(1, 1, 1, 1), f.tint, w);
+        if (fx & FE_Size)
+            result.sizeMultiplier *= lerp(1.0f, f.sizeScale, w);
+
+        // ---- トレイル（範囲内にいる間だけ出す。間隔は一番細かいものを使う）----
+        if (fx & FE_Trail)
+        {
+            result.forceTrail = 1;
+            if (f.trailSpawnDistance > 0.0f)
+                result.trailDistOverride = (result.trailDistOverride <= 0.0f) ? f.trailSpawnDistance
+                                                                              : min(result.trailDistOverride, f.trailSpawnDistance);
+        }
+
+        // ---- 入った瞬間に1回だけ ----
+        if (fx & FE_Once)
+            ApplySettingsOverride(p, fi, particleIndex);
+    }
+    return result;
 }
 
 // 親パーティクルはローカル変数 p で読み書きする（global往復を排除）。
@@ -418,8 +403,10 @@ void main(uint3 DTid : SV_DispatchThreadID)
 
     // 機能ゲート: 使う機能のバッファだけ load/store する
     const bool useRotation = (gSettings.enableRandomRotation != 0 || gSettings.enableRandomAngularVelocity != 0);
-    const bool useOverride = (gFieldCB.fieldCount > 0);
-    const bool useTrail = (gSettings.enableTrail != 0 || gFieldCB.fieldCount > 0);
+    // フィールドは「受ける設定（fieldCount>0）」かつ「効くものがある（マスク≠0）」ときだけ
+    const bool fieldsOn = (gFieldCB.fieldCount > 0) && (gPerFrame.fieldUpdateMask != 0u);
+    const bool useOverride = fieldsOn;
+    const bool useTrail = (gSettings.enableTrail != 0 || fieldsOn);
 
     Particle p = (Particle) 0;
     p.lifeTime = lifeTime;
@@ -677,58 +664,16 @@ void main(uint3 DTid : SV_DispatchThreadID)
     uint fieldForceTrail = 0;
     float fieldTrailDistOverride = 0.0f;
     float4 fieldColorMultiplier = float4(1, 1, 1, 1);
-    if (gFieldCB.fieldCount > 0)
+    float fieldSizeMultiplier = 1.0f;
+    if (fieldsOn)
     {
-        FieldEffectResult fieldResult = ApplyFields(
-                p.velocity,
-                p.translate,
-                gPerFrame.deltaTime);
-
-        p.velocity = fieldResult.velocity;
-
-            // --- 寿命ドレイン ---
-            // currentTime を進めることで残り寿命を縮める。
-        if (fieldResult.lifeTimeDrain > 0.0f)
-        {
-            p.currentTime =
-                    min(p.currentTime + fieldResult.lifeTimeDrain,
-                        p.lifeTime);
-        }
-
-            // --- カラー乗算・トレイルフラグは後段で適用 ---
+        FieldEffectResult fieldResult = ApplyFields(p, (uint) particleIndex, gPerFrame.deltaTime);
         fieldColorMultiplier = fieldResult.colorMultiplier;
+        fieldSizeMultiplier = fieldResult.sizeMultiplier;
         fieldForceTrail = fieldResult.forceTrail;
         fieldTrailDistOverride = fieldResult.trailDistOverride;
-
-            // =============================================
-            // 7.6. 一度きり設定上書き
-            //   各フィールドについて、パーティクルが影響範囲内かどうかを
-            //   再チェックし、enableSettingsOverride が立っているものだけ処理する。
-            //   ApplyFields のループとは独立させているのは、
-            //   上書き処理が gParticles を直接書き換えるため
-            //   速度処理と混在させると副作用が出る可能性があるため。
-            // =============================================
-        for (uint fi = 0; fi < gFieldCB.fieldCount; fi++)
-        {
-            if (gFields[fi].enableSettingsOverride == 0u)
-                continue; // 設定上書き機能OFF → 高速スキップ
-
-            // groupId フィルタ（ApplyFields と同じ規則）
-            bool ovGroupMatch = (gFields[fi].groupId == -1) ||
-                                (gPerFrame.emitterFieldGroupId == -1) ||
-                                (gFields[fi].groupId == gPerFrame.emitterFieldGroupId);
-            if (!ovGroupMatch)
-                continue;
-
-            float3 toP = p.translate - gFields[fi].position;
-            if (dot(toP, toP) >= gFields[fi].radius * gFields[fi].radius)
-                continue; // 範囲外
-
-                // ローカル p で完結（往復書き戻し不要）
-            ApplySettingsOverride(p, fi, (uint) particleIndex);
-        }
     }
-        
+
         // 9. 移動更新
     p.translate += p.velocity * gPerFrame.deltaTime;
     p.currentTime += gPerFrame.deltaTime;
@@ -739,7 +684,7 @@ void main(uint3 DTid : SV_DispatchThreadID)
 
     // フィールドの色上書き(OB_Color)を受けた粒子は RGB を固定し、アルファのフェードだけ続ける。
     // （旧実装は色上書き直後にここで毎フレーム再計算されて即座に消えていた）
-    const bool colorLocked = (gFieldCB.fieldCount > 0) &&
+    const bool colorLocked = fieldsOn &&
                              ((p.settingsOverrideFlags.x & (1u << OB_Color)) != 0u);
 
     if (gSettings.enableColorGradient)
@@ -823,6 +768,18 @@ void main(uint3 DTid : SV_DispatchThreadID)
         // 回転更新
     p.rotation += p.angularVelocity * gPerFrame.deltaTime;
         
+        // --- フィールドによる大きさの倍率 (大きさ更新の後に適用) ---
+    //   毎フレーム大きさを計算し直す設定なら掛けるだけでよい。
+    //   計算し直さない設定（大きさ固定）では積み重ならないよう、元の大きさから掛け直す。
+    if (fieldsOn)
+    {
+        const bool scaleRecomputed = gSettings.enableEndScale || gSettings.enableLifetimeScale || gSettings.enableSinScale;
+        if (scaleRecomputed)
+            p.scale *= fieldSizeMultiplier;
+        else if (!gSettings.enableSizeCurve)
+            p.scale = p.initialScale * fieldSizeMultiplier;
+    }
+
         // --- フィールドによるカラー乗算 (色更新の後に適用) ---
     if (fieldColorMultiplier.r != 1.0f ||
             fieldColorMultiplier.g != 1.0f ||
@@ -901,7 +858,12 @@ void main(uint3 DTid : SV_DispatchThreadID)
     PDrawCore odc;
     odc.translate = p.translate;
     odc.scaleXY = PackScaleXY(p.scale);
-    odc.scaleZ = PackScaleZ(p.scale);
+    // フリップブックのコマ番号を空いている上位16bitへ同梱する（無効なら0のまま）
+    odc.scaleZ = PackScaleZFrame(
+                p.scale, ComputeParticleWord(gSettings.enableFlipbook, gSettings.flipbookCols,
+                                             gSettings.flipbookRows, gSettings.flipbookMode,
+                                             gSettings.flipbookFps, gSettings.flipbookRandomStart,
+                                             lifeRatio, gPerFrame.time, particleIndex));
     odc.velocity = p.velocity;
     odc.color = PackColorRGBA8(p.color);
     gDrawCore[particleIndex] = odc;

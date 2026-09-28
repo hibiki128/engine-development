@@ -315,6 +315,23 @@ class ColliderBase
     /// </summary>
     void LoadFromJson();
 
+#ifdef USE_IMGUI
+    /// <summary>
+    /// Undo と Play モードのスナップショット用に、今の設定を JSON へ写す。
+    /// ファイルを経由しないので毎フレーム呼んでも構わない
+    /// （SaveToJson は DataHandler ごしにディスクへ書くので、この用途には使えない）。
+    /// </summary>
+    /// <returns>nlohmann::json: 種別・共通設定・形状ごとの値</returns>
+    nlohmann::json CaptureState() const;
+
+    /// <summary>
+    /// CaptureState で得た状態を反映する。
+    /// 名前と形状種別は変えられないので、呼び出し側が合う相手へ渡すこと
+    /// </summary>
+    /// <param name="state">反映する状態</param>
+    void RestoreState(const nlohmann::json &state);
+#endif // USE_IMGUI
+
     // 中心座標・回転を外部から取得するための関数オブジェクト
     std::function<Vector3()> getPositionFunc_;
     std::function<Quaternion()> getRotationFunc_;
@@ -373,6 +390,21 @@ class ColliderBase
     /// </summary>
     /// <param name="json">読み込み元</param>
     virtual void LoadShapeFromJson(DataHandler &json) {}
+
+#ifdef USE_IMGUI
+    /// <summary>
+    /// 形状ごとの値をスナップショットへ足す（派生クラスで実装）。
+    /// SaveShapeToJson と同じ中身だが、こちらはファイルを経由しない
+    /// </summary>
+    /// <param name="shape">書き込み先</param>
+    virtual void CaptureShape(nlohmann::json &shape) const {}
+
+    /// <summary>
+    /// 形状ごとの値をスナップショットから戻す（派生クラスで実装）
+    /// </summary>
+    /// <param name="shape">読み込み元</param>
+    virtual void ApplyShape(const nlohmann::json &shape) {}
+#endif // USE_IMGUI
 
     /// <summary>
     /// 保存値のタグを反映する。SetTag と違い未登録のタグでも捨てない

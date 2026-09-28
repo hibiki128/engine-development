@@ -84,6 +84,17 @@ class GameParamHub
     /// </summary>
     void LoadLayout();
 
+    /// <summary>
+    /// 変数のポインタから、登録済みのパラメータの「コード既定値」と表示名を探す
+    /// （エディタの数値欄の右クリック「既定値へ戻す」で使う）
+    /// </summary>
+    /// <param name="ptr">変数のポインタ（float / int / Vector2〜4 の先頭）</param>
+    /// <param name="outValues">既定値の各成分（最大4つ）</param>
+    /// <param name="outCount">成分の数</param>
+    /// <param name="outLabel">「出所 / 表示名」</param>
+    /// <returns>bool: 見つかったら true</returns>
+    bool FindCodeDefault(const void *ptr, float outValues[4], int &outCount, std::string &outLabel) const;
+
   private:
     GameParamHub() = default;
     ~GameParamHub();
@@ -107,6 +118,9 @@ class GameParamHub
         ParamValue original;       ///< 初回登録時のコード既定値（元の値にリセットする用）
         bool hasOriginal = false;  ///< original を捕捉済みか
     };
+
+    /// <summary>コードの既定値（登録時の値）から変えてあるか</summary>
+    bool IsModified(const Entry &e) const;
 
     /// <summary>ユーザーが作るセクション（CollapsingHeader相当）</summary>
     struct SectionDef

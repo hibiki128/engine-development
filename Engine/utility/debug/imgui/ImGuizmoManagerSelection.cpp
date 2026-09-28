@@ -19,24 +19,66 @@
 // =======================================================================
 
 namespace Hagine {
-// ---- PruneSelectionByFilter -------------------------------------------
+// ---- シーンのクリック対象フィルタ ---------------------------------------
+// 選択そのものは外さない（階層・インスペクタから選んだ物はフィルタに関係なく操作できる）。
+// 重なり候補だけは OFF にした種類を含みうるので畳む。
 
-// 操作対象フィルタで無効化された分類の名前を選択セットから取り除く。
-// これによりフィルタOFFにした種類のギズモが表示され続けるのを防ぐ。
-void ImGuizmoManager::PruneSelectionByFilter()
+void ImGuizmoManager::SetCategoryEnabled(GizmoCategory category, bool enabled)
 {
-    for (auto it = selectedNames_.begin(); it != selectedNames_.end();)
+    categoryEnabled_[static_cast<int>(category)] = enabled;
+    overlapCandidates_.clear();
+    overlapCycleIndex_ = 0;
+}
+
+void ImGuizmoManager::ToggleCategory(GizmoCategory category)
+{
+    SetCategoryEnabled(category, !IsCategoryEnabled(category));
+}
+
+void ImGuizmoManager::SoloCategory(GizmoCategory category)
+{
+    const uint32_t soloMask = 1u << static_cast<uint32_t>(category);
+    SetCategoryMask(GetCategoryMask() == soloMask ? (1u << kGizmoCategoryCount) - 1u : soloMask);
+}
+
+void ImGuizmoManager::EnableAllCategories()
+{
+    SetCategoryMask((1u << kGizmoCategoryCount) - 1u);
+}
+
+uint32_t ImGuizmoManager::GetCategoryMask() const
+{
+    uint32_t mask = 0;
+    for (int i = 0; i < kGizmoCategoryCount; ++i)
     {
-        auto found = transformMap_.find(*it);
-        if (found != transformMap_.end() && !IsCategoryEnabled(found->second.category))
+        if (categoryEnabled_[i])
         {
-            it = selectedNames_.erase(it);
-        }
-        else
-        {
-            ++it;
+            mask |= 1u << i;
         }
     }
+    return mask;
+}
+
+void ImGuizmoManager::SetCategoryMask(uint32_t mask)
+{
+    for (int i = 0; i < kGizmoCategoryCount; ++i)
+    {
+        categoryEnabled_[i] = (mask & (1u << i)) != 0;
+    }
+    overlapCandidates_.clear();
+    overlapCycleIndex_ = 0;
+}
+
+int ImGuizmoManager::GetOverlapCount() const
+{
+    // 階層など別の経路で選び直された後は、前のクリックの重なりは関係ない
+    if (overlapCandidates_.size() <= 1 || selectedNames_.size() != 1 ||
+        overlapCycleIndex_ >= static_cast<int>(overlapCandidates_.size()) ||
+        *selectedNames_.begin() != overlapCandidates_[overlapCycleIndex_].first)
+    {
+        return 0;
+    }
+    return static_cast<int>(overlapCandidates_.size());
 }
 
 // ---- HandleMouseSelection ---------------------------------------------
@@ -256,7 +298,33 @@ void ImGuizmoManager::HandleHotkeys(bool sceneHovered)
         CycleOverlapSelection();
     }
 
-    if (ctrlHeld)
+    // Alt+1〜4: その種類だけクリック対象に（もう一度で全部に戻す）/ Alt+0: 全部
+    const bool altHeld = input->PushKey(DIK_LMENU) || input->PushKey(DIK_RMENU);
+    if (altHeld)
+    {
+        static const char *kCategoryNames[kGizmoCategoryCount] = {"オブジェクト", "スプライト", "パーティクル", "ライト"};
+        static const BYTE kCategoryKeys[kGizmoCategoryCount] = {DIK_1, DIK_2, DIK_3, DIK_4};
+        for (int i = 0; i < kGizmoCategoryCount; ++i)
+        {
+            if (input->TriggerKey(kCategoryKeys[i]))
+            {
+                SoloCategory(static_cast<GizmoCategory>(i));
+                const bool isSolo = GetCategoryMask() == (1u << i);
+                ImGuiNotification::Post(isSolo ? std::format("クリック対象: {}だけ", kCategoryNames[i]) : std::string("クリック対象: すべて"),
+                                        {0.45f, 0.68f, 0.52f, 1.0f});
+            }
+        }
+        if (input->TriggerKey(DIK_0))
+        {
+            EnableAllCategories();
+            ImGuiNotification::Post("クリック対象: すべて", {0.45f, 0.68f, 0.52f, 1.0f});
+        }
+        return;
+    }
+
+    // Shift+数字 はシーンビューのカメラのブックマークに使うので、ここでは拾わない
+    const bool shiftHeld = input->PushKey(DIK_LSHIFT) || input->PushKey(DIK_RSHIFT);
+    if (ctrlHeld || shiftHeld)
     {
         return;
     }

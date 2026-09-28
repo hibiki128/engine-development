@@ -21,7 +21,29 @@ struct ParticleMaterial
 {
     Vector4 color;
     Matrix4x4 uvTransform;
-    float padding[3];
+    // ---- プロシージャル形状（画像を用意せず、ピクセルシェーダーで形そのものを作る）----
+    // HLSL 側 struct Material（ParticleCS.PS.hlsl）とここまでを一致させること。
+    // ※ この構造体の先頭から textureFilePath の手前までが GPU へ渡る領域
+    uint32_t shapeMode = 0;      // 0=テクスチャそのまま / 1=炎 / 2=シャード(稲妻) / 3=リング
+    float shapeEdge = 0.5f;      // 輪郭のしきい値。大きいほど痩せる
+    float shapeNoiseScale = 3.0f;// ゆらぎの細かさ
+    float shapeRimWidth = 0.22f; // 縁取りの太さ（0で縁取りなし）
+    Vector4 shapeRimColor = {0.45f, 0.85f, 1.0f, 1.0f}; // 縁の色（中心は白く抜ける）
+    float shapeTime = 0.0f;      // ランタイム: 経過時間（CPUが毎フレーム入れる）
+    float shapeSpeed = 1.6f;     // ゆらぎが動く速さ
+    float shapeSoftness = 0.06f; // 輪郭のぼかし。0 に近いほどカチッとしたセル調になる
+    uint32_t enableSoftParticle = 0; // 1=背景に近いほど薄くして刺さった断面を消す
+    float softParticleFade = 1.0f;   // 完全に消えるまでの距離（ワールド単位）
+    // 深度を「ビュー空間の奥行き」へ戻すのに要る射影行列の2要素。
+    //   viewZ = m32 / (深度バッファの値 - m22)
+    // 近/遠クリップを持ち回るより、これ2つの方が取り違えが起きない
+    float depthProjM22 = 0.0f;
+    float depthProjM32 = 0.0f;
+    float shapeFresnel = 0.0f;   // 縁ほど濃く・正面ほど薄くする強さ [0,1]（0で無効）
+    Vector2 uvScrollSpeed = {0.0f, 0.0f}; // UVを流す速さ（炎が立ち上る動きに使う）
+    float shapePad2 = 0.0f;
+    float shapePad3 = 0.0f;
+    // ↑ここまでが GPU へ行く
     std::string textureFilePath;
     uint32_t textureIndex = 0;
 };
@@ -48,6 +70,12 @@ struct EmitterMesh
     // gSettings.emitCount を一時書き換え＋即復元する方式は GPU 実行時に復元後の値を
     // 読んでしまい効かなかったため、per-emitter CB のこの専用フィールドで渡す。
     uint32_t emitCountOverride;
+    // 発生数へ掛ける係数[0,1]。発生の立ち上がり（スポーン率のフェードイン）に使う。
+    // 1.0 で従来どおり。**グループごとの emitCount を書き換えるのではなくここで掛ける**こと。
+    // 書き換えてしまうと、作者が決めた値が実行時の値で上書きされるうえ、
+    // 「emitCount が 0 のグループはディスパッチごと省く」最適化に引っかかって
+    // 係数が 0 の瞬間にグループが止まり、二度と復帰しなくなる
+    float emitRateScale;
 };
 
 /// <summary>
@@ -163,6 +191,13 @@ struct PerView
     // グループが回転を使わない（enableRandomRotation/enableRandomAngularVelocity が両方OFF）なら
     // 全パーティクルの rotation が常に 0 なので、VS の回転計算を丸ごと省ける。
     uint32_t enableRotation = 0;
+    // ---- フリップブック（描画VSがUVをずらすのに使う）----
+    // コマ番号そのものは Update/Emit が DrawCore の scaleZ 上位16bit へ詰める。
+    // VS はここの格子数を見て「何コマ目をどのUVで出すか」を決める
+    uint32_t enableFlipbookDraw = 0;
+    uint32_t flipbookColsDraw = 1;
+    uint32_t flipbookRowsDraw = 1;
+    uint32_t flipbookDrawPad = 0;
     // ---- 描画カリング (overdraw 対策) ----
     // 距離カリング: 遠い粒子をアルファフェード→縮退カリングしてフィルレート(ROP/blend)を節約する。
     // 画面サイズ上限/微小カリング: 巨大粒子のスケールを抑え、サブピクセル粒子を破棄する。
@@ -200,7 +235,13 @@ struct PerFrame
     float time;
     float deltaTime;
     uint32_t groupId;
-    int32_t emitterFieldGroupId; // -1=全フィールド対象, 0以上=同IDのフィールドのみ対象
+    // このグループが受けるフィールドの GPU 上の番号をビットで（bit i = フィールドバッファの i 番目）。
+    // レイヤーの一致判定は CPU で済ませておき、シェーダーは立っているビットだけ読む。
+    uint32_t fieldUpdateMask; // 粒子を動かす・変える効果を持つフィールド（Update 用）
+    uint32_t fieldEmitMask;   // 「この範囲から発生」を持ち、今フレーム発生するフィールド（Emit 用）
+    uint32_t perFramePad0;
+    uint32_t perFramePad1;
+    uint32_t perFramePad2;
 };
 
 /// <summary>
@@ -425,6 +466,46 @@ struct ParticleCSSettings
     // 並びは left/right/bottom/top/near/far。
     Vector4 frustumPlanes[6] = {};
 
+    // ---- フリップブック（スプライトシート）----
+    // 1枚のテクスチャに格子状に並べたコマを順に切り替えて「絵として動く」エフェクトを作る。
+    // 炎・爆発・稲妻のような**形のあるもの**は、点を大量に飛ばすより1枚の絵を動かす方が似る。
+    // コマ番号は DrawCore の scaleZ の**空いていた上位16bit**へ詰めるので、1粒あたりの帯域は増えない。
+    // HLSL ParticleCSSettings（Particle.hlsli）の frustumPlanes の直後と一致させること
+    uint32_t enableFlipbook = 0;
+    uint32_t flipbookCols = 1;        // 横のコマ数
+    uint32_t flipbookRows = 1;        // 縦のコマ数
+    uint32_t flipbookMode = 0;        // 0=寿命で1周 / 1=fps でループ
+    float flipbookFps = 30.0f;        // mode=1 のときのコマ送り速度
+    uint32_t flipbookRandomStart = 0; // 1=粒ごとに開始コマをずらす
+    float flipbookPad0 = 0.0f;
+    float flipbookPad1 = 0.0f;
+
+    // ---- プロシージャル形状（画像を用意せずに「形のある絵」を作る）----
+    // 丸いソフトスプライトでは格闘ゲームの炎・稲妻にならないが、
+    // スプライトシートを描き起こすのも大変なので、**形をシェーダーで計算して作る**。
+    // 値はここで持ち、描画に要るぶんだけ毎フレーム マテリアルCB へ写す
+    uint32_t shapeMode = 0;       // 0=テクスチャそのまま / 1=炎 / 2=シャード(稲妻) / 3=リング
+    float shapeEdge = 0.5f;       // 輪郭のしきい値
+    float shapeNoiseScale = 3.0f; // ゆらぎの細かさ
+    float shapeRimWidth = 0.22f;  // 縁取りの太さ
+    Vector4 shapeRimColor = {0.45f, 0.85f, 1.0f, 1.0f};
+    float shapeSpeed = 1.6f;      // ゆらぎが動く速さ
+    float shapeSoftness = 0.06f;  // 輪郭のぼかし（小さいほどセル調）
+    // ---- ソフトパーティクル ----
+    // 板が地面や壁へ刺さったときに出る「切り口の直線」を消す。
+    // 背景との距離が近いほどアルファを落として、境目を溶かす
+    uint32_t enableSoftParticle = 0;
+    float softParticleFade = 1.0f; // この距離（ワールド単位）まで近づくと完全に消える
+    // ---- UVスクロール ----
+    // テクスチャ／プロシージャル形状のゆらぎを流す。炎が「立ち上る」動きになる
+    Vector2 uvScrollSpeed = {0.0f, 0.0f};
+    // ---- 縁の発光（フレネル）----
+    // メッシュの輪郭（視線と面が平行なところ）ほど濃く、カメラ正面を向いた面ほど薄くする。
+    // 体を包む殻に貼ると、中のキャラが透けて輪郭だけが光る「オーラ」の見え方になる。
+    // 面の向きが要るので、ビルボードを切ったメッシュにだけ効く
+    float shapeFresnel = 0.0f;
+    float shapePad1 = 0.0f;
+
     // ---- 演出の基準空間（ここから下は CPU 専用。HLSL 側には対応メンバが無い）----
     // 「渦の回転軸」「渦/集束の目標オフセット」をどの空間の値として解釈するか。
     // GPU へ渡るのは解決済みのワールド値（vortexAxis / vortexTarget / gatherTarget）だけなので、
@@ -473,96 +554,7 @@ struct ParticleFieldSettingsOverride
     Vector3 gatherTarget = {0.0f, 0.0f, 0.0f};         // 向け替えターゲット座標
 };
 
-/// =============================================
-/// GPUに送るフィールドデータ（StructuredBuffer 要素 / 16バイト境界）
-///
-/// 【重要】このレイアウトは HLSL 側 `struct ParticleField`
-///   （Engine/EngineAssets/shaders/Particle/Particle.hlsli）と**バイト単位で一致**させること。
-///   メンバの追加/削除/並べ替えは両方を同時に直し、下の static_assert を更新する。
-///
-/// 【責務（1構造体に混載）】
-///   1. Force        : position / radius / direction / strength / fieldType / falloff
-///                     （ApplyFields の速度系エフェクト。Wind/Attract/Repel/Vortex）
-///   2. LifeDrain    : lifeTimeDrain / enableLifeDrain（範囲内で寿命を削る）
-///   3. ForceTrail   : enableForceTrail / trailSpawnDistanceOverride（フィールドでトレイル強制）
-///   4. ColorMultiply: enableColorMultiply / colorMultiplier（範囲内で色を乗算）
-///   5. SettingsOverride : enableSettingsOverride（一度きりの設定上書きの有効化。
-///                         実データは gFieldsOverride[t1]/ParticleFieldSettingsOverride 側）
-///   6. EmitSpawn    : enableEmitSpawn / emitSpawnLifeTimeMin/Max / emitSpawnCount
-///                     （Emit 時、このフィールド範囲内にのみ発生させる）
-///   7. GroupFilter  : groupId（どのエミッターに影響するか）
-///
-/// 【グループフィルタ仕様（GPUの ApplyFields と一致）】
-///   - field.groupId == -1                      → 全エミッターに影響
-///   - emitter.fieldGroupId == -1               → そのエミッターは全フィールドの影響を受ける
-///   - 上記以外は field.groupId == emitter.fieldGroupId のときのみ影響
-/// =============================================
-struct ParticleFieldData
-{
-    // --- 1. Force（速度系エフェクト） ---
-    Vector3 position = {0, 0, 0};  // フィールドの中心座標
-    float radius = 5.0f;           // 影響範囲（球）
-    Vector3 direction = {1, 0, 0}; // Wind/Vortex軸方向（C++側で正規化して転送）
-    float strength = 1.0f;         // 力の強さ
-    uint32_t fieldType = 0;        // ParticleFieldType (0:Wind 1:Attract 2:Repel 3:Vortex)
-    float falloff = 1.0f;          // 減衰指数（1=線形, 2=二乗）
-
-    // --- 2. LifeDrain（寿命ドレイン） ---
-    float lifeTimeDrain = 0.0f;   // 毎秒削る寿命量（秒/秒）
-    uint32_t enableLifeDrain = 0; // 0=無効 1=有効
-
-    // --- 3. ForceTrail（トレイル強制生成） ---
-    uint32_t enableForceTrail = 0;           // 0=無効 1=有効
-    float trailSpawnDistanceOverride = 0.0f; // >0 のときトレイル生成間隔を上書き
-
-    // --- 4. ColorMultiply（カラー乗算） ---
-    uint32_t enableColorMultiply = 0;                   // 0=無効 1=有効
-    Vector4 colorMultiplier = {1.0f, 1.0f, 1.0f, 1.0f}; // 乗算色（白=変化なし）
-
-    // --- 5. SettingsOverride（一度きり設定上書きの有効化フラグ） ---
-    uint32_t enableSettingsOverride = 0; // 0=無効 1=有効（実データは gFieldsOverride 側）
-
-    // --- 6. EmitSpawn（Emit時スポーン判定） ---
-    uint32_t enableEmitSpawn = 0;       // 1=このフィールド範囲内にのみEmit
-    float emitSpawnLifeTimeMin = 0.25f; // enableEmitSpawn=1 時の寿命Min
-    float emitSpawnLifeTimeMax = 0.25f; // enableEmitSpawn=1 時の寿命Max
-    // 【GPU通信専用】今フレームこのフィールドが発生させる粒子数。
-    // ParticleCSFieldManager::Update() が設定値(ParticleField::emitSpawnCount)と
-    // 間隔タイマーから毎フレーム算出して書き込む（バースト無しフレームは0）。
-    // シェーダはこの値でスレッド→担当フィールドの割り当てを行う。直接編集しないこと。
-    uint32_t emitSpawnCount = 0;
-
-    // --- 7. GroupFilter（グループID） ---
-    int32_t groupId = -1;                      // -1=全エミッター対象 / 0以上=同IDのエミッターのみ
-    float groupIdPadding[3] = {0.f, 0.f, 0.f}; // 16バイト境界揃え
-};
-
-// GPUレイアウト契約の固定（HLSL `struct ParticleField` と一致させること）。
-// 値が変わった＝レイアウトが動いた合図。HLSL 側も合わせて更新する。
-static_assert(sizeof(ParticleFieldData) == 112, "ParticleFieldData のサイズが変化。HLSL struct ParticleField と一致させること");
-static_assert(offsetof(ParticleFieldData, colorMultiplier) == 60, "colorMultiplier のオフセットずれ。HLSL と要整合");
-static_assert(offsetof(ParticleFieldData, enableSettingsOverride) == 76, "enableSettingsOverride のオフセットずれ。HLSL と要整合");
-static_assert(offsetof(ParticleFieldData, groupId) == 96, "groupId のオフセットずれ。HLSL と要整合");
-
-/// =============================================
-/// エディタ用フィールド（名前付き）
-/// =============================================
-struct ParticleField
-{
-    std::string name = "NewField";
-    bool enabled = true;
-    ParticleFieldData data = {};
-    ParticleFieldSettingsOverride override_ = {}; // 一度きり設定上書きデータ
-
-    // --- 接触Emit設定（CPU管理） ---
-    // 発生数/間隔はフィールド側が唯一の設定場所。エミッター側は
-    // 「フィールド接触部分にのみ発生」トグルとグループIDのみを持つ。
-    // 毎フレーム ParticleCSFieldManager::Update() がタイマーを進め、
-    // バーストするフレームだけ data.emitSpawnCount に emitSpawnCount を書き込む。
-    uint32_t emitSpawnCount = 1000;  // 1バーストあたりの発生数（対象エミッターごと）
-    float emitSpawnInterval = 0.0f;  // バースト間隔[秒]（0=毎フレーム発生）
-    float emitSpawnTimer = 0.0f;     // ランタイム: 間隔タイマー（保存対象外）
-};
+// フィールド本体（形と効果）は gpu/ParticleCSField.h
 
 /// =======================
 

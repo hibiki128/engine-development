@@ -1,6 +1,7 @@
 #include "../OffScreen/FullScreen.hlsli"
 #include "Deferred.hlsli"
 #include "../Object/Toon.hlsli"
+#include "../Shadow/ShadowSample.hlsli"
 
 // ============================================================
 // ディファードのライティングパス
@@ -47,6 +48,11 @@ struct ShadowDataGPU
     int enabled;
     float bias;
     float strength;
+    float normalBias; // 面が光に対して浅いときに足すバイアス（縞状の影の対策）
+
+    float softness;  // 影の縁のぼかし幅（シャドウマップのテクセル単位）
+    int sampleCount; // ぼかしのサンプル数
+    float mapSize;   // シャドウマップの解像度
     float padding;
 };
 
@@ -64,25 +70,13 @@ Texture2D<float> gShadowMap : register(t4);
 TextureCube<float4> gEnvironmentTexture : register(t5);
 StructuredBuffer<PointLightGPU> gPointLights : register(t6);
 StructuredBuffer<uint> gTileLightIndices : register(t7);
+Texture2D<float> gSsao : register(t8); // SSAO（接地の陰り）。1=遮蔽なし
+Texture2D<float> gRtShadowMask : register(t9); // RTの影マスク。1=日向 / 0=影
 
 SamplerState gSampler : register(s0);
 SamplerComparisonState gShadowSampler : register(s1);
 
-float SampleShadowPCF(float2 shadowUV, float shadowDepth)
-{
-    float2 texelSize = float2(1.0f / 2048.0f, 1.0f / 2048.0f);
-    float shadow = 0.0f;
-    [unroll]
-    for (int x = -1; x <= 1; x++)
-    {
-        [unroll]
-        for (int y = -1; y <= 1; y++)
-        {
-            shadow += gShadowMap.SampleCmpLevelZero(gShadowSampler, shadowUV + float2(x, y) * texelSize, shadowDepth);
-        }
-    }
-    return shadow / 9.0f;
-}
+// 影の引き方は ../Shadow/ShadowSample.hlsli に集約している（前方描画と共通）
 
 float4 main(VertexShaderOutput input) : SV_TARGET
 {
@@ -114,13 +108,25 @@ float4 main(VertexShaderOutput input) : SV_TARGET
     // G-Buffer の b にマテリアル側のトゥーン適用フラグが載っている
     const bool useToon = materialSample.b > 0.5f;
 
+    // 自己発光。ライトに当たっていなくても光る分なので、影も減衰も掛けずに最後へ足す。
+    // 発光色はアルベドを流用する（前方描画と同じ扱い）
+    const float3 emissive = albedo * (materialSample.a * DEFERRED_EMISSIVE_RANGE);
+
     const float2 uv = (float2(pixel) + 0.5f) / float2(gConstants.screenSize);
     const float3 worldPosition = ReconstructWorldPosition(uv, deviceDepth, gConstants.invViewProjection);
     const float3 toEye = normalize(gConstants.cameraPosition - worldPosition);
 
-    // ── シャドウ係数（前方描画と同じ計算。shadowCoord は worldPos × LightVP で再現できる）──
+    // ── シャドウ係数 ──
     float shadowFactor = 1.0f;
-    if (gShadowData.enabled != 0)
+    if (gConstants.useRtShadow != 0)
+    {
+        // レイトレーシングで求めた遮蔽をそのまま使う。
+        // 投影範囲もテクセル密度も無いので、バイアス調整やカスケードの悩みが無い
+        const float shadow = gRtShadowMask.Load(int3(pixel, 0));
+        shadowFactor = lerp(1.0f - gShadowData.strength, 1.0f, shadow);
+    }
+    // 以下はシャドウマップ版（前方描画と同じ計算。shadowCoord は worldPos × LightVP で再現できる）
+    else if (gShadowData.enabled != 0)
     {
         float4 shadowCoord = mul(float4(worldPosition, 1.0f), gConstants.lightViewProjection);
         float3 projCoord = shadowCoord.xyz / shadowCoord.w;
@@ -130,8 +136,12 @@ float4 main(VertexShaderOutput input) : SV_TARGET
             shadowUV.y >= 0.0f && shadowUV.y <= 1.0f &&
             projCoord.z >= 0.0f && projCoord.z <= 1.0f)
         {
-            float shadowDepth = projCoord.z - gShadowData.bias;
-            float shadow = SampleShadowPCF(shadowUV, shadowDepth);
+            // 面が光へどれだけ正面を向いているか。浅いほどバイアスを強める
+            const float ndotl = saturate(dot(normal, -normalize(gDirectionalLight.direction)));
+            float shadow = SampleShadowSoft(gShadowMap, gShadowSampler, shadowUV, projCoord.z, ndotl,
+                                            gShadowData.bias, gShadowData.normalBias,
+                                            gShadowData.softness, gShadowData.sampleCount,
+                                            gShadowData.mapSize, input.position.xy);
             shadowFactor = lerp(1.0f - gShadowData.strength, 1.0f, shadow);
         }
     }
@@ -139,7 +149,7 @@ float4 main(VertexShaderOutput input) : SV_TARGET
     if (!enableLighting)
     {
         // ライティング無効のマテリアルはアルベドをそのまま出す（影だけ乗る）
-        return float4(albedo * shadowFactor, outputAlpha);
+        return float4(albedo * shadowFactor + emissive, outputAlpha);
     }
 
     // ── トゥーン（セル）シェーディング ──────────────────
@@ -206,7 +216,7 @@ float4 main(VertexShaderOutput input) : SV_TARGET
         float3 toonReflected = reflect(-toEye, normal);
         toonColor += gEnvironmentTexture.Sample(gSampler, toonReflected).rgb * environmentCoefficient;
 
-        return float4(toonColor, outputAlpha);
+        return float4(toonColor + emissive, outputAlpha);
     }
 
     float3 color = float3(0.0f, 0.0f, 0.0f);
@@ -320,6 +330,18 @@ float4 main(VertexShaderOutput input) : SV_TARGET
     float3 reflectedVector = reflect(cameraToPosition, normal);
     float4 environmentColor = gEnvironmentTexture.Sample(gSampler, reflectedVector);
     color += environmentColor.rgb * environmentCoefficient;
+
+    // ── SSAO（接地の陰り）──
+    // 物と床の接地部分やへこみを暗くして、置いてある感じを出す。
+    // 効かせ具合が 0 のときは SSAO 自体が動いていないので何もしない
+    if (gConstants.ssaoStrength > 0.0f)
+    {
+        const float ambientOcclusion = gSsao.Load(int3(pixel, 0));
+        color *= lerp(1.0f, ambientOcclusion, saturate(gConstants.ssaoStrength));
+    }
+
+    // 発光は遮蔽の影響を受けない（SSAOの後に足す）
+    color += emissive;
 
     return float4(color, outputAlpha);
 }

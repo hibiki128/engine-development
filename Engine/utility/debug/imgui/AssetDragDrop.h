@@ -16,6 +16,8 @@ namespace AssetDragDrop {
 // ペイロード種別ID（ImGui の制約: 32文字以内）。
 inline constexpr const char *kTexturePayloadId = "ASSET_TEX_PATH";
 inline constexpr const char *kModelPayloadId = "ASSET_MDL_PATH";
+inline constexpr const char *kPrefabPayloadId = "ASSET_PREFAB";
+inline constexpr const char *kSoundPayloadId = "ASSET_SOUND_PATH";
 
 /// <summary>
 /// 直前に描いたアイテム（Selectable/Image 等）をテクスチャパスのドラッグ元にする。
@@ -87,6 +89,78 @@ inline bool ModelTarget(std::string &outRelPath)
     if (ImGui::BeginDragDropTarget())
     {
         if (const ImGuiPayload *payload = ImGui::AcceptDragDropPayload(kModelPayloadId))
+        {
+            if (payload->Data && payload->DataSize > 0)
+            {
+                outRelPath.assign(static_cast<const char *>(payload->Data));
+                received = true;
+            }
+        }
+        ImGui::EndDragDropTarget();
+    }
+    return received;
+}
+
+/// <summary>
+/// 直前に描いたアイテムをプレハブのドラッグ元にする。
+/// シーンウィンドウへドロップするとその場にプレハブが置かれる。
+/// </summary>
+/// <param name="prefabName">プレハブ名（拡張子なし）</param>
+inline void PrefabSource(const std::string &prefabName)
+{
+    if (ImGui::BeginDragDropSource(ImGuiDragDropFlags_None))
+    {
+        ImGui::SetDragDropPayload(kPrefabPayloadId, prefabName.c_str(), prefabName.size() + 1);
+        ImGui::Text("プレハブを配置: %s", prefabName.c_str());
+        ImGui::EndDragDropSource();
+    }
+}
+
+/// <summary>
+/// 直前に描いたアイテムをプレハブのドロップ先にする。
+/// ドロップされたら outPrefabName を受け取った名前で更新して true を返す。
+/// </summary>
+inline bool PrefabTarget(std::string &outPrefabName)
+{
+    bool received = false;
+    if (ImGui::BeginDragDropTarget())
+    {
+        if (const ImGuiPayload *payload = ImGui::AcceptDragDropPayload(kPrefabPayloadId))
+        {
+            if (payload->Data && payload->DataSize > 0)
+            {
+                outPrefabName.assign(static_cast<const char *>(payload->Data));
+                received = true;
+            }
+        }
+        ImGui::EndDragDropTarget();
+    }
+    return received;
+}
+
+/// <summary>
+/// 直前に描いたアイテムを音のドラッグ元にする（タイムラインの音イベントなどへ渡す）
+/// </summary>
+/// <param name="relPath">sounds ルートからの相対パス</param>
+inline void SoundSource(const std::string &relPath)
+{
+    if (ImGui::BeginDragDropSource(ImGuiDragDropFlags_None))
+    {
+        ImGui::SetDragDropPayload(kSoundPayloadId, relPath.c_str(), relPath.size() + 1);
+        ImGui::Text("音: %s", relPath.c_str());
+        ImGui::EndDragDropSource();
+    }
+}
+
+/// <summary>
+/// 直前に描いたアイテムを音のドロップ先にする。ドロップされたら true
+/// </summary>
+inline bool SoundTarget(std::string &outRelPath)
+{
+    bool received = false;
+    if (ImGui::BeginDragDropTarget())
+    {
+        if (const ImGuiPayload *payload = ImGui::AcceptDragDropPayload(kSoundPayloadId))
         {
             if (payload->Data && payload->DataSize > 0)
             {

@@ -358,7 +358,9 @@ T EaseOutSine(const T &start, const T &end, float x, float totalX)
 template <typename T>
 T EaseInOutSine(const T &start, const T &end, float x, float totalX)
 {
-    float t = x / (totalX / 2.0f);
+    // 0.5*(1-cos(pi*t)) は t が 0→1 で 0→1 になる式。
+    // ここで t を 0→2 にすると中間で終点に達してから戻ってくる往復カーブになってしまう
+    float t = x / totalX;
     float easeT = 0.5f * (1.0f - std::cosf(t * std::numbers::pi_v<float>));
     return LerpE(start, end, easeT);
 }

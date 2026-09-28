@@ -2,20 +2,23 @@
 #include "camera/projection/ViewProjection.h"
 #include "object/Object3dCommon.h"
 #include "animation/ModelAnimation.h"
-#include "light/LightGroup.h"
 #include "string"
 #include "type/Matrix4x4.h"
 #include "type/Vector2.h"
 #include "type/Vector3.h"
 #include "type/Vector4.h"
 #include "vector"
+#include <array>
+#include <render/RenderView.h>
 #include <graphics/pipeline/PipelineManager.h>
 #include <model/material/Material.h>
 #include <model/Model.h>
 #include <transform/ObjColor.h>
 
 namespace Hagine {
+class LightGroup; // 使うのはポインタだけ（LightGroup.h は 100 本以上の .cpp に広がっていた）
 class ModelCommon;
+class AnimationBlendSpace;
 class Object3d
 {
   private: // メンバ変数
@@ -41,13 +44,30 @@ class Object3d
     Microsoft::WRL::ComPtr<ID3D12Resource> transformationMatrixResource_;
     // バッファリソース内のデータを指すポインタ
     TransformationMatrix *pTransformationMatrixData_ = nullptr;
+    // カメラビュー窓（RenderView 1〜）用の変換行列。同じフレームに別のカメラで描くので、
+    // メインと同じバッファを使うと後から書いた行列で両方が描かれてしまう。使われたら作る
+    std::array<Microsoft::WRL::ComPtr<ID3D12Resource>, RenderView::kMaxViews> viewTransformResources_{};
+    std::array<TransformationMatrix *, RenderView::kMaxViews> pViewTransformData_{};
+
+    /// <summary>今描いているビュー用の変換行列（メインなら従来のもの）</summary>
+    TransformationMatrix *CurrentTransformData();
+    /// <summary>今描いているビュー用の変換行列のGPUアドレス</summary>
+    D3D12_GPU_VIRTUAL_ADDRESS CurrentTransformAddress();
 
     Transform transform_;
 
     Model *pModel_ = nullptr;
     std::shared_ptr<ModelAnimation> currentModelAnimation_ = nullptr;
     std::map<std::string, std::shared_ptr<ModelAnimation>> modelAnimations_;
+    // ブレンドスペース（移動方向や速さでクリップを混ぜる）。モデルのアニメーションを
+    // 差し替えても続くよう、ModelAnimation ではなくここで持つ
+    std::shared_ptr<AnimationBlendSpace> blendSpace_;
+    float blendSpaceWeight_ = 0.0f;       // 今の効き（0〜1）
+    float blendSpaceTargetWeight_ = 0.0f; // 目標の効き（止めるときは0）
+    float blendSpaceFade_ = 0.25f;        // 出入りにかける時間（秒）
+    bool blendSpacePaused_ = false;       // 再生を止めているか
     std::vector<std::unique_ptr<Material>> materials_;
+    float cameraFade_ = 1.0f; // カメラに近いときの見え具合（SetCameraFade）
     std::vector<ObjColor> color_;
     // インスタンシング描画でマテリアル色を白に固定するための使い回しバッファ
     // （個体色はインスタンスバッファ側で乗算するので、ここで二重に掛けない）
@@ -69,6 +89,12 @@ class Object3d
     std::map<std::string, bool> animationLoopFlags_;
 
     std::string modelFilePath_;
+    // ModelManager 上でこのオブジェクトのモデルを指すキー。
+    // gltf は同じパスから体ごとに別の実体ができるので、パスでは引き直せない
+    std::string modelKey_;
+    // そのモデルがこのオブジェクト専用に作られたものか。
+    // gltf だけが該当する（プリミティブと .obj は他と共有しているので捨ててはいけない）
+    bool ownsModel_ = false;
     // 動的モデル（メタボールなど）を作ったときの ModelManager 上のキー
     std::string dynamicModelKey_;
     std::unique_ptr<Object3dCommon> objectCommon_;
@@ -85,6 +111,11 @@ class Object3d
     bool skinnedThisFrame_ = false;
 
   public: // メンバ関数
+    /// <summary>
+    /// デストラクタ。自分専用に作られたモデル（gltf）を ModelManager へ返す
+    /// </summary>
+    ~Object3d();
+
     void Initialize();
 
     /// <summary>
@@ -93,6 +124,22 @@ class Object3d
     void CreateModel(const std::string &filePath);
 
     void CreatePrimitiveModel(const PrimitiveType &type, std::string texPath);
+
+    /// <summary>
+    /// 形状パラメータ付きでプリミティブのモデルを作る（岩の種・でこぼこ等をオブジェクトごとに変えたいとき）
+    /// </summary>
+    /// <param name="type">プリミティブの種類</param>
+    /// <param name="texPath">テクスチャのパス</param>
+    /// <param name="params">形状パラメータ（同じ値のものはモデルを共有する）</param>
+    void CreatePrimitiveModel(const PrimitiveType &type, std::string texPath, const PrimitiveParams &params);
+
+  private:
+    /// <summary>プリミティブ用のマテリアル（1枚）を作り直す</summary>
+    /// <param name="type">プリミティブの種類</param>
+    /// <param name="texPath">テクスチャのパス</param>
+    void SetupPrimitiveMaterial(const PrimitiveType &type, const std::string &texPath);
+
+  public:
 
     /// <summary>
     /// 動的メッシュのモデルを作る（メタボールなど、オブジェクトごとに形が変わるもの用）。
@@ -175,6 +222,44 @@ class Object3d
     bool IsLayerAnimationPlaying() const;
 
     /// <summary>
+    /// ブレンドスペースを再生する（今のアニメーションからフェードして切り替える）
+    /// 同じブレンドスペースを再生中なら何もしない
+    /// </summary>
+    /// <param name="space">再生するブレンドスペース</param>
+    /// <param name="fadeDuration">切り替えにかける時間（秒）</param>
+    void PlayBlendSpace(const std::shared_ptr<AnimationBlendSpace> &space, float fadeDuration);
+
+    /// <summary>
+    /// ブレンドスペースを止める（フェードして通常のアニメーションへ戻す）
+    /// </summary>
+    /// <param name="fadeDuration">切り替えにかける時間（秒）</param>
+    void StopBlendSpace(float fadeDuration);
+
+    /// <summary>
+    /// ブレンドスペースを再生中か（フェードアウト中は false）
+    /// </summary>
+    /// <returns>bool: 再生中なら true</returns>
+    bool IsBlendSpacePlaying() const { return blendSpace_ != nullptr && blendSpaceTargetWeight_ > 0.0f; }
+
+    /// <summary>
+    /// 再生中（フェードアウト中を含む）のブレンドスペースを取得する
+    /// </summary>
+    /// <returns>AnimationBlendSpace*: 無ければ nullptr</returns>
+    AnimationBlendSpace *GetBlendSpace() const { return blendSpace_.get(); }
+
+    /// <summary>
+    /// ブレンドスペースの今の効き（0〜1）を取得する
+    /// </summary>
+    /// <returns>float: 効き</returns>
+    float GetBlendSpaceWeight() const { return blendSpaceWeight_; }
+
+    /// <summary>
+    /// ブレンドスペースの再生を一時停止する
+    /// </summary>
+    /// <param name="paused">true で停止</param>
+    void SetBlendSpacePaused(bool paused) { blendSpacePaused_ = paused; }
+
+    /// <summary>
     /// アニメーションの有無
     /// </summary>
     /// <param name="anime"></param>
@@ -192,6 +277,13 @@ class Object3d
     /// </summary>
     /// <returns>bool: インスタンシング描画の対象にしてよいか</returns>
     bool CanBatchInstanced() const;
+
+    /// <summary>
+    /// カメラに近いときの見え具合（1=普通 / 0=完全に消える）を全マテリアルへ渡す。
+    /// 1 未満のあいだはマテリアルを他の物と共有できないので、インスタンシングの対象から外れる
+    /// </summary>
+    void SetCameraFade(float fade);
+    float GetCameraFade() const { return cameraFade_; }
 
     /// <summary>
     /// 今のパス（影 / G-Buffer / 前方描画）で描かれる対象かを返す。
@@ -359,6 +451,12 @@ class Object3d
     void AddAnimation(const std::string &fileName, bool loop = true);
 
   private: // メンバ関数
+    /// <summary>
+    /// 自分専用に作られたモデルを ModelManager へ返す（共有モデルなら何もしない）。
+    /// モデルを差し替えるときと、破棄されるときに呼ぶ
+    /// </summary>
+    void ReleaseOwnedModel();
+
     /// <summary>
     /// 座標変換行列データ作成
     /// </summary>

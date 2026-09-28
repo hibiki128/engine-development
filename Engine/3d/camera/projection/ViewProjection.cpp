@@ -363,14 +363,11 @@ void ViewProjection::ShowDebugInfo()
             ImGui::InputText("##vpfname", fname, sizeof(fname));
             ImGui::Spacing();
 
-            ImGui::PushStyleColor(ImGuiCol_Button, {0.20f, 0.45f, 0.20f, 0.8f});
-            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, {0.25f, 0.55f, 0.25f, 0.9f});
-            if (ImGui::Button("現在のカメラを保存##vpsv", ImVec2(-1, 0)))
+            if (NeutralButton("現在のカメラを保存##vpsv", ImVec2(-1, 0)))
                 Save(fname);
             ImGui::Spacing();
             if (ImGui::Button("ファイルから読み込み##vpld", ImVec2(-1, 0)))
                 Load(fname);
-            ImGui::PopStyleColor(2);
             ImGui::Unindent(6.0f);
             ImGui::Spacing();
         }
@@ -463,14 +460,11 @@ void ViewProjection::ShowDebugInfo()
                 EaseCameraMove(static_cast<EasingType>(easeType), jname, dur);
             ImGui::PopStyleColor(2);
 
-            ImGui::PushStyleColor(ImGuiCol_Button, {0.50f, 0.15f, 0.15f, 0.85f});
-            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, {0.70f, 0.20f, 0.20f, 0.90f});
-            if (ImGui::Button("イージング停止##vpstop", ImVec2(-1, 0)) && isEasing_)
+            if (NeutralButton("イージング停止##vpstop", ImVec2(-1, 0)) && isEasing_)
             {
                 isEasing_ = false;
                 easingTime_ = 0.f;
             }
-            ImGui::PopStyleColor(2);
 
             // 実行中の詳細
             if (isEasing_)

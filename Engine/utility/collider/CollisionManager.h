@@ -7,10 +7,22 @@
 #include "type/OBBCollider.h"
 #include "type/SphereCollider.h"
 #include <camera/projection/ViewProjection.h>
+#include <string>
 #include <unordered_map>
 #include <vector>
 
 namespace Hagine {
+
+/// <summary>
+/// レイキャストが当たった1点の情報
+/// </summary>
+struct RaycastHit
+{
+    ColliderBase *pCollider = nullptr; //!< 当たったコライダー
+    Vector3 position{};                //!< 当たった点（ワールド空間）
+    Vector3 normal{};                  //!< 当たった面の法線（レイと向かい合う側・ワールド空間）
+    float distance = 0.0f;             //!< 始点からの距離
+};
 
 /// <summary>
 /// 全コライダーの登録・更新・衝突判定を統括するシングルトン
@@ -68,6 +80,28 @@ class CollisionManager
     /// </summary>
     /// <param name="viewProjection">ビュープロジェクション</param>
     void DebugDraw(const ViewProjection &viewProjection);
+
+    /// <summary>
+    /// 登録済みコライダーへレイを飛ばし、一番手前で当たった点を返す。
+    ///
+    /// 足IKの接地探しや、音の遮蔽判定のように「衝突ペア」ではなく
+    /// 一方向の当たりだけが欲しい場面で使う。
+    /// 判定が無効（IsEnabled が false）のコライダーは無視する。
+    ///
+    /// 円柱コライダーは対象外（Y軸直立の近似しか持たず、面の法線が定義できないため）。
+    /// </summary>
+    /// <param name="origin">レイの始点（ワールド空間）</param>
+    /// <param name="direction">レイの方向（正規化不要）</param>
+    /// <param name="maxDistance">判定する最大距離</param>
+    /// <param name="tagFilter">対象にするタグ（空なら全タグ）</param>
+    /// <param name="outHit">当たった点の情報</param>
+    /// <param name="ignoreOwnerName">このオブジェクト名を持つコライダーは無視する
+    /// （足元へレイを撃つときに自分の体へ当たるのを防ぐ用。空なら無視しない）</param>
+    /// <param name="pIgnore">無視するコライダー1つ（不要なら nullptr）</param>
+    /// <returns>bool: 当たったら true</returns>
+    bool RaycastClosest(const Vector3 &origin, const Vector3 &direction, float maxDistance,
+                        const std::vector<std::string> &tagFilter, RaycastHit &outHit,
+                        const std::string &ignoreOwnerName = {}, const ColliderBase *pIgnore = nullptr) const;
 
     /// <summary>
     /// OBB同士のめり込み解消ベクトル（MTV）を計算
@@ -160,6 +194,19 @@ class CollisionManager
     void UpdateColliders();
 
     /// <summary>
+    /// 1つのコライダーに対するレイ判定。形状ごとの計算へ振り分ける
+    /// </summary>
+    /// <param name="pCollider">対象のコライダー</param>
+    /// <param name="origin">レイの始点</param>
+    /// <param name="direction">レイの方向（正規化済み）</param>
+    /// <param name="maxDistance">判定する最大距離</param>
+    /// <param name="outDistance">始点からの距離</param>
+    /// <param name="outNormal">当たった面の法線</param>
+    /// <returns>bool: 当たったら true</returns>
+    static bool RaycastCollider(const ColliderBase *pCollider, const Vector3 &origin, const Vector3 &direction,
+                                float maxDistance, float &outDistance, Vector3 &outNormal);
+
+    /// <summary>
     /// 衝突対象となるペアを総当たりで判定
     /// </summary>
     void CheckCollisions();
@@ -234,6 +281,18 @@ class CollisionManager
 
 #ifdef USE_IMGUI
     ColliderBase *pInspectorSelected_ = nullptr; // インスペクタで選択中のコライダー
+    std::string inspectorSearch_;                // 一覧の絞り込み（名前・タグ）
+    int inspectorTypeFilter_ = -1;               // 種類の絞り込み（-1 = すべて / ColliderType）
+    bool inspectorEnabledOnly_ = false;          // 当たり判定が有効な物だけ
+    bool highlightSelected_ = true;              // 選んだコライダーをシーンで点滅させる
+    bool colorByTag_ = false;                    // タグの色で塗り分けている
+    std::unordered_map<ColliderBase *, Vector4> colorsBeforeTagTint_; // 塗り分ける前の色（戻す用）
+
+    /// <summary>コライダーがまだ登録されているか（ポインタの比較だけで確かめる）</summary>
+    bool IsRegistered(const ColliderBase *pCollider) const;
+
+    /// <summary>タグの色で塗り分ける / 元の色へ戻す</summary>
+    void SetColorByTag(bool enable);
 #endif
 };
 } // namespace Hagine

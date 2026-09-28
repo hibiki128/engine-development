@@ -7,6 +7,8 @@
 #include "frame/Frame.h"
 #include "model/material/Material.h"
 #include "object/Object3dInstancing.h"
+#include "render/CameraFade.h"
+#include "render/RenderCulling.h"
 #include "scene/SceneManager.h"
 #include "utility/debug/imgui/DebugUIHelper.h"
 #include "utility/debug/imgui/ImGuiNotification.h"
@@ -45,6 +47,15 @@ void BaseObject::Init(const std::string objectName) {
 
 void BaseObject::Update() {
     if (obj3d_->GetHaveAnimation()) {
+        // ステートマシンは「どのクリップを流すか」を決めるので、アニメーションを進める前に動かす
+        if (animStateMachine_) {
+#ifdef USE_IMGUI
+            const bool running = PlayModeManager::GetInstance()->ShouldUpdateGame();
+#else
+            const bool running = true;
+#endif // USE_IMGUI
+            animStateMachine_->Update(running ? Frame::DeltaTime() : 0.0f);
+        }
         // ループフラグはアニメーションごとに Object3d が内部管理する
         HAGINE_CPU_PROFILE("Update/Objects/Anim");
         obj3d_->AnimationUpdate();
@@ -69,62 +80,105 @@ void BaseObject::Update() {
     }
 }
 
+bool BaseObject::ApplyRenderTransform(Vector3 &outOriginalPosition, Quaternion &outOriginalRotation) {
+    outOriginalPosition = transform_->translation_;
+    outOriginalRotation = transform_->quaternionRotation_;
+
+    const bool hasOffset = (offSet_.x != 0.0f || offSet_.y != 0.0f || offSet_.z != 0.0f);
+    if (!hasOffset && !applyRenderRotationOffset_) {
+        return false;
+    }
+
+    transform_->translation_ = outOriginalPosition + offSet_;
+
+    if (applyRenderRotationOffset_) {
+        // ローカル空間の回転として現在の向きへ合成
+        transform_->quaternionRotation_ = outOriginalRotation * renderRotationOffset_;
+
+        // モデル中心が原点にない場合、回転で位置がずれる。
+        // ピボット（回転中心）が固定されるよう平行移動で補正する
+        if (renderRotationPivot_.x != 0.0f || renderRotationPivot_.y != 0.0f || renderRotationPivot_.z != 0.0f) {
+            Vector3 rotatedPivot = renderRotationOffset_.Rotate(renderRotationPivot_);
+            Vector3 pivotShift = outOriginalRotation.Rotate(renderRotationPivot_ - rotatedPivot);
+            transform_->translation_ += pivotShift;
+        }
+    }
+
+    transform_->UpdateMatrix();
+    return true;
+}
+
+void BaseObject::RestoreRenderTransform(const Vector3 &originalPosition, const Quaternion &originalRotation) {
+    transform_->translation_ = originalPosition;
+    transform_->quaternionRotation_ = originalRotation;
+    transform_->UpdateMatrix();
+}
+
+Matrix4x4 BaseObject::GetRenderWorldMatrix() {
+    Vector3 originalPosition;
+    Quaternion originalRotation;
+    if (!ApplyRenderTransform(originalPosition, originalRotation)) {
+        return transform_->matWorld_;
+    }
+    const Matrix4x4 renderMatrix = transform_->matWorld_;
+    RestoreRenderTransform(originalPosition, originalRotation);
+    return renderMatrix;
+}
+
 void BaseObject::Draw(const ViewProjection &viewProjection) {
     // 描画専用の位置オフセット・回転オフセットを一時的に適用する。
     // これらは描画時のみ反映し、ゲームプレイで参照する transform_ の値は描画後に元へ戻す
-    Vector3 originalPosition = transform_->translation_;
-    Quaternion originalRotation = transform_->quaternionRotation_;
+    Vector3 originalPosition;
+    Quaternion originalRotation;
+    const bool applyRenderTransform = ApplyRenderTransform(originalPosition, originalRotation);
 
-    bool hasOffset = (offSet_.x != 0.0f || offSet_.y != 0.0f || offSet_.z != 0.0f);
-    bool applyRenderTransform = hasOffset || applyRenderRotationOffset_;
+    // 画面に入らないものはここで捨てる。モデルを持たないものは広がりが分からないので判定しない
+    const bool visible = !(obj3d_ && obj3d_->GetModel()) ||
+                         RenderCulling::IsVisible(viewProjection, GetLocalBounds(), transform_->matWorld_);
 
-    if (applyRenderTransform) {
-        transform_->translation_ = originalPosition + offSet_;
+    // カメラに近い物は透けさせる（影のパスでは常に 1）。完全に消えるなら描かない
+    // （カメラビュー窓の描画中はマテリアルの値を書き換えない。メインの描画と共有しているため）
+    float cameraFade = 1.0f;
+    if (!RenderView::IsExtra()) {
+        if (visible && obj3d_ && obj3d_->GetModel() && cameraFadeEnabled_) {
+            cameraFade = CameraFade::Compute(viewProjection, GetLocalBounds(), transform_->matWorld_);
+        }
+        if (obj3d_) {
+            obj3d_->SetCameraFade(cameraFade);
+        }
+    }
 
-        if (applyRenderRotationOffset_) {
-            // ローカル空間の回転として現在の向きへ合成
-            transform_->quaternionRotation_ = originalRotation * renderRotationOffset_;
-
-            // モデル中心が原点にない場合、回転で位置がずれる。
-            // ピボット（回転中心）が固定されるよう平行移動で補正する
-            if (renderRotationPivot_.x != 0.0f || renderRotationPivot_.y != 0.0f || renderRotationPivot_.z != 0.0f) {
-                Vector3 rotatedPivot = renderRotationOffset_.Rotate(renderRotationPivot_);
-                Vector3 pivotShift = originalRotation.Rotate(renderRotationPivot_ - rotatedPivot);
-                transform_->translation_ += pivotShift;
+    if (visible && cameraFade > 0.0f) {
+        // スケルトンの描画が必要な場合
+        if (skeletonDraw_) {
+            obj3d_->DrawSkeleton(*transform_, viewProjection);
+        }
+        if (!isWireframe_) {
+            // 同じモデルを参照するオブジェクトをまとめて描くため、まずバッチャへ積んでみる。
+            // 積めた場合は BaseObjectManager::Draw の Flush でまとめて描かれる。
+            // （収集中でない・スキニング・半透明などで積めなければ従来どおり1体ずつ描く）
+            const bool batched = isModelDraw_ &&
+                                 Object3dInstancing::GetInstance()->TrySubmit(
+                                     obj3d_.get(), *transform_, viewProjection, reflect_, isLighting_);
+            if (!batched) {
+                // オブジェクトの描画
+                obj3d_->Draw(*transform_, viewProjection, reflect_, isLighting_, isModelDraw_);
             }
+        } else {
+            obj3d_->DrawWireframe(*transform_, viewProjection, isRainbow_);
         }
-
-        transform_->UpdateMatrix();
-    }
-
-    // スケルトンの描画が必要な場合
-    if (skeletonDraw_) {
-        obj3d_->DrawSkeleton(*transform_, viewProjection);
-    }
-    if (!isWireframe_) {
-        // 同じモデルを参照するオブジェクトをまとめて描くため、まずバッチャへ積んでみる。
-        // 積めた場合は BaseObjectManager::Draw の Flush でまとめて描かれる。
-        // （収集中でない・スキニング・半透明などで積めなければ従来どおり1体ずつ描く）
-        const bool batched = isModelDraw_ &&
-                             Object3dInstancing::GetInstance()->TrySubmit(
-                                 obj3d_.get(), *transform_, viewProjection, reflect_, isLighting_);
-        if (!batched) {
-            // オブジェクトの描画
-            obj3d_->Draw(*transform_, viewProjection, reflect_, isLighting_, isModelDraw_);
-        }
-    } else {
-        obj3d_->DrawWireframe(*transform_, viewProjection, isRainbow_);
     }
 
     // 描画専用の変更を元へ戻す
     if (applyRenderTransform) {
-        transform_->translation_ = originalPosition;
-        transform_->quaternionRotation_ = originalRotation;
-        transform_->UpdateMatrix();
+        RestoreRenderTransform(originalPosition, originalRotation);
     }
 }
 
 void BaseObject::CopyPropertiesFrom(const BaseObject &source) {
+    // 複製してもプレハブとのつながりは保つ（複製した物からも反映・置き直しができる）
+    prefabSource_ = source.prefabSource_;
+
     // トランスフォーム
     transform_->translation_ = source.transform_->translation_;
     transform_->quaternionRotation_ = source.transform_->quaternionRotation_;
@@ -133,6 +187,7 @@ void BaseObject::CopyPropertiesFrom(const BaseObject &source) {
 
     // 見た目のフラグ
     isLighting_ = source.isLighting_;
+    cameraFadeEnabled_ = source.cameraFadeEnabled_;
     isModelDraw_ = source.isModelDraw_;
     isWireframe_ = source.isWireframe_;
     isRainbow_ = source.isRainbow_;

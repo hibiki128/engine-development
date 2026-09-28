@@ -142,4 +142,80 @@ IDxcBlob *ShaderCompiler::CompileWithReflection(const std::wstring &filePath, co
     // 実行用のバイナリを返却
     return shaderBlob;
 }
+
+bool ShaderCompiler::TryCompile(const std::wstring &filePath, const wchar_t *profile, std::string *outError)
+{
+    if (outError)
+    {
+        outError->clear();
+    }
+
+    IDxcBlobEncoding *shaderSource = nullptr;
+    HRESULT hr = pDxcUtils_->LoadFile(filePath.c_str(), nullptr, &shaderSource);
+    if (FAILED(hr) || !shaderSource)
+    {
+        if (outError)
+        {
+            *outError = "ファイルを読めませんでした";
+        }
+        return false;
+    }
+
+    DxcBuffer shaderSourceBuffer;
+    shaderSourceBuffer.Ptr = shaderSource->GetBufferPointer();
+    shaderSourceBuffer.Size = shaderSource->GetBufferSize();
+    shaderSourceBuffer.Encoding = DXC_CP_UTF8;
+
+    // 本番の Compile と同じ指定で通るかを見る必要があるので、オプションは揃えておく
+#ifdef _DEBUG
+    const wchar_t *optimizeOption = L"-Od";
+#else
+    const wchar_t *optimizeOption = L"-O3";
+#endif
+
+    LPCWSTR arguments[] = {
+        filePath.c_str(),
+        L"-E", L"main",
+        L"-T", profile,
+        L"-Zi", L"-Qembed_debug",
+        optimizeOption,
+        L"-Zpr",
+    };
+
+    IDxcResult *shaderResult = nullptr;
+    hr = pDxcCompiler_->Compile(&shaderSourceBuffer, arguments, _countof(arguments),
+                                pIncludeHandler_, IID_PPV_ARGS(&shaderResult));
+    shaderSource->Release();
+    if (FAILED(hr) || !shaderResult)
+    {
+        if (outError)
+        {
+            *outError = "DXCの呼び出しに失敗しました";
+        }
+        if (shaderResult)
+        {
+            shaderResult->Release();
+        }
+        return false;
+    }
+
+    // 本番の Compile は警告でも止めるので、ここでも「メッセージが出たら失敗」で揃える
+    bool succeeded = true;
+    IDxcBlobUtf8 *shaderError = nullptr;
+    shaderResult->GetOutput(DXC_OUT_ERRORS, IID_PPV_ARGS(&shaderError), nullptr);
+    if (shaderError != nullptr && shaderError->GetStringLength() != 0)
+    {
+        if (outError)
+        {
+            *outError = shaderError->GetStringPointer();
+        }
+        succeeded = false;
+    }
+    if (shaderError)
+    {
+        shaderError->Release();
+    }
+    shaderResult->Release();
+    return succeeded;
+}
 } // namespace Hagine

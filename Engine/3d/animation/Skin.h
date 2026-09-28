@@ -18,6 +18,17 @@ class Skin
     /// ===================================================
 
     /// <summary>
+    /// デストラクタ。確保したSRVインデックスを SrvManager へ返す
+    /// </summary>
+    ~Skin();
+
+    // SRVインデックスを持つので、コピーすると同じ番号を二重に返すことになる。
+    // 実際どこでもコピーしていないが、間違って増やせないようにしておく
+    Skin() = default;
+    Skin(const Skin &) = delete;
+    Skin &operator=(const Skin &) = delete;
+
+    /// <summary>
     /// 初期化
     /// </summary>
     /// <param name="skeleton">スケルトンデータ</param>

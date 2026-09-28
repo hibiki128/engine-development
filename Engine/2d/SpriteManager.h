@@ -7,7 +7,6 @@
 #include <unordered_map>
 #include <vector>
 #ifdef USE_IMGUI
-#include <edit/undo/ImGuiUndoTracker.h>
 #include <nlohmann/json.hpp>
 #endif // USE_IMGUI
 
@@ -228,7 +227,6 @@ class SpriteManager
     std::string texturePath_ = "";                     // テクスチャパス
     std::string saveFolder_ = "Sprite";                // 保存先フォルダ
 #ifdef USE_IMGUI
-    ImGuiUndoTracker undoTracker_;                           // スプライトマネージャUIのUndoトラッカー
     std::unordered_map<std::string, Vector3 *> gizmoBound_; // ギズモに登録中の平行移動ポインタ（スプライト名 → instanceData 内アドレス）
 #endif                                                       // _DEBUG
 };

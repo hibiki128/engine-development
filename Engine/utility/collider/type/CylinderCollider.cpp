@@ -28,4 +28,29 @@ void CylinderCollider::LoadShapeFromJson(DataHandler &json)
     height_ = json.Load<float>("height", height_);
     inward_ = json.Load<bool>("inward", inward_);
 }
+
+#ifdef USE_IMGUI
+void CylinderCollider::CaptureShape(nlohmann::json &shape) const
+{
+    shape["radius"] = radius_;
+    shape["height"] = height_;
+    shape["inward"] = inward_;
+}
+
+void CylinderCollider::ApplyShape(const nlohmann::json &shape)
+{
+    if (shape.contains("radius"))
+    {
+        radius_ = shape["radius"].get<float>();
+    }
+    if (shape.contains("height"))
+    {
+        height_ = shape["height"].get<float>();
+    }
+    if (shape.contains("inward"))
+    {
+        inward_ = shape["inward"].get<bool>();
+    }
+}
+#endif // USE_IMGUI
 } // namespace Hagine

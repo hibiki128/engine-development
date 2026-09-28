@@ -89,6 +89,16 @@ class SceneManager
     /// <param name="onRebuilt">作り直した直後に呼ぶ処理（未保存の編集を戻す用）</param>
     /// <returns>bool: 予約できたら true。シーンが無い・未登録名で作り直せない場合は false</returns>
     bool RequestSceneRebuild(std::function<void()> onRebuilt = {});
+
+    /// <summary>
+    /// 直近の作り直し（破棄 → 生成 → Initialize → onRebuilt）にかかった時間[ms]。
+    /// 停止したときの引っかかりがどこから来ているかを見るために測ってある
+    /// </summary>
+    /// <returns>float: 所要時間[ms]。まだ一度も作り直していなければ 0</returns>
+    float GetLastRebuildMilliseconds() const { return lastRebuildMilliseconds_; }
+
+    /// <summary>直近の作り直しの計測値があるか</summary>
+    bool HasRebuildMeasurement() const { return hasRebuildMeasurement_; }
 #endif // USE_IMGUI
 
     float GetClearTime() const { return clearTime_; }
@@ -143,6 +153,8 @@ class SceneManager
 #ifdef USE_IMGUI
     bool rebuildRequested_ = false;         // 次フレーム先頭でシーンを作り直すか
     std::function<void()> onSceneRebuilt_;  // 作り直した直後に呼ぶ処理
+    float lastRebuildMilliseconds_ = 0.0f;  // 直近の作り直しにかかった時間[ms]
+    bool hasRebuildMeasurement_ = false;    // 上の計測値があるか
 #endif // USE_IMGUI
 
     float clearTime_ = 0.0f;

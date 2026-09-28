@@ -7,7 +7,9 @@
 #include <model/ModelStructs.h>
 #include <particle/ParticleCommon.h>
 #include <primitive/PrimitiveModel.h>
+#include <array>
 #include <d3d12.h>
+#include <render/RenderView.h>
 #include <utility>
 #include <wrl.h>
 
@@ -40,6 +42,12 @@ class ParticleCSGroup
     /// デストラクタ
     /// </summary>
     ~ParticleCSGroup();
+
+    // SRV／UAV の枠を多数持つので、コピーすると同じ番号を二重に返すことになる。
+    // 複製は「作り直す」形（GetIndependentParticleGroup）なので C++ のコピーは要らない
+    ParticleCSGroup() = default;
+    ParticleCSGroup(const ParticleCSGroup &) = delete;
+    ParticleCSGroup &operator=(const ParticleCSGroup &) = delete;
     ParticleCSGroupData CreateParticleGroup(const std::string &groupName, const std::string &filename, uint32_t maxParticleCount = 10000, const std::string &texturePath = {}, BlendMode blendMode = BlendMode::Add);
     ParticleCSGroupData CreatePrimitiveParticleGroup(const std::string &groupName, PrimitiveType type, uint32_t maxParticleCount = 10000, const std::string &texturePath = {}, BlendMode blendMode = BlendMode::Add);
     void Update(const ViewProjection &vp);
@@ -132,6 +140,12 @@ class ParticleCSGroup
     Microsoft::WRL::ComPtr<ID3D12Resource> GetPerFrameResource() const { return perFrameResource_; }
     Microsoft::WRL::ComPtr<ID3D12Resource> GetMaterialResource() const { return materialResource_; }
     Microsoft::WRL::ComPtr<ID3D12Resource> GetPerViewResource() const { return perViewResource_; }
+
+    /// <summary>
+    /// カメラビュー窓（RenderView 1〜）で描くための per-view を用意してGPUアドレスを返す。
+    /// 設定はメインのものを写し、カメラに関わる値（行列・位置・ビルボード）だけそのカメラで作り直す
+    /// </summary>
+    D3D12_GPU_VIRTUAL_ADDRESS PreparePerViewForView(const ViewProjection &vp, int view);
     Microsoft::WRL::ComPtr<ID3D12Resource> GetSettingsResource() const { return settingsResource_; }
     D3D12_INDEX_BUFFER_VIEW GetIndexBufferView() const { return indexBufferView_; }
     D3D12_VERTEX_BUFFER_VIEW GetVertexBufferView() const { return vertexBufferView_; }
@@ -150,6 +164,12 @@ class ParticleCSGroup
     std::vector<CurvePoint> &GetAlphaCurvePoints() { return alphaCurvePoints_; }
     void MarkLifeCurvesDirty() { lifeCurvesDirty_ = true; }
     std::string GetGroupName() { return particleGroupData_.groupName; }
+    /// <summary>
+    /// 発光の強さ（色全体に掛ける倍率）。粒子の色は8bitで持つので1を超えられないため、
+    /// ブルームが乗るほど明るくしたいグループはこれを1より大きくする
+    /// </summary>
+    float &GetEmissive() { return emissive_; }
+    void SetEmissive(float emissive) { emissive_ = emissive; }
     PrimitiveType GetPrimitiveType() { return type_; }
     std::string GetModelPath() { return modelFilePath_; }
     uint32_t GetAliveParticleCount();
@@ -176,6 +196,13 @@ class ParticleCSGroup
     // プール再利用時に GPU 上のパーティクル状態とフリーリストを初期化し直す。
     // （新規生成時の InitParticle と同等。バッファ/SRV は再確保しない）
     void ResetForReuse() { InitParticle(); }
+
+    // 初期化(InitParticle)を積んだが、まだ GPU で実行されていないか。
+    // 初期化は描画用コマンドリストに積まれ、発生・更新は計算用コマンドリストで先に走るため、
+    // 初期化と同じフレームに発生させると、出した粒子を後から走る初期化が消してしまう。
+    // エミッターはこれが立っている間は発生を1フレーム待たせる
+    bool IsInitPending() const { return initPending_; }
+    void ClearInitPending() { initPending_ = false; }
 
     // Trail/Rotation/Override を「使うグループだけ」本確保する（演出なしは 1要素ダミーのまま）。
     // Emit CS もこれらのバッファへ書き込むため、Emit のバインドより前に呼ぶこと。
@@ -211,6 +238,37 @@ class ParticleCSGroup
     // 再確保時は in-flight 参照中の旧リソース／ディスクリプタを上書きせず、
     // 旧リソースは retiredSoABuffers_ へ退避し新しいディスクリプタ枠に作り直す（ハザード回避）。
     void AllocateSoABuffer(SoABuffer &buf, uint32_t count);
+
+#ifdef USE_IMGUI
+    // ===================================
+    // DrawImGui() のセクション（見出し1つ＝1メソッド）。
+    // 実体は責務ごとに .cpp を分けてある:
+    //   ParticleCSGroupImGui.cpp       … DrawImGui 本体 / 出現・寿命・サイズ / 速度・色彩 / テクスチャ
+    //   ParticleCSGroupImGuiEffect.cpp … エフェクトカード（追加したものだけ表示する分）
+    //   ParticleCSGroupImGuiField.cpp  … 発生形状 / 場系エフェクト / Debug Info
+    // 共通部品（見出しの色・エフェクトカードのヘッダ）は ParticleCSGroupImGuiInternal.h
+    // ===================================
+    void DrawImGuiBasicSection();       //!< 出現・寿命・サイズ
+    void DrawImGuiAppearanceSection();  //!< 速度・色彩・ブレンド
+    void DrawImGuiTextureSection();     //!< テクスチャ
+    void DrawImGuiEffectSection();      //!< エフェクトカード
+    void DrawImGuiEmitShapeSection();   //!< 発生形状
+    void DrawImGuiFieldEffectSection(); //!< ギャザー／渦巻き／カールノイズ／トレイル
+    void DrawImGuiDebugSection();       //!< Debug Info
+#endif                                  // USE_IMGUI
+
+    /// <summary>
+    /// SRV／UAV の枠を1つ SrvManager へ返して 0 に戻す。
+    /// **渡すのは予約番号なので -1 する**（+1規約）
+    /// </summary>
+    /// <param name="srvIndex">確保時に +1 して覚えた番号（0 なら何もしない）</param>
+    void FreeSrvIndex(uint32_t &srvIndex);
+
+    /// <summary>SoA バッファが持つ UAV／SRV の枠を返す</summary>
+    void FreeSoADescriptors(SoABuffer &buf);
+
+    /// <summary>このグループが確保した全ての SRV／UAV の枠を返す</summary>
+    void FreeAllSrvIndices();
     void CreatePerViewResource();
     void CreateMaterialResource();
     void CreateIndexResource();
@@ -264,9 +322,13 @@ class ParticleCSGroup
 
     Microsoft::WRL::ComPtr<ID3D12Resource> perViewResource_{};
     PerView *pPerViewData_ = nullptr;
+    // カメラビュー窓用の per-view（使われたら作る）
+    std::array<Microsoft::WRL::ComPtr<ID3D12Resource>, RenderView::kMaxViews> viewPerViewResources_{};
+    std::array<PerView *, RenderView::kMaxViews> pViewPerViewData_{};
 
     Microsoft::WRL::ComPtr<ID3D12Resource> materialResource_ = nullptr;
     ParticleMaterial *pMaterialData_ = nullptr;
+    float emissive_ = 1.0f; ///< 発光の強さ（マテリアル色に掛ける倍率。1で従来どおり）
 
     Microsoft::WRL::ComPtr<ID3D12Resource> vertexResource_ = nullptr;
     D3D12_VERTEX_BUFFER_VIEW vertexBufferView_{};
@@ -375,6 +437,7 @@ class ParticleCSGroup
     float frequency_ = 0.1f;
     bool isRandomColor_ = false;
     bool isInitialized_ = false;
+    bool initPending_ = false; ///< 初期化を積んだフレームの間 true（→ IsInitPending）
 
     Microsoft::WRL::ComPtr<ID3D12Resource> freeListIndexReadbackBuffer_;
     Microsoft::WRL::ComPtr<ID3D12Resource> freeListTrailIndexReadbackBuffer_;

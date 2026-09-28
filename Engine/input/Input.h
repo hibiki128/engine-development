@@ -75,6 +75,7 @@ class Input {
 
     Ray currentRay_;
     SceneViewport currentViewport_;
+    bool keyboardSuspended_ = false;
 
   public:
     // シングルトンインスタンスの取得
@@ -122,6 +123,21 @@ class Input {
     /// 全キーが揃った状態から、いずれかを離した瞬間か（複数キー同時押し）
     /// </summary>
     bool ReleaseMomentKey(std::initializer_list<BYTE> keys) const;
+
+    /// <summary>
+    /// キーボード入力を一時的に止める。
+    /// true のあいだ PushKey などは「どのキーも押されていない」を返す。
+    /// 音楽エディタの鍵盤のように、PCキーボードをゲーム以外の用途へ丸ごと使う画面で立てる。
+    /// （デバッグカメラの WASD などと同時に反応してしまうのを防ぐ）
+    /// </summary>
+    /// <param name="suspended">止めるなら true</param>
+    void SetKeyboardSuspended(bool suspended) { keyboardSuspended_ = suspended; }
+
+    /// <summary>
+    /// キーボード入力が止められているか
+    /// </summary>
+    /// <returns>bool: 止まっていれば true</returns>
+    bool IsKeyboardSuspended() const { return keyboardSuspended_; }
 
     /// <summary>
     /// 現在のジョイスティック状態を取得する

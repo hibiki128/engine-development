@@ -1,11 +1,17 @@
 #include "OffScreen.h"
 #include "DirectXCommon.h"
 #include <Frame.h>
+#include <render/ToneMapSettings.h>
+#include <render/deferred/DeferredRenderer.h>
+#include <shadow/ShadowMap.h>
 #include <format>
 #ifdef USE_IMGUI
 #include "imgui.h"
 #include "utility/debug/imgui/ImGuiNotification.h"
 #include "utility/debug/imgui/DebugUIHelper.h"
+#include <algorithm>
+#include <icon/IconsFontAwesome5.h>
+#include <vector>
 #endif
 
 namespace Hagine {
@@ -23,12 +29,12 @@ void OffScreen::Initialize()
 
 void OffScreen::Draw()
 {
-    renderer_.Draw(effectChain_, Frame::DeltaTime());
+    renderer_.Draw(effectChain_, Frame::UnscaledDeltaTime());
 }
 
 void OffScreen::DrawWithoutCopy()
 {
-    renderer_.DrawWithoutCopy(effectChain_, Frame::DeltaTime());
+    renderer_.DrawWithoutCopy(effectChain_, Frame::UnscaledDeltaTime());
 }
 
 void OffScreen::BeginCompositePass()
@@ -75,6 +81,71 @@ void OffScreen::SetProjection(Matrix4x4 projectionMatrix)
     }
 }
 
+void OffScreen::SetCamera(const Matrix4x4 &viewMatrix,
+                          const Matrix4x4 &projectionMatrix,
+                          const Vector3 &cameraPosition,
+                          const Vector3 &sunDirection)
+{
+    SetProjection(projectionMatrix);
+
+    // ワールド座標まで戻すには、ビューと射影をまとめた行列の逆行列が要る。
+    // SSR は画面へ投影し直すので順行列のほうも要る
+    viewProjection_ = viewMatrix * projectionMatrix;
+    viewProjectionInverse_ = Inverse(viewProjection_);
+    cameraPosition_ = cameraPosition;
+    sunDirection_ = sunDirection;
+
+    const auto &slots = effectChain_.GetSlots();
+    for (int i = 0; i < PostEffectChain::kMaxSlots; ++i)
+    {
+        if (!slots[i].occupied)
+        {
+            continue;
+        }
+        if (auto *p = effectChain_.GetParams<HeightFogParams>(i))
+        {
+            p->SetCamera(viewProjectionInverse_, cameraPosition_);
+            p->SetSunDirection(sunDirection_);
+        }
+        if (auto *p = effectChain_.GetParams<LightShaftParams>(i))
+        {
+            ApplyCameraToLightShaft(p);
+        }
+        if (auto *p = effectChain_.GetParams<SsrParams>(i))
+        {
+            ApplyCameraToSsr(p);
+        }
+        if (auto *p = effectChain_.GetParams<RtReflectionParams>(i))
+        {
+            ApplyCameraToRtReflection(p);
+        }
+    }
+}
+
+void OffScreen::ApplyCameraToSsr(SsrParams *pParams)
+{
+    // SSR は G-Buffer の法線を読むので、ディファードが動いているかも伝える
+    pParams->SetCamera(viewProjection_, viewProjectionInverse_, cameraPosition_);
+    pParams->SetNormalsAvailable(DeferredRenderer::GetInstance()->IsEnabled());
+}
+
+void OffScreen::ApplyCameraToRtReflection(RtReflectionParams *pParams)
+{
+    // 渡すものは SSR と同じ。交点の探し方だけが違う
+    pParams->SetCamera(viewProjection_, viewProjectionInverse_, cameraPosition_);
+    pParams->SetNormalsAvailable(DeferredRenderer::GetInstance()->IsEnabled());
+}
+
+void OffScreen::ApplyCameraToLightShaft(LightShaftParams *pParams)
+{
+    // 光の筋は「その点に光が届いているか」をシャドウマップで見るので、
+    // カメラに加えてライトの行列と有効状態も要る
+    ShadowMap *pShadowMap = ShadowMap::GetInstance();
+    pParams->SetCamera(viewProjectionInverse_, cameraPosition_);
+    pParams->SetLightDirection(sunDirection_);
+    pParams->SetShadow(pShadowMap->GetLightViewProjection(), pShadowMap->IsEnabled());
+}
+
 uint32_t OffScreen::GetFinalResultSrvIndex() const
 {
     return renderer_.GetFinalResultSrvIndex();
@@ -103,6 +174,23 @@ int OffScreen::AddEffect(ShaderMode mode, const std::string &name, int slotIndex
         if (auto *p = effectChain_.GetParams<DepthOfFieldParams>(result))
         {
             p->SetProjectionInverse(projectionInverse_);
+        }
+        if (auto *p = effectChain_.GetParams<HeightFogParams>(result))
+        {
+            p->SetCamera(viewProjectionInverse_, cameraPosition_);
+            p->SetSunDirection(sunDirection_);
+        }
+        if (auto *p = effectChain_.GetParams<LightShaftParams>(result))
+        {
+            ApplyCameraToLightShaft(p);
+        }
+        if (auto *p = effectChain_.GetParams<SsrParams>(result))
+        {
+            ApplyCameraToSsr(p);
+        }
+        if (auto *p = effectChain_.GetParams<RtReflectionParams>(result))
+        {
+            ApplyCameraToRtReflection(p);
         }
     }
     return result;
@@ -150,11 +238,18 @@ void OffScreen::LoadData(const std::string &fileName)
 void OffScreen::Setting()
 {
 #ifdef USE_IMGUI
+    // 露出とトーンマップはエフェクトの並びとは別の「最後に必ず通る処理」なので、
+    // チェーンの一覧より先に出しておく
+    ToneMapSettings::GetInstance()->DrawImGui();
+    ImGui::Separator();
+
     const char *shaderModeItems[] = {
         "なし", "グレイ", "ビネット", "スムース", "ガウス",
         "アウトライン(エッジ検出)", "アウトライン(深度ベース)",
         "ブラー", "シネマティック", "ディゾルブ", "ランダム", "集中線", "ピクセル化", "ブルーム", "レトロ", "衝撃波", "白黒(二値)",
-        "被写界深度(DoF)"};
+        "被写界深度(DoF)",
+        "アンチエイリアス(FXAA)", "カラーグレーディング", "色収差", "フィルムグレイン", "レンズ歪み",
+        "フォグ(距離＋高さ)", "光の筋(レイマーチ)", "画面内反射(SSR)", "RT反射", "打撃インパクト"};
 
     // 各エフェクトが何をするかの一言説明（shaderModeItems と同じ並び＝ShaderMode順）。
     // 「効果の中身が分からない」対策として追加/選択UIに表示する。
@@ -177,214 +272,181 @@ void OffScreen::Setting()
         "衝撃波のように画面を歪ませる",
         "完全な白黒（明度で白か黒に二値化）",
         "ピント面から外れた場所をぼかす（被写界深度）",
+        "輪郭のギザギザを馴染ませる（最後のほうに置く）",
+        "画面全体の色味を作り込む（色温度・暗部/中間/明部）",
+        "画面の端で赤青がずれる、レンズ越しの生々しさ",
+        "フィルムのような細かいざらつきを乗せる",
+        "広角レンズのように画面を曲げる（周辺減光つき）",
+        "遠くを霞ませて奥行きを出す。低地に霧をためることもできる",
+        "物陰から光芒が伸びる（木漏れ日・窓から差す光）。シャドウマップが要る",
+        "床や水面に周囲が映り込む。ディファードが要る（画面外の物は映らない）",
+        "レイトレーシングで映り込ませる。画面外を向いた反射でも空が正しく映る",
+        "当たった瞬間の衝撃波の歪み・集中ブラー・色収差・フラッシュ・白黒の1コマ（演出側から操作する）",
     };
     static_assert(IM_ARRAYSIZE(shaderModeItems) == static_cast<int>(ShaderMode::Count),
                   "shaderModeItems は ShaderMode::Count と同数にすること");
     static_assert(IM_ARRAYSIZE(shaderModeDescs) == static_cast<int>(ShaderMode::Count),
                   "shaderModeDescs は ShaderMode::Count と同数にすること");
 
-    // 削除用の控えめな赤ボタン色をまとめて適用するヘルパー
-    auto pushDangerButton = [] {
-        ImGui::PushStyleColor(ImGuiCol_Button, DebugTheme::kBgRed);
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.80f, 0.46f, 0.46f, 0.40f));
+    // 種類ごとのまとまり（追加メニューの見出しと色に使う）
+    struct EffectCategory
+    {
+        const char *name;
+        ImVec4 color;
+        std::vector<ShaderMode> modes;
+    };
+    static const EffectCategory kCategories[] = {
+        {ICON_FA_PALETTE " 色・トーン", DebugTheme::kAccentYellow,
+         {ShaderMode::Gray, ShaderMode::Cinematic, ShaderMode::Monochrome, ShaderMode::ColorGrading, ShaderMode::Retro}},
+        {ICON_FA_TINT " ぼかし", DebugTheme::kAccentBlue,
+         {ShaderMode::Smooth, ShaderMode::Gauss, ShaderMode::Blur, ShaderMode::DepthOfField}},
+        {ICON_FA_PEN " 輪郭・アンチエイリアス", DebugTheme::kAccentCyan,
+         {ShaderMode::Outline, ShaderMode::Depth, ShaderMode::Fxaa}},
+        {ICON_FA_FILM " 画面の加工", DebugTheme::kAccentPurple,
+         {ShaderMode::Vignette, ShaderMode::Random, ShaderMode::FocusLine, ShaderMode::Pixelate, ShaderMode::FilmGrain, ShaderMode::Dissolve}},
+        {ICON_FA_SUN " 光・レンズ", DebugTheme::kAccentOrange,
+         {ShaderMode::Bloom, ShaderMode::ChromaticAberration, ShaderMode::LensDistortion, ShaderMode::Shockwave, ShaderMode::Impact}},
+        {ICON_FA_CLOUD " 空間・映り込み", DebugTheme::kAccentGreen,
+         {ShaderMode::HeightFog, ShaderMode::LightShaft, ShaderMode::Ssr, ShaderMode::RtReflection}},
+    };
+    auto categoryColor = [&](ShaderMode mode) {
+        for (const EffectCategory &category : kCategories)
+        {
+            if (std::find(category.modes.begin(), category.modes.end(), mode) != category.modes.end())
+                return category.color;
+        }
+        return DebugTheme::kTextDim;
     };
 
-    // ── ステータス ──
-    SectionHeader("[ ポストエフェクト ]", DebugTheme::kAccentBlue);
-    const int freeSlots = effectChain_.GetFreeSlotCount();
-    ImGui::AlignTextToFramePadding();
-    ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kTextDim);
-    ImGui::TextUnformatted("空きスロット");
-    ImGui::PopStyleColor();
-    ImGui::SameLine();
-    StatusBadge(std::format("{} / {}", freeSlots, PostEffectChain::kMaxSlots).c_str(),
-                freeSlots > 0 ? DebugTheme::kAccentGreen : DebugTheme::kAccentOrange);
-
-    ImGui::Spacing();
-
-    // ── クイック切替：チェックでON/OFF（未追加なら自動追加）──
-    ImGui::PushStyleColor(ImGuiCol_Header, DebugTheme::kBgGreen);
-    bool quickOpen = ImGui::CollapsingHeader("クイック切替", ImGuiTreeNodeFlags_DefaultOpen);
-    ImGui::PopStyleColor();
-    if (quickOpen)
-    {
-        const auto &quickSlots = effectChain_.GetSlots();
-        for (int m = 1; m < static_cast<int>(ShaderMode::Count); ++m)
+    const auto &slots = effectChain_.GetSlots();
+    auto findSlot = [&](ShaderMode mode) {
+        for (int i = 0; i < PostEffectChain::kMaxSlots; ++i)
         {
-            ShaderMode mode = static_cast<ShaderMode>(m);
+            if (slots[i].occupied && slots[i].params && slots[i].params->GetMode() == mode)
+                return i;
+        }
+        return -1;
+    };
 
-            // このモードを持つスロットを探す
-            int foundSlot = -1;
-            for (int i = 0; i < PostEffectChain::kMaxSlots; ++i)
+    // ── 見出し: 使っている数・追加・まとめて操作 ──
+    const int freeSlots = effectChain_.GetFreeSlotCount();
+    SectionHeader("[ ポストエフェクト ]", DebugTheme::kAccentBlue);
+    ImGui::BeginDisabled(freeSlots <= 0);
+    if (PrimaryButton(ICON_FA_PLUS " エフェクトを追加"))
+    {
+        ImGui::OpenPopup("##addPostEffect");
+    }
+    ImGui::EndDisabled();
+    ImGui::SameLine();
+    StatusBadge(std::format("{} / {} 使用中", PostEffectChain::kMaxSlots - freeSlots, PostEffectChain::kMaxSlots).c_str(),
+                freeSlots > 0 ? DebugTheme::kAccentGreen : DebugTheme::kAccentOrange);
+    ImGui::SameLine();
+    if (NeutralButton("全部OFF"))
+    {
+        for (int i = 0; i < PostEffectChain::kMaxSlots; ++i)
+        {
+            if (slots[i].occupied)
+                effectChain_.SetEnabled(i, false);
+        }
+        ImGuiNotification::Post("全エフェクトを無効化しました", {0.82f, 0.58f, 0.36f, 1.0f});
+    }
+    ImGui::SameLine();
+    if (DangerButton("全部削除"))
+    {
+        for (int i = PostEffectChain::kMaxSlots - 1; i >= 0; --i)
+        {
+            effectChain_.RemoveEffect(i);
+        }
+        ImGuiNotification::Post("全エフェクトを削除しました", {0.82f, 0.58f, 0.36f, 1.0f});
+    }
+
+    // ── 追加メニュー（種類ごと・検索付き。もう入っている物は印と「外す」）──
+    if (ImGui::BeginPopup("##addPostEffect"))
+    {
+        static std::string search;
+        if (ImGui::IsWindowAppearing())
+        {
+            search.clear();
+            ImGui::SetKeyboardFocusHere();
+        }
+        ImGui::SetNextItemWidth(300.0f);
+        ImGui::InputTextWithHint("##fxSearch", ICON_FA_SEARCH " 名前や説明で探す（例: ぼかし・光）", &search);
+        for (const EffectCategory &category : kCategories)
+        {
+            bool headerShown = false;
+            for (ShaderMode mode : category.modes)
             {
-                if (quickSlots[i].occupied && quickSlots[i].params &&
-                    quickSlots[i].params->GetMode() == mode)
+                const int m = static_cast<int>(mode);
+                if (!search.empty() && std::string(shaderModeItems[m]).find(search) == std::string::npos &&
+                    std::string(shaderModeDescs[m]).find(search) == std::string::npos)
                 {
-                    foundSlot = i;
-                    break;
+                    continue;
                 }
-            }
-
-            bool active = (foundSlot >= 0) && quickSlots[foundSlot].enabled;
-            ImGui::PushID(1000 + m);
-            if (ImGui::Checkbox(shaderModeItems[m], &active))
-            {
-                if (active)
+                if (!headerShown)
                 {
-                    if (foundSlot < 0)
+                    ImGui::PushStyleColor(ImGuiCol_Text, category.color);
+                    ImGui::SeparatorText(category.name);
+                    ImGui::PopStyleColor();
+                    headerShown = true;
+                }
+                const int existing = findSlot(mode);
+                if (ImGui::MenuItem(shaderModeItems[m], existing >= 0 ? "使用中" : nullptr, existing >= 0))
+                {
+                    if (existing < 0)
                     {
-                        std::string defaultName = std::string("quick_") + shaderModeItems[m];
-                        AddEffect(mode, defaultName, -1);
+                        if (AddEffect(mode, shaderModeItems[m], -1) == -1)
+                            ImGuiNotification::Post("追加できませんでした（スロットが満杯）", {0.85f, 0.42f, 0.42f, 1.0f});
+                        else
+                            ImGuiNotification::Post(std::format("エフェクトを追加しました: {}", shaderModeItems[m]), {0.45f, 0.68f, 0.52f, 1.0f});
                     }
                     else
                     {
-                        effectChain_.SetEnabled(foundSlot, true);
+                        effectChain_.SetEnabled(existing, true);
                     }
                 }
-                else
-                {
-                    if (foundSlot >= 0)
-                    {
-                        effectChain_.SetEnabled(foundSlot, false);
-                    }
-                }
+                ImGui::SetItemTooltip("%s", shaderModeDescs[m]);
             }
-
-            // 有効時はパラメータも展開
-            if (active && foundSlot >= 0)
-            {
-                ImGui::SameLine();
-                pushDangerButton();
-                bool del = ImGui::SmallButton("削除");
-                ImGui::PopStyleColor(2);
-                if (del)
-                {
-                    effectChain_.RemoveEffect(foundSlot);
-                    ImGuiNotification::Post(std::format("エフェクトを削除しました: {}", shaderModeItems[m]), {0.82f, 0.58f, 0.36f, 1.0f});
-                }
-                else
-                {
-                    ImGui::Indent();
-                    quickSlots[foundSlot].params->DrawUI();
-                    ImGui::Unindent();
-                }
-            }
-            ImGui::PopID();
         }
-
-        ImGui::Spacing();
-        if (ImGui::Button("全部OFF"))
-        {
-            const auto &s = effectChain_.GetSlots();
-            for (int i = 0; i < PostEffectChain::kMaxSlots; ++i)
-            {
-                if (s[i].occupied)
-                    effectChain_.SetEnabled(i, false);
-            }
-            ImGuiNotification::Post("全エフェクトを無効化しました", {0.82f, 0.58f, 0.36f, 1.0f});
-        }
-        ImGui::SameLine();
-        pushDangerButton();
-        bool clearAll = ImGui::Button("全部削除");
-        ImGui::PopStyleColor(2);
-        if (clearAll)
-        {
-            for (int i = PostEffectChain::kMaxSlots - 1; i >= 0; --i)
-            {
-                effectChain_.RemoveEffect(i);
-            }
-            ImGuiNotification::Post("全エフェクトを削除しました", {0.82f, 0.58f, 0.36f, 1.0f});
-        }
+        ImGui::EndPopup();
     }
 
     ImGui::Spacing();
 
-    // ── エフェクト追加 ──
-    SectionHeader("[ エフェクト追加 ]", DebugTheme::kAccentGreen);
-
-    static int selectedMode = 0;
-    static char effectName[64] = "";
-    static int targetSlot = -1; // -1で自動
-
-    ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kTextDim);
-    ImGui::TextUnformatted("種類 / 名前 / スロット");
-    ImGui::PopStyleColor();
-    ImGui::SetNextItemWidth(-1);
-    ImGui::Combo("##addmode", &selectedMode, shaderModeItems, IM_ARRAYSIZE(shaderModeItems));
-    // 選択中のエフェクトの説明を出す（何を追加しようとしているか分かるように）
-    ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kTextDim);
-    ImGui::TextWrapped("%s", shaderModeDescs[selectedMode]);
-    ImGui::PopStyleColor();
-    ImGui::SetNextItemWidth(-1);
-    ImGui::InputTextWithHint("##addname", "エフェクト名（省略可）", effectName, sizeof(effectName));
-    ImGui::SetNextItemWidth(-1);
-    ImGui::SliderInt("##addslot", &targetSlot, -1, PostEffectChain::kMaxSlots - 1, "スロット: %d");
-    ImGui::SetItemTooltip("-1 で空きスロットへ自動配置");
-
-    ImGui::PushStyleColor(ImGuiCol_Button, DebugTheme::kBgGreen);
-    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.45f, 0.68f, 0.52f, 0.40f));
-    bool addClicked = ImGui::Button("エフェクトを追加", ImVec2(-1, 0));
-    ImGui::PopStyleColor(2);
-    if (addClicked)
-    {
-        int result = AddEffect(static_cast<ShaderMode>(selectedMode), effectName, targetSlot);
-        if (result == -1)
-        {
-            ImGuiNotification::Post("追加に失敗しました（スロット満杯か指定スロット使用中）", {0.85f, 0.42f, 0.42f, 1.0f});
-        }
-        else
-        {
-            ImGuiNotification::Post(std::format("エフェクトを追加しました: {}", shaderModeItems[selectedMode]), {0.45f, 0.68f, 0.52f, 1.0f});
-        }
-    }
-
-    ImGui::Spacing();
-
-    // ── スロット一覧（行をドラッグ＆ドロップで並べ替え）──
-    SectionHeader("[ スロット一覧 ]", DebugTheme::kAccentOrange);
-    ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kTextDim);
-    ImGui::TextUnformatted("行をドラッグして別の行に重ねると順序を入れ替えます");
-    ImGui::PopStyleColor();
-
-    const auto &slots = effectChain_.GetSlots();
+    // ── 使っているエフェクト（上から順にかかる。行をドラッグで並べ替え）──
     int dragFrom = -1; // ドラッグ元スロット
     int dragTo = -1;   // ドロップ先スロット（ループ後にまとめて入れ替える）
+    int pendingRemove = -1;
+    int shown = 0;
     for (int i = 0; i < PostEffectChain::kMaxSlots; ++i)
     {
-        ImGui::PushID(i);
-
-        if (!slots[i].occupied)
-        {
-            // 空きスロットは控えめに表示
-            ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kTextDim);
-            ImGui::Text("[%d]  空き", i);
-            ImGui::PopStyleColor();
-            ImGui::PopID();
+        if (!slots[i].occupied || !slots[i].params)
             continue;
-        }
-
+        ++shown;
         const auto &slot = slots[i];
-        ShaderMode mode = slot.params->GetMode();
+        const ShaderMode mode = slot.params->GetMode();
+        const ImVec4 color = categoryColor(mode);
+        ImGui::PushID(i);
 
         // 有効トグル
         bool enabled = slot.enabled;
-        if (ThemedToggle("##en", &enabled, DebugTheme::kAccentPurple))
+        if (ThemedToggle("##en", &enabled, color))
             effectChain_.SetEnabled(i, enabled);
         ImGui::SetItemTooltip("このエフェクトの有効 / 無効");
         ImGui::SameLine();
 
-        // ドラッグ可能な行ラベル（末尾の操作ボタンぶんの幅を空ける）
-        std::string rowLabel = std::format("[{}] {}  ({})", i, slot.name,
-                                           shaderModeItems[static_cast<int>(mode)]);
-        float reserve = 150.0f;
-        float selW = ImGui::GetContentRegionAvail().x - reserve;
-        if (selW < 80.0f)
-            selW = 80.0f;
-        ImGui::Selectable(rowLabel.c_str(), false, ImGuiSelectableFlags_AllowOverlap, ImVec2(selW, 0.0f));
+        // 見出し（開くとパラメータ）。ドラッグで並べ替え
+        ImVec4 headerColor = color;
+        headerColor.w = slot.enabled ? 0.28f : 0.10f;
+        ImGui::PushStyleColor(ImGuiCol_Header, headerColor);
+        ImGui::PushStyleColor(ImGuiCol_Text, slot.enabled ? ImGui::GetStyleColorVec4(ImGuiCol_Text) : ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+        const std::string label = std::format("{}. {}###fxslot{}", shown, shaderModeItems[static_cast<int>(mode)], i);
+        const bool open = ImGui::CollapsingHeader(label.c_str(), ImGuiTreeNodeFlags_AllowOverlap);
+        ImGui::PopStyleColor(2);
+        ImGui::SetItemTooltip("%s\nドラッグで順番を入れ替え（上から順にかかります）", shaderModeDescs[static_cast<int>(mode)]);
         if (ImGui::BeginDragDropSource(ImGuiDragDropFlags_None))
         {
             ImGui::SetDragDropPayload("FX_SLOT", &i, sizeof(int));
-            ImGui::Text("移動: %s", slot.name.c_str());
+            ImGui::Text("移動: %s", shaderModeItems[static_cast<int>(mode)]);
             ImGui::EndDragDropSource();
         }
         if (ImGui::BeginDragDropTarget())
@@ -396,58 +458,56 @@ void OffScreen::Setting()
             }
             ImGui::EndDragDropTarget();
         }
-        ImGui::SetItemTooltip("ドラッグで並べ替え");
 
-        // 並べ替え / 削除
-        ImGui::SameLine();
-        if (ImGui::SmallButton("上") && i > 0)
-            effectChain_.MoveUp(i);
-        ImGui::SetItemTooltip("ひとつ上へ");
-        ImGui::SameLine();
-        if (ImGui::SmallButton("下") && i < PostEffectChain::kMaxSlots - 1)
-            effectChain_.MoveDown(i);
-        ImGui::SetItemTooltip("ひとつ下へ");
-        ImGui::SameLine();
-        pushDangerButton();
-        bool delSlot = ImGui::SmallButton("削除");
-        ImGui::PopStyleColor(2);
-        if (delSlot)
+        // 右端: 上へ / 下へ / 外す
+        const float buttonSize = ImGui::GetFrameHeight();
+        ImGui::SameLine(ImGui::GetContentRegionMax().x - buttonSize * 3.0f - ImGui::GetStyle().ItemSpacing.x * 2.0f);
         {
-            effectChain_.RemoveEffect(i);
-            ImGuiNotification::Post(std::format("スロット[{}]を削除しました", i), {0.82f, 0.58f, 0.36f, 1.0f});
-            ImGui::PopID();
-            continue;
+            ScopedButtonColors ghost(DebugTheme::kButtonGhost, DebugTheme::kButtonGhostHover);
+            if (ImGui::Button(ICON_FA_ARROW_UP, ImVec2(buttonSize, buttonSize)) && i > 0)
+                effectChain_.MoveUp(i);
+            ImGui::SetItemTooltip("ひとつ前にかける");
+            ImGui::SameLine();
+            if (ImGui::Button(ICON_FA_ARROW_DOWN, ImVec2(buttonSize, buttonSize)) && i < PostEffectChain::kMaxSlots - 1)
+                effectChain_.MoveDown(i);
+            ImGui::SetItemTooltip("ひとつ後にかける");
+        }
+        ImGui::SameLine();
+        {
+            ScopedButtonColors danger(DebugTheme::kButtonGhost, DebugTheme::kButtonDangerHover);
+            if (ImGui::Button(ICON_FA_TIMES, ImVec2(buttonSize, buttonSize)))
+                pendingRemove = i;
+            ImGui::SetItemTooltip("外す");
         }
 
-        // 何のエフェクトかを毎行の説明で示す（有効/無効に関わらず一目で分かるように）
-        ImGui::Indent();
-        ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kTextDim);
-        ImGui::TextWrapped("%s", shaderModeDescs[static_cast<int>(mode)]);
-        ImGui::PopStyleColor();
-
-        // 有効時のみパラメータUI表示
-        if (slot.enabled)
+        if (open)
         {
-            ImGui::Spacing();
-            // 各エフェクトのスライダー幅を揃えて雑然感を減らす
+            ImGui::Indent();
+            DimText(shaderModeDescs[static_cast<int>(mode)]);
+            ImGui::BeginDisabled(!slot.enabled);
             ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x * 0.6f);
             slot.params->DrawUI();
             ImGui::PopItemWidth();
+            ImGui::EndDisabled();
+            ImGui::Unindent();
+            ImGui::Spacing();
         }
-        ImGui::Unindent();
-
         ImGui::PopID();
-        ImGui::Spacing();
-        ImGui::Separator();
+    }
+    if (shown == 0)
+    {
+        DimText("エフェクトはありません。「＋ エフェクトを追加」から足してください");
     }
     // ドロップ確定後にまとめて入れ替える（ループ中のスロット変更を避ける）
     if (dragFrom >= 0 && dragTo >= 0 && dragFrom != dragTo)
     {
-        if (effectChain_.SwapSlots(dragFrom, dragTo))
-        {
-            ImGuiNotification::Post(std::format("スロット {} と {} を入れ替えました", dragFrom, dragTo),
-                                    {0.42f, 0.66f, 0.68f, 1.0f});
-        }
+        effectChain_.SwapSlots(dragFrom, dragTo);
+    }
+    if (pendingRemove >= 0)
+    {
+        const std::string removedName = shaderModeItems[static_cast<int>(slots[pendingRemove].params->GetMode())];
+        effectChain_.RemoveEffect(pendingRemove);
+        ImGuiNotification::Post("エフェクトを外しました: " + removedName, {0.82f, 0.58f, 0.36f, 1.0f});
     }
 
     ImGui::Spacing();
@@ -460,23 +520,17 @@ void OffScreen::Setting()
     ImGui::Spacing();
 
     float bw = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
-    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.20f, 0.42f, 0.58f, 0.85f));
-    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.26f, 0.52f, 0.70f, 0.95f));
-    if (ImGui::Button("セーブ", ImVec2(bw, 0)))
+    if (PrimaryButton(ICON_FA_SAVE " セーブ", ImVec2(bw, 0)))
     {
         dataManager_.SaveData(std::string(saveFileName));
         ImGuiNotification::Post(std::format("オフスクリーン設定を保存しました: {}", saveFileName), {0.45f, 0.68f, 0.52f, 1.0f});
     }
-    ImGui::PopStyleColor(2);
     ImGui::SameLine();
-    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.20f, 0.48f, 0.40f, 0.85f));
-    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.26f, 0.60f, 0.50f, 0.95f));
-    if (ImGui::Button("ロード", ImVec2(bw, 0)))
+    if (NeutralButton(ICON_FA_UPLOAD " ロード", ImVec2(bw, 0)))
     {
         dataManager_.LoadData(std::string(saveFileName));
         ImGuiNotification::Post(std::format("オフスクリーン設定を読み込みました: {}", saveFileName), {0.42f, 0.66f, 0.68f, 1.0f});
     }
-    ImGui::PopStyleColor(2);
 #endif
 }
 } // namespace Hagine

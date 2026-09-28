@@ -3,6 +3,7 @@
 #include "line/LineRenderer.h"
 #include "ParticleCSEmitter.h"
 #include "ParticleCSGroupManager.h"
+#include "particle/ParticleEditorUI.h"
 #include "map"
 #include <unordered_map>
 namespace Hagine {
@@ -33,6 +34,7 @@ class ParticleCSEditor
     std::unordered_map<std::string, std::unique_ptr<ParticleCSEmitter>> emitters_;
     int selectedEmitterIndex_ = 0;
     std::string selectedEmitterName_;
+    std::string emitterSearch_; // エミッター一覧の検索語
 
     ParticleCSGroupManager *pParticleGroupManager_ = nullptr;
 
@@ -59,14 +61,26 @@ class ParticleCSEditor
 
     bool ColoredCollapsingHeader(const char *label, int colorIndex);
 
-    void ShowFileSelector();
-
     // エミッター・グループの一覧表示と削除UIを表示
     void ShowDeleteSection();
 
-    std::vector<std::string> GetJsonFiles();
     std::string localEmitterModelPath_;
     PrimitiveType localEmitterType_ = PrimitiveType::None;
+
+    // ===== 作成・削除タブ（ParticleCSEditorCreate.cpp）=====
+    std::string quickName_;       // 作るエミッターの名前（空ならプリセット名から自動）
+    std::string loadSearch_;      // 保存済み一覧の検索語
+    std::string duplicateSource_; // 複製の元にするエミッター
+    std::string groupSearch_;     // グループ一覧の検索語
+    std::string selectedGroupName_; // 削除タブで選んでいるグループ
+    ParticleEditorUI::DeleteState deleteState_; // 削除タブのエミッター一覧の状態
+
+    // プリセット・複製・保存済みの読み込みを並べた「作成」タブの上半分
+    void DrawQuickCreate();
+    // プリセットからエミッターを作る（作ったら選んでプレビューに出す）
+    bool CreateEmitterFromPreset(const std::string &name, int presetIndex);
+    // 今の設定を写して別名のエミッターを作る（新しい名前で保存ファイルもできる）
+    bool DuplicateEmitter(const std::string &source, const std::string &name);
 
   public:
     // インスタンスの取得
@@ -97,9 +111,9 @@ class ParticleCSEditor
     // Graphics フェーズのみ（Compute 実行済み後に呼ぶ）
     void DrawAllGraphics(const ViewProjection &vp_);
     // すべてのエミッターのデバッグ情報を表示
-    void DebugAll();
+    void DebugAll(bool ownTabBar = true);
     // ImGuiエディターの表示処理
-    void ShowImGuiEditor();
+    void ShowImGuiEditor(bool ownTabBar = true);
     // データのロード
     void Load();
     // エミッターを名前指定で削除
@@ -173,6 +187,8 @@ class ParticleCSEditor
     float previewCamYaw_ = 0.6f;
     float previewCamPitch_ = 0.45f;
     float previewCamDistance_ = 16.0f;
+    float previewPanelWidth_ = 420.0f; // 右のエディタパネルの幅（仕切りのドラッグで変わる）
+    bool previewShowingCpu_ = false;   // 右パネルで CPU のタブを開いているか（操作バーの対象を切り替える）
     Vector3 previewCamTarget_ = {0.0f, 0.0f, 0.0f};
 
     // グリッド頂点バッファを最大容量で確保し永続マップする（初回のみ）。

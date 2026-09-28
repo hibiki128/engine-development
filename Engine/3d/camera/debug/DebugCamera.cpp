@@ -2,6 +2,7 @@
 #include <DirectXCommon.h>
 #include <Input.h>
 #include <camera/CameraManager.h>
+#include <render/RenderCulling.h>
 #include <Mymath.h>
 #ifdef USE_IMGUI
 #include <imgui.h>
@@ -67,6 +68,15 @@ void DebugCamera::Update()
     // アクティブ時のみデバッグ操作を適用
     if (isActive_)
     {
+        // ブックマークなどから置かれた視点
+        if (hasPendingView_)
+        {
+            translation_ = pendingViewPosition_;
+            eulerRotation_ = pendingViewRotation_;
+            quaternionRotation_ = Quaternion::FromEulerAngles(eulerRotation_);
+            hasPendingView_ = false;
+        }
+
         // カメラ操作がロックされていない場合のみ移動計算
         if (!lockCamera_)
         {
@@ -87,6 +97,36 @@ void DebugCamera::Update()
             Vector3 viewDirection = TransformNormal({0.0f, 0.0f, 1.0f}, matRot).Normalize();
             translation_ = focusTarget - viewDirection * (focusRadius * 3.0f + 2.0f);
         }
+
+        // シーンビューの軸表示から「正面・上・横から見る」を選ばれたら、
+        // 注視点（選択物の重心。無ければ今見ている前方の点）を中心に回り込む
+        float alignPitch = 0.0f;
+        float alignYaw = 0.0f;
+        bool hasPivot = false;
+        Vector3 pivot{};
+        if (ImGuizmoManager::GetInstance()->ConsumeViewAlignRequest(alignPitch, alignYaw, hasPivot, pivot))
+        {
+            Matrix4x4 currentRot = isUseQuaternion_
+                                       ? QuaternionToMatrix4x4(quaternionRotation_)
+                                       : MakeRotateXMatrix(eulerRotation_.x) * MakeRotateYMatrix(eulerRotation_.y);
+            const Vector3 currentDirection = TransformNormal({0.0f, 0.0f, 1.0f}, currentRot).Normalize();
+            constexpr float kDefaultPivotDistance = 20.0f;
+            float distance = hasPivot ? (pivot - translation_).Length() : kDefaultPivotDistance;
+            distance = (std::max)(distance, 2.0f);
+            if (!hasPivot)
+            {
+                pivot = translation_ + currentDirection * distance;
+            }
+
+            // 真上・真下はマウス操作の上下制限と同じだけ手前で止める（ジンバルの特異点を避ける）
+            const float pitchLimit = std::numbers::pi_v<float> / 2.0f - 0.01f;
+            eulerRotation_ = {std::clamp(alignPitch, -pitchLimit, pitchLimit), alignYaw, 0.0f};
+            quaternionRotation_ = Quaternion::FromEulerAngles(eulerRotation_);
+
+            const Matrix4x4 newRot = MakeRotateXMatrix(eulerRotation_.x) * MakeRotateYMatrix(eulerRotation_.y);
+            const Vector3 newDirection = TransformNormal({0.0f, 0.0f, 1.0f}, newRot).Normalize();
+            translation_ = pivot - newDirection * distance;
+        }
 #endif // USE_IMGUI
 
         // 操作結果をカメラへ反映する（行列の生成はカメラ側が行う）
@@ -100,6 +140,15 @@ void DebugCamera::Update()
             pCamera_->SetRotation(eulerRotation_);
         }
     }
+}
+
+void DebugCamera::SetView(const Vector3 &position, const Vector3 &rotation)
+{
+    // 有効化と同じフレームに呼ばれると、有効化時の「直前のカメラの構図を写す」で上書きされる。
+    // 実際に置くのは Update の中（有効化の処理の後）にする
+    pendingViewPosition_ = position;
+    pendingViewRotation_ = rotation;
+    hasPendingView_ = true;
 }
 
 void DebugCamera::CameraMove(Vector3 &cameraRotate, Vector3 &cameraTranslate, Vector2 &clickPosition)
@@ -229,6 +278,15 @@ void DebugCamera::DrawImGui()
         ImGui::SameLine(0, 8);
         StatusBadge(isActive_ ? "使用中" : "未使用",
                     isActive_ ? DebugTheme::kAccentGreen : DebugTheme::kTextDim);
+
+        // 視錐台カリングの確認（メインカメラの視界で判定し、外から見る）
+        bool inspect = RenderCulling::IsInspectWithMainCamera();
+        if (ImGui::Checkbox("カリングをメインカメラで判定##dbcCull", &inspect))
+        {
+            RenderCulling::SetInspectWithMainCamera(inspect);
+        }
+        ImGui::SetItemTooltip("デバッグカメラ中も、描く/省くの判定はデバッグカメラを使う前のカメラで行います。\n"
+                              "黄色い線がメインカメラの視界、赤い箱が省かれた物です（統計窓の「錐台カリング」で詳しく設定）");
     }
 
     if (!isActive_)

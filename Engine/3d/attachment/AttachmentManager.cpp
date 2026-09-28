@@ -483,10 +483,7 @@ void AttachmentManager::DrawImGui()
     ImGui::SetItemTooltip("シーン上で子を動かしてもここの値は更新されます");
 
     ImGui::Spacing();
-    ImGui::PushStyleColor(ImGuiCol_Button, DebugTheme::kBgRed);
-    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.80f, 0.46f, 0.46f, 0.40f));
-    const bool detach = ImGui::Button("親子付けを解除", ImVec2(-1, 0));
-    ImGui::PopStyleColor(2);
+    const bool detach = DangerButton("親子付けを解除", ImVec2(-1, 0));
     if (detach)
     {
         Detach(uiSelectedChild_);

@@ -1,5 +1,6 @@
 #include "SrvManager.h"
 #include "DirectXCommon.h"
+#include <algorithm>
 #include <cstdlib>
 
 namespace Hagine {
@@ -112,6 +113,44 @@ void SrvManager::CreateSRVforDepth(uint32_t srvIndex, ID3D12Resource *pResource)
     pDxCommon_->GetDevice()->CreateShaderResourceView(pResource, &depthTextureSrvDesc, GetCPUDescriptorHandle(srvIndex));
 }
 
+void SrvManager::CreateSRVforShadowDepth(uint32_t srvIndex, ID3D12Resource *pResource)
+{
+    D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc{};
+    // シャドウマップは D32_FLOAT なので、読むときは R32_FLOAT
+    srvDesc.Format = DXGI_FORMAT_R32_FLOAT;
+    srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+    srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+    srvDesc.Texture2D.MipLevels = 1;
+    srvDesc.Texture2D.MostDetailedMip = 0;
+
+    pDxCommon_->GetDevice()->CreateShaderResourceView(pResource, &srvDesc, GetCPUDescriptorHandle(srvIndex));
+}
+
+void SrvManager::CreateSRVforTextureCube(uint32_t srvIndex, ID3D12Resource *pResource,
+                                         DXGI_FORMAT format, UINT mipLevels)
+{
+    D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc{};
+    srvDesc.Format = format;
+    srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+    srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURECUBE;
+    srvDesc.TextureCube.MostDetailedMip = 0;
+    srvDesc.TextureCube.MipLevels = (std::max)(mipLevels, 1u);
+    srvDesc.TextureCube.ResourceMinLODClamp = 0.0f;
+
+    pDxCommon_->GetDevice()->CreateShaderResourceView(pResource, &srvDesc, GetCPUDescriptorHandle(srvIndex));
+}
+
+void SrvManager::CreateSRVforTlas(uint32_t srvIndex, D3D12_GPU_VIRTUAL_ADDRESS address)
+{
+    D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc{};
+    srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+    srvDesc.ViewDimension = D3D12_SRV_DIMENSION_RAYTRACING_ACCELERATION_STRUCTURE;
+    srvDesc.RaytracingAccelerationStructure.Location = address;
+
+    // 加速構造だけは「リソースを渡さない」のが決まり。アドレスがすべてを指している
+    pDxCommon_->GetDevice()->CreateShaderResourceView(nullptr, &srvDesc, GetCPUDescriptorHandle(srvIndex));
+}
+
 void SrvManager::CreateUAVStructuredBuffer(uint32_t srvIndex, ID3D12Resource *pResource, UINT numElements, UINT structureByteStride)
 {
     D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc{};
@@ -159,11 +198,36 @@ uint32_t SrvManager::Allocate()
 
 void SrvManager::Free(uint32_t srvIndex)
 {
-    // ディスクリプタをクリアしてから解放
-    ClearDescriptor(srvIndex);
+    // ディスクリプタをクリアしてから解放。
+    // **潰すのは予約番号ではなく実際に書き込んだスロット（srvIndex + 1）のほう**。
+    // +1規約では予約番号 srvIndex のスロットは「隣の予約が使っている実スロット」なので、
+    // そこをクリアすると生きているリソースのSRVを巻き込んでnull化してしまう
+    if (srvIndex + 1 < kMaxSRVCount)
+    {
+        ClearDescriptor(srvIndex + 1);
+    }
 
     // 解放するインデックスを空きリストに追加
     freeIndices_.push(srvIndex);
+}
+
+void SrvManager::FreeDeferred(uint32_t srvIndex)
+{
+    pendingFrees_.push_back({srvIndex, kFreeDelayFrames});
+}
+
+void SrvManager::Update()
+{
+    for (auto it = pendingFrees_.begin(); it != pendingFrees_.end();)
+    {
+        if (--it->framesLeft > 0)
+        {
+            ++it;
+            continue;
+        }
+        Free(it->srvIndex);
+        it = pendingFrees_.erase(it);
+    }
 }
 
 // SRVの最大数チェック

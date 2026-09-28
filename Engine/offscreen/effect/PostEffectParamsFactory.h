@@ -63,11 +63,41 @@ class PostEffectParamsFactory
         case ShaderMode::Shockwave:
             params = std::make_unique<ShockwaveParams>();
             break;
+        case ShaderMode::Fxaa:
+            params = std::make_unique<FxaaParams>();
+            break;
+        case ShaderMode::ColorGrading:
+            params = std::make_unique<ColorGradingParams>();
+            break;
+        case ShaderMode::ChromaticAberration:
+            params = std::make_unique<ChromaticAberrationParams>();
+            break;
+        case ShaderMode::FilmGrain:
+            params = std::make_unique<FilmGrainParams>();
+            break;
+        case ShaderMode::LensDistortion:
+            params = std::make_unique<LensDistortionParams>();
+            break;
         case ShaderMode::Monochrome:
             params = std::make_unique<MonochromeParams>();
             break;
         case ShaderMode::DepthOfField:
             params = std::make_unique<DepthOfFieldParams>();
+            break;
+        case ShaderMode::HeightFog:
+            params = std::make_unique<HeightFogParams>();
+            break;
+        case ShaderMode::LightShaft:
+            params = std::make_unique<LightShaftParams>();
+            break;
+        case ShaderMode::RtReflection:
+            params = std::make_unique<RtReflectionParams>();
+            break;
+        case ShaderMode::Ssr:
+            params = std::make_unique<SsrParams>();
+            break;
+        case ShaderMode::Impact:
+            params = std::make_unique<ImpactParams>();
             break;
         default:
             assert(false && "未対応のShaderModeです。PostEffectParamsFactory::Createにcaseを追加してください。");

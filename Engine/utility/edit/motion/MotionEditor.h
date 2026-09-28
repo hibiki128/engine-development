@@ -297,7 +297,30 @@ class MotionEditor
     /// private method
     /// ===================================================
 
+    /// <summary>
+    /// 0〜1 の進み具合の姿勢を対象へ当てる（再生とつまみのプレビューで共通）
+    /// </summary>
+    void ApplyPose(Motion &motion, float t);
+
+    /// <summary>
+    /// 今の姿勢を補間の基準にし、回転・大きさの両端を決める（再生の開始時）
+    /// </summary>
+    void PrepareBase(Motion &motion);
+
 #ifdef USE_IMGUI
+    /// <summary>時間の帯（再生位置のつまみ・当たり判定の区間）</summary>
+    void DrawTimelineStrip(Motion &motion);
+
+    /// <summary>イージングの選択と進み具合のグラフ</summary>
+    void DrawEasingPreview(Motion &motion);
+
+    /// <summary>基準の姿勢から、指定の時刻の姿勢を作って当てる（止まっているときのプレビュー）</summary>
+    void PreviewAt(Motion &motion, float time);
+
+    /// <summary>Undo 用の状態（登録済みモーションの編集できる値）</summary>
+    nlohmann::json CaptureUndoState() const;
+    void RestoreUndoState(const nlohmann::json &state);
+
     /// <summary>
     /// 制御点と Catmull-Rom 軌跡を 3D プロット（ImPlot3D）で表示する。
     /// 数値の並びだけでは軌跡の形が読めないため、窓の中で回して確かめられるようにする。
@@ -358,6 +381,8 @@ class MotionEditor
     std::string selectedName_;      // 選択中モーション名
     std::string jsonName_;          // JSONファイル名
     int selectedControlPoint_ = -1; // 選択中のコントロールポイント番号
+    int lastDrawFrame_ = -1;        // 同じフレームに2回描かないための印
+    int stripDrag_ = 0;             // 時間の帯でつまんでいる物（1=当たり開始 2=当たり終了 3=再生位置）
 };
 
 } // namespace Hagine

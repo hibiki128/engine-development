@@ -29,6 +29,15 @@ class PostEffectRenderer
     uint32_t GetFinalResultSrvIndex() const { return renderBuffer_.GetFinalResultSrvIndex(); }
     void CopyFinalResultToBackBuffer();
 
+    /// <summary>
+    /// このステージでトーンマップを掛けるかどうかを設定する。
+    /// 画面に出る最後のステージだけ true にすること。
+    /// 中間ステージの結果は次のステージの背景として重ねられるので、
+    /// そこで掛けてしまうと背景にだけ二重に掛かって暗く沈む
+    /// </summary>
+    /// <param name="apply">掛けるなら true</param>
+    void SetApplyToneMap(bool apply) { applyToneMap_ = apply; }
+
   private:
     /// @brief エフェクトなしで最終結果テクスチャに直接コピー
     void DrawToFinalResult();
@@ -36,9 +45,13 @@ class PostEffectRenderer
     /// @brief 有効なエフェクトをピンポンバッファ上で順に適用し、最後に最終結果へ書き戻す
     void ApplyEffectChain(PostEffectChain &effectChain, const std::vector<int> &enabledIndices);
 
-    /// @brief チェーンの出口。ピンポン(リニアFP16) → 最終結果(sRGB) へ写す
+    /// @brief チェーンの出口。ピンポン(HDR) → 最終結果へトーンマップして写す
     /// @param srcPingPong 最後に書き込んだピンポンバッファのインデックス
     void ResolveChainToFinalResult(int srcPingPong);
+
+    /// @brief 指定テクスチャを全画面へ写す。最後のステージならトーンマップを通す
+    /// @param srcSrv 写し元のSRV
+    void DrawToneMapped(D3D12_GPU_DESCRIPTOR_HANDLE srcSrv);
 
     /// @brief コンピュートシェーダー版エフェクトを実行する
     /// @return 実行できたら true。CS未対応・生成失敗なら false（呼び出し側がPS版へフォールバック）
@@ -86,5 +99,8 @@ class PostEffectRenderer
     uint32_t computeSrvTableBaseIndex_ = 0;
     uint32_t computeSrvTableCursor_ = 0;
     bool computeSrvTableReady_ = false;
+
+    // 画面に出る最後のステージだけ true。DrawSystem が毎フレーム設定する
+    bool applyToneMap_ = true;
 };
 } // namespace Hagine

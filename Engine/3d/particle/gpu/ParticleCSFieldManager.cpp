@@ -2,13 +2,16 @@
 #include "ParticleCSFieldManager.h"
 #include "utility/debug/imgui/ImGuiNotification.h"
 #include <Frame.h>
+#include <MyMath.h>
 #include <algorithm>
 #include <cassert>
 #include <cmath>
+#include <icon/IconsFontAwesome5.h>
+#include <line/LineRenderer.h>
+#include <numbers>
 
 #ifdef USE_IMGUI
-#include <imgui.h>
-#include "utility/debug/imgui/DebugUIHelper.h"
+#include "../utility/debug/imgui/ImGuizmoManager.h"
 #endif
 
 #pragma pack(push, 1)
@@ -40,9 +43,12 @@ struct GPU_FieldSettingsOverride
 static_assert(sizeof(GPU_FieldSettingsOverride) == 112,
               "GPU_FieldSettingsOverride のサイズが変化。HLSL ParticleFieldSettingsOverrideData と一致させること");
 
-static constexpr size_t kGPUOverrideStride = sizeof(GPU_FieldSettingsOverride);
+namespace {
+constexpr size_t kGPUOverrideStride = sizeof(GPU_FieldSettingsOverride);
+// 保存形式の版。1 = 旧形式（fieldType + 機能ごとの enable 群）/ 2 = 形 + 効果
+constexpr int kFieldFormatVersion = 2;
 
-static void PackOverrideToGPU(const ParticleFieldSettingsOverride &src, GPU_FieldSettingsOverride &dst)
+void PackOverrideToGPU(const ParticleFieldSettingsOverride &src, GPU_FieldSettingsOverride &dst)
 {
     dst.overrideMask = src.overrideMask;
     dst.lifeTimeMin = src.lifeTimeMin;
@@ -74,8 +80,70 @@ static void PackOverrideToGPU(const ParticleFieldSettingsOverride &src, GPU_Fiel
     dst.pad4 = 0.0f;
 }
 
+Vector3 SafeNormalize(const Vector3 &v, const Vector3 &fallback)
+{
+    const float length = v.Length();
+    return (length > 1e-5f) ? v * (1.0f / length) : fallback;
+}
+
+/// <summary>フィールドの回転（オイラー角）からローカル軸3本を取り出す（ギズモと同じ行列の作り方）</summary>
+void FieldAxes(const ParticleField &field, Vector3 &axisX, Vector3 &axisY, Vector3 &axisZ)
+{
+    const Matrix4x4 rotation = MakeAffineMatrix({1.0f, 1.0f, 1.0f}, field.rotation, {0.0f, 0.0f, 0.0f});
+    axisX = SafeNormalize({rotation.m[0][0], rotation.m[0][1], rotation.m[0][2]}, {1.0f, 0.0f, 0.0f});
+    axisY = SafeNormalize({rotation.m[1][0], rotation.m[1][1], rotation.m[1][2]}, {0.0f, 1.0f, 0.0f});
+    axisZ = SafeNormalize({rotation.m[2][0], rotation.m[2][1], rotation.m[2][2]}, {0.0f, 0.0f, 1.0f});
+}
+
+/// <summary>形の半分の大きさ（球: x=半径 / 箱: 各軸の半分 / 円柱: x=半径 y=高さの半分）</summary>
+Vector3 FieldHalfExtent(const ParticleField &field)
+{
+    constexpr float kMin = 0.01f;
+    switch (field.shape)
+    {
+    case ParticleFieldShape::Box:
+        return {(std::max)(field.boxSize.x * 0.5f, kMin), (std::max)(field.boxSize.y * 0.5f, kMin), (std::max)(field.boxSize.z * 0.5f, kMin)};
+    case ParticleFieldShape::Cylinder:
+        return {(std::max)(field.radius, kMin), (std::max)(field.height * 0.5f, kMin), (std::max)(field.radius, kMin)};
+    default:
+        return {(std::max)(field.radius, kMin), (std::max)(field.radius, kMin), (std::max)(field.radius, kMin)};
+    }
+}
+
+/// <summary>矢印を1本描く（先端に V 字）</summary>
+void DrawArrow(LineRenderer *line, const Vector3 &from, const Vector3 &to, const Vector4 &color)
+{
+    line->AddLine(from, to, color);
+    const Vector3 direction = to - from;
+    const float length = direction.Length();
+    if (length < 1e-4f)
+    {
+        return;
+    }
+    const Vector3 forward = direction * (1.0f / length);
+    const Vector3 up = (std::abs(forward.y) > 0.9f) ? Vector3{1.0f, 0.0f, 0.0f} : Vector3{0.0f, 1.0f, 0.0f};
+    const Vector3 side = SafeNormalize(forward.Cross(up), {1.0f, 0.0f, 0.0f});
+    const float head = length * 0.25f;
+    const Vector3 base = to - forward * head;
+    line->AddLine(to, base + side * (head * 0.5f), color);
+    line->AddLine(to, base - side * (head * 0.5f), color);
+}
+} // namespace
+
+// =============================================
+// 初期化・終了
+// =============================================
+
 void ParticleCSFieldManager::Finalize()
 {
+#ifdef USE_IMGUI
+    for (const std::string &name : gizmoNames_)
+    {
+        ImGuizmoManager::GetInstance()->RemoveTarget(name);
+    }
+    gizmoNames_.clear();
+    gizmoRegisteredData_ = nullptr;
+#endif
     // マップ中のリソースはアンマップしてから解放する
     if (fieldsResource_)
     {
@@ -93,31 +161,34 @@ void ParticleCSFieldManager::Finalize()
         pOverrideMappedData_ = nullptr;
     }
 
-    // ComPtr は Reset() で明示的に解放（デストラクタでも自動解放される）
     fieldsResource_.Reset();
     fieldCountResource_.Reset();
     zeroFieldCountResource_.Reset();
     overrideResource_.Reset();
 
     fields_.clear();
+    uploadedSlots_.clear();
 }
 
 void ParticleCSFieldManager::Initialize()
 {
     pDxCommon_ = ParticleCommon::GetInstance()->GetDxCommon();
     pSrvManager_ = SrvManager::GetInstance();
+    // 上限ぶん先に確保しておき、追加で並びが作り直されないようにする
+    // （ゲーム側が GetField のポインタを持ち続けるため。並べ替え・削除は番号がずれるので注意）
+    fields_.reserve(kMaxFields);
     CreateGPUResources();
 }
 
 void ParticleCSFieldManager::CreateGPUResources()
 {
     // フィールド配列バッファ（StructuredBuffer として使う）
-    size_t bufSize = sizeof(ParticleFieldData) * kMaxFields;
+    size_t bufSize = sizeof(ParticleFieldGPU) * kMaxFields;
     fieldsResource_ = pDxCommon_->CreateBufferResource(bufSize);
     fieldsResource_->Map(0, nullptr, reinterpret_cast<void **>(&pFieldsMappedData_));
     ZeroMemory(pFieldsMappedData_, bufSize);
 
-    // フィールド数バッファ（ConstantBuffer）
+    // フィールド数バッファ（ConstantBuffer）。シェーダーは「受けるか（>0）」の判定にだけ使う
     fieldCountResource_ = pDxCommon_->CreateBufferResource(sizeof(uint32_t) * 4); // アライメント
     fieldCountResource_->Map(0, nullptr, reinterpret_cast<void **>(&pFieldCountMappedData_));
     *pFieldCountMappedData_ = 0;
@@ -132,15 +203,9 @@ void ParticleCSFieldManager::CreateGPUResources()
     fieldsSrvIndex_ = pSrvManager_->Allocate() + 1;
     fieldsSrvHandle_.first = pSrvManager_->GetCPUDescriptorHandle(fieldsSrvIndex_);
     fieldsSrvHandle_.second = pSrvManager_->GetGPUDescriptorHandle(fieldsSrvIndex_);
-    pSrvManager_->CreateSRVforStructuredBuffer(
-        fieldsSrvIndex_,
-        fieldsResource_.Get(),
-        kMaxFields,
-        sizeof(ParticleFieldData));
+    pSrvManager_->CreateSRVforStructuredBuffer(fieldsSrvIndex_, fieldsResource_.Get(), kMaxFields, sizeof(ParticleFieldGPU));
 
     // 設定上書きバッファ（StructuredBuffer: gFieldsOverride t1）
-    // HLSL の ParticleFieldSettingsOverrideData と同じレイアウトを
-    // GPU_FieldSettingsOverride として扱う（サイズだけ合わせる）
     size_t overrideBufSize = kGPUOverrideStride * kMaxFields;
     overrideResource_ = pDxCommon_->CreateBufferResource(overrideBufSize);
     overrideResource_->Map(0, nullptr, &pOverrideMappedData_);
@@ -149,92 +214,406 @@ void ParticleCSFieldManager::CreateGPUResources()
     overrideSrvIndex_ = pSrvManager_->Allocate() + 1;
     overrideSrvHandle_.first = pSrvManager_->GetCPUDescriptorHandle(overrideSrvIndex_);
     overrideSrvHandle_.second = pSrvManager_->GetGPUDescriptorHandle(overrideSrvIndex_);
-    pSrvManager_->CreateSRVforStructuredBuffer(
-        overrideSrvIndex_,
-        overrideResource_.Get(),
-        kMaxFields,
-        kGPUOverrideStride);
+    pSrvManager_->CreateSRVforStructuredBuffer(overrideSrvIndex_, overrideResource_.Get(), kMaxFields, kGPUOverrideStride);
 }
+
+// =============================================
+// 毎フレーム
+// =============================================
 
 void ParticleCSFieldManager::Update()
 {
-    UpdateEmitSpawnTimers();
+    UpdateSpawnTimers();
     UploadToGPU();
+    SyncGizmoTargets();
 }
 
-void ParticleCSFieldManager::UpdateEmitSpawnTimers()
+void ParticleCSFieldManager::UpdateSpawnTimers()
 {
-    // 接触Emitのバースト管理。
-    // 各フィールドの間隔タイマーを進め、バーストするフレームだけ
-    // data.emitSpawnCount（GPU通信スロット）に発生数を書き込む。
-    // エミッター側（EmitterDisPatch）はこの値の合計をディスパッチ数に使う。
-    const float dt = Frame::DeltaTime();
-    for (auto &f : fields_)
+    // 「この範囲から発生」の間隔管理。出すフレームだけ spawn.burst に数を入れる。
+    const float dt = Frame::UnscaledDeltaTime();
+    for (ParticleField &field : fields_)
     {
-        uint32_t burst = 0;
-        if (f.enabled && f.data.enableEmitSpawn != 0 && f.emitSpawnCount > 0)
+        ParticleField::Spawn &spawn = field.spawn;
+        spawn.burst = 0;
+        if (!field.enabled || !spawn.enabled || spawn.count == 0)
         {
-            if (f.emitSpawnInterval <= 0.0f)
-            {
-                // 間隔0 = 毎フレーム発生
-                burst = f.emitSpawnCount;
-                f.emitSpawnTimer = 0.0f;
-            }
-            else
-            {
-                f.emitSpawnTimer += dt;
-                if (f.emitSpawnTimer >= f.emitSpawnInterval)
-                {
-                    f.emitSpawnTimer -= f.emitSpawnInterval;
-                    // 低FPSで複数間隔ぶん経過しても1バーストに丸める（発生数の暴発防止）
-                    f.emitSpawnTimer = std::min(f.emitSpawnTimer, f.emitSpawnInterval);
-                    burst = f.emitSpawnCount;
-                }
-            }
+            spawn.timer = 0.0f;
+            continue;
         }
-        else
+        if (spawn.interval <= 0.0f)
         {
-            f.emitSpawnTimer = 0.0f;
+            spawn.burst = spawn.count; // 間隔0 = 毎フレーム
+            spawn.timer = 0.0f;
+            continue;
         }
-        f.data.emitSpawnCount = burst;
+        spawn.timer += dt;
+        if (spawn.timer >= spawn.interval)
+        {
+            // 低FPSで複数間隔ぶん経過しても1回に丸める（発生数の暴発防止）
+            spawn.timer = (std::min)(spawn.timer - spawn.interval, spawn.interval);
+            spawn.burst = spawn.count;
+        }
     }
+}
+
+ParticleFieldGPU ParticleCSFieldManager::PackField(const ParticleField &field)
+{
+    ParticleFieldGPU gpu;
+    gpu.center = field.position;
+    gpu.shape = static_cast<uint32_t>(field.shape);
+    FieldAxes(field, gpu.axisX, gpu.axisY, gpu.axisZ);
+    gpu.halfExtent = FieldHalfExtent(field);
+    switch (field.shape)
+    {
+    case ParticleFieldShape::Box:
+        gpu.boundRadiusSq = gpu.halfExtent.x * gpu.halfExtent.x + gpu.halfExtent.y * gpu.halfExtent.y + gpu.halfExtent.z * gpu.halfExtent.z;
+        break;
+    case ParticleFieldShape::Cylinder:
+        gpu.boundRadiusSq = gpu.halfExtent.x * gpu.halfExtent.x + gpu.halfExtent.y * gpu.halfExtent.y;
+        break;
+    default:
+        gpu.boundRadiusSq = gpu.halfExtent.x * gpu.halfExtent.x;
+        break;
+    }
+    gpu.falloffStart = std::clamp(field.falloffStart, 0.0f, 0.95f);
+    gpu.falloffCurve = static_cast<uint32_t>(field.falloff);
+
+    uint32_t flags = 0;
+    if (field.wind.enabled)
+    {
+        flags |= FieldEffectBits::Wind;
+        gpu.windVelocity = SafeNormalize(field.wind.direction, {1.0f, 0.0f, 0.0f}) * field.wind.speed;
+        gpu.windResponse = (std::max)(field.wind.response, 0.0f);
+    }
+    if (field.attract.enabled)
+    {
+        flags |= FieldEffectBits::Attract;
+        gpu.attractStrength = field.attract.strength;
+        gpu.absorbRadius = (std::max)(field.attract.absorbRadius, 0.0f);
+    }
+    if (field.vortex.enabled)
+    {
+        flags |= FieldEffectBits::Vortex;
+        gpu.vortexSpeed = field.vortex.speed;
+        gpu.vortexResponse = (std::max)(field.vortex.response, 0.0f);
+    }
+    if (field.drag.enabled)
+    {
+        flags |= FieldEffectBits::Drag;
+        gpu.dragPerSecond = (std::max)(field.drag.perSecond, 0.0f);
+    }
+    if (field.tint.enabled)
+    {
+        flags |= FieldEffectBits::Tint;
+        gpu.tint = field.tint.color;
+    }
+    if (field.size.enabled)
+    {
+        flags |= FieldEffectBits::Size;
+        gpu.sizeScale = (std::max)(field.size.scale, 0.0f);
+    }
+    if (field.life.enabled)
+    {
+        flags |= field.life.killOnEnter ? FieldEffectBits::Kill : FieldEffectBits::Life;
+        gpu.lifeSpeed = (std::max)(field.life.speed, 0.0f);
+    }
+    if (field.trail.enabled)
+    {
+        flags |= FieldEffectBits::Trail;
+        gpu.trailSpawnDistance = (std::max)(field.trail.spawnDistance, 0.0f);
+    }
+    if (field.once.enabled && field.once.settings.overrideMask != 0)
+    {
+        flags |= FieldEffectBits::Once;
+    }
+    gpu.effectFlags = flags;
+
+    gpu.emitLifeMin = (std::min)(field.spawn.lifeMin, field.spawn.lifeMax);
+    gpu.emitLifeMax = field.spawn.lifeMax;
+    gpu.emitCount = field.spawn.burst;
+    return gpu;
 }
 
 void ParticleCSFieldManager::UploadToGPU()
 {
+    uploadedSlots_.clear();
     uint32_t count = 0;
-    for (auto &f : fields_)
+    for (int index = 0; index < static_cast<int>(fields_.size()); ++index)
     {
-        if (!f.enabled)
+        const ParticleField &field = fields_[index];
+        if (!field.enabled)
+            continue;
+        // ソロ中はそのフィールドだけを効かせる（どれが効いているかを切り分ける用）
+        if (soloIndex_ >= 0 && index != soloIndex_)
             continue;
         if (count >= kMaxFields)
             break;
 
-        ParticleFieldData gpuData = f.data;
+        pFieldsMappedData_[count] = PackField(field);
+        auto *dst = reinterpret_cast<GPU_FieldSettingsOverride *>(static_cast<uint8_t *>(pOverrideMappedData_) + count * kGPUOverrideStride);
+        PackOverrideToGPU(field.once.settings, *dst);
 
-        // Wind/Vortex の方向はシェーダ側で正規化しない契約のため、ここで正規化して転送する。
-        // （長さが強さに紛れ込む・(0,0,0)で無反応になる、という不安定さの元だった）
-        const float dirLen = std::sqrt(gpuData.direction.x * gpuData.direction.x +
-                                       gpuData.direction.y * gpuData.direction.y +
-                                       gpuData.direction.z * gpuData.direction.z);
-        if (dirLen > 1e-5f)
-        {
-            gpuData.direction.x /= dirLen;
-            gpuData.direction.y /= dirLen;
-            gpuData.direction.z /= dirLen;
-        }
-
-        pFieldsMappedData_[count] = gpuData;
-
-        // 設定上書きデータを GPU レイアウト構造体へパック
-        auto *dst = reinterpret_cast<GPU_FieldSettingsOverride *>(
-            static_cast<uint8_t *>(pOverrideMappedData_) + count * kGPUOverrideStride);
-        PackOverrideToGPU(f.override_, *dst);
-
-        count++;
+        UploadedSlot slot;
+        slot.layers = field.layers;
+        slot.affectsParticles = (pFieldsMappedData_[count].effectFlags & FieldEffectBits::UpdateMask) != 0;
+        slot.emitCount = field.spawn.enabled ? field.spawn.burst : 0;
+        uploadedSlots_.push_back(slot);
+        ++count;
     }
     *pFieldCountMappedData_ = count;
 }
+
+uint32_t ParticleCSFieldManager::GetUpdateMask(uint32_t receiveLayers) const
+{
+    uint32_t mask = 0;
+    for (size_t i = 0; i < uploadedSlots_.size(); ++i)
+    {
+        if (uploadedSlots_[i].affectsParticles && (uploadedSlots_[i].layers & receiveLayers) != 0)
+        {
+            mask |= 1u << i;
+        }
+    }
+    return mask;
+}
+
+uint32_t ParticleCSFieldManager::GetEmitMask(uint32_t receiveLayers) const
+{
+    uint32_t mask = 0;
+    for (size_t i = 0; i < uploadedSlots_.size(); ++i)
+    {
+        if (uploadedSlots_[i].emitCount > 0 && (uploadedSlots_[i].layers & receiveLayers) != 0)
+        {
+            mask |= 1u << i;
+        }
+    }
+    return mask;
+}
+
+uint32_t ParticleCSFieldManager::GetEmitBurstTotal(uint32_t receiveLayers) const
+{
+    uint32_t total = 0;
+    for (const UploadedSlot &slot : uploadedSlots_)
+    {
+        if (slot.emitCount > 0 && (slot.layers & receiveLayers) != 0)
+        {
+            total += slot.emitCount;
+        }
+    }
+    return total;
+}
+
+// =============================================
+// ギズモ登録
+// =============================================
+
+void ParticleCSFieldManager::SyncGizmoTargets()
+{
+#ifdef USE_IMGUI
+    // 毎フレーム登録し直すと選択が外れるので、増減・改名・並べ替え・再確保があったときだけ作り直す
+    std::vector<std::string> names;
+    names.reserve(fields_.size());
+    for (const ParticleField &field : fields_)
+    {
+        names.push_back(GizmoName(field.name));
+    }
+    if (names == gizmoNames_ && gizmoRegisteredData_ == fields_.data())
+    {
+        return;
+    }
+
+    ImGuizmoManager *gizmo = ImGuizmoManager::GetInstance();
+    // 同じ番号のまま名前だけ変わった（名前の入力中など）ものは、選択を新しい名前へ引き継ぐ
+    std::vector<std::string> keepSelected;
+    for (size_t i = 0; i < gizmoNames_.size() && i < names.size(); ++i)
+    {
+        if (gizmoNames_[i] != names[i] && gizmo->IsSelected(gizmoNames_[i]))
+        {
+            keepSelected.push_back(names[i]);
+        }
+    }
+    for (const std::string &old : gizmoNames_)
+    {
+        if (std::find(names.begin(), names.end(), old) == names.end())
+        {
+            gizmo->RemoveTarget(old);
+        }
+    }
+    for (int i = 0; i < static_cast<int>(fields_.size()); ++i)
+    {
+        // 位置と回転をギズモで動かせる（大きさは形ごとに意味が違うので数値で）
+        gizmo->AddTarget(names[i], &fields_[i].position, &fields_[i].rotation, nullptr, true, [this, i]() { DrawFieldDetail(i); });
+        // シーンのアイコンは効果ごとの絵で別に描くので、エミッターの★は出さない
+        gizmo->SetSceneIcon(names[i], false);
+    }
+    for (const std::string &name : keepSelected)
+    {
+        gizmo->AddToSelection(name);
+    }
+    gizmoNames_ = std::move(names);
+    gizmoRegisteredData_ = fields_.data();
+#endif
+}
+
+int ParticleCSFieldManager::FindFieldByGizmoName(const std::string &gizmoName) const
+{
+    for (int i = 0; i < static_cast<int>(fields_.size()); ++i)
+    {
+        if (GizmoName(fields_[i].name) == gizmoName)
+        {
+            return i;
+        }
+    }
+    return -1;
+}
+
+// =============================================
+// 表示用（代表の効果で色・絵・名前を決める）
+// =============================================
+
+namespace {
+enum class PrimaryEffect
+{
+    None,
+    Vortex,
+    Pull,
+    Push,
+    Wind,
+    Drag,
+    Kill,
+    Life,
+    Tint,
+    Size,
+    Trail,
+    Once,
+    Spawn,
+};
+
+PrimaryEffect GetPrimaryEffect(const ParticleField &field)
+{
+    if (field.vortex.enabled)
+        return PrimaryEffect::Vortex;
+    if (field.attract.enabled)
+        return field.attract.strength >= 0.0f ? PrimaryEffect::Pull : PrimaryEffect::Push;
+    if (field.wind.enabled)
+        return PrimaryEffect::Wind;
+    if (field.drag.enabled)
+        return PrimaryEffect::Drag;
+    if (field.life.enabled)
+        return field.life.killOnEnter ? PrimaryEffect::Kill : PrimaryEffect::Life;
+    if (field.tint.enabled)
+        return PrimaryEffect::Tint;
+    if (field.size.enabled)
+        return PrimaryEffect::Size;
+    if (field.trail.enabled)
+        return PrimaryEffect::Trail;
+    if (field.once.enabled)
+        return PrimaryEffect::Once;
+    if (field.spawn.enabled)
+        return PrimaryEffect::Spawn;
+    return PrimaryEffect::None;
+}
+} // namespace
+
+Vector4 ParticleCSFieldManager::FieldColor(const ParticleField &field)
+{
+    switch (GetPrimaryEffect(field))
+    {
+    case PrimaryEffect::Vortex:
+        return {0.2f, 1.0f, 0.6f, 1.0f};
+    case PrimaryEffect::Pull:
+        return {0.8f, 0.3f, 1.0f, 1.0f};
+    case PrimaryEffect::Push:
+        return {1.0f, 0.5f, 0.1f, 1.0f};
+    case PrimaryEffect::Wind:
+        return {0.3f, 0.7f, 1.0f, 1.0f};
+    case PrimaryEffect::Drag:
+        return {0.55f, 0.65f, 0.80f, 1.0f};
+    case PrimaryEffect::Kill:
+    case PrimaryEffect::Life:
+        return {0.95f, 0.35f, 0.35f, 1.0f};
+    case PrimaryEffect::Tint:
+        return {1.0f, 0.85f, 0.35f, 1.0f};
+    case PrimaryEffect::Size:
+        return {0.95f, 0.65f, 0.85f, 1.0f};
+    case PrimaryEffect::Trail:
+    case PrimaryEffect::Once:
+        return {0.60f, 0.85f, 0.85f, 1.0f};
+    case PrimaryEffect::Spawn:
+        return {0.55f, 0.90f, 0.45f, 1.0f};
+    default:
+        return {0.6f, 0.6f, 0.6f, 1.0f};
+    }
+}
+
+const char *ParticleCSFieldManager::FieldIcon(const ParticleField &field)
+{
+    switch (GetPrimaryEffect(field))
+    {
+    case PrimaryEffect::Vortex:
+        return ICON_FA_SYNC_ALT;
+    case PrimaryEffect::Pull:
+        return ICON_FA_MAGNET;
+    case PrimaryEffect::Push:
+        return ICON_FA_BOMB;
+    case PrimaryEffect::Wind:
+        return ICON_FA_WIND;
+    case PrimaryEffect::Drag:
+        return ICON_FA_TACHOMETER_ALT;
+    case PrimaryEffect::Kill:
+    case PrimaryEffect::Life:
+        return ICON_FA_HOURGLASS_HALF;
+    case PrimaryEffect::Tint:
+        return ICON_FA_TINT;
+    case PrimaryEffect::Size:
+        return ICON_FA_EXPAND_ARROWS_ALT;
+    case PrimaryEffect::Trail:
+        return ICON_FA_METEOR;
+    case PrimaryEffect::Once:
+        return ICON_FA_BOLT;
+    case PrimaryEffect::Spawn:
+        return ICON_FA_SEEDLING;
+    default:
+        return ICON_FA_CIRCLE_NOTCH;
+    }
+}
+
+const char *ParticleCSFieldManager::FieldSummary(const ParticleField &field)
+{
+    switch (GetPrimaryEffect(field))
+    {
+    case PrimaryEffect::Vortex:
+        return "渦";
+    case PrimaryEffect::Pull:
+        return "引き寄せ";
+    case PrimaryEffect::Push:
+        return "押し出し";
+    case PrimaryEffect::Wind:
+        return "風";
+    case PrimaryEffect::Drag:
+        return "抵抗";
+    case PrimaryEffect::Kill:
+        return "消す";
+    case PrimaryEffect::Life:
+        return "寿命";
+    case PrimaryEffect::Tint:
+        return "色";
+    case PrimaryEffect::Size:
+        return "大きさ";
+    case PrimaryEffect::Trail:
+        return "トレイル";
+    case PrimaryEffect::Once:
+        return "入った瞬間";
+    case PrimaryEffect::Spawn:
+        return "発生";
+    default:
+        return "効果なし";
+    }
+}
+
+// =============================================
+// 追加・削除
+// =============================================
 
 void ParticleCSFieldManager::AddField(const ParticleField &field)
 {
@@ -263,100 +642,222 @@ ParticleField *ParticleCSFieldManager::GetField(int index)
 
 void ParticleCSFieldManager::SaveFieldData(DataHandler &data, const ParticleField &field)
 {
-    // 基本情報
+    // 旧形式のキーが残ると読み分けを誤るので、書く前に全部消す
+    data.RemoveByPrefix("");
+    data.Save("version", kFieldFormatVersion);
     data.Save("name", field.name);
     data.Save("enabled", field.enabled);
 
-    // フィールドデータ
-    data.Save("fieldType", field.data.fieldType);
-    data.Save<Vector3>("position", field.data.position);
-    data.Save("radius", field.data.radius);
-    data.Save<Vector3>("direction", field.data.direction);
-    data.Save("strength", field.data.strength);
-    data.Save("falloff", field.data.falloff);
+    // 形と範囲
+    data.Save("shape", static_cast<int>(field.shape));
+    data.Save<Vector3>("position", field.position);
+    data.Save<Vector3>("rotation", field.rotation);
+    data.Save("radius", field.radius);
+    data.Save<Vector3>("boxSize", field.boxSize);
+    data.Save("height", field.height);
+    data.Save("falloff", static_cast<int>(field.falloff));
+    data.Save("falloffStart", field.falloffStart);
+    data.Save("layers", field.layers);
 
-    // 寿命ドレイン
-    data.Save("enableLifeDrain", field.data.enableLifeDrain);
-    data.Save("lifeTimeDrain", field.data.lifeTimeDrain);
-
-    // トレイル強制生成
-    data.Save("enableForceTrail", field.data.enableForceTrail);
-    data.Save("trailSpawnDistanceOverride", field.data.trailSpawnDistanceOverride);
-
-    // カラー乗算
-    data.Save("enableColorMultiply", field.data.enableColorMultiply);
-    data.Save<Vector4>("colorMultiplier", field.data.colorMultiplier);
-
-    // 一度きり設定上書き
-    data.Save("enableSettingsOverride", field.data.enableSettingsOverride);
-    if (field.data.enableSettingsOverride)
+    // 効果（有効なものだけ書く。読むときは無ければ無効）
+    if (field.wind.enabled)
     {
-        SaveOverrideData(data, field.override_);
+        data.Save<Vector3>("wind_direction", field.wind.direction);
+        data.Save("wind_speed", field.wind.speed);
+        data.Save("wind_response", field.wind.response);
     }
-
-    // 接触Emit（発生数・間隔はフィールド側が唯一の設定場所）
-    data.Save("enableEmitSpawn", field.data.enableEmitSpawn);
-    if (field.data.enableEmitSpawn)
+    if (field.attract.enabled)
     {
-        data.Save("emitSpawnLifeTimeMin", field.data.emitSpawnLifeTimeMin);
-        data.Save("emitSpawnLifeTimeMax", field.data.emitSpawnLifeTimeMax);
-        data.Save("emitSpawnCount", static_cast<int>(field.emitSpawnCount));
-        data.Save("emitSpawnInterval", field.emitSpawnInterval);
+        data.Save("attract_strength", field.attract.strength);
+        data.Save("attract_absorbRadius", field.attract.absorbRadius);
     }
-
-    // グループID
-    data.Save("groupId", field.data.groupId);
+    if (field.vortex.enabled)
+    {
+        data.Save("vortex_speed", field.vortex.speed);
+        data.Save("vortex_response", field.vortex.response);
+    }
+    if (field.drag.enabled)
+    {
+        data.Save("drag_perSecond", field.drag.perSecond);
+    }
+    if (field.tint.enabled)
+    {
+        data.Save<Vector4>("tint_color", field.tint.color);
+    }
+    if (field.size.enabled)
+    {
+        data.Save("size_scale", field.size.scale);
+    }
+    if (field.life.enabled)
+    {
+        data.Save("life_speed", field.life.speed);
+        data.Save("life_killOnEnter", field.life.killOnEnter);
+    }
+    if (field.trail.enabled)
+    {
+        data.Save("trail_spawnDistance", field.trail.spawnDistance);
+    }
+    if (field.once.enabled)
+    {
+        data.Save("once_enabled", true);
+        SaveOverrideData(data, field.once.settings);
+    }
+    if (field.spawn.enabled)
+    {
+        data.Save("spawn_count", static_cast<int>(field.spawn.count));
+        data.Save("spawn_interval", field.spawn.interval);
+        data.Save("spawn_lifeMin", field.spawn.lifeMin);
+        data.Save("spawn_lifeMax", field.spawn.lifeMax);
+    }
 }
 
 void ParticleCSFieldManager::LoadFieldData(DataHandler &data, ParticleField &field)
 {
-    // 基本情報
+    if (data.Load("version", 1) < kFieldFormatVersion)
+    {
+        LoadLegacyFieldData(data, field);
+        return;
+    }
     field.name = data.Load("name", field.name);
     field.enabled = data.Load("enabled", field.enabled);
 
-    // フィールドデータ
-    field.data.fieldType = data.Load("fieldType", field.data.fieldType);
-    field.data.position = data.Load<Vector3>("position", field.data.position);
-    field.data.radius = data.Load("radius", field.data.radius);
-    field.data.direction = data.Load<Vector3>("direction", field.data.direction);
-    field.data.strength = data.Load("strength", field.data.strength);
-    field.data.falloff = data.Load("falloff", field.data.falloff);
+    field.shape = static_cast<ParticleFieldShape>(std::clamp(data.Load("shape", 0), 0, 2));
+    field.position = data.Load<Vector3>("position", field.position);
+    field.rotation = data.Load<Vector3>("rotation", field.rotation);
+    field.radius = data.Load("radius", field.radius);
+    field.boxSize = data.Load<Vector3>("boxSize", field.boxSize);
+    field.height = data.Load("height", field.height);
+    field.falloff = static_cast<ParticleFieldFalloff>(std::clamp(data.Load("falloff", 2), 0, 2));
+    field.falloffStart = data.Load("falloffStart", field.falloffStart);
+    field.layers = data.Load<uint32_t>("layers", field.layers);
 
-    // 寿命ドレイン
-    field.data.enableLifeDrain = data.Load("enableLifeDrain", field.data.enableLifeDrain);
-    field.data.lifeTimeDrain = data.Load("lifeTimeDrain", field.data.lifeTimeDrain);
+    field.wind.enabled = data.Contains("wind_speed");
+    field.wind.direction = data.Load<Vector3>("wind_direction", field.wind.direction);
+    field.wind.speed = data.Load("wind_speed", field.wind.speed);
+    field.wind.response = data.Load("wind_response", field.wind.response);
 
-    // トレイル強制生成
-    field.data.enableForceTrail = data.Load("enableForceTrail", field.data.enableForceTrail);
-    field.data.trailSpawnDistanceOverride = data.Load("trailSpawnDistanceOverride", field.data.trailSpawnDistanceOverride);
+    field.attract.enabled = data.Contains("attract_strength");
+    field.attract.strength = data.Load("attract_strength", field.attract.strength);
+    field.attract.absorbRadius = data.Load("attract_absorbRadius", field.attract.absorbRadius);
 
-    // カラー乗算
-    field.data.enableColorMultiply = data.Load("enableColorMultiply", field.data.enableColorMultiply);
-    field.data.colorMultiplier = data.Load<Vector4>("colorMultiplier", field.data.colorMultiplier);
+    field.vortex.enabled = data.Contains("vortex_speed");
+    field.vortex.speed = data.Load("vortex_speed", field.vortex.speed);
+    field.vortex.response = data.Load("vortex_response", field.vortex.response);
 
-    // 一度きり設定上書き
-    field.data.enableSettingsOverride = data.Load("enableSettingsOverride", field.data.enableSettingsOverride);
-    if (field.data.enableSettingsOverride)
+    field.drag.enabled = data.Contains("drag_perSecond");
+    field.drag.perSecond = data.Load("drag_perSecond", field.drag.perSecond);
+
+    field.tint.enabled = data.Contains("tint_color");
+    field.tint.color = data.Load<Vector4>("tint_color", field.tint.color);
+
+    field.size.enabled = data.Contains("size_scale");
+    field.size.scale = data.Load("size_scale", field.size.scale);
+
+    field.life.enabled = data.Contains("life_speed");
+    field.life.speed = data.Load("life_speed", field.life.speed);
+    field.life.killOnEnter = data.Load("life_killOnEnter", field.life.killOnEnter);
+
+    field.trail.enabled = data.Contains("trail_spawnDistance");
+    field.trail.spawnDistance = data.Load("trail_spawnDistance", field.trail.spawnDistance);
+
+    field.once.enabled = data.Load("once_enabled", false);
+    if (field.once.enabled)
     {
-        LoadOverrideData(data, field.override_);
+        LoadOverrideData(data, field.once.settings);
     }
 
-    // 接触Emit（発生数・間隔はフィールド側が唯一の設定場所）
-    field.data.enableEmitSpawn = data.Load("enableEmitSpawn", field.data.enableEmitSpawn);
-    if (field.data.enableEmitSpawn)
-    {
-        field.data.emitSpawnLifeTimeMin = data.Load("emitSpawnLifeTimeMin", field.data.emitSpawnLifeTimeMin);
-        field.data.emitSpawnLifeTimeMax = data.Load("emitSpawnLifeTimeMax", field.data.emitSpawnLifeTimeMax);
-        field.emitSpawnCount = static_cast<uint32_t>(
-            std::max(0, data.Load("emitSpawnCount", static_cast<int>(field.emitSpawnCount))));
-        field.emitSpawnInterval = data.Load("emitSpawnInterval", field.emitSpawnInterval);
-    }
-    // data.emitSpawnCount はGPU通信専用（毎フレーム算出）なのでロードしない
-    field.data.emitSpawnCount = 0;
-    field.emitSpawnTimer = 0.0f;
+    field.spawn.enabled = data.Contains("spawn_count");
+    field.spawn.count = static_cast<uint32_t>((std::max)(0, data.Load("spawn_count", static_cast<int>(field.spawn.count))));
+    field.spawn.interval = data.Load("spawn_interval", field.spawn.interval);
+    field.spawn.lifeMin = data.Load("spawn_lifeMin", field.spawn.lifeMin);
+    field.spawn.lifeMax = data.Load("spawn_lifeMax", field.spawn.lifeMax);
+    field.spawn.timer = 0.0f;
+    field.spawn.burst = 0;
+}
 
-    // グループID
-    field.data.groupId = data.Load("groupId", field.data.groupId);
+void ParticleCSFieldManager::LoadLegacyFieldData(DataHandler &data, ParticleField &field)
+{
+    // 旧形式: 球だけ・fieldType で力を1つ選ぶ・機能ごとに enableXxx。
+    // 力は「加速度」だったので、風と渦は「その値の速さへ1秒ほどでなじむ」に読み替える。
+    field.name = data.Load("name", field.name);
+    field.enabled = data.Load("enabled", field.enabled);
+    field.shape = ParticleFieldShape::Sphere;
+    field.position = data.Load<Vector3>("position", field.position);
+    field.radius = data.Load("radius", field.radius);
+
+    // 減衰指数 → 弱まり方（1 付近 = 直線 / 小さい = ほぼ一定 / 大きい = なめらか）
+    const float exponent = data.Load("falloff", 1.0f);
+    field.falloffStart = 0.0f;
+    field.falloff = (exponent < 0.5f) ? ParticleFieldFalloff::Constant
+                                      : ((exponent <= 1.5f) ? ParticleFieldFalloff::Linear : ParticleFieldFalloff::Smooth);
+
+    const uint32_t fieldType = data.Load<uint32_t>("fieldType", 0u);
+    const Vector3 direction = data.Load<Vector3>("direction", {1.0f, 0.0f, 0.0f});
+    const float strength = data.Load("strength", 1.0f);
+    const bool hasDirection = direction.Length() > 1e-4f;
+    switch (fieldType)
+    {
+    case 0: // 風（向きが 0 のものは力を持たない。発生範囲だけに使われていた）
+        field.wind.enabled = hasDirection && std::abs(strength) > 1e-4f;
+        field.wind.direction = hasDirection ? direction : Vector3{1.0f, 0.0f, 0.0f};
+        field.wind.speed = strength;
+        field.wind.response = 1.0f;
+        break;
+    case 1: // 引力
+        field.attract.enabled = true;
+        field.attract.strength = strength;
+        break;
+    case 2: // 斥力
+        field.attract.enabled = true;
+        field.attract.strength = -strength;
+        break;
+    case 3: // 渦（旧 direction を回転軸に。形の Y 軸をそちらへ向ける）
+    {
+        field.vortex.enabled = true;
+        field.vortex.speed = strength;
+        field.vortex.response = 1.0f;
+        const Vector3 axis = SafeNormalize(direction, {0.0f, 1.0f, 0.0f});
+        const float pitch = std::acos(std::clamp(axis.y, -1.0f, 1.0f));
+        const float yaw = std::atan2(axis.x, axis.z);
+        field.rotation = {pitch, yaw, 0.0f};
+        break;
+    }
+    default:
+        break;
+    }
+
+    if (data.Load<uint32_t>("enableLifeDrain", 0u) != 0)
+    {
+        field.life.enabled = true;
+        field.life.speed = 1.0f + data.Load("lifeTimeDrain", 0.0f);
+    }
+    if (data.Load<uint32_t>("enableForceTrail", 0u) != 0)
+    {
+        field.trail.enabled = true;
+        field.trail.spawnDistance = data.Load("trailSpawnDistanceOverride", 0.0f);
+    }
+    if (data.Load<uint32_t>("enableColorMultiply", 0u) != 0)
+    {
+        field.tint.enabled = true;
+        field.tint.color = data.Load<Vector4>("colorMultiplier", field.tint.color);
+    }
+    if (data.Load<uint32_t>("enableSettingsOverride", 0u) != 0)
+    {
+        field.once.enabled = true;
+        LoadOverrideData(data, field.once.settings);
+    }
+    if (data.Load<uint32_t>("enableEmitSpawn", 0u) != 0)
+    {
+        field.spawn.enabled = true;
+        field.spawn.count = static_cast<uint32_t>((std::max)(0, data.Load("emitSpawnCount", 1000)));
+        field.spawn.interval = data.Load("emitSpawnInterval", 0.0f);
+        field.spawn.lifeMin = data.Load("emitSpawnLifeTimeMin", 0.25f);
+        field.spawn.lifeMax = data.Load("emitSpawnLifeTimeMax", 0.25f);
+    }
+
+    // 旧 groupId: -1 = 全部 / n = レイヤー n+1 だけ（エミッター側も同じ規則で読み替えるので意味は変わらない）
+    const int groupId = data.Load("groupId", -1);
+    field.layers = (groupId < 0 || groupId >= 32) ? 0xFFFFFFFFu : (1u << groupId);
 }
 
 void ParticleCSFieldManager::SaveOverrideData(DataHandler &data, const ParticleFieldSettingsOverride &ov)
@@ -377,8 +878,6 @@ void ParticleCSFieldManager::SaveOverrideData(DataHandler &data, const ParticleF
 
 void ParticleCSFieldManager::LoadOverrideData(DataHandler &data, ParticleFieldSettingsOverride &ov)
 {
-    // 新フォーマット（8項目）。旧フォーマット(ov_maskLo/Hi + 45項目)は
-    // ビット意味が異なり安全に変換できないため読み込まない（実質未使用だった）。
     ov.overrideMask = data.Load("ov_mask", ov.overrideMask);
     ov.lifeTimeMin = data.Load("ov_lifeTimeMin", ov.lifeTimeMin);
     ov.lifeTimeMax = data.Load("ov_lifeTimeMax", ov.lifeTimeMax);
@@ -410,591 +909,37 @@ ParticleField ParticleCSFieldManager::LoadField(const std::string &fileName, con
     }
     ParticleField field = defaultField;
     LoadFieldData(*data, field);
-    ImGuiNotification::Post("パーティクルフィールドを読み込みました: " + fileName, {0.2f, 0.8f, 0.8f, 1.0f});
     return field;
 }
 
-// =============================================
-// CreateField
-// =============================================
-
 ParticleField *ParticleCSFieldManager::CreateField(const std::string &name, const std::string &templateName)
 {
-    // 上限チェック
     if (static_cast<uint32_t>(fields_.size()) >= kMaxFields)
     {
         return nullptr;
     }
 
     ParticleField newField;
-
     if (!templateName.empty())
     {
-        // ★ テンプレートjsonが指定されていれば、そのデータを複製して土台にする
+        // テンプレートjsonが指定されていれば、そのデータを複製して土台にする
         newField = LoadField(templateName, ParticleField{});
     }
-
     // 名前は引数で上書き（テンプレートの名前ではなく指定名を使う）
     newField.name = name;
 
-    // 自身のjsonが既に存在すれば、それをロードして上書きする
-    // （再起動後の復元など、name.json が保存済みの場合に対応）
+    // 自身のjsonが既に存在すれば、それをロードして上書きする（再起動後の復元など）
     {
         std::unique_ptr<DataHandler> selfData = std::make_unique<DataHandler>("ParticleField", name);
         if (selfData->Exists())
         {
             LoadFieldData(*selfData, newField);
-            newField.name = name; // name だけは引数を優先
+            newField.name = name;
         }
     }
 
     fields_.push_back(newField);
-    ImGuiNotification::Post("パーティクルフィールドを作成しました: " + name, {0.4f, 0.8f, 1.0f, 1.0f});
     return &fields_.back();
-}
-
-// =============================================
-// ImGui
-// =============================================
-void ParticleCSFieldManager::DrawImGui()
-{
-#ifdef USE_IMGUI
-    ImGui::PushStyleColor(ImGuiCol_TitleBgActive, ImVec4(0.16f, 0.18f, 0.22f, 1.0f));
-    ImGui::SetNextWindowSize(ImVec2(420, 600), ImGuiCond_FirstUseEver);
-
-    bool show = true;
-
-    if (!ImGui::Begin("パーティクルフィールド管理", &show, ImGuiWindowFlags_NoFocusOnAppearing))
-    {
-        ImGui::PopStyleColor();
-        ImGui::End();
-        return;
-    }
-    ImGui::PopStyleColor();
-
-    // ヘッダー情報
-    ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kTextCaption);
-    ImGui::Text("フィールド数: %d / %d", static_cast<int>(fields_.size()), kMaxFields);
-    ImGui::PopStyleColor();
-    ImGui::Separator();
-    ImGui::Spacing();
-
-    // フィールド追加ボタン
-    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.22f, 0.40f, 0.30f, 0.85f));
-    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.28f, 0.50f, 0.38f, 0.95f));
-    ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.32f, 0.58f, 0.44f, 1.0f));
-    if (ImGui::Button("フィールドを追加", ImVec2(-1, 30)))
-    {
-        ParticleField newField;
-        newField.name = "Field_" + std::to_string(fields_.size());
-        newField.enabled = true;
-        AddField(newField);
-    }
-    ImGui::PopStyleColor(3);
-    ImGui::Spacing();
-
-    // フィールドリスト
-    int removeIndex = -1;
-    for (int i = 0; i < static_cast<int>(fields_.size()); ++i)
-    {
-        auto &f = fields_[i];
-
-        // フィールドタイプ別の色
-        ImVec4 headerColor;
-        const char *typeLabel;
-        switch (static_cast<ParticleFieldType>(f.data.fieldType))
-        {
-        case ParticleFieldType::Wind:
-            headerColor = ImVec4(0.30f, 0.40f, 0.52f, 0.55f);
-            typeLabel = "[風]";
-            break;
-        case ParticleFieldType::Attract:
-            headerColor = ImVec4(0.42f, 0.34f, 0.50f, 0.55f);
-            typeLabel = "[引力]";
-            break;
-        case ParticleFieldType::Repel:
-            headerColor = ImVec4(0.52f, 0.40f, 0.28f, 0.55f);
-            typeLabel = "[斥力]";
-            break;
-        case ParticleFieldType::Vortex:
-            headerColor = ImVec4(0.30f, 0.46f, 0.44f, 0.55f);
-            typeLabel = "[渦巻き]";
-            break;
-        default:
-            headerColor = ImVec4(0.32f, 0.33f, 0.36f, 0.55f);
-            typeLabel = "[不明]";
-            break;
-        }
-
-        // 無効時はグレーアウト
-        if (!f.enabled)
-        {
-            headerColor = ImVec4(0.28f, 0.28f, 0.30f, 0.55f);
-        }
-
-        ImGui::PushStyleColor(ImGuiCol_Header, headerColor);
-        ImGui::PushStyleColor(ImGuiCol_HeaderHovered, ImVec4(headerColor.x + 0.1f, headerColor.y + 0.1f, headerColor.z + 0.1f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_HeaderActive, ImVec4(headerColor.x + 0.2f, headerColor.y + 0.2f, headerColor.z + 0.2f, 1.0f));
-
-        std::string label = std::string(typeLabel) + " " + f.name + "##field" + std::to_string(i);
-        bool open = ImGui::CollapsingHeader(label.c_str());
-        ImGui::PopStyleColor(3);
-
-        if (open)
-        {
-            ImGui::Indent();
-            ImGui::PushItemWidth(200.0f);
-
-            // 有効/無効チェック
-            ImGui::Checkbox(("有効##en" + std::to_string(i)).c_str(), &f.enabled);
-            ImGui::SameLine();
-
-            // 保存ボタン
-            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.22f, 0.34f, 0.48f, 0.85f));
-            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.30f, 0.44f, 0.60f, 0.95f));
-            ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.36f, 0.52f, 0.70f, 1.0f));
-            if (ImGui::Button(("保存##save" + std::to_string(i)).c_str(), ImVec2(50, 0)))
-            {
-                SaveField(f);
-            }
-            ImGui::PopStyleColor(3);
-            ImGui::SameLine();
-
-            // 削除ボタン
-            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.46f, 0.24f, 0.24f, 0.85f));
-            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.58f, 0.30f, 0.30f, 0.95f));
-            ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.66f, 0.36f, 0.36f, 1.0f));
-            if (ImGui::Button(("削除##del" + std::to_string(i)).c_str(), ImVec2(60, 0)))
-            {
-                removeIndex = i;
-            }
-            ImGui::PopStyleColor(3);
-
-            ImGui::Spacing();
-
-            // 名前
-            char nameBuf[128];
-            strncpy_s(nameBuf, f.name.c_str(), sizeof(nameBuf) - 1);
-            if (ImGui::InputText(("名前##nm" + std::to_string(i)).c_str(), nameBuf, sizeof(nameBuf)))
-            {
-                f.name = nameBuf;
-            }
-
-            ImGui::Spacing();
-            ImGui::Separator();
-
-            // フィールドタイプ選択
-            ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kTextCaption);
-            ImGui::TextUnformatted("フィールド種類");
-            ImGui::PopStyleColor();
-
-            const char *typeItems[] = {"風 (Wind)", "引力 (Attract)", "斥力 (Repel)", "渦巻き (Vortex)"};
-            int typeIdx = static_cast<int>(f.data.fieldType);
-            if (ImGui::Combo(("##type" + std::to_string(i)).c_str(), &typeIdx, typeItems, 4))
-            {
-                f.data.fieldType = static_cast<uint32_t>(typeIdx);
-            }
-
-            ImGui::Spacing();
-            ImGui::Separator();
-
-            // 位置・範囲
-            ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kTextCaption);
-            ImGui::TextUnformatted("位置・影響範囲");
-            ImGui::PopStyleColor();
-
-            ImGui::DragFloat3(("位置##pos" + std::to_string(i)).c_str(), &f.data.position.x, 0.1f, -9999.0f, 9999.0f, "%.2f");
-            ImGui::DragFloat(("影響半径##rad" + std::to_string(i)).c_str(), &f.data.radius, 0.1f, 0.01f, 9999.0f, "%.2f");
-            ImGui::DragFloat(("減衰指数##fal" + std::to_string(i)).c_str(), &f.data.falloff, 0.05f, 0.1f, 4.0f, "%.2f");
-            if (ImGui::IsItemHovered())
-                ImGui::SetTooltip("中心=1 端=0 の減衰カーブの指数\n1.0=線形 / 2.0=二乗（端で急激に弱く） / 0.5=平方根（広範囲で強い）");
-
-            ImGui::Spacing();
-            ImGui::Separator();
-
-            // タイプ別パラメータ
-            ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kTextCaption);
-            ImGui::TextUnformatted("フィールドパラメータ");
-            ImGui::PopStyleColor();
-
-            ImGui::DragFloat(("強さ##str" + std::to_string(i)).c_str(), &f.data.strength, 0.05f, -999.0f, 999.0f, "%.3f");
-
-            auto ft = static_cast<ParticleFieldType>(f.data.fieldType);
-            if (ft == ParticleFieldType::Wind)
-            {
-                ImGui::DragFloat3(("方向##dir" + std::to_string(i)).c_str(), &f.data.direction.x, 0.01f, -1.0f, 1.0f, "%.3f");
-                if (ImGui::IsItemHovered())
-                    ImGui::SetTooltip("正規化しなくてもシェーダー側で正規化されます");
-            }
-            else if (ft == ParticleFieldType::Vortex)
-            {
-                ImGui::DragFloat3(("回転軸##dir" + std::to_string(i)).c_str(), &f.data.direction.x, 0.01f, -1.0f, 1.0f, "%.3f");
-                if (ImGui::IsItemHovered())
-                    ImGui::SetTooltip("渦の回転軸（例: 0,1,0 = Y軸回り）");
-            }
-
-            ImGui::Spacing();
-            ImGui::Separator();
-
-            // -----------------------------------------------
-            // 寿命ドレイン
-            // -----------------------------------------------
-            ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kTextCaption);
-            ImGui::TextUnformatted("寿命ドレイン");
-            ImGui::PopStyleColor();
-
-            bool lifeDrainEnabled = (f.data.enableLifeDrain != 0);
-            if (ImGui::Checkbox(("有効##ld" + std::to_string(i)).c_str(), &lifeDrainEnabled))
-            {
-                f.data.enableLifeDrain = lifeDrainEnabled ? 1u : 0u;
-            }
-            if (lifeDrainEnabled)
-            {
-                ImGui::DragFloat(("ドレイン量(秒/秒)##ldr" + std::to_string(i)).c_str(),
-                                 &f.data.lifeTimeDrain, 0.05f, 0.0f, 100.0f, "%.3f");
-                if (ImGui::IsItemHovered())
-                    ImGui::SetTooltip("フィールド中心(influence=1)で毎秒この量だけ寿命を消費します");
-            }
-
-            ImGui::Spacing();
-            ImGui::Separator();
-
-            // -----------------------------------------------
-            // トレイル強制生成
-            // -----------------------------------------------
-            ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kTextCaption);
-            ImGui::TextUnformatted("トレイル強制生成");
-            ImGui::PopStyleColor();
-
-            bool forceTrail = (f.data.enableForceTrail != 0);
-            if (ImGui::Checkbox(("有効##ft" + std::to_string(i)).c_str(), &forceTrail))
-            {
-                f.data.enableForceTrail = forceTrail ? 1u : 0u;
-            }
-            if (forceTrail)
-            {
-                ImGui::DragFloat(("生成間隔上書き##tdo" + std::to_string(i)).c_str(),
-                                 &f.data.trailSpawnDistanceOverride, 0.01f, 0.0f, 10.0f, "%.3f");
-                if (ImGui::IsItemHovered())
-                    ImGui::SetTooltip("0 のときはグループ設定の trailSpawnDistance を使用します");
-            }
-
-            ImGui::Spacing();
-            ImGui::Separator();
-
-            // -----------------------------------------------
-            // カラー乗算
-            // -----------------------------------------------
-            ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kTextCaption);
-            ImGui::TextUnformatted("カラー乗算");
-            ImGui::PopStyleColor();
-
-            bool colorMul = (f.data.enableColorMultiply != 0);
-            if (ImGui::Checkbox(("有効##cm" + std::to_string(i)).c_str(), &colorMul))
-            {
-                f.data.enableColorMultiply = colorMul ? 1u : 0u;
-            }
-            if (colorMul)
-            {
-                ImGui::ColorEdit4(("乗算色##clr" + std::to_string(i)).c_str(),
-                                  &f.data.colorMultiplier.x,
-                                  ImGuiColorEditFlags_Float | ImGuiColorEditFlags_HDR);
-                if (ImGui::IsItemHovered())
-                    ImGui::SetTooltip("フィールド影響度(influence)でブレンドされます\n白(1,1,1,1)=変化なし");
-            }
-
-            ImGui::Spacing();
-            ImGui::Separator();
-
-            // -----------------------------------------------
-            // 一度きり設定上書き
-            // -----------------------------------------------
-            ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kTextCaption);
-            ImGui::TextUnformatted("一度きり設定上書き");
-            ImGui::PopStyleColor();
-            ImGui::SameLine();
-            ImGui::TextDisabled("(?)");
-            if (ImGui::IsItemHovered())
-                ImGui::SetTooltip("フィールドに最初に入ったとき、チェックした項目を\n粒子ごとに一度だけ書き換えます。\n一度書き換えた粒子は再度入っても変化しません。");
-
-            bool settingsOvEnabled = (f.data.enableSettingsOverride != 0);
-            if (ImGui::Checkbox(("有効##so" + std::to_string(i)).c_str(), &settingsOvEnabled))
-            {
-                f.data.enableSettingsOverride = settingsOvEnabled ? 1u : 0u;
-            }
-            if (settingsOvEnabled)
-            {
-                DrawOverrideImGui(f.override_, i);
-            }
-
-            ImGui::Spacing();
-            ImGui::Separator();
-
-            // --- 接触Emit ---
-            ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kTextCaption);
-            ImGui::TextUnformatted("接触Emit");
-            ImGui::PopStyleColor();
-            ImGui::SameLine();
-            ImGui::TextDisabled("(?)");
-            if (ImGui::IsItemHovered())
-                ImGui::SetTooltip(
-                    "「フィールド接触部分にのみ発生」を有効にしたエミッターが、\n"
-                    "このフィールドと接触している表面にだけパーティクルを発生させます。\n"
-                    "発生数・間隔・寿命はここ（フィールド側）が唯一の設定場所です。\n"
-                    "エミッター側はトグルとグループIDのみ持ちます。");
-
-            bool emitSpawn = (f.data.enableEmitSpawn != 0);
-            if (ImGui::Checkbox(("有効##es" + std::to_string(i)).c_str(), &emitSpawn))
-            {
-                f.data.enableEmitSpawn = emitSpawn ? 1u : 0u;
-            }
-            if (emitSpawn)
-            {
-                ImGui::Indent();
-                ImGui::PushItemWidth(180.0f);
-
-                int spawnCount = static_cast<int>(f.emitSpawnCount);
-                if (ImGui::DragInt(("発生数/バースト##esCount" + std::to_string(i)).c_str(), &spawnCount, 10, 0, 50000))
-                {
-                    f.emitSpawnCount = static_cast<uint32_t>(std::max(0, spawnCount));
-                }
-                if (ImGui::IsItemHovered())
-                    ImGui::SetTooltip(
-                        "1回のバーストで発生させる粒子数（対象エミッターごと）。\n"
-                        "全スレッドが接触点にEmitするため 500〜3000 程度で十分密になります。");
-
-                ImGui::DragFloat(("発生間隔##esInterval" + std::to_string(i)).c_str(),
-                                 &f.emitSpawnInterval, 0.005f, 0.0f, 10.0f, "%.3f s");
-                if (ImGui::IsItemHovered())
-                    ImGui::SetTooltip("バーストの間隔（秒）。0 = 毎フレーム発生します。");
-
-                ImGui::DragFloat(("寿命 Min##esLTMin" + std::to_string(i)).c_str(),
-                                 &f.data.emitSpawnLifeTimeMin, 0.01f, 0.0f, 60.0f, "%.2f s");
-                ImGui::DragFloat(("寿命 Max##esLTMax" + std::to_string(i)).c_str(),
-                                 &f.data.emitSpawnLifeTimeMax, 0.01f, 0.0f, 60.0f, "%.2f s");
-                // Min > Max にならないよう補正
-                if (f.data.emitSpawnLifeTimeMin > f.data.emitSpawnLifeTimeMax)
-                    f.data.emitSpawnLifeTimeMin = f.data.emitSpawnLifeTimeMax;
-
-                // ライブ状態（間隔タイマーの進行と今フレームのバースト）
-                if (f.emitSpawnInterval > 0.0f)
-                {
-                    const float ratio = std::clamp(f.emitSpawnTimer / f.emitSpawnInterval, 0.0f, 1.0f);
-                    ImGui::ProgressBar(ratio, ImVec2(180.0f, 0.0f), "");
-                    ImGui::SameLine();
-                    ImGui::TextDisabled("次バーストまで %.2fs",
-                                        std::max(0.0f, f.emitSpawnInterval - f.emitSpawnTimer));
-                }
-                else
-                {
-                    ImGui::TextDisabled("毎フレーム %u 個発生中", f.emitSpawnCount);
-                }
-
-                ImGui::PopItemWidth();
-                ImGui::Unindent();
-            }
-
-            ImGui::Spacing();
-            ImGui::Separator();
-
-            // --- グループID ---
-            ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kTextCaption);
-            ImGui::TextUnformatted("グループID");
-            ImGui::PopStyleColor();
-            ImGui::SameLine();
-            ImGui::TextDisabled("(?)");
-            if (ImGui::IsItemHovered())
-                ImGui::SetTooltip(
-                    "-1 = 全エミッターに影響する（デフォルト）\n"
-                    "0以上 = 同じIDを持つエミッターにのみ影響する\n"
-                    "エミッター側は SetFieldGroupId() で設定します。");
-            ImGui::PushItemWidth(120.0f);
-            int gid = f.data.groupId;
-            if (ImGui::DragInt(("##groupId" + std::to_string(i)).c_str(), &gid, 1, -1, 255))
-            {
-                f.data.groupId = std::max(-1, gid);
-            }
-            ImGui::PopItemWidth();
-            ImGui::SameLine();
-            if (f.data.groupId == -1)
-            {
-                ImGui::TextDisabled("(全エミッター対象)");
-            }
-            else
-            {
-                ImGui::Text("(ID: %d のエミッターのみ)", f.data.groupId);
-            }
-
-            ImGui::PopItemWidth();
-            ImGui::Unindent();
-        }
-
-        ImGui::Spacing();
-    }
-
-    if (removeIndex >= 0)
-    {
-        RemoveField(removeIndex);
-    }
-
-    // -----------------------------------------------
-    // ギズモ表示トグル & 即時描画
-    // -----------------------------------------------
-    ImGui::Spacing();
-    ImGui::Separator();
-    ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kTextCaption);
-    ImGui::TextUnformatted("デバッグ表示");
-    ImGui::PopStyleColor();
-    ImGui::Checkbox("ギズモ表示##gizmo", &showGizmos_);
-    if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("各フィールドの影響範囲・方向をワイヤーフレームで表示します");
-
-    if (showGizmos_)
-    {
-        DrawFieldGizmos();
-    }
-
-    ImGui::End();
-#endif
-}
-
-// =============================================
-// DrawOverrideImGui
-// =============================================
-void ParticleCSFieldManager::DrawOverrideImGui(ParticleFieldSettingsOverride &ov, int idx)
-{
-#ifdef USE_IMGUI
-    using namespace FieldOverrideBits;
-    const std::string s = std::to_string(idx);
-
-    // 項目ヘルパー: 先頭のチェックボックスで上書きON/OFFを切り替え、
-    // ONのときだけ右隣の値エディタを操作できるようにする
-    auto BitCheckbox = [&](const char *id, uint32_t bit) -> bool {
-        bool checked = (ov.overrideMask & bit) != 0;
-        if (ImGui::Checkbox((std::string("##cb") + id + s).c_str(), &checked))
-        {
-            if (checked)
-                ov.overrideMask |= bit;
-            else
-                ov.overrideMask &= ~bit;
-        }
-        ImGui::SameLine();
-        return checked;
-    };
-
-    ImGui::Indent(12.0f);
-    ImGui::TextDisabled("チェックした項目だけ、入った粒子へ一度だけ適用されます");
-
-    // ---- 寿命（Min/Max乱数で上書き） ----
-    {
-        const bool on = BitCheckbox("life", LifeTime);
-        if (!on)
-            ImGui::BeginDisabled();
-        float v[2] = {ov.lifeTimeMin, ov.lifeTimeMax};
-        if (ImGui::DragFloat2(("寿命 Min/Max##ov" + s).c_str(), v, 0.01f, 0.0f, 60.0f, "%.2f s"))
-        {
-            ov.lifeTimeMin = v[0];
-            ov.lifeTimeMax = std::max(v[0], v[1]);
-        }
-        if (!on)
-            ImGui::EndDisabled();
-        if (on && ImGui::IsItemHovered())
-            ImGui::SetTooltip("寿命を Min〜Max の乱数で上書きします。\n短くすると入った粒子が早く消えます。");
-    }
-
-    // ---- スケール（Min/Max乱数で上書き） ----
-    {
-        const bool on = BitCheckbox("scale", Scale);
-        if (!on)
-            ImGui::BeginDisabled();
-        float v[2] = {ov.scaleMin, ov.scaleMax};
-        if (ImGui::DragFloat2(("スケール Min/Max##ov" + s).c_str(), v, 0.01f, 0.0f, 99.0f, "%.2f"))
-        {
-            ov.scaleMin = v[0];
-            ov.scaleMax = std::max(v[0], v[1]);
-        }
-        if (!on)
-            ImGui::EndDisabled();
-    }
-
-    // ---- 速度（Min/Max乱数で置換） ----
-    {
-        const bool on = BitCheckbox("vel", Velocity);
-        if (!on)
-            ImGui::BeginDisabled();
-        ImGui::DragFloat3(("速度 Min##ov" + s).c_str(), &ov.velocityMin.x, 0.01f, -999.0f, 999.0f, "%.2f");
-        if (on && ImGui::IsItemHovered())
-            ImGui::SetTooltip("速度を成分ごとの Min〜Max 乱数で置き換えます");
-        const float checkboxWidth = ImGui::GetFrameHeight() + ImGui::GetStyle().ItemSpacing.x;
-        ImGui::Indent(checkboxWidth);
-        ImGui::DragFloat3(("速度 Max##ov" + s).c_str(), &ov.velocityMax.x, 0.01f, -999.0f, 999.0f, "%.2f");
-        ImGui::Unindent(checkboxWidth);
-        if (!on)
-            ImGui::EndDisabled();
-    }
-
-    // ---- 速度倍率（一度だけ乗算） ----
-    {
-        const bool on = BitCheckbox("velmul", VelocityMul);
-        if (!on)
-            ImGui::BeginDisabled();
-        ImGui::DragFloat(("速度倍率##ov" + s).c_str(), &ov.velocityMultiplier, 0.01f, -10.0f, 10.0f, "%.2f");
-        if (!on)
-            ImGui::EndDisabled();
-        if (on && ImGui::IsItemHovered())
-            ImGui::SetTooltip("入った瞬間に速度へ一度だけ乗算します。\n0=停止 / 0.5=減速 / 負=反転");
-    }
-
-    // ---- 加速度インパルス（一度だけ加算） ----
-    {
-        const bool on = BitCheckbox("impulse", AccelImpulse);
-        if (!on)
-            ImGui::BeginDisabled();
-        ImGui::DragFloat3(("加速インパルス##ov" + s).c_str(), &ov.accelImpulse.x, 0.01f, -999.0f, 999.0f, "%.2f");
-        if (!on)
-            ImGui::EndDisabled();
-        if (on && ImGui::IsItemHovered())
-            ImGui::SetTooltip("入った瞬間に速度へ一度だけ加算します（吹き飛ばし等）");
-    }
-
-    // ---- 色（RGBを上書きして固定） ----
-    {
-        const bool on = BitCheckbox("color", Color);
-        if (!on)
-            ImGui::BeginDisabled();
-        ImGui::ColorEdit4(("色上書き##ov" + s).c_str(), &ov.color.x, ImGuiColorEditFlags_Float);
-        if (!on)
-            ImGui::EndDisabled();
-        if (on && ImGui::IsItemHovered())
-            ImGui::SetTooltip("入った粒子のRGBをこの色に固定します。\nアルファのフェードは通常どおり継続します。");
-    }
-
-    // ---- トレイル生成間隔の上書き ----
-    {
-        const bool on = BitCheckbox("traildist", TrailDistance);
-        if (!on)
-            ImGui::BeginDisabled();
-        ImGui::DragFloat(("トレイル生成間隔##ov" + s).c_str(), &ov.trailSpawnDistance, 0.005f, 0.001f, 10.0f, "%.3f");
-        if (!on)
-            ImGui::EndDisabled();
-        if (on && ImGui::IsItemHovered())
-            ImGui::SetTooltip("トレイルの生成間隔（距離）を上書きします。\n小さいほど濃く出ます。");
-    }
-
-    // ---- 向け替え（速さを保ったままターゲット方向へ） ----
-    {
-        const bool on = BitCheckbox("redirect", GatherRedirect);
-        if (!on)
-            ImGui::BeginDisabled();
-        ImGui::DragFloat3(("向け替え先##ov" + s).c_str(), &ov.gatherTarget.x, 0.1f, -9999.0f, 9999.0f, "%.1f");
-        if (!on)
-            ImGui::EndDisabled();
-        if (on && ImGui::IsItemHovered())
-            ImGui::SetTooltip("入った瞬間、速さを保ったままこの座標の方向へ向け替えます");
-    }
-
-    ImGui::Unindent(12.0f);
-#endif
 }
 
 // =============================================
@@ -1003,266 +948,126 @@ void ParticleCSFieldManager::DrawOverrideImGui(ParticleFieldSettingsOverride &ov
 
 void ParticleCSFieldManager::DrawFieldGizmos()
 {
-    for (const auto &f : fields_)
+    for (int i = 0; i < static_cast<int>(fields_.size()); ++i)
     {
-        if (!f.enabled)
-            continue;
-
-        // フィールドタイプ別に色を決定
-        // strength の絶対値を alpha に反映して強さを視覚化（0.4〜1.0 にクランプ）
-        float alpha = std::min(1.0f, 0.4f + std::abs(f.data.strength) * 0.06f);
-
-        Vector4 color;
-        auto ft = static_cast<ParticleFieldType>(f.data.fieldType);
-        switch (ft)
+        if (fields_[i].enabled)
         {
-        case ParticleFieldType::Wind:
-            // 風 → 水色
-            color = {0.3f, 0.7f, 1.0f, alpha};
-            break;
-        case ParticleFieldType::Attract:
-            // 引力 → 紫
-            color = {0.8f, 0.3f, 1.0f, alpha};
-            break;
-        case ParticleFieldType::Repel:
-            // 斥力 → オレンジ
-            color = {1.0f, 0.5f, 0.1f, alpha};
-            break;
-        case ParticleFieldType::Vortex:
-            // 渦巻き → 緑
-            color = {0.2f, 1.0f, 0.6f, alpha};
-            break;
-        default:
-            color = {0.6f, 0.6f, 0.6f, alpha};
-            break;
-        }
-
-        // 影響範囲球（全タイプ共通）
-        DrawFieldSphere(f, color);
-
-        // タイプ別の方向・強さ表示
-        switch (ft)
-        {
-        case ParticleFieldType::Wind:
-            DrawWindArrows(f, color);
-            break;
-        case ParticleFieldType::Attract:
-            // inward = true（外→中心向き）
-            DrawRadialLines(f, color, true);
-            break;
-        case ParticleFieldType::Repel:
-            // inward = false（中心→外向き）
-            DrawRadialLines(f, color, false);
-            break;
-        case ParticleFieldType::Vortex:
-            DrawVortexArcs(f, color);
-            break;
-        default:
-            break;
+            DrawFieldGizmo(i);
         }
     }
 }
 
-// --- 影響範囲球 ---
-void ParticleCSFieldManager::DrawFieldSphere(const ParticleField &field, const Vector4 &color)
+void ParticleCSFieldManager::DrawFieldGizmo(int index)
 {
-    LineRenderer::GetInstance()->AddSphere(field.data.position, field.data.radius, color, 16);
-}
-
-// --- Wind：球内に等間隔で方向矢印を描く ---
-void ParticleCSFieldManager::DrawWindArrows(const ParticleField &field, const Vector4 &color)
-{
-    const Vector3 &center = field.data.position;
-    const float r = field.data.radius;
-
-    // 方向を正規化
-    Vector3 dir = field.data.direction;
-    float len = std::sqrt(dir.x * dir.x + dir.y * dir.y + dir.z * dir.z);
-    if (len < 1e-5f)
+    if (index < 0 || index >= static_cast<int>(fields_.size()))
         return;
-    dir.x /= len;
-    dir.y /= len;
-    dir.z /= len;
+    const ParticleField &field = fields_[index];
+    LineRenderer *line = LineRenderer::GetInstance();
 
-    // strength の絶対値で矢印の長さを決定（最大 radius の 0.6 倍）
-    float arrowLen = std::min(r * 0.6f, std::abs(field.data.strength) * 0.5f + r * 0.15f);
-    // 矢頭サイズ
-    float headLen = arrowLen * 0.25f;
+    Vector4 color = FieldColor(field);
+    color.w = field.enabled ? 0.9f : 0.3f;
+    Vector4 dim = color;
+    dim.w *= 0.4f;
 
-    // 球内に 3×3×3 グリッドで矢印を配置
-    const int grid = 3;
-    float step = r * 1.6f / (grid - 1);
-    for (int ix = 0; ix < grid; ++ix)
-    {
-        for (int iy = 0; iy < grid; ++iy)
+    Vector3 axisX;
+    Vector3 axisY;
+    Vector3 axisZ;
+    FieldAxes(field, axisX, axisY, axisZ);
+    const Vector3 half = FieldHalfExtent(field);
+    const Vector3 &center = field.position;
+    const float core = (field.falloff == ParticleFieldFalloff::Constant) ? 0.0f : std::clamp(field.falloffStart, 0.0f, 0.95f);
+
+    // ---- 形（外側の境界と、100% で効く芯）----
+    auto drawShape = [&](float scale, const Vector4 &shapeColor) {
+        switch (field.shape)
         {
-            for (int iz = 0; iz < grid; ++iz)
-            {
-                Vector3 offset = {
-                    -r * 0.8f + ix * step,
-                    -r * 0.8f + iy * step,
-                    -r * 0.8f + iz * step,
-                };
-                // 球の外側は除外
-                float d2 = offset.x * offset.x + offset.y * offset.y + offset.z * offset.z;
-                if (d2 > r * r)
-                    continue;
-
-                Vector3 from = {center.x + offset.x, center.y + offset.y, center.z + offset.z};
-                Vector3 to = {from.x + dir.x * arrowLen, from.y + dir.y * arrowLen, from.z + dir.z * arrowLen};
-                LineRenderer::GetInstance()->AddLine(from, to, color);
-
-                // 矢頭：dirに垂直な軸で小さな V 字を描く
-                // dir に直交するベクトルを求める
-                Vector3 up = {0.0f, 1.0f, 0.0f};
-                if (std::abs(dir.y) > 0.9f)
-                    up = {1.0f, 0.0f, 0.0f};
-                // cross(dir, up)
-                Vector3 side = {
-                    dir.y * up.z - dir.z * up.y,
-                    dir.z * up.x - dir.x * up.z,
-                    dir.x * up.y - dir.y * up.x,
-                };
-                float sLen = std::sqrt(side.x * side.x + side.y * side.y + side.z * side.z);
-                if (sLen > 1e-5f)
-                {
-                    side.x /= sLen;
-                    side.y /= sLen;
-                    side.z /= sLen;
-                }
-                Vector3 headBase = {to.x - dir.x * headLen, to.y - dir.y * headLen, to.z - dir.z * headLen};
-                Vector3 h1 = {headBase.x + side.x * headLen * 0.5f, headBase.y + side.y * headLen * 0.5f, headBase.z + side.z * headLen * 0.5f};
-                Vector3 h2 = {headBase.x - side.x * headLen * 0.5f, headBase.y - side.y * headLen * 0.5f, headBase.z - side.z * headLen * 0.5f};
-                LineRenderer::GetInstance()->AddLine(to, h1, color);
-                LineRenderer::GetInstance()->AddLine(to, h2, color);
-            }
-        }
-    }
-}
-
-// --- Attract / Repel：球面から中心、または中心から球面へ向かう放射線 ---
-void ParticleCSFieldManager::DrawRadialLines(const ParticleField &field, const Vector4 &color, bool inward)
-{
-    const Vector3 &center = field.data.position;
-    const float r = field.data.radius;
-
-    // strength の絶対値で線の長さ割合を決定（0.3〜1.0）
-    float ratio = std::min(1.0f, 0.3f + std::abs(field.data.strength) * 0.07f);
-
-    // 正二十面体の頂点方向（12方向）を均一配置の代わりに球面上を均等サンプル
-    const int stacks = 4;
-    const int slices = 8;
-    const float kPi = 3.1415926535f;
-    for (int si = 0; si < stacks; ++si)
-    {
-        float theta = kPi * (si + 0.5f) / stacks; // 0 〜 π
-        for (int sj = 0; sj < slices; ++sj)
+        case ParticleFieldShape::Box:
         {
-            float phi = 2.0f * kPi * sj / slices;
-            Vector3 dir = {
-                std::sin(theta) * std::cos(phi),
-                std::cos(theta),
-                std::sin(theta) * std::sin(phi),
+            const Vector3 x = axisX * (half.x * scale);
+            const Vector3 y = axisY * (half.y * scale);
+            const Vector3 z = axisZ * (half.z * scale);
+            // 0-3 が手前面（-Z 側）、4-7 が奥面
+            const Vector3 corners[8] = {
+                center - x - y - z, center + x - y - z, center + x + y - z, center - x + y - z,
+                center - x - y + z, center + x - y + z, center + x + y + z, center - x + y + z,
             };
-            Vector3 surface = {center.x + dir.x * r, center.y + dir.y * r, center.z + dir.z * r};
-            // 線の長さを ratio で縮める（途中まで）
-            Vector3 inner = {
-                center.x + dir.x * r * (1.0f - ratio),
-                center.y + dir.y * r * (1.0f - ratio),
-                center.z + dir.z * r * (1.0f - ratio),
-            };
-            if (inward)
-            {
-                // 球面 → 中心方向へ（Attract）
-                LineRenderer::GetInstance()->AddLine(surface, inner, color);
-            }
-            else
-            {
-                // 中心 → 球面方向へ（Repel）
-                LineRenderer::GetInstance()->AddLine(inner, surface, color);
-            }
+            line->AddBoxCorners(corners, shapeColor);
+            break;
         }
-    }
-}
-
-// --- Vortex：回転軸周りに螺旋状の円弧を描く ---
-void ParticleCSFieldManager::DrawVortexArcs(const ParticleField &field, const Vector4 &color)
-{
-    const Vector3 &center = field.data.position;
-    const float r = field.data.radius;
-
-    // 回転軸を正規化
-    Vector3 axis = field.data.direction;
-    float axLen = std::sqrt(axis.x * axis.x + axis.y * axis.y + axis.z * axis.z);
-    if (axLen < 1e-5f)
-        return;
-    axis.x /= axLen;
-    axis.y /= axLen;
-    axis.z /= axLen;
-
-    // strength の符号で回転方向を決定、絶対値で螺旋の巻き数を決定
-    float sign = (field.data.strength >= 0.0f) ? 1.0f : -1.0f;
-    float turns = std::min(1.5f, 0.5f + std::abs(field.data.strength) * 0.1f);
-
-    // 軸に直交するベクトルを生成
-    Vector3 up = {0.0f, 1.0f, 0.0f};
-    if (std::abs(axis.y) > 0.9f)
-        up = {1.0f, 0.0f, 0.0f};
-    // right = cross(axis, up)
-    Vector3 right = {
-        axis.y * up.z - axis.z * up.y,
-        axis.z * up.x - axis.x * up.z,
-        axis.x * up.y - axis.y * up.x,
+        case ParticleFieldShape::Cylinder:
+        {
+            const Vector3 u = axisX * (half.x * scale);
+            const Vector3 v = axisZ * (half.x * scale);
+            const Vector3 top = center + axisY * (half.y * scale);
+            const Vector3 bottom = center - axisY * (half.y * scale);
+            line->AddCircle(top, u, v, shapeColor, 32);
+            line->AddCircle(bottom, u, v, shapeColor, 32);
+            for (const Vector3 &side : {u, u * -1.0f, v, v * -1.0f})
+            {
+                line->AddLine(bottom + side, top + side, shapeColor);
+            }
+            break;
+        }
+        default:
+            line->AddSphere(center, half.x * scale, shapeColor, 24);
+            break;
+        }
     };
-    float rLen = std::sqrt(right.x * right.x + right.y * right.y + right.z * right.z);
-    right.x /= rLen;
-    right.y /= rLen;
-    right.z /= rLen;
-    // forward = cross(right, axis)
-    Vector3 forward = {
-        right.y * axis.z - right.z * axis.y,
-        right.z * axis.x - right.x * axis.z,
-        right.x * axis.y - right.y * axis.x,
-    };
-
-    // 高さ方向の異なる3段に円弧を描く
-    const int arcLayers = 3;
-    const int arcSegments = 24;
-    const float kPi = 3.1415926535f;
-    for (int layer = 0; layer < arcLayers; ++layer)
+    drawShape(1.0f, color);
+    if (core > 0.05f)
     {
-        // 各段を軸方向にオフセット（-r*0.5 〜 r*0.5）
-        float heightOffset = -r * 0.5f + r * layer / (arcLayers - 1);
-        Vector3 layerCenter = {
-            center.x + axis.x * heightOffset,
-            center.y + axis.y * heightOffset,
-            center.z + axis.z * heightOffset,
-        };
-        // 段ごとに半径を変えて円錐状に見せる
-        float layerRadius = r * (0.5f + 0.5f * std::sin(kPi * layer / (arcLayers - 1)));
+        drawShape(core, dim);
+    }
 
-        for (int seg = 0; seg < arcSegments; ++seg)
+    const float reach = (std::max)({half.x, half.y, half.z});
+
+    // ---- 風: 中心を通る矢印（長さは風速に合わせて最大で範囲の 8 割）----
+    if (field.wind.enabled)
+    {
+        const Vector3 direction = SafeNormalize(field.wind.direction, {1.0f, 0.0f, 0.0f}) * (field.wind.speed >= 0.0f ? 1.0f : -1.0f);
+        const float length = (std::min)(reach * 0.8f, 0.5f + std::abs(field.wind.speed) * 0.2f);
+        const Vector3 side = SafeNormalize(
+            direction.Cross((std::abs(direction.y) > 0.9f) ? Vector3{1.0f, 0.0f, 0.0f} : Vector3{0.0f, 1.0f, 0.0f}), {1.0f, 0.0f, 0.0f});
+        for (float offset : {-0.4f, 0.0f, 0.4f})
         {
-            float t1 = sign * 2.0f * kPi * turns * seg / arcSegments;
-            float t2 = sign * 2.0f * kPi * turns * (seg + 1) / arcSegments;
-
-            Vector3 p1 = {
-                layerCenter.x + layerRadius * (right.x * std::cos(t1) + forward.x * std::sin(t1)),
-                layerCenter.y + layerRadius * (right.y * std::cos(t1) + forward.y * std::sin(t1)),
-                layerCenter.z + layerRadius * (right.z * std::cos(t1) + forward.z * std::sin(t1)),
-            };
-            Vector3 p2 = {
-                layerCenter.x + layerRadius * (right.x * std::cos(t2) + forward.x * std::sin(t2)),
-                layerCenter.y + layerRadius * (right.y * std::cos(t2) + forward.y * std::sin(t2)),
-                layerCenter.z + layerRadius * (right.z * std::cos(t2) + forward.z * std::sin(t2)),
-            };
-            LineRenderer::GetInstance()->AddLine(p1, p2, color);
+            const Vector3 from = center + side * (reach * offset) - direction * (length * 0.5f);
+            DrawArrow(line, from, from + direction * length, color);
         }
     }
 
-    // 回転軸そのものを細い線で表示（軸の方向が分かるように）
-    Vector3 axisTop = {center.x + axis.x * r * 0.6f, center.y + axis.y * r * 0.6f, center.z + axis.z * r * 0.6f};
-    Vector3 axisBot = {center.x - axis.x * r * 0.6f, center.y - axis.y * r * 0.6f, center.z - axis.z * r * 0.6f};
-    LineRenderer::GetInstance()->AddLine(axisBot, axisTop, color);
+    // ---- 渦: 形の Y 軸まわりに、回る向きの矢印付きの輪 ----
+    if (field.vortex.enabled)
+    {
+        const float ringRadius = half.x * 0.6f;
+        const float sign = (field.vortex.speed >= 0.0f) ? 1.0f : -1.0f;
+        line->AddCircle(center, axisX * ringRadius, axisZ * ringRadius, color, 32);
+        line->AddLine(center - axisY * half.y, center + axisY * half.y, dim);
+        constexpr int kArrows = 4;
+        for (int a = 0; a < kArrows; ++a)
+        {
+            const float angle = 2.0f * std::numbers::pi_v<float> * static_cast<float>(a) / kArrows;
+            const Vector3 radial = axisX * std::cos(angle) + axisZ * std::sin(angle);
+            const Vector3 point = center + radial * ringRadius;
+            // 接線 = Y 軸 × 半径方向（シェーダーの cross(axisY, radial) と同じ向き）
+            const Vector3 tangent = axisY.Cross(radial) * sign;
+            DrawArrow(line, point - tangent * (ringRadius * 0.3f), point + tangent * (ringRadius * 0.3f), color);
+        }
+    }
+
+    // ---- 引き寄せ / 押し出し: 6方向の矢印（内向き / 外向き）と、消える範囲 ----
+    if (field.attract.enabled)
+    {
+        const bool pull = field.attract.strength >= 0.0f;
+        for (const Vector3 &axis : {axisX, axisX * -1.0f, axisY, axisY * -1.0f, axisZ, axisZ * -1.0f})
+        {
+            const Vector3 outer = center + axis * (reach * 0.9f);
+            const Vector3 inner = center + axis * (reach * 0.45f);
+            DrawArrow(line, pull ? outer : inner, pull ? inner : outer, color);
+        }
+        if (field.attract.absorbRadius > 0.0f)
+        {
+            line->AddSphere(center, field.attract.absorbRadius, dim, 12);
+        }
+    }
 }
 } // namespace Hagine

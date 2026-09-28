@@ -43,7 +43,7 @@ void ParticleManager::Update(const ViewProjection &viewProjection)
             // 軌跡パーティクル生成処理
             if (particleSetting.enableTrail && !particle.isChild)
             {
-                particle.trailSpawnTimer += Frame::DeltaTime();
+                particle.trailSpawnTimer += Frame::UnscaledDeltaTime();
                 if (particle.trailSpawnTimer >= particleSetting.trailSpawnInterval)
                 {
                     CreateTrailParticle(particle, particleSetting);
@@ -109,7 +109,7 @@ void ParticleManager::Update(const ViewProjection &viewProjection)
                 float distanceFactor = std::min(1.0f, distance);
                 toEmitter = toEmitter.Normalize();
                 float gatherSpeed = particleSetting.gatherStrength * gatherFactor * distanceFactor * 3.0f;
-                Vector3 gatherVelocity = toEmitter * gatherSpeed * Frame::DeltaTime();
+                Vector3 gatherVelocity = toEmitter * gatherSpeed * Frame::UnscaledDeltaTime();
                 particle.velocity = gatherVelocity;
                 particle.transform.translation_ += particle.velocity;
             }
@@ -148,12 +148,33 @@ void ParticleManager::Update(const ViewProjection &viewProjection)
                     particle.velocity += particle.Acce;
                 }
                 particle.transform.translation_ +=
-                    particle.velocity * Frame::DeltaTime();
+                    particle.velocity * Frame::UnscaledDeltaTime();
             }
 
-            particle.velocity.y -= particleSetting.gravity * Frame::DeltaTime();
-            particle.currentTime += Frame::DeltaTime();
+            particle.velocity.y -= particleSetting.gravity * Frame::UnscaledDeltaTime();
+            particle.currentTime += Frame::UnscaledDeltaTime();
 
+            const Matrix4x4 worldMatrix = ComputeWorldMatrix(particle, particleSetting, viewProjection.matView_, billboardMatrix);
+
+            Matrix4x4 worldViewProjectionMatrix = worldMatrix * viewProjectionMatrix;
+            if (numInstance < particleGroup->GetMaxInstance())
+            {
+                particleGroup->GetParticleGroupData().instancingData[numInstance].WVP = worldViewProjectionMatrix;
+                particleGroup->GetParticleGroupData().instancingData[numInstance].World = worldMatrix;
+                particleGroup->GetParticleGroupData().instancingData[numInstance].color = particle.color;
+                particleGroup->GetParticleGroupData().instancingData[numInstance].color.w = particle.color.w;
+                ++numInstance;
+            }
+            aliveParticles.push_back(std::move(particle));
+        }
+        particles.swap(aliveParticles);
+        particleGroup->GetParticleGroupData().instanceCount = numInstance;
+    }
+}
+
+Matrix4x4 ParticleManager::ComputeWorldMatrix(const Particle &particle, const ParticleSetting &particleSetting,
+                                              const Matrix4x4 &viewMatrixIn, const Matrix4x4 &billboardMatrix)
+{
             Matrix4x4 worldMatrix{};
 
             // === 各軸ビルボード処理 ===
@@ -162,7 +183,7 @@ void ParticleManager::Update(const ViewProjection &viewProjection)
             {
 
                 Matrix4x4 customBillboardMatrix = MakeIdentity4x4();
-                Matrix4x4 viewMatrix = viewProjection.matView_;
+                const Matrix4x4 &viewMatrix = viewMatrixIn;
 
                 // ビューマトリックスから回転成分を抽出
                 Vector3 right = {viewMatrix.m[0][0], viewMatrix.m[1][0], viewMatrix.m[2][0]};
@@ -241,20 +262,43 @@ void ParticleManager::Update(const ViewProjection &viewProjection)
                                                particle.transform.eulerRotation_,
                                                particle.transform.translation_);
             }
+            return worldMatrix;
+}
 
-            Matrix4x4 worldViewProjectionMatrix = worldMatrix * viewProjectionMatrix;
-            if (numInstance < particleGroup->GetMaxInstance())
+void ParticleManager::DrawForView(const ViewProjection &viewProjection)
+{
+    const int view = RenderView::Current();
+    if (view == 0)
+    {
+        return;
+    }
+    const Matrix4x4 viewProjectionMatrix = viewProjection.matView_ * viewProjection.matProjection_;
+    Matrix4x4 billboardMatrix = viewProjection.matView_;
+    billboardMatrix.m[3][0] = 0.0f;
+    billboardMatrix.m[3][1] = 0.0f;
+    billboardMatrix.m[3][2] = 0.0f;
+    billboardMatrix.m[3][3] = 1.0f;
+    billboardMatrix = Inverse(billboardMatrix);
+
+    for (auto &[groupName, particleGroup] : particleGroups_)
+    {
+        const ParticleSetting &particleSetting = particleSettings_[groupName];
+        ParticleGroup::ViewInstancing &instancing = particleGroup->AcquireViewInstancing(view);
+        uint32_t count = 0;
+        for (const Particle &particle : particleGroup->GetParticleGroupData().particles)
+        {
+            if (particle.lifeTime <= particle.currentTime || count >= particleGroup->GetMaxInstance())
             {
-                particleGroup->GetParticleGroupData().instancingData[numInstance].WVP = worldViewProjectionMatrix;
-                particleGroup->GetParticleGroupData().instancingData[numInstance].World = worldMatrix;
-                particleGroup->GetParticleGroupData().instancingData[numInstance].color = particle.color;
-                particleGroup->GetParticleGroupData().instancingData[numInstance].color.w = particle.color.w;
-                ++numInstance;
+                continue;
             }
-            aliveParticles.push_back(std::move(particle));
+            const Matrix4x4 world = ComputeWorldMatrix(particle, particleSetting, viewProjection.matView_, billboardMatrix);
+            instancing.data[count].WVP = world * viewProjectionMatrix;
+            instancing.data[count].World = world;
+            instancing.data[count].color = particle.color;
+            ++count;
         }
-        particles.swap(aliveParticles);
-        particleGroup->GetParticleGroupData().instanceCount = numInstance;
+        instancing.count = count;
+        DrawGroup(particleGroup, instancing.srvIndex, count);
     }
 }
 
@@ -328,6 +372,14 @@ void ParticleManager::Draw()
 {
     for (auto &[groupName, particleGroup] : particleGroups_)
     {
+        DrawGroup(particleGroup, particleGroup->GetParticleGroupData().instancingSRVIndex,
+                  particleGroup->GetParticleGroupData().instanceCount);
+    }
+}
+
+void ParticleManager::DrawGroup(ParticleGroup *particleGroup, uint32_t instancingSrvIndex, uint32_t instanceCount)
+{
+    {
         pParticleCommon_->DrawCommonSetting(particleGroup->GetParticleGroupData().blendMode);
         const auto &meshes = particleGroup->GetModelData().meshes;
         for (size_t meshIndex = 0; meshIndex < meshes.size(); ++meshIndex)
@@ -336,7 +388,7 @@ void ParticleManager::Draw()
             D3D12_VERTEX_BUFFER_VIEW vertexBufferView = particleGroup->GetVertexBufferView();
             pParticleCommon_->GetDxCommon()->GetCommandList()->IASetIndexBuffer(&indexBufferView);
             pParticleCommon_->GetDxCommon()->GetCommandList()->IASetVertexBuffers(0, 1, &vertexBufferView);
-            if (particleGroup->GetParticleGroupData().instanceCount > 0)
+            if (instanceCount > 0)
             {
                 // t0 は頂点シェーダー（インスタンスデータ）とピクセルシェーダー（テクスチャ）で
                 // 同じ番号の別リソースなので、可視性まで指定して引く
@@ -348,13 +400,13 @@ void ParticleManager::Draw()
                     rootSignature->GetCbvIndex(0), particleGroup->GetmaterialResource()->GetGPUVirtualAddress());
                 pSrvManager_->SetGraphicsRootDescriptorTable(
                     rootSignature->GetSrvIndex(0, D3D12_SHADER_VISIBILITY_VERTEX),
-                    particleGroup->GetParticleGroupData().instancingSRVIndex);
+                    instancingSrvIndex);
                 pSrvManager_->SetGraphicsRootDescriptorTable(
                     rootSignature->GetSrvIndex(0, D3D12_SHADER_VISIBILITY_PIXEL),
                     particleGroup->GetParticleGroupData().materials[meshIndex].textureIndex);
                 pParticleCommon_->GetDxCommon()->GetCommandList()->DrawIndexedInstanced(
                     UINT(meshes[meshIndex].indices.size()),
-                    particleGroup->GetParticleGroupData().instanceCount,
+                    instanceCount,
                     0, 0, 0);
             }
         }

@@ -22,6 +22,9 @@ class GamePad
 
     // 感度・振動設定（ゲーム側の設定画面から書き換える）
     float stickSensitivity_ = 1.0f; // スティック入力に掛ける倍率
+    float rumbleTimer_ = 0.0f;      // 時間つき振動の残り時間（秒）
+    float rumbleLow_ = 0.0f;        // 時間つき振動の左モーターの強さ（0〜1）
+    float rumbleHigh_ = 0.0f;       // 時間つき振動の右モーターの強さ（0〜1）
     bool isVibrationEnabled_ = true; // 振動を鳴らすか
 
   public:
@@ -32,7 +35,12 @@ class GamePad
     void Init(int32_t playerIndex = 0);
 
     /// <summary>
-    /// 更新（毎フレーム呼び出す）
+    /// 振動中に破棄されたら止める（シーンを切り替えても鳴りっぱなしにならないように）
+    /// </summary>
+    ~GamePad();
+
+    /// <summary>
+    /// 更新（毎フレーム呼び出す）。時間つき振動（Rumble）もここで進める
     /// </summary>
     void Update();
 
@@ -126,6 +134,22 @@ class GamePad
     /// 振動を停止する
     /// </summary>
     void StopVibration();
+
+    /// <summary>
+    /// 決まった時間だけ振動させる（被弾・必殺技などの手応え用）。
+    /// 強さは全体の振動の強さ（SetVibrationScale）を掛けてから出す。
+    /// 鳴っている途中でもっと強い振動が来たら上書きし、弱い振動は残り時間だけ延ばす
+    /// </summary>
+    /// <param name="lowStrength">左（低音・重い）モーターの強さ 0〜1</param>
+    /// <param name="highStrength">右（高音・軽い）モーターの強さ 0〜1</param>
+    /// <param name="seconds">振動させる時間（秒。実時間なのでヒットストップでも止まらない）</param>
+    void Rumble(float lowStrength, float highStrength, float seconds);
+
+    /// <summary>
+    /// 全体の振動の強さ（オプション画面の設定。0で振動しない）
+    /// </summary>
+    static void SetVibrationScale(float scale);
+    static float GetVibrationScale();
 
     /// <summary>
     /// 振動の有効・無効を設定する。無効にした瞬間に鳴っている振動も止める

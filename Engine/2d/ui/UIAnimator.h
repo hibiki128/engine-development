@@ -175,6 +175,36 @@ class UIAnimator
     int selectedGroup_ = -1;      // エディタで選択中のグループindex
     int selectedClip_ = -1;       // エディタで選択中のクリップindex
     char newNameBuffer_[128] = {}; // 新規作成・リネーム用の入力バッファ
+
+    // ---- タイムライン・プレビュー（UIAnimatorTimeline.cpp）----
+    /// <summary>プレビューする前の値（「プレビュー前に戻す」で書き戻す）</summary>
+    struct PreviewValue
+    {
+        UITargetKind kind;
+        std::string target;
+        UIChannel channel;
+        float value;
+    };
+    int selectedTween_ = -1;                   // タイムラインで選んだトゥイーン
+    float scrubTime_ = 0.0f;                   // 目盛りで指している時刻
+    bool scrubbing_ = false;                   // 目盛りをつまんでいる最中か
+    std::vector<PreviewValue> previewSnapshot_; // プレビュー前の値
+    std::string previewClip_;                   // どのクリップのプレビューか
+
+    /// クリップの長さ（遅延+秒数のいちばん長い物）
+    float ClipLength(const UIClip &clip) const;
+    /// 再生中のクリップの今の時刻
+    float ClipTime(const UIClip &clip) const;
+    /// クリップが動かす値を覚えておく
+    void CapturePreviewSnapshot(const UIClip &clip);
+    /// 覚えておいた値へ戻す
+    void RestorePreviewSnapshot();
+    /// 指定の時刻の姿を当てる（途中の確認用）
+    void PreviewClipAt(UIClip &clip, float time);
+    /// タイムラインを描く。行を押してトゥイーンを選んだら true
+    bool DrawClipTimeline(UIClip &clip);
+    /// グループとメンバーを階層で描く
+    void DrawGroupTree();
 #endif // USE_IMGUI
 };
 

@@ -109,4 +109,35 @@ void OBBCollider::LoadShapeFromJson(DataHandler &json)
     positionOffset_ = json.Load<Vector3>("scaleOffset", positionOffset_);
     anchorPoint_ = json.Load<Vector3>("anchorPoint", anchorPoint_);
 }
+
+#ifdef USE_IMGUI
+void OBBCollider::CaptureShape(nlohmann::json &shape) const
+{
+    shape["size"] = size_;
+    shape["rotationOffset"] = rotationOffset_;
+    // キー名は保存JSONに合わせてある（中身は位置オフセット）
+    shape["scaleOffset"] = positionOffset_;
+    shape["anchorPoint"] = anchorPoint_;
+}
+
+void OBBCollider::ApplyShape(const nlohmann::json &shape)
+{
+    if (shape.contains("size"))
+    {
+        size_ = shape["size"].get<Vector3>();
+    }
+    if (shape.contains("rotationOffset"))
+    {
+        rotationOffset_ = shape["rotationOffset"].get<Vector3>();
+    }
+    if (shape.contains("scaleOffset"))
+    {
+        positionOffset_ = shape["scaleOffset"].get<Vector3>();
+    }
+    if (shape.contains("anchorPoint"))
+    {
+        anchorPoint_ = shape["anchorPoint"].get<Vector3>();
+    }
+}
+#endif // USE_IMGUI
 } // namespace Hagine

@@ -48,6 +48,31 @@ class GpuProfiler
     /// ImGui 表示（ラベル別 ms とキュー合計）。
     void DrawImGui();
 
+    /// <summary>
+    /// 1フレームぶんの描画統計（GPU が数えた値。Direct キューの分だけ）
+    /// </summary>
+    struct FrameStats
+    {
+        uint64_t vertices = 0;          ///< 読み込んだ頂点の数
+        uint64_t primitives = 0;        ///< 組み立てた三角形（線・点も含む）の数
+        uint64_t drawnPrimitives = 0;   ///< 裁ち落とし・裏面カリングを通って実際に描いた数
+        uint64_t pixels = 0;            ///< ピクセルシェーダーを走らせた回数（塗った画素の延べ数）
+        uint64_t computeThreads = 0;    ///< コンピュートシェーダーのスレッド数（Direct キュー分）
+        bool valid = false;             ///< 読み戻せたか
+    };
+
+    /// <summary>描画の始め（Direct リストへ記録を始めた直後）に呼ぶ</summary>
+    void BeginPipelineStats(ID3D12GraphicsCommandList *pCommandList);
+
+    /// <summary>描画の終わり（Direct リストを閉じる前）に呼ぶ</summary>
+    void EndPipelineStats(ID3D12GraphicsCommandList *pCommandList);
+
+    /// <summary>直近に読み戻せたフレームの描画統計（3フレーム遅れ）</summary>
+    const FrameStats &GetFrameStats() const { return frameStats_; }
+
+    /// <summary>描画統計の表示（統計の窓などから呼ぶ）</summary>
+    void DrawFrameStatsImGui();
+
     void SetEnabled(bool e) { enabled_ = e; }
     bool IsEnabled() const { return enabled_; }
 
@@ -109,6 +134,14 @@ class GpuProfiler
     Microsoft::WRL::ComPtr<ID3D12Resource> readbackCompute_;
     uint64_t *pMappedGraphics_ = nullptr;
     uint64_t *pMappedCompute_ = nullptr;
+
+    // ---- 描画統計（パイプライン統計クエリ。1フレーム1つを kRing 段）----
+    Microsoft::WRL::ComPtr<ID3D12QueryHeap> statsHeap_;
+    Microsoft::WRL::ComPtr<ID3D12Resource> statsReadback_;
+    D3D12_QUERY_DATA_PIPELINE_STATISTICS *pMappedStats_ = nullptr;
+    bool statsWritten_[kRing] = {}; // その段に結果を書いたか
+    bool statsOpen_ = false;        // このフレームの計測中か
+    FrameStats frameStats_;
 
     DirectXCommon *pDxCommon_ = nullptr;
     bool enabled_ = true;

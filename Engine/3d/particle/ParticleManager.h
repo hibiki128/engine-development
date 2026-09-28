@@ -44,6 +44,12 @@ class ParticleManager
     void Draw();
 
     /// <summary>
+    /// カメラビュー窓（RenderView 1〜）用に描く。粒は動かさず（Update で進めた今の状態のまま）、
+    /// そのカメラ向けの行列だけ作り直してビュー用のバッファへ書いて描く
+    /// </summary>
+    void DrawForView(const ViewProjection &viewProjection);
+
+    /// <summary>
     /// パーティクルグループを追加
     /// </summary>
     /// <param name="particleGroup">追加するパーティクルグループ</param>
@@ -151,6 +157,17 @@ class ParticleManager
     /// <param name="parent">親パーティクル</param>
     /// <param name="setting">パーティクル設定</param>
     void CreateTrailParticle(const Particle &parent, const ParticleSetting &setting);
+
+    /// <summary>
+    /// 1粒のワールド行列（ビルボードはこのカメラに向ける）
+    /// </summary>
+    static Matrix4x4 ComputeWorldMatrix(const Particle &particle, const ParticleSetting &setting,
+                                        const Matrix4x4 &viewMatrix, const Matrix4x4 &billboardMatrix);
+
+    /// <summary>
+    /// インスタンス数とSRVを指定してグループを描く（Draw / DrawForView 共通）
+    /// </summary>
+    void DrawGroup(ParticleGroup *particleGroup, uint32_t instancingSrvIndex, uint32_t instanceCount);
 
     /// <summary>
     /// 設定に基づいて新しいパーティクルを1つ生成

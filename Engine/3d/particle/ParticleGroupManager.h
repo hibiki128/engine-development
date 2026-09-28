@@ -144,6 +144,32 @@ class ParticleGroupManager
     }
 
     /// <summary>
+    /// 使い終わった独立グループを破棄する。エミッターの破棄時に呼ぶ。
+    /// これを呼ばないとシーンを行き来するたびに独立グループが積み上がり、
+    /// 1個につきSRV2枠とインスタンシング用バッファが返らない。
+    ///
+    /// 注意: 引数は既に破棄済み（ダングリング）の可能性があるため、
+    ///       ポインタ値の比較しか行わずデリファレンスしない
+    /// </summary>
+    /// <param name="group">GetIndependentParticleGroup が返したポインタ</param>
+    void ReleaseIndependentGroup(ParticleGroup *group)
+    {
+        if (!group)
+        {
+            return;
+        }
+        for (auto it = independentGroups_.begin(); it != independentGroups_.end(); ++it)
+        {
+            if (it->get() == group) // ポインタ比較のみ（derefしない）
+            {
+                independentGroups_.erase(it);
+                return;
+            }
+        }
+        // 見つからない（既に返却済み / Finalize 済み）→ 何もしない
+    }
+
+    /// <summary>
     /// 管理中の全パーティクルグループを取得
     /// </summary>
     /// <returns>std::vector&lt;ParticleGroup*&gt;: 全グループの生ポインタ一覧</returns>

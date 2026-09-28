@@ -5,13 +5,16 @@
 #include <cstring>
 #include <fstream>
 #include <functional>
+#include <render/raytracing/RaytracingScene.h>
 #include <sstream>
 
 namespace Hagine {
-void ModelManager::LoadModel(const std::string &filePath)
+std::string ModelManager::LoadModel(const std::string &filePath)
 {
-
-    // .gltfファイルの場合、内容に基づくハッシュを生成しない（毎回新しいモデルを作成）
+    // .gltf は呼ぶたびに別の実体を作る。
+    // スキンの出力頂点バッファとパレットSRVを Model が持っていて、描画のときに
+    // そこから引いているので、同じファイルでも体ごとに分けないと
+    // 「最後にバインドした1体のポーズ」を全員が使うことになる
     if (filePath.substr(filePath.find_last_of(".") + 1) == "gltf")
     {
         // 新しいユニークな識別子を生成する（例えば、インデックスなど）
@@ -27,13 +30,13 @@ void ModelManager::LoadModel(const std::string &filePath)
         // モデルをmapコンテナに格納する
         models_.insert(std::make_pair(uniqueKey, std::move(model)));
         ImGuiNotification::Post("モデルを読み込みました: " + filePath, {0.2f, 0.8f, 0.8f, 1.0f});
-        return;
+        return uniqueKey;
     }
 
     // .gltf以外のファイルは元のパスで検索（重複チェック）
     if (models_.contains(filePath))
     {
-        return;
+        return filePath;
     }
 
     std::unique_ptr<Model> model = std::make_unique<Model>();
@@ -42,6 +45,7 @@ void ModelManager::LoadModel(const std::string &filePath)
     model->SetSrv(pSrvManager_);
     models_.insert(std::make_pair(filePath, std::move(model)));
     ImGuiNotification::Post("モデルを読み込みました: " + filePath, {0.2f, 0.8f, 0.8f, 1.0f});
+    return filePath;
 }
 
 std::string ModelManager::CreatePrimitiveModel(PrimitiveType type, std::string texPath)
@@ -89,7 +93,7 @@ std::string ModelManager::CreatePrimitiveModel(PrimitiveType type, std::string t
 
 std::string ModelManager::MakePrimitiveKey(PrimitiveType type)
 {
-    // 「.」を含めないこと。FindModel が拡張子で gltf 判定をしているため
+    // 「.」を含めないこと。LoadModel が拡張子で gltf 判定をしているため
     return "PrimitiveModel_" + std::to_string(static_cast<int>(type));
 }
 
@@ -104,7 +108,11 @@ std::string ModelManager::MakePrimitiveKey(PrimitiveType type, const PrimitivePa
     };
     return "PrimitiveParamModel_" + std::to_string(static_cast<int>(type)) + "_" +
            std::to_string(params.divide) + "_" + std::to_string(params.heightDivide) + "_" +
-           bits(params.ringOuterRadius) + "_" + bits(params.ringInnerRadius);
+           bits(params.ringOuterRadius) + "_" + bits(params.ringInnerRadius) + "_" +
+           // 岩は種とノイズ設定で形が変わるので、これらもキーに混ぜる
+           std::to_string(params.rockSeed) + "_" + bits(params.rockNoiseScale) + "_" +
+           bits(params.rockNoiseAmount) + "_" + std::to_string(params.rockOctaves) + "_" +
+           bits(params.rockFlattenY);
 }
 
 std::string ModelManager::CreateDynamicModel(uint32_t vertexCapacity, uint32_t indexCapacity)
@@ -135,43 +143,53 @@ std::string ModelManager::CreateGpuWritableModel(uint32_t maxVertexCount)
 
 void ModelManager::RemoveModel(const std::string &key)
 {
-    models_.erase(key);
+    auto it = models_.find(key);
+    if (it == models_.end())
+    {
+        return;
+    }
+
+    // 一覧からは今すぐ外す（以降 FindModelByKey では引けない）。
+    // 実体は GPU が触り終わるまで持っておく
+    pendingRelease_.push_back({std::move(it->second), kReleaseDelayFrames});
+    models_.erase(it);
 }
 
-Model *ModelManager::FindModel(const std::string &filePath)
+void ModelManager::Update()
 {
-    // .gltfファイルの場合はファイルパスにユニークな識別子を使って検索
-    if (filePath.substr(filePath.find_last_of(".") + 1) == "gltf")
+    for (auto it = pendingRelease_.begin(); it != pendingRelease_.end();)
     {
-        // 同じファイルパスで複数のモデルがある可能性があるので、それを確認
-        std::vector<Model *> matchedModels;
-
-        // キーがファイルパスを含むモデルをすべて収集
-        for (const auto &[key, model] : models_)
+        if (--it->framesLeft > 0)
         {
-            if (key.find(filePath) != std::string::npos)
-            {
-                matchedModels.push_back(model.get());
-            }
+            ++it;
+            continue;
         }
 
-        // 一致するモデルがあれば、必要に応じて最も新しいモデルなどを選んで返す
-        if (!matchedModels.empty())
-        {
-            // 例えば、最も新しい（インデックスが最大）ものを返す
-            return matchedModels.back();
-        }
+        // レイトレの加速構造は BLAS を Model* で覚えている。
+        // 実体を捨てたあと、後から作られた別のモデルが同じアドレスに乗ることがあり、
+        // そのとき古い形のBLASが引き当てられてしまう。捨てる直前に必ず外す。
+        //
+        // 外すのを「一覧から消した時点」ではなくここにしているのは、BLAS自体も
+        // GPUリソースだから。猶予フレームを待った今なら、このモデルを使った
+        // 描画コマンドは GPU 側で完了している
+        RaytracingScene::GetInstance()->OnModelDestroyed(it->model.get());
+
+        it = pendingRelease_.erase(it); // ここで実体が解放される
     }
-    else
-    {
-        // .gltf以外のファイルはファイルパスそのもので検索
-        if (models_.contains(filePath))
-        {
-            return models_.at(filePath).get();
-        }
-    }
+}
 
-    return nullptr;
+Model *ModelManager::FindModelByKey(const std::string &key) const
+{
+    // キーは LoadModel / CreatePrimitiveModel / CreateDynamicModel の戻り値。
+    //
+    // 以前はここでファイルパスの部分一致を取り、当てはまった中の1つを返していた。
+    // models_ は unordered_map で並びが不定なので、**読み込んだ直後でも別の実体が
+    // 返ってくることがあり**、同じ gltf を使うキャラ同士が1つの Model を共有していた。
+    // Model はスキン（出力頂点バッファとパレット）を指しているので、共有すると
+    // 後からバインドしたほうのポーズで全員が描かれる（プレイヤーが敵と同じ動きをする）。
+    // キーの完全一致にして、この曖昧さごと無くしてある
+    auto it = models_.find(key);
+    return (it == models_.end()) ? nullptr : it->second.get();
 }
 
 void ModelManager::Initialize(SrvManager *pSrvManager, ModelCommon *modelCommon)
@@ -183,5 +201,6 @@ void ModelManager::Initialize(SrvManager *pSrvManager, ModelCommon *modelCommon)
 void ModelManager::Finalize()
 {
     models_.clear();
+    pendingRelease_.clear();
 }
 } // namespace Hagine

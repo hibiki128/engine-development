@@ -2,6 +2,7 @@
 #include <DirectXCommon.h>
 #ifdef USE_IMGUI
 #include <cstdio>
+#include <string>
 #include <imgui.h>
 #include <implot.h>
 // DebugUIHelper.h は ImVec4 / ImGui:: を使うので imgui.h の後に include する
@@ -23,10 +24,20 @@ void GpuProfiler::Finalize()
     }
     pMappedGraphics_ = nullptr;
     pMappedCompute_ = nullptr;
+    if (statsReadback_ && pMappedStats_)
+    {
+        statsReadback_->Unmap(0, nullptr);
+    }
+    pMappedStats_ = nullptr;
 
     readbackGraphics_.Reset();
     readbackCompute_.Reset();
     queryHeap_.Reset();
+    statsReadback_.Reset();
+    statsHeap_.Reset();
+    statsOpen_ = false;
+    for (bool &written : statsWritten_)
+        written = false;
 
     pDxCommon_ = nullptr;
     // 次に使われたら作り直せるようにしておく
@@ -86,6 +97,26 @@ void GpuProfiler::EnsureInit()
     readbackCompute_->SetName(L"GpuProfiler_Readback_Compute");
     readbackCompute_->Map(0, nullptr, reinterpret_cast<void **>(&pMappedCompute_));
 
+    // 描画統計のクエリ（1フレーム1つ）と読み戻し先。作れなくても時間の計測は続ける
+    D3D12_QUERY_HEAP_DESC sqd{};
+    sqd.Type = D3D12_QUERY_HEAP_TYPE_PIPELINE_STATISTICS;
+    sqd.Count = kRing;
+    if (SUCCEEDED(pDevice->CreateQueryHeap(&sqd, IID_PPV_ARGS(&statsHeap_))))
+    {
+        D3D12_RESOURCE_DESC srd = rd;
+        srd.Width = static_cast<UINT64>(kRing) * sizeof(D3D12_QUERY_DATA_PIPELINE_STATISTICS);
+        if (SUCCEEDED(pDevice->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &srd, D3D12_RESOURCE_STATE_COPY_DEST, nullptr,
+                                                       IID_PPV_ARGS(&statsReadback_))))
+        {
+            statsReadback_->SetName(L"GpuProfiler_Readback_Stats");
+            statsReadback_->Map(0, nullptr, reinterpret_cast<void **>(&pMappedStats_));
+        }
+        else
+        {
+            statsHeap_.Reset();
+        }
+    }
+
     // キューごとのタイムスタンプ周波数（tick/秒）。Direct と Compute で異なりうる。
     if (auto *gq = pDxCommon_->GetCommandQueue())
         gq->GetTimestampFrequency(&freqGraphics_);
@@ -106,6 +137,19 @@ void GpuProfiler::BeginFrame()
     ringIndex_ = (ringIndex_ + 1) % kRing;
     pairCursor_ = 0;
     RingFrame &rf = rings_[ringIndex_];
+
+    // 描画統計: この段には kRing フレーム前の結果が入っている
+    if (statsWritten_[ringIndex_] && pMappedStats_)
+    {
+        const D3D12_QUERY_DATA_PIPELINE_STATISTICS &s = pMappedStats_[ringIndex_];
+        frameStats_.vertices = s.IAVertices;
+        frameStats_.primitives = s.IAPrimitives;
+        frameStats_.drawnPrimitives = s.CPrimitives;
+        frameStats_.pixels = s.PSInvocations;
+        frameStats_.computeThreads = s.CSInvocations;
+        frameStats_.valid = true;
+    }
+    statsWritten_[ringIndex_] = false;
 
     if (rf.valid && pMappedGraphics_ && pMappedCompute_)
     {
@@ -195,6 +239,66 @@ void GpuProfiler::Resolve(ID3D12GraphicsCommandList *pCommandList, bool isComput
                              startSlot, 2, dst,
                              static_cast<UINT64>(startSlot) * sizeof(uint64_t));
     }
+}
+
+void GpuProfiler::BeginPipelineStats(ID3D12GraphicsCommandList *pCommandList)
+{
+    if (!enabled_ || !initialized_ || !statsHeap_ || !pCommandList || statsOpen_)
+        return;
+    pCommandList->BeginQuery(statsHeap_.Get(), D3D12_QUERY_TYPE_PIPELINE_STATISTICS, ringIndex_);
+    statsOpen_ = true;
+}
+
+void GpuProfiler::EndPipelineStats(ID3D12GraphicsCommandList *pCommandList)
+{
+    // 始めたのと同じリストで閉じる（Direct リストはフレームの最後まで開いたまま）
+    if (!statsOpen_ || !pCommandList)
+        return;
+    statsOpen_ = false;
+    pCommandList->EndQuery(statsHeap_.Get(), D3D12_QUERY_TYPE_PIPELINE_STATISTICS, ringIndex_);
+    pCommandList->ResolveQueryData(statsHeap_.Get(), D3D12_QUERY_TYPE_PIPELINE_STATISTICS, ringIndex_, 1, statsReadback_.Get(),
+                                   static_cast<UINT64>(ringIndex_) * sizeof(D3D12_QUERY_DATA_PIPELINE_STATISTICS));
+    statsWritten_[ringIndex_] = true;
+}
+
+void GpuProfiler::DrawFrameStatsImGui()
+{
+#ifdef USE_IMGUI
+    SectionHeader("[ 描画統計（GPU が数えた1フレームぶん）]", DebugTheme::kAccentBlue);
+    if (!statsHeap_)
+    {
+        DimText("この環境では描画統計を取れません");
+        return;
+    }
+    if (!enabled_)
+    {
+        DimText("GPU プロファイラの「計測ON」を入れると数えます");
+        return;
+    }
+    if (!frameStats_.valid)
+    {
+        DimText("数えています…");
+        return;
+    }
+    const FrameStats &s = frameStats_;
+    auto count = [](uint64_t value) {
+        char text[32];
+        if (value >= 1000000)
+            snprintf(text, sizeof(text), "%.2f M", static_cast<double>(value) / 1000000.0);
+        else if (value >= 1000)
+            snprintf(text, sizeof(text), "%.1f K", static_cast<double>(value) / 1000.0);
+        else
+            snprintf(text, sizeof(text), "%llu", static_cast<unsigned long long>(value));
+        return std::string(text);
+    };
+    ImGui::Text("頂点: %s", count(s.vertices).c_str());
+    ImGui::Text("三角形: %s（実際に描いた %s）", count(s.primitives).c_str(), count(s.drawnPrimitives).c_str());
+    ImGui::SetItemTooltip("「実際に描いた」は画面外・裏面を省いたあとの数。影・G-Buffer など同じ物を何度も描く分も入る");
+    ImGui::Text("塗った画素: %s", count(s.pixels).c_str());
+    ImGui::SetItemTooltip("ピクセルシェーダーを走らせた延べ回数。画面の画素数より大きいほど重ね塗り（オーバードロー）が多い");
+    ImGui::Text("コンピュート: %s スレッド", count(s.computeThreads).c_str());
+    DimText("GPU パーティクルの計算（Compute キュー）はここに入りません。3フレーム遅れの値です");
+#endif // USE_IMGUI
 }
 
 void GpuProfiler::ResolveCompute(ID3D12GraphicsCommandList *pCommandList) { Resolve(pCommandList, true); }

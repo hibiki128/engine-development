@@ -178,21 +178,15 @@ void ToonSettings::DrawImGui()
     ImGui::Spacing();
     ImGui::Separator();
     const float saveWidth = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
-    ImGui::PushStyleColor(ImGuiCol_Button, DebugTheme::kButtonPrimary);
-    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, DebugTheme::kButtonPrimaryHover);
-    if (ImGui::Button("トゥーン設定を保存", ImVec2(saveWidth, 0.0f)))
+    if (PrimaryButton("トゥーン設定を保存", ImVec2(saveWidth, 0.0f)))
     {
         SaveData(kDataFileName);
     }
-    ImGui::PopStyleColor(2);
     ImGui::SameLine();
-    ImGui::PushStyleColor(ImGuiCol_Button, DebugTheme::kButtonConfirm);
-    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, DebugTheme::kButtonConfirmHover);
-    if (ImGui::Button("読み込み", ImVec2(saveWidth, 0.0f)))
+    if (ConfirmButton("読み込み", ImVec2(saveWidth, 0.0f)))
     {
         LoadData(kDataFileName);
     }
-    ImGui::PopStyleColor(2);
     ImGui::SetItemTooltip("保存した内容は次回の起動時にも自動で読み込まれます");
 #endif // USE_IMGUI
 }
