@@ -150,4 +150,46 @@ void DirectionalLight::Load(DataHandler *handler)
     pData_->BlinnPhong = handler->Load<int32_t>("directional_BlinnPhong", true);
     pData_->intensity = handler->Load<float>("directional_intensity", 1.0f);
 }
+
+#ifdef USE_IMGUI
+nlohmann::json DirectionalLight::CaptureState() const
+{
+    nlohmann::json state = nlohmann::json::object();
+    state["kind"] = "directional";
+    state["active"] = enabled_;
+    if (pData_)
+    {
+        state["color"] = pData_->color;
+        state["direction"] = pData_->direction;
+        state["intensity"] = pData_->intensity;
+        state["halfLambert"] = pData_->HalfLambert;
+        state["blinnPhong"] = pData_->BlinnPhong;
+    }
+    return state;
+}
+
+void DirectionalLight::RestoreState(const nlohmann::json &state)
+{
+    if (!state.is_object())
+    {
+        return;
+    }
+    enabled_ = state.value("active", enabled_);
+    if (!pData_)
+    {
+        return;
+    }
+    if (state.contains("color"))
+    {
+        pData_->color = state["color"].get<Vector4>();
+    }
+    if (state.contains("direction"))
+    {
+        pData_->direction = state["direction"].get<Vector3>();
+    }
+    pData_->intensity = state.value("intensity", pData_->intensity);
+    pData_->HalfLambert = state.value("halfLambert", pData_->HalfLambert);
+    pData_->BlinnPhong = state.value("blinnPhong", pData_->BlinnPhong);
+}
+#endif // USE_IMGUI
 } // namespace Hagine

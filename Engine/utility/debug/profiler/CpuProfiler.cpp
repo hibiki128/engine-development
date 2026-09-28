@@ -1,4 +1,5 @@
 #include "CpuProfiler.h"
+#include <algorithm>
 #ifdef USE_IMGUI
 #include <cstdio>
 #include <imgui.h>
@@ -20,12 +21,18 @@ void CpuProfiler::BeginFrame()
     using clock = std::chrono::high_resolution_clock;
     const clock::time_point now = clock::now();
 
+    // 記録はフレームを回しているスレッドだけ（別スレッドの計測が混ざると帯グラフが崩れる）
+    if (mainThread_ == std::thread::id())
+        mainThread_ = std::this_thread::get_id();
+
     // ---- 実フレーム時間（BeginFrame 間隔・present 待ち込み）----
     if (hasLastBegin_)
     {
         const double wallMs = std::chrono::duration<double, std::milli>(now - lastBegin_).count();
         smoothedWallMs_ = (smoothedWallMs_ <= 0.0) ? wallMs : smoothedWallMs_ * 0.85 + wallMs * 0.15;
+        FinishFrameRecord(static_cast<float>(wallMs));
     }
+    currentEvents_.clear();
     lastBegin_ = now;
     hasLastBegin_ = true;
 
@@ -85,15 +92,98 @@ void CpuProfiler::Accumulate(const char *label, double ms)
     current_.push_back({label, ms, nextOrder_++});
 }
 
+namespace {
+// 今のスコープの入れ子の深さ（スレッドごと）
+thread_local int tScopeDepth = 0;
+} // namespace
+
 CpuProfileScope::CpuProfileScope(const char *label)
-    : pLabel_(label), t0_(std::chrono::high_resolution_clock::now()) {}
+    : pLabel_(label), t0_(std::chrono::high_resolution_clock::now())
+{
+    ++tScopeDepth;
+}
 
 CpuProfileScope::~CpuProfileScope()
 {
-    const double ms = std::chrono::duration<double, std::milli>(
-                          std::chrono::high_resolution_clock::now() - t0_)
-                          .count();
-    CpuProfiler::GetInstance()->Accumulate(pLabel_, ms);
+    const auto t1 = std::chrono::high_resolution_clock::now();
+    --tScopeDepth;
+    const double ms = std::chrono::duration<double, std::milli>(t1 - t0_).count();
+    CpuProfiler *pProfiler = CpuProfiler::GetInstance();
+    pProfiler->Accumulate(pLabel_, ms);
+    pProfiler->RecordEvent(pLabel_, t0_, t1, tScopeDepth);
+}
+
+void CpuProfiler::RecordEvent(const char *label, std::chrono::high_resolution_clock::time_point begin,
+                              std::chrono::high_resolution_clock::time_point end, int depth)
+{
+    if (!enabled_ || !recording_ || !hasLastBegin_ || !label || std::this_thread::get_id() != mainThread_)
+        return;
+    Event e;
+    e.label = label;
+    e.startMs = (std::max)(0.0f, std::chrono::duration<float, std::milli>(begin - lastBegin_).count());
+    e.durationMs = std::chrono::duration<float, std::milli>(end - begin).count();
+    e.depth = depth;
+    currentEvents_.push_back(e);
+}
+
+float CpuProfiler::GetSpikeThreshold() const
+{
+    if (!autoThreshold_)
+        return manualThresholdMs_;
+    // 直近のフレームの中央値の1.5倍（ただし60fps予算より下にはしない）
+    if (records_.size() < 10)
+        return 1.0e9f;
+    std::vector<float> walls;
+    walls.reserve(records_.size());
+    for (const FrameRecord &r : records_)
+        walls.push_back(r.wallMs);
+    std::nth_element(walls.begin(), walls.begin() + walls.size() / 2, walls.end());
+    return (std::max)(walls[walls.size() / 2] * 1.5f, 1000.0f / 60.0f + 2.0f);
+}
+
+void CpuProfiler::FinishFrameRecord(float wallMs)
+{
+    if (!recording_ || frozen_)
+        return;
+    FrameRecord record;
+    record.index = ++frameCounter_;
+    record.wallMs = wallMs;
+    // 開始の早い順・外側が先に並ぶようにしておく（帯グラフで外側から描く）
+    record.events = currentEvents_;
+    std::sort(record.events.begin(), record.events.end(), [](const Event &a, const Event &b) {
+        return a.depth != b.depth ? a.depth < b.depth : a.startMs < b.startMs;
+    });
+
+    // 重いフレームは直近の記録が流れても残るよう別に取っておく
+    if (wallMs > GetSpikeThreshold())
+    {
+        spikes_.push_back(record);
+        if (spikes_.size() > kMaxSpikes)
+            spikes_.pop_front();
+    }
+    records_.push_back(std::move(record));
+    if (records_.size() > kMaxRecords)
+        records_.pop_front();
+}
+
+const CpuProfiler::FrameRecord *CpuProfiler::FindRecord(uint64_t index) const
+{
+    if (index == 0)
+        return nullptr;
+    const std::deque<FrameRecord> &source = selectedIsSpike_ ? spikes_ : records_;
+    for (const FrameRecord &r : source)
+    {
+        if (r.index == index)
+            return &r;
+    }
+    // 一覧から流れて消えていたら、もう片方も探す
+    const std::deque<FrameRecord> &other = selectedIsSpike_ ? records_ : spikes_;
+    for (const FrameRecord &r : other)
+    {
+        if (r.index == index)
+            return &r;
+    }
+    return nullptr;
 }
 
 void CpuProfiler::DrawImGui()

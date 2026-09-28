@@ -5,6 +5,7 @@
 #ifdef USE_IMGUI
 #include <imgui.h>
 #include "utility/debug/imgui/DebugUIHelper.h"
+#include <icon/IconsFontAwesome5.h>
 #endif // USE_IMGUI
 
 namespace Hagine {
@@ -239,14 +240,16 @@ void CameraManager::DrawImGui()
     // 新規追加（ここで作って位置を決めて保存 → コードからは Find(名前)->Load() で呼び出せる）
     static std::string newCameraName;
     ImGui::SetNextItemWidth(-90.0f);
-    ImGui::InputText("##cameranewname", &newCameraName);
+    ImGui::InputTextWithHint("##cameranewname", "新しいカメラの名前", &newCameraName);
     ImGui::SameLine();
-    if (ImGui::Button("カメラ追加##cameraadd") && !newCameraName.empty())
+    ImGui::BeginDisabled(newCameraName.empty());
+    if (PrimaryButton(ICON_FA_PLUS " 追加##cameraadd"))
     {
         Camera *pCreated = Create(newCameraName);
         selectedName_ = pCreated->GetName();
         newCameraName.clear();
     }
+    ImGui::EndDisabled();
     ImGui::Separator();
 
     if (cameras_.empty())
@@ -257,19 +260,51 @@ void CameraManager::DrawImGui()
     }
 
     // 一覧（アクティブなものに印を付ける）
-    const std::vector<std::string> names = GetCameraNames();
-    if (ImGui::BeginListBox("##cameralist", ImVec2(-1.0f, 4.0f * ImGui::GetTextLineHeightWithSpacing())))
+    std::vector<std::string> names = GetCameraNames();
+    std::sort(names.begin(), names.end());
+    std::string pendingRemove;
+    ImGui::BeginChild("##cameralist", ImVec2(-1.0f, 5.5f * ImGui::GetTextLineHeightWithSpacing()), ImGuiChildFlags_Borders | ImGuiChildFlags_ResizeY);
+    for (const std::string &name : names)
     {
-        for (const std::string &name : names)
+        const bool isActive = (pActiveCamera_ && pActiveCamera_->GetName() == name);
+        ImGui::PushID(name.c_str());
+        // 使用中は黄色の●、それ以外はカメラの絵
+        ImGui::TextColored(isActive ? DebugTheme::kAccentYellow : DebugTheme::kTextDim, isActive ? ICON_FA_CIRCLE : ICON_FA_VIDEO);
+        ImGui::SetItemTooltip(isActive ? "いま画面に映っているカメラ" : "使っていないカメラ");
+        ImGui::SameLine();
+        if (ImGui::Selectable(name.c_str(), selectedName_ == name, ImGuiSelectableFlags_AllowDoubleClick))
         {
-            const bool isActive = (pActiveCamera_ && pActiveCamera_->GetName() == name);
-            std::string label = (isActive ? "> " : "  ") + name;
-            if (ImGui::Selectable(label.c_str(), selectedName_ == name))
+            selectedName_ = name;
+            if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
             {
-                selectedName_ = name;
+                SetActive(name); // ダブルクリックで切り替え
             }
         }
-        ImGui::EndListBox();
+        ImGui::SetItemTooltip("クリックで選択 / ダブルクリックでこのカメラに切り替え / 右クリックでメニュー");
+        if (ImGui::BeginPopupContextItem("##cameraRowMenu"))
+        {
+            selectedName_ = name;
+            if (ImGui::MenuItem(ICON_FA_EXCHANGE_ALT " このカメラに切り替え", nullptr, false, !isActive))
+                SetActive(name);
+            if (ImGui::MenuItem(ICON_FA_SIGN_IN_ALT " 寄せて切り替え（1秒）", nullptr, false, !isActive))
+                BlendTo(name, 1.0f);
+            ImGui::Separator();
+            if (ImGui::MenuItem(ICON_FA_SAVE " 保存"))
+                Find(name)->Save();
+            if (ImGui::MenuItem(ICON_FA_UPLOAD " 読み込み"))
+                Find(name)->Load();
+            ImGui::Separator();
+            if (ImGui::MenuItem(ICON_FA_TRASH " 削除"))
+                pendingRemove = name;
+            ImGui::EndPopup();
+        }
+        ImGui::PopID();
+    }
+    ImGui::EndChild();
+    if (!pendingRemove.empty())
+    {
+        Remove(pendingRemove);
+        return; // 破棄したので以降は触らない
     }
 
     Camera *pSelected = Find(selectedName_);
@@ -278,30 +313,28 @@ void CameraManager::DrawImGui()
         return;
     }
 
-    if (ImGui::Button("このカメラに切り替え##camerasetactive"))
+    const bool selectedIsActive = (pSelected == pActiveCamera_);
+    ImGui::BeginDisabled(selectedIsActive);
+    if (PrimaryButton(ICON_FA_EXCHANGE_ALT " 切り替え##camerasetactive"))
     {
         SetActive(pSelected);
     }
+    ImGui::SetItemTooltip("このカメラですぐ映す");
     ImGui::SameLine();
     static float blendDuration = 1.0f;
-    if (ImGui::Button("寄せて切り替え##camerablend"))
+    if (NeutralButton(ICON_FA_SIGN_IN_ALT " 寄せて切り替え##camerablend"))
     {
         BlendTo(pSelected, blendDuration);
     }
+    ImGui::SetItemTooltip("今のカメラから、指定の秒数をかけて寄せる");
+    ImGui::EndDisabled();
     ImGui::SameLine();
-    ImGui::SetNextItemWidth(80.0f);
+    ImGui::SetNextItemWidth(70.0f);
     ImGui::DragFloat("秒##camerablendtime", &blendDuration, 0.05f, 0.0f, 10.0f, "%.2f");
-
-    ImGui::SameLine();
-    if (ImGui::Button("削除##cameraremove"))
-    {
-        Remove(selectedName_);
-        return; // 破棄したので以降は触らない
-    }
 
     if (blending_)
     {
-        ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.4f, 1.0f), "カメラ切り替え中 %.2f / %.2f 秒", blendTime_, blendDuration_);
+        ImGui::TextColored(DebugTheme::kAccentYellow, ICON_FA_SPINNER " 切り替え中 %.2f / %.2f 秒", blendTime_, blendDuration_);
     }
 
     ImGui::Separator();

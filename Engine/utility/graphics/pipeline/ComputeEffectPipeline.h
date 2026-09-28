@@ -65,8 +65,11 @@ class ComputeEffectPipeline
     /// <param name="shaderFileName">shaders ルートからの相対パス（例 "OffScreen/GaussianBlur.CS.hlsl"）</param>
     /// <param name="samplerPresets">s0 から順に割り当てるサンプラー設定</param>
     /// <returns>const ComputeEffectProgram*: 生成に失敗した場合は nullptr</returns>
+    /// <param name="profile">コンパイルに使うシェーダープロファイル。
+    ///        RayQuery を書いたシェーダーは cs_6_5 以上でないとコンパイルできない</param>
     const ComputeEffectProgram *Get(const std::string &shaderFileName,
-                                    const std::vector<ShaderRootSignature::SamplerPreset> &samplerPresets = {});
+                                    const std::vector<ShaderRootSignature::SamplerPreset> &samplerPresets = {},
+                                    const wchar_t *profile = L"cs_6_0");
 
     /// <summary>
     /// 生成済みパイプラインをすべて破棄する（シェーダーを編集して作り直したいとき用）
@@ -89,6 +92,7 @@ class ComputeEffectPipeline
     /// </summary>
     bool Build(const std::string &shaderFileName,
                const std::vector<ShaderRootSignature::SamplerPreset> &samplerPresets,
+               const wchar_t *profile,
                ComputeEffectProgram &outProgram);
 
     DirectXCommon *pDxCommon_ = nullptr;

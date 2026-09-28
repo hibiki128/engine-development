@@ -13,6 +13,8 @@
 #include <imgui_toggle_palette.h>
 // std::string をそのまま InputText へ渡す（公式 misc/cpp）。
 #include <imgui_stdlib.h>
+#include <cstdio>
+#include <cstdlib>
 #include <string>
 
 namespace Hagine {
@@ -210,10 +212,123 @@ static bool SmallResetButton(const char *id)
 }
 
 // ------------------------------------------------------------
+// 値の右クリックメニュー（コピー・貼り付け・リセット）
+//
+// 数値はOSのクリップボードへ「1.00, 2.00, 3.00」の形で入れる。
+// 他の欄・他のオブジェクト・テキストエディタのどこへ貼っても読める。
+// 読むときは区切り（カンマ・空白・括弧）を問わないので、手で打った値も貼れる。
+// ------------------------------------------------------------
+namespace ValueClipboard {
+/// <summary>数値を「a, b, c」の文字列にする</summary>
+inline std::string Format(const float *v, int count)
+{
+    std::string text;
+    char buffer[48];
+    for (int i = 0; i < count; ++i)
+    {
+        snprintf(buffer, sizeof(buffer), "%.4g", v[i]);
+        if (i > 0)
+            text += ", ";
+        text += buffer;
+    }
+    return text;
+}
+
+/// <summary>文字列から数値を順に読む。読めた個数を返す（数値以外の文字は区切りとして読み飛ばす）</summary>
+inline int Parse(const char *text, float *out, int maxCount)
+{
+    if (!text)
+        return 0;
+    int count = 0;
+    const char *p = text;
+    while (*p && count < maxCount)
+    {
+        const bool startsNumber = (*p >= '0' && *p <= '9') || *p == '-' || *p == '+' || *p == '.';
+        if (!startsNumber)
+        {
+            ++p;
+            continue;
+        }
+        char *end = nullptr;
+        const float value = strtof(p, &end);
+        if (end == p)
+        {
+            ++p;
+            continue;
+        }
+        out[count++] = value;
+        p = end;
+    }
+    return count;
+}
+
+/// <summary>クリップボードに count 個以上の数値が入っているか</summary>
+inline bool Has(int count)
+{
+    float dummy[4];
+    return Parse(ImGui::GetClipboardText(), dummy, 4) >= count;
+}
+} // namespace ValueClipboard
+
+/// <summary>
+/// 直前に描いた数値欄（DragFloat / DragFloat3 / ColorEdit4 など）へ右クリックメニューを付ける。
+/// </summary>
+/// <param name="popupId">ポップアップのID（窓の中で一意なもの）</param>
+/// <param name="v">対象の値</param>
+/// <param name="count">要素数（1〜4）</param>
+/// <param name="defaultValue">リセット先。nullptr ならリセット項目を出さない</param>
+/// <returns>bool: 貼り付け・リセットで値が変わったら true</returns>
+inline bool FloatNContextMenu(const char *popupId, float *v, int count, const float *defaultValue = nullptr)
+{
+    bool changed = false;
+    if (ImGui::BeginPopupContextItem(popupId))
+    {
+        const std::string current = ValueClipboard::Format(v, count);
+        ImGui::TextDisabled("%s", current.c_str());
+        ImGui::Separator();
+        if (ImGui::MenuItem("コピー"))
+        {
+            ImGui::SetClipboardText(current.c_str());
+        }
+        float pasted[4] = {};
+        const int readable = ValueClipboard::Parse(ImGui::GetClipboardText(), pasted, 4);
+        if (ImGui::MenuItem("貼り付け", nullptr, false, readable >= count))
+        {
+            for (int i = 0; i < count; ++i)
+                v[i] = pasted[i];
+            changed = true;
+        }
+        if (count > 1)
+        {
+            // 1つだけ入っているときは全要素へ同じ値を入れる（スケールの一律指定など）
+            if (ImGui::MenuItem("全要素に同じ値を貼り付け", nullptr, false, readable >= 1))
+            {
+                for (int i = 0; i < count; ++i)
+                    v[i] = pasted[0];
+                changed = true;
+            }
+        }
+        if (defaultValue)
+        {
+            ImGui::Separator();
+            if (ImGui::MenuItem("既定値に戻す"))
+            {
+                for (int i = 0; i < count; ++i)
+                    v[i] = defaultValue[i];
+                changed = true;
+            }
+        }
+        ImGui::EndPopup();
+    }
+    return changed;
+}
+
+// ------------------------------------------------------------
 // ラベルを上に置いてから全幅 DragFloat3 を描く
 //   label       : 表示テキスト (ASCII)
 //   id          : ImGui ID (## から始める)
 //   frameBgColor: フレーム背景色
+// 右クリックで値のコピー・貼り付けができる
 // ------------------------------------------------------------
 static bool LabeledDrag3(const char *label, const char *id,
                          float *v, float speed,
@@ -228,6 +343,7 @@ static bool LabeledDrag3(const char *label, const char *id,
     ImGui::PushStyleColor(ImGuiCol_FrameBg, frameBgColor);
     bool changed = ImGui::DragFloat3(id, v, speed, vmin, vmax, fmt);
     ImGui::PopStyleColor();
+    changed |= FloatNContextMenu(id, v, 3);
     return changed;
 }
 

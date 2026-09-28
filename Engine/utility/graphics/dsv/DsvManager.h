@@ -15,7 +15,7 @@ class DsvManager
 {
   public:
     // DSVの最大数
-    static constexpr uint32_t kMaxDSVCount = 2;
+    static constexpr uint32_t kMaxDSVCount = 6; // 0=シーン / 1=パーティクルのプレビュー / 2〜5=カメラビュー窓
 
     DsvManager() = default;
     ~DsvManager() = default;

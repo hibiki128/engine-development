@@ -19,6 +19,9 @@
 
 // 環境マップ係数を8bitへ詰めるときのレンジ（0〜4を想定）
 #define DEFERRED_ENV_COEFF_RANGE 4.0f
+// 自己発光の強さを8bitへ詰めるときのレンジ（0〜8を想定）。
+// GB2 は R8G8B8A8_UNORM なので 0〜1 しか入らない。強さはこの値で割って詰め、読むときに掛け戻す
+#define DEFERRED_EMISSIVE_RANGE 8.0f
 // スポットライトの最大数。※ LightGroup.h の MAX_SPOT_LIGHTS と一致させること
 // （スポットは定数バッファ経由でタイルカリングの対象外なので、点光源ほどは増やせない）
 #define MAX_SPOT_LIGHTS_DEFERRED 32
@@ -57,7 +60,9 @@ struct DeferredConstants
     float nearZ;                // near クリップ
     float farZ;                 // far クリップ
     uint pointLightCapacity;    // ライトバッファの容量（GPU生成分の溢れを切り捨てる上限）
-    float padding;
+    float ssaoStrength;         // SSAO（接地の陰り）の効かせ具合。0 で無効
+    uint useRtShadow;           // 1 でシャドウマップの代わりにRTの影マスクを使う
+    float3 deferredPadding;
 };
 
 /// <summary>

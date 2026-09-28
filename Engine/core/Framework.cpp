@@ -8,10 +8,19 @@
 #include <debug/log/Logger.h>
 #include <Frame.h>
 #include <camera/CameraManager.h>
+#include <render/RenderCulling.h>
+#include <render/SceneViewRenderer.h>
 #include <object/Object3dInstancing.h>
 #include <particle/gpu/ParticleCSSpawner.h>
 #include <attachment/AttachmentManager.h>
 #include <light/ToonSettings.h>
+#include <graphics/pipeline/ShaderHotReload.h>
+#include <render/raytracing/RaytracingScene.h>
+#include <render/raytracing/RtAoPass.h>
+#include <render/raytracing/RtShadowPass.h>
+#include <render/ToneMapSettings.h>
+#include <render/bloom/BloomPass.h>
+#include <render/ssao/SsaoRenderer.h>
 #include <shadow/ShadowMap.h>
 #include <iterator>
 #ifdef USE_IMGUI
@@ -117,6 +126,19 @@ void Framework::Initialize()
     ComputeEffectPipeline::GetInstance()->Initialize(pDxCommon_);
     ///-------------------------------------------
 
+    ///-----------ShaderHotReload-----------------
+    // HLSLを保存したらパイプラインを作り直す。ここで現在の更新時刻を基準として控える
+    // （パイプラインが全部できたあとに呼ぶこと。基準より前の変更は拾わない）
+    ShaderHotReload::GetInstance()->Initialize(pDxCommon_);
+    ///-------------------------------------------
+
+    ///-----------Raytracing----------------------
+    // インラインRT（RayQuery）用の加速構造と、RTの影パス。
+    // 非対応環境では初期化の中で「使わない」と判断してすべて素通りする
+    RaytracingScene::GetInstance()->Initialize(pDxCommon_, pSrvManager_);
+    RtShadowPass::GetInstance()->Initialize(pDxCommon_, pSrvManager_);
+    ///-------------------------------------------
+
     ///-----------TextureManager----------
     pTextureManager_ = TextureManager::GetInstance();
     pTextureManager_->Initialize(pSrvManager_);
@@ -152,6 +174,24 @@ void Framework::Initialize()
     pAudio_ = Audio::GetInstance();
     pAudio_->Initialize();
     ///---------------------------
+
+    ///---------CaptureManager / DebugConsole-------------
+    // 画面の撮影と、実行中にコマンドを打てるコンソール。
+    // どちらも Present 直後やImGui描画時に呼ばれるので、この時点で立ち上げておく
+    CaptureManager::GetInstance()->Initialize(pDxCommon_);
+    DebugConsole::GetInstance()->Initialize();
+    ///---------------------------------------------------
+
+    ///---------TimelineManager-------------
+    // カメラ・オブジェクト・音・パーティクルをまとめて動かす演出の再生役
+    TimelineManager::GetInstance()->Initialize();
+    ///-------------------------------------
+
+    ///---------MusicEngine-------------
+    // 音楽制作（シンセ・シーケンサ）。Audio の XAudio2 を借りるので必ずこの後に初期化する。
+    // 実際のミキサースレッドは、初めて音を鳴らすときまで立ち上がらない
+    MusicEngine::GetInstance()->Initialize(pAudio_->GetXAudio2());
+    ///---------------------------------
 
     ///-------SceneTransition-------
     sceneTransition_ = std::make_unique<SceneTransition>();
@@ -193,12 +233,20 @@ void Framework::Initialize()
     // トゥーンシェーディングのつまみ。前方描画とディファードの両方へ同じ値を配る
     ToonSettings::GetInstance()->Initialize();
     ToonSettings::GetInstance()->LoadData("ToonData");
+    // HDR で描いたシーンを画面に出せる範囲へ収めるつまみ（露出・トーンマップ）
+    ToneMapSettings::GetInstance()->Initialize();
     ///------------------------------
 
     ///-------DeferredRenderer-------
     // SrvManager / PipelineManager / LightGroup の初期化後に行う
     pDeferredRenderer_ = DeferredRenderer::GetInstance();
     pDeferredRenderer_->Initialize();
+    // SSAO（接地の陰り）。G-Buffer を使うのでディファードの直後に立ち上げる
+    SsaoRenderer::GetInstance()->Initialize();
+    // RTの遮蔽。SSAO と同じ物を作るので、置き換えられるよう隣で立ち上げる
+    RtAoPass::GetInstance()->Initialize(pDxCommon_, pSrvManager_);
+    // ブルーム（ミップ列）。シーンのカラーターゲットを読むので DirectXCommon の後
+    BloomPass::GetInstance()->Initialize();
     ///------------------------------
 
     ///-------ParticleEditor-------
@@ -280,13 +328,27 @@ void Framework::Finalize()
     shortcutManager_->Finalize();
     pSpriteManager_->Finalize();
     pLineRenderer_->Finalize();
+    SsaoRenderer::GetInstance()->Finalize();
+    BloomPass::GetInstance()->Finalize();
+    // 加速構造はGPUメモリを掴んだままなので、SRVマネージャーより先に畳む
+    RtAoPass::GetInstance()->Finalize();
+    RtShadowPass::GetInstance()->Finalize();
+    RaytracingScene::GetInstance()->Finalize();
     pDeferredRenderer_->Finalize();
     pSkyBox_->Finalize();
+    SceneViewRenderer::GetInstance()->Finalize();
     ShadowMap::GetInstance()->Finalize();
     pSrvManager_->Finalize();
+    // 書き出し待ちの画像を吐き切ってからスレッドを畳む
+    CaptureManager::GetInstance()->Finalize();
+    DebugConsole::GetInstance()->Finalize();
+    TimelineManager::GetInstance()->Finalize();
+    // ミキサースレッドとソースボイスは、XAudio2 本体を畳む前に片付ける
+    MusicEngine::GetInstance()->Finalize();
     pAudio_->Finalize();
     pLightGroup_->Finalize();
     ToonSettings::GetInstance()->Finalize();
+    ToneMapSettings::GetInstance()->Finalize();
     AttachmentManager::GetInstance()->Finalize();
     pMotionEditor_->Finalize();
     pParticleEditor_->Finalize();
@@ -308,6 +370,22 @@ void Framework::RegisterShortcutKey()
     // フルスクリーン
     shortcutManager_->RegisterShortcut("FullScreen", DIK_F11, [this]() {
         winApp_->ToggleFullScreen();
+    });
+    // スクリーンショット。ウィンドウを開かずに素材を撮れるよう、常に効くようにしてある
+    shortcutManager_->RegisterShortcut("Screenshot", DIK_F9, []() {
+        CaptureManager::GetInstance()->RequestScreenshot();
+    });
+    // 連番録画の開始・停止
+    shortcutManager_->RegisterShortcut("RecordToggle", DIK_F10, []() {
+        CaptureManager *capture = CaptureManager::GetInstance();
+        if (capture->IsRecording())
+        {
+            capture->StopSequence();
+        }
+        else
+        {
+            capture->StartSequence();
+        }
     });
 #ifdef USE_IMGUI
     shortcutManager_->RegisterShortcut("ShowShortcuts", DIK_F1, [this]() {
@@ -428,12 +506,37 @@ void Framework::Update()
     /// deltaTimeの更新
     Frame::Update();
 
+    // HLSLが保存されていたらパイプラインを作り直す。
+    // 描画を始める前のこの位置で行うことで、このフレームから新しいシェーダーが使われる
+    ShaderHotReload::GetInstance()->Update();
+
+    // 破棄されたオブジェクトが返したモデルとSRVインデックスのうち、
+    // GPU が触り終わったものを実際に捨てる。描画を始める前のここで済ませておく
+    pModelManager_->Update();
+    pSrvManager_->Update();
+
     // 線の積み上げをリセットし、視錐台カリング用の平面を更新する。
     // このフレーム中に積まれた線は、DrawSystem の Render で一括描画される。
     // （カリングには前フレームのカメラ行列を使う。1フレームぶんの遅れはデバッグ線では問題にならない）
     if (BaseScene *currentScene = pSceneManager_->GetBaseScene())
     {
         pLineRenderer_->BeginFrame(*currentScene->GetViewProjection());
+
+        // デバッグカメラを使っている間は、使う前のカメラ（メイン）の行列をカリングへ渡す。
+        // ポインタではなく行列を写すので、シーンを切り替えても古いカメラを指さない
+        DebugCamera *pDebugCamera = currentScene->GetDebugCamera();
+        Camera *pMainCamera = pDebugCamera ? pDebugCamera->GetPreviousCamera() : nullptr;
+        if (pMainCamera)
+        {
+            const ViewProjection &mainView = pMainCamera->GetViewProjection();
+            const Matrix4x4 mainViewProjection = mainView.matView_ * mainView.matProjection_;
+            RenderCulling::SetInspectionCamera(&mainViewProjection);
+        }
+        else
+        {
+            RenderCulling::SetInspectionCamera(nullptr);
+        }
+        RenderCulling::SubmitDebugLines();
     }
 
     // 動的ポイントライト（GPUパーティクルの発光など）の登録もフレーム単位。
@@ -459,17 +562,25 @@ void Framework::Update()
         pSceneManager_->Update();
     }
     {
+        // 演出タイムライン。オブジェクトの姿勢を書き換えるので、
+        // ワールド行列が組み立てられる BaseObjectManager::Update より前に流す。
+        // 一時停止中でも動かす（止めた状態で演出を作り込めるようにするため）
+        HAGINE_CPU_PROFILE("Update/Timeline");
+        TimelineManager::GetInstance()->Update(Frame::DeltaTime());
+    }
+    {
         HAGINE_CPU_PROFILE("Update/Objects(anim+phys)");
         pBaseObjectManager_->Update();
     }
     {
         // UIトゥイーンの補間とグループ相対位置の反映（スプライト行列構築の前に行う）
+        // UI はヒットストップ・スローモーション中も止めないので実時間で進める
         HAGINE_CPU_PROFILE("Update/UIAnimator");
-        UIAnimator::GetInstance()->Update(Frame::DeltaTime());
+        UIAnimator::GetInstance()->Update(Frame::UnscaledDeltaTime());
     }
     {
         HAGINE_CPU_PROFILE("Update/Sprites");
-        pSpriteManager_->UpdateAll(Frame::DeltaTime());
+        pSpriteManager_->UpdateAll(Frame::UnscaledDeltaTime());
     }
     {
         // テクスチャ差し替えで退避したリソースを、GPUが使い終わった頃に解放する
@@ -491,6 +602,37 @@ void Framework::Update()
         LightGroup::GetInstance()->Update(*pSceneManager_->GetBaseScene()->GetViewProjection());
         ToonSettings::GetInstance()->Update();
     }
+    {
+        // 3Dオーディオの聞き手をカメラに合わせ、フェード進行と再生済みボイスの回収も行う
+        HAGINE_CPU_PROFILE("Update/Audio");
+        // 音はゲーム時間を止めても鳴り続けるので実時間で進める
+        // （ゲーム時間で割るとヒットストップ中のカメラの揺れがドップラーを暴れさせる）
+        const float deltaTime = Frame::UnscaledDeltaTime();
+        if (BaseScene *currentScene = pSceneManager_->GetBaseScene())
+        {
+            const ViewProjection &viewProjection = *currentScene->GetViewProjection();
+            SoundListener listener;
+            listener.position = viewProjection.translation_;
+            // カメラのワールド行列の基底が、そのまま右方向と前方向になる
+            listener.right = Vector3(viewProjection.matWorld_.m[0][0], viewProjection.matWorld_.m[0][1],
+                                     viewProjection.matWorld_.m[0][2])
+                                 .Normalize();
+            listener.forward = Vector3(viewProjection.matWorld_.m[2][0], viewProjection.matWorld_.m[2][1],
+                                       viewProjection.matWorld_.m[2][2])
+                                   .Normalize();
+            // ドップラー用の速度は前フレームとの差から求める。
+            // シーン切り替え直後は位置が飛ぶので、その1フレームだけ速度0にする
+            if (audioListenerInitialized_ && deltaTime > 0.0f)
+            {
+                listener.velocity = (listener.position - audioListenerPreviousPosition_) * (1.0f / deltaTime);
+            }
+            audioListenerPreviousPosition_ = listener.position;
+            audioListenerInitialized_ = true;
+            pAudio_->SetListener(listener);
+        }
+        pAudio_->Update(deltaTime);
+    }
+
     {
         HAGINE_CPU_PROFILE("Update/Input");
         pInput_->Update();
@@ -522,7 +664,6 @@ void Framework::LoadResource()
     // UIの文字はここで焼いた高さのピクセル数でそのまま画像化される（アトラスは自動で広がる）。
     // 画面に出す最大の文字より大きく取っておけば、拡大してもぼやけない
     pTextureManager_->LoadFontTexture("NotoSansJP-Medium.ttf", 256);
-    pTextureManager_->LoadFontTexture("Buildingsandundertherailwaytracksfree_ver.otf", 256);
 
     ImGuiNotification::Post("全ての基本リソースを読み込みました", {0.2f, 0.8f, 0.2f, 1.0f});
     Logger::Info("All base resources loaded.");

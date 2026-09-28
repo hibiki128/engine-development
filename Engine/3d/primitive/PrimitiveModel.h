@@ -21,6 +21,7 @@ enum class PrimitiveType
     Cone,
     Pyramid,
     ClosedCylinder,
+    Rock, // 球をノイズででこぼこにした岩。シードを変えると別の形になる
     Count,
 };
 
@@ -34,6 +35,13 @@ struct PrimitiveParams
     uint32_t heightDivide = 1;    // Cylinder の高さ方向の分割数（格子の横リング本数 = heightDivide+1）
     float ringOuterRadius = 1.0f; // Ring の外半径
     float ringInnerRadius = 0.5f; // Ring の内半径（円の幅 = 外半径 - 内半径）
+
+    // --- Rock 用（球をノイズででこぼこにするときの形） ---
+    uint32_t rockSeed = 1;         // 乱数の種。変えると同じ設定でも別の形になる
+    float rockNoiseScale = 1.6f;   // でこぼこの細かさ（大きいほど細かい凹凸）
+    float rockNoiseAmount = 0.35f; // でこぼこの深さ（0で真球、大きいほど荒い）
+    uint32_t rockOctaves = 4;      // ノイズの重ね回数（多いほどディテールが増える）
+    float rockFlattenY = 0.75f;    // 縦の潰し（1で球、小さいほど平たい岩になる）
 };
 
 /// <summary>指定の PrimitiveType がパラメータ調整に対応するか</summary>
@@ -177,10 +185,22 @@ class PrimitiveModel
     /// </summary>
     void CreateClosedCylinder();
 
+    /// <summary>
+    /// 岩の頂点データを生成（既定パラメータ）
+    /// </summary>
+    void CreateRock();
+
     /// ===================================================
     /// パラメータ版ビルダー（Create* は既定値でこれらを呼ぶ）
     /// ===================================================
     PrimitiveData BuildSphere(uint32_t divide);
+
+    /// <summary>
+    /// 球の各頂点を中心からの距離方向へノイズでずらして「岩」を作る。
+    /// ノイズは方向ベクトルだけで決まるので、経度の継ぎ目や極でも形が割れない。
+    /// </summary>
+    PrimitiveData BuildRock(uint32_t divide, const PrimitiveParams &params);
+
     PrimitiveData BuildCylinder(uint32_t divide, uint32_t heightDivide);
     PrimitiveData BuildRing(uint32_t divide, float outerRadius, float innerRadius);
     PrimitiveData BuildCone(uint32_t divide);

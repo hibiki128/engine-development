@@ -6,6 +6,26 @@
 #include <MyMath.h>
 
 namespace Hagine {
+Skin::~Skin()
+{
+    if (!pSrvManager_)
+    {
+        return; // 初期化されていない（ボーンの無いモデル）
+    }
+
+    // 確保したのは4つ。**渡すのは予約番号なので -1 する**（+1規約）。
+    // 解放は数フレーム後。GPU がまだ前のフレームでこのスロットを読んでいる最中に
+    // ディスクリプタを潰すと絵が壊れるため
+    for (uint32_t srvIndex : {skinClusterPaletteSrvIndex_, skinClusterInfluenceSrvIndex_,
+                              skinClusterInputVertexSrvIndex_, skinClusterOutputVertexSrvIndex_})
+    {
+        if (srvIndex != 0)
+        {
+            pSrvManager_->FreeDeferred(srvIndex - 1);
+        }
+    }
+}
+
 void Skin::Initialize(const Skeleton &skeleton, const ModelData &modelData)
 {
     pDxCommon_ = DirectXCommon::GetInstance();

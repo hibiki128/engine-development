@@ -221,6 +221,10 @@ void ShadowMap::Update()
         pShadowDataPtr_->enabled = enabled_ ? 1 : 0;
         pShadowDataPtr_->bias = bias_;
         pShadowDataPtr_->strength = strength_;
+        pShadowDataPtr_->normalBias = normalBias_;
+        pShadowDataPtr_->softness = softness_;
+        pShadowDataPtr_->sampleCount = sampleCount_;
+        pShadowDataPtr_->mapSize = static_cast<float>(kShadowMapSize);
         pShadowDataPtr_->padding = 0.f;
     }
 }
@@ -304,27 +308,34 @@ void ShadowMap::UpdateImGui(bool *open)
             label("強度");
             ImGui::DragFloat("##strength", &strength_, 0.01f, 0.f, 1.f, "%.2f");
 
+            label("傾きバイアス");
+            ImGui::DragFloat("##normalBias", &normalBias_, 0.0005f, 0.f, 0.05f, "%.5f");
+            ImGui::SetItemTooltip("光が浅く当たる面ほど強めるバイアス。\n"
+                                  "縞状の影が出るときは上げ、影が物から浮くときは下げる");
+
+            label("縁のぼかし");
+            ImGui::DragFloat("##softness", &softness_, 0.1f, 0.f, 8.f, "%.1f テクセル");
+            ImGui::SetItemTooltip("影の輪郭をどれだけ柔らかくするか。0 でくっきり");
+
+            label("ぼかし品質");
+            ImGui::SliderInt("##sampleCount", &sampleCount_, 1, 16, "%d サンプル");
+            ImGui::SetItemTooltip("多いほど滑らかで重くなります（4〜8 が手頃）");
+
             ImGui::EndTable();
         }
 
         ImGui::Spacing();
         SectionHeader("[ セーブ / ロード ]", DebugTheme::kAccentPurple);
         float bw = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
-        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.20f, 0.42f, 0.58f, 0.85f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.26f, 0.52f, 0.70f, 0.95f));
-        if (ImGui::Button("保存", ImVec2(bw, 0)))
+        if (PrimaryButton("保存", ImVec2(bw, 0)))
         {
             SaveConfig();
         }
-        ImGui::PopStyleColor(2);
         ImGui::SameLine();
-        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.20f, 0.48f, 0.40f, 0.85f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.26f, 0.60f, 0.50f, 0.95f));
-        if (ImGui::Button("読み込み", ImVec2(bw, 0)))
+        if (ConfirmButton("読み込み", ImVec2(bw, 0)))
         {
             LoadConfig();
         }
-        ImGui::PopStyleColor(2);
     }
     ImGui::End();
 #endif
@@ -337,6 +348,9 @@ void ShadowMap::SaveConfig(const std::string &fileName)
     data->Save("syncWithDirectionalLight", static_cast<int>(syncWithDirectionalLight_));
     data->Save("bias", bias_);
     data->Save("strength", strength_);
+    data->Save("normalBias", normalBias_);
+    data->Save("softness", softness_);
+    data->Save("sampleCount", sampleCount_);
     data->Save("lightDirX", lightDir_.x);
     data->Save("lightDirY", lightDir_.y);
     data->Save("lightDirZ", lightDir_.z);
@@ -358,6 +372,9 @@ void ShadowMap::LoadConfig(const std::string &fileName)
     syncWithDirectionalLight_ = static_cast<bool>(data->Load<int>("syncWithDirectionalLight", 1));
     bias_ = data->Load<float>("bias", 0.001f);
     strength_ = data->Load<float>("strength", 0.7f);
+    normalBias_ = data->Load<float>("normalBias", 0.0025f);
+    softness_ = data->Load<float>("softness", 1.5f);
+    sampleCount_ = data->Load<int32_t>("sampleCount", 8);
     lightDir_.x = data->Load<float>("lightDirX", 0.f);
     lightDir_.y = data->Load<float>("lightDirY", -1.f);
     lightDir_.z = data->Load<float>("lightDirZ", 0.5f);

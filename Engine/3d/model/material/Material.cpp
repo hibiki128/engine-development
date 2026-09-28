@@ -69,6 +69,8 @@ void Material::Draw(const Vector4 color, bool lighting) {
     pMaterialDataGPU_->normalStrength = materialData_.normalStrength;
     pMaterialDataGPU_->proceduralScale = materialData_.proceduralScale;
     pMaterialDataGPU_->enableToon = materialData_.enableToon ? 1 : 0;
+    pMaterialDataGPU_->emissiveStrength = materialData_.emissiveStrength;
+    pMaterialDataGPU_->cameraFade = cameraFade_;
 
     ID3D12GraphicsCommandList *pCommandList = pDxCommon_->GetCommandList().Get();
 
@@ -100,6 +102,11 @@ void Material::SetTexture(const std::string &texturePath) {
 
 void Material::SetEnvironmentCoefficients(float environmentCoefficients) {
     materialData_.environmentCoefficient = environmentCoefficients;
+    UpdateGPUData();
+}
+
+void Material::SetEmissiveStrength(float strength) {
+    materialData_.emissiveStrength = strength;
     UpdateGPUData();
 }
 
@@ -152,6 +159,8 @@ void Material::UpdateGPUData() {
         pMaterialDataGPU_->normalStrength = materialData_.normalStrength;
         pMaterialDataGPU_->proceduralScale = materialData_.proceduralScale;
         pMaterialDataGPU_->enableToon = materialData_.enableToon ? 1 : 0;
+        pMaterialDataGPU_->emissiveStrength = materialData_.emissiveStrength;
+        pMaterialDataGPU_->cameraFade = cameraFade_;
     }
 }
 

@@ -19,6 +19,7 @@
 #include "line/LineRenderer.h"
 #ifdef USE_IMGUI
 #include <imgui.h>
+#include "utility/debug/imgui/SettingsPanel.h"
 #endif // USE_IMGUI
 #include <OffScreen.h>
 #include "SpriteManager.h"
@@ -67,6 +68,17 @@ class BaseScene
     /// プロジェクトに追加
     /// </summary>
     virtual void AddParticleSetting();
+
+#ifdef USE_IMGUI
+    /// <summary>
+    /// 「シーン設定」窓のパネル（全シーン共通。検索語・表示の切り替え・固定はシーンをまたいで残る）。
+    /// AddSceneSetting の中で Add を並べ、最後に Draw を呼ぶ
+    /// </summary>
+    static SettingsPanel &ScenePanel();
+
+    /// <summary>「シーンのオブジェクト設定」窓のパネル（使い方は ScenePanel と同じ）</summary>
+    static SettingsPanel &ObjectPanel();
+#endif // USE_IMGUI
 
     /// <summary>
     /// 描画

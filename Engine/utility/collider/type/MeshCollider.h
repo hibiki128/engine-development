@@ -1,6 +1,6 @@
 #pragma once
 #include "../ColliderBase.h"
-#include "line/LineRenderer.h"
+#include "line/LineBatchId.h"
 #include "type/Matrix4x4.h"
 #include <functional>
 #include <vector>
@@ -124,6 +124,16 @@ class MeshCollider : public ColliderBase
     /// </summary>
     /// <param name="json">読み込み元</param>
     void LoadShapeFromJson(DataHandler &json) override;
+
+#ifdef USE_IMGUI
+    /// <summary>元モデルのパス・ワイヤーフレーム表示をスナップショットへ足す</summary>
+    /// <param name="shape">書き込み先</param>
+    void CaptureShape(nlohmann::json &shape) const override;
+
+    /// <summary>元モデルのパス・ワイヤーフレーム表示をスナップショットから戻す</summary>
+    /// <param name="shape">読み込み元</param>
+    void ApplyShape(const nlohmann::json &shape) override;
+#endif // USE_IMGUI
 
   private:
     /// ===================================================

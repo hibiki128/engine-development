@@ -7,6 +7,39 @@
 namespace Hagine {
 std::unordered_map<std::string, ModelData> ParticleGroup::modelCache_;
 
+ParticleGroup::~ParticleGroup()
+{
+    // 確保したのはインスタンシング用の1つ。**渡すのは予約番号なので -1 する**（+1規約）。
+    // 解放は数フレーム後。GPU がまだ前のフレームでこのスロットを読んでいる最中に
+    // ディスクリプタを潰すと絵が壊れるため
+    if (particleGroupData_.instancingSRVIndex != 0)
+    {
+        SrvManager::GetInstance()->FreeDeferred(particleGroupData_.instancingSRVIndex - 1);
+        particleGroupData_.instancingSRVIndex = 0;
+    }
+    for (ViewInstancing &view : viewInstancing_)
+    {
+        if (view.srvIndex != 0)
+        {
+            SrvManager::GetInstance()->FreeDeferred(view.srvIndex - 1);
+            view.srvIndex = 0;
+        }
+    }
+}
+
+ParticleGroup::ViewInstancing &ParticleGroup::AcquireViewInstancing(int view)
+{
+    ViewInstancing &target = viewInstancing_[(view > 0 && view < RenderView::kMaxViews) ? view : 0];
+    if (!target.resource)
+    {
+        target.resource = ParticleCommon::GetInstance()->GetDxCommon()->CreateBufferResource(sizeof(ParticleForGPU) * kNumMaxInstance);
+        target.resource->Map(0, nullptr, reinterpret_cast<void **>(&target.data));
+        target.srvIndex = SrvManager::GetInstance()->Allocate() + 1; // +1規約
+        SrvManager::GetInstance()->CreateSRVforStructuredBuffer(target.srvIndex, target.resource.Get(), kNumMaxInstance, sizeof(ParticleForGPU));
+    }
+    return target;
+}
+
 void ParticleGroup::Initialize()
 {
 }
@@ -18,8 +51,8 @@ ParticleGroupData ParticleGroup::CreateParticleGroup(const std::string &groupNam
 {
     particleGroupData_.groupName = groupName;
     modelFilePath_ = filename;
-    ModelManager::GetInstance()->LoadModel(filename);
-    pModel_ = ModelManager::GetInstance()->FindModel(filename);
+    // 読み込みが返したキーでそのまま引く（パスで引き直すと別の実体が返りうる）
+    pModel_ = ModelManager::GetInstance()->FindModelByKey(ModelManager::GetInstance()->LoadModel(filename));
     modelData_ = pModel_->GetModelData();
     CreateVertexData();
     CreateIndexResource();
@@ -50,6 +83,11 @@ ParticleGroupData ParticleGroup::CreateParticleGroup(const std::string &groupNam
         mat.textureIndex = TextureManager::GetInstance()->GetTextureIndexByFilePath(mat.textureFilePath);
     }
     particleGroupData_.instancingResource = ParticleCommon::GetInstance()->GetDxCommon()->CreateBufferResource(sizeof(ParticleForGPU) * kNumMaxInstance);
+    // 作り直した場合は前の枠を捨ててから取り直す（上書きすると番号が迷子になる）
+    if (particleGroupData_.instancingSRVIndex != 0)
+    {
+        SrvManager::GetInstance()->FreeDeferred(particleGroupData_.instancingSRVIndex - 1);
+    }
     particleGroupData_.instancingSRVIndex = SrvManager::GetInstance()->Allocate() + 1;
     particleGroupData_.instancingResource->Map(0, nullptr, reinterpret_cast<void **>(&particleGroupData_.instancingData));
 
@@ -64,7 +102,7 @@ ParticleGroupData ParticleGroup::CreatePrimitiveParticleGroup(const std::string 
 {
     particleGroupData_.groupName = groupName;
     type_ = type;
-    pModel_ = ModelManager::GetInstance()->FindModel(ModelManager::GetInstance()->CreatePrimitiveModel(type, texturePath));
+    pModel_ = ModelManager::GetInstance()->FindModelByKey(ModelManager::GetInstance()->CreatePrimitiveModel(type, texturePath));
     TextureManager::GetInstance()->LoadTexture(texturePath);
     modelData_ = pModel_->GetModelData();
     CreateVertexData();
@@ -96,6 +134,11 @@ ParticleGroupData ParticleGroup::CreatePrimitiveParticleGroup(const std::string 
         mat.textureIndex = TextureManager::GetInstance()->GetTextureIndexByFilePath(mat.textureFilePath);
     }
     particleGroupData_.instancingResource = ParticleCommon::GetInstance()->GetDxCommon()->CreateBufferResource(sizeof(ParticleForGPU) * kNumMaxInstance);
+    // 作り直した場合は前の枠を捨ててから取り直す（上書きすると番号が迷子になる）
+    if (particleGroupData_.instancingSRVIndex != 0)
+    {
+        SrvManager::GetInstance()->FreeDeferred(particleGroupData_.instancingSRVIndex - 1);
+    }
     particleGroupData_.instancingSRVIndex = SrvManager::GetInstance()->Allocate() + 1;
     particleGroupData_.instancingResource->Map(0, nullptr, reinterpret_cast<void **>(&particleGroupData_.instancingData));
 

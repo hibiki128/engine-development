@@ -28,6 +28,7 @@ void ParticleCSEmitter::SaveSetting()
     data->Save("isGizmoSelectable", isGizmoSelectable_);
     data->Save("drawGroup", drawGroup_);
     data->Save("frequency", pEmitterMeshData_->frequency);
+    data->Save("emitRampTime", emitRampTime_);
     data->Save("frequencyTime", pEmitterMeshData_->frequencyTime);
     data->Save<Vector3>("translate", pEmitterMeshData_->translate);
     // ビルボード合成前の回転を保存する（pEmitterMeshData_->rotation はカメラを含む解決済みの値）
@@ -42,10 +43,17 @@ void ParticleCSEmitter::SaveSetting()
     data->Save("primitiveHeightDivide", static_cast<int>(primitiveParams_.heightDivide));
     data->Save("primitiveRingOuter", primitiveParams_.ringOuterRadius);
     data->Save("primitiveRingInner", primitiveParams_.ringInnerRadius);
+    // 岩の形（種とノイズ設定）。これが無いと読み直すたびに別の形になってしまう
+    data->Save("primitiveRockSeed", static_cast<int>(primitiveParams_.rockSeed));
+    data->Save("primitiveRockNoiseScale", primitiveParams_.rockNoiseScale);
+    data->Save("primitiveRockNoiseAmount", primitiveParams_.rockNoiseAmount);
+    data->Save("primitiveRockOctaves", static_cast<int>(primitiveParams_.rockOctaves));
+    data->Save("primitiveRockFlattenY", primitiveParams_.rockFlattenY);
 
     // フィールド影響設定
     data->Save("receiveFields", receiveFields_);
-    data->Save("fieldGroupId", fieldGroupId_);
+    data->Remove("fieldGroupId");
+    data->Save("fieldLayers", fieldLayers_);
     data->Save("emitOnlyOnFieldContact", emitOnlyOnFieldContact_);
 
     // 発光（動的ポイントライト）設定
@@ -213,6 +221,27 @@ void ParticleCSEmitter::SaveSetting()
         // ★ 寿命カーブ(サイズ/アルファ)設定の保存（有効フラグ + 制御点列）
         data->Save(prefix + "enableSizeCurve", group->GetSettingsData()->enableSizeCurve);
         data->Save(prefix + "enableAlphaCurve", group->GetSettingsData()->enableAlphaCurve);
+        // ★ フリップブック（スプライトシート）
+        data->Save(prefix + "enableFlipbook", group->GetSettingsData()->enableFlipbook);
+        data->Save(prefix + "flipbookCols", group->GetSettingsData()->flipbookCols);
+        data->Save(prefix + "flipbookRows", group->GetSettingsData()->flipbookRows);
+        data->Save(prefix + "flipbookMode", group->GetSettingsData()->flipbookMode);
+        data->Save(prefix + "flipbookFps", group->GetSettingsData()->flipbookFps);
+        data->Save(prefix + "flipbookRandomStart", group->GetSettingsData()->flipbookRandomStart);
+        // ★ プロシージャル形状（画像を使わずPSで形を作る）
+        data->Save(prefix + "shapeMode", group->GetSettingsData()->shapeMode);
+        data->Save(prefix + "shapeEdge", group->GetSettingsData()->shapeEdge);
+        data->Save(prefix + "shapeNoiseScale", group->GetSettingsData()->shapeNoiseScale);
+        data->Save(prefix + "shapeRimWidth", group->GetSettingsData()->shapeRimWidth);
+        data->Save<Vector4>(prefix + "shapeRimColor", group->GetSettingsData()->shapeRimColor);
+        data->Save(prefix + "shapeSpeed", group->GetSettingsData()->shapeSpeed);
+        data->Save(prefix + "shapeSoftness", group->GetSettingsData()->shapeSoftness);
+        data->Save(prefix + "shapeFresnel", group->GetSettingsData()->shapeFresnel);
+        // ★ ソフトパーティクル／UVスクロール
+        data->Save(prefix + "enableSoftParticle", group->GetSettingsData()->enableSoftParticle);
+        data->Save(prefix + "softParticleFade", group->GetSettingsData()->softParticleFade);
+        data->Save<Vector2>(prefix + "uvScrollSpeed", group->GetSettingsData()->uvScrollSpeed);
+        data->Save<float>(prefix + "emissive", group->GetEmissive());
         auto saveCurve = [&](const std::string &key, const std::vector<CurvePoint> &pts) {
             data->Save(prefix + key + "Count", static_cast<int>(pts.size()));
             for (size_t pi = 0; pi < pts.size(); ++pi)
@@ -241,6 +270,8 @@ void ParticleCSEmitter::LoadSetting()
         drawGroup_ = "3D"; // 旧データは3D扱いに正規化
     }
     pEmitterMeshData_->frequency = data->Load("frequency", 0.1f);
+    // 0 なら従来どおり最初から最大の発生数（既存 json は 0 になるので無回帰）
+    emitRampTime_ = data->Load("emitRampTime", 0.0f);
     pEmitterMeshData_->frequencyTime = data->Load("frequencyTime", 0.0f);
     pEmitterMeshData_->translate = data->Load<Vector3>("translate", Vector3(0.0f, 0.0f, 0.0f));
     baseRotation_ = data->Load<Quaternion>("rotation", Quaternion::IdentityQuaternion());
@@ -256,9 +287,23 @@ void ParticleCSEmitter::LoadSetting()
     primitiveParams_.heightDivide = static_cast<uint32_t>(data->Load("primitiveHeightDivide", 1));
     primitiveParams_.ringOuterRadius = data->Load("primitiveRingOuter", 1.0f);
     primitiveParams_.ringInnerRadius = data->Load("primitiveRingInner", 0.5f);
+    primitiveParams_.rockSeed = static_cast<uint32_t>(data->Load("primitiveRockSeed", 1));
+    primitiveParams_.rockNoiseScale = data->Load("primitiveRockNoiseScale", 1.6f);
+    primitiveParams_.rockNoiseAmount = data->Load("primitiveRockNoiseAmount", 0.35f);
+    primitiveParams_.rockOctaves = static_cast<uint32_t>(data->Load("primitiveRockOctaves", 4));
+    primitiveParams_.rockFlattenY = data->Load("primitiveRockFlattenY", 0.75f);
     // フィールド影響設定
     receiveFields_ = data->Load("receiveFields", false);
-    fieldGroupId_ = data->Load("fieldGroupId", -1);
+    // 旧 fieldGroupId: -1 = 全部 / n = レイヤー n+1 だけ（フィールド側の読み替えと同じ規則）
+    if (data->Contains("fieldLayers"))
+    {
+        fieldLayers_ = data->Load<uint32_t>("fieldLayers", 0xFFFFFFFFu);
+    }
+    else
+    {
+        const int legacyGroupId = data->Load("fieldGroupId", -1);
+        fieldLayers_ = (legacyGroupId < 0 || legacyGroupId >= 32) ? 0xFFFFFFFFu : (1u << legacyGroupId);
+    }
     emitOnlyOnFieldContact_ = data->Load("emitOnlyOnFieldContact", false);
     // 旧キー fieldContactEmitCount は廃止（発生数はフィールド側の接触Emit設定に一本化）
 
@@ -430,8 +475,30 @@ void ParticleCSEmitter::LoadSetting()
         // ★ 寿命カーブ(サイズ/アルファ)の有効フラグ（点は group 側ストレージ）
         settings.enableSizeCurve = data->Load<uint32_t>(prefix + "enableSizeCurve", 0);
         settings.enableAlphaCurve = data->Load<uint32_t>(prefix + "enableAlphaCurve", 0);
+        // ★ フリップブック（既存 json は enableFlipbook=0 になるので無回帰）
+        settings.enableFlipbook = data->Load<uint32_t>(prefix + "enableFlipbook", 0);
+        settings.flipbookCols = data->Load<uint32_t>(prefix + "flipbookCols", 1);
+        settings.flipbookRows = data->Load<uint32_t>(prefix + "flipbookRows", 1);
+        settings.flipbookMode = data->Load<uint32_t>(prefix + "flipbookMode", 0);
+        settings.flipbookFps = data->Load<float>(prefix + "flipbookFps", 30.0f);
+        settings.flipbookRandomStart = data->Load<uint32_t>(prefix + "flipbookRandomStart", 0);
+        // ★ プロシージャル形状（既存 json は shapeMode=0＝テクスチャそのままなので無回帰）
+        settings.shapeMode = data->Load<uint32_t>(prefix + "shapeMode", 0);
+        settings.shapeEdge = data->Load<float>(prefix + "shapeEdge", 0.5f);
+        settings.shapeNoiseScale = data->Load<float>(prefix + "shapeNoiseScale", 3.0f);
+        settings.shapeRimWidth = data->Load<float>(prefix + "shapeRimWidth", 0.22f);
+        settings.shapeRimColor = data->Load<Vector4>(prefix + "shapeRimColor", Vector4(0.45f, 0.85f, 1.0f, 1.0f));
+        settings.shapeSpeed = data->Load<float>(prefix + "shapeSpeed", 1.6f);
+        settings.shapeSoftness = data->Load<float>(prefix + "shapeSoftness", 0.06f);
+        settings.shapeFresnel = data->Load<float>(prefix + "shapeFresnel", 0.0f);
+        // ★ ソフトパーティクル／UVスクロール（既存 json は 0＝無効なので無回帰）
+        settings.enableSoftParticle = data->Load<uint32_t>(prefix + "enableSoftParticle", 0);
+        settings.softParticleFade = data->Load<float>(prefix + "softParticleFade", 1.0f);
+        settings.uvScrollSpeed = data->Load<Vector2>(prefix + "uvScrollSpeed", Vector2(0.0f, 0.0f));
 
         group->SetSettingData(settings);
+        // 発光の強さ（既存 json は 1＝従来どおり）
+        group->SetEmissive(data->Load<float>(prefix + "emissive", 1.0f));
 
         {
             int stopCount = data->Load(prefix + "colorStopCount", 0);
@@ -478,6 +545,14 @@ void ParticleCSEmitter::LoadSetting()
         }
 
         AddParticleGroup(group);
+
+        // ここまでの group は「JSONの設定を積むための入れ物」でしかない。
+        // AddParticleGroup が中でもう1つ独立グループを取って設定を写し取るので、
+        // この入れ物は誰にも持たれないまま独立グループ一覧へ残り続ける
+        // （＝エミッターを破棄しても返らず、1体につきグループ1個分の
+        //   GPUバッファとSRV 25枠がシーンを跨いで積み上がっていた）。
+        // 用が済んだ時点で再利用プールへ返す
+        ParticleCSGroupManager::GetInstance()->ReleaseIndependentGroup(group);
     }
     ImGuiNotification::Post("パーティクル設定を読み込みました: " + name_, {0.2f, 0.8f, 0.8f, 1.0f});
 }

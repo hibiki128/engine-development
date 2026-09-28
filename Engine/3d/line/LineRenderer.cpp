@@ -118,7 +118,7 @@ void LineRenderer::BeginFrame(const ViewProjection &viewProjection)
 {
     lineCount_ = 0;
     batchSubmissions_.clear();
-    ExtractFrustum(viewProjection.matView_ * viewProjection.matProjection_);
+    frustum_.ExtractFromViewProjection(viewProjection.matView_ * viewProjection.matProjection_);
     TickPendingReleases();
 }
 
@@ -347,56 +347,7 @@ void LineRenderer::SubmitBatch(LineBatchId id, const Matrix4x4 &world, const Vec
 
 bool LineRenderer::IsSphereVisible(const Vector3 &center, float radius) const
 {
-    if (!frustumValid_)
-    {
-        return true;
-    }
-    for (const Vector4 &plane : frustumPlanes_)
-    {
-        const float distance = plane.x * center.x + plane.y * center.y + plane.z * center.z + plane.w;
-        if (distance < -radius)
-        {
-            return false;
-        }
-    }
-    return true;
-}
-
-void LineRenderer::ExtractFrustum(const Matrix4x4 &viewProjection)
-{
-    // 行ベクトル規約（clip = pos * M）なので、平面は列の和差で得られる
-    auto column = [&viewProjection](int index) -> Vector4 {
-        return Vector4(viewProjection.m[0][index], viewProjection.m[1][index],
-                       viewProjection.m[2][index], viewProjection.m[3][index]);
-    };
-
-    const Vector4 c0 = column(0);
-    const Vector4 c1 = column(1);
-    const Vector4 c2 = column(2);
-    const Vector4 c3 = column(3);
-
-    const Vector4 raw[6] = {
-        {c3.x + c0.x, c3.y + c0.y, c3.z + c0.z, c3.w + c0.w}, // 左
-        {c3.x - c0.x, c3.y - c0.y, c3.z - c0.z, c3.w - c0.w}, // 右
-        {c3.x + c1.x, c3.y + c1.y, c3.z + c1.z, c3.w + c1.w}, // 下
-        {c3.x - c1.x, c3.y - c1.y, c3.z - c1.z, c3.w - c1.w}, // 上
-        {c2.x, c2.y, c2.z, c2.w},                             // 近
-        {c3.x - c2.x, c3.y - c2.y, c3.z - c2.z, c3.w - c2.w}, // 遠
-    };
-
-    for (int i = 0; i < 6; ++i)
-    {
-        const float length = std::sqrt(raw[i].x * raw[i].x + raw[i].y * raw[i].y + raw[i].z * raw[i].z);
-        if (length <= 1e-6f)
-        {
-            // 行列が未初期化などで平面を作れない場合はカリングを無効化する
-            frustumValid_ = false;
-            return;
-        }
-        const float inv = 1.0f / length;
-        frustumPlanes_[i] = {raw[i].x * inv, raw[i].y * inv, raw[i].z * inv, raw[i].w * inv};
-    }
-    frustumValid_ = true;
+    return frustum_.IsSphereVisible(center, radius);
 }
 
 Microsoft::WRL::ComPtr<ID3D12Resource> LineRenderer::CreateVertexBuffer(uint32_t vertexCount, D3D12_VERTEX_BUFFER_VIEW &outView, LineVertex **outMapped)

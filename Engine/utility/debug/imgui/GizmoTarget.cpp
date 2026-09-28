@@ -10,6 +10,7 @@
 #include <edit/undo/UndoRedoManager.h>
 #include "WinApp.h"
 #include <format>
+#include <numbers>
 #include <imgui.h>
 // DebugUIHelper.h は ImVec4 / ImGui:: を使うので imgui.h の後に include する
 #include "DebugUIHelper.h"
@@ -315,14 +316,27 @@ void GizmoTarget::ShowImGui()
             }
             else
             {
-                ImGui::DragFloat3("Translation", &worldTransform->translation_.x, 0.1f);
-                ImGui::DragFloat3("Scale", &worldTransform->scale_.x, 0.01f);
+                // 専用の表示が無い対象の既定の表示（数値欄は右クリックでコピー・貼り付け・既定値に戻す）
+                static const float kZero[3] = {0.0f, 0.0f, 0.0f};
+                static const float kOne[3] = {1.0f, 1.0f, 1.0f};
+                bool changed = LabeledDrag3("位置", "##wtPos", &worldTransform->translation_.x, 0.1f, 0.0f, 0.0f, "%.2f",
+                                            DebugTheme::FrameBg(DebugTheme::kAccentBlue));
+                changed |= FloatNContextMenu("##wtPosCtx", &worldTransform->translation_.x, 3, kZero);
+
+                const float toDeg = 180.0f / std::numbers::pi_v<float>;
                 Vector3 euler = worldTransform->GetRotationEuler();
-                if (ImGui::DragFloat3("Rotation (rad)", &euler.x, 0.01f))
+                float degrees[3] = {euler.x * toDeg, euler.y * toDeg, euler.z * toDeg};
+                if (LabeledDrag3("回転 (度)", "##wtRot", degrees, 0.5f, 0.0f, 0.0f, "%.1f°", DebugTheme::FrameBg(DebugTheme::kAccentCyan)) |
+                    FloatNContextMenu("##wtRotCtx", degrees, 3, kZero))
                 {
-                    worldTransform->SetRotationEuler(euler);
+                    worldTransform->SetRotationEuler({degrees[0] / toDeg, degrees[1] / toDeg, degrees[2] / toDeg});
+                    changed = true;
                 }
-                if (ImGui::Button("UpdateMatrix"))
+
+                changed |= LabeledDrag3("拡縮", "##wtScale", &worldTransform->scale_.x, 0.01f, 0.0f, 0.0f, "%.2f",
+                                        DebugTheme::FrameBg(DebugTheme::kAccentGreen));
+                changed |= FloatNContextMenu("##wtScaleCtx", &worldTransform->scale_.x, 3, kOne);
+                if (changed)
                 {
                     worldTransform->UpdateMatrix();
                 }
@@ -337,21 +351,39 @@ void GizmoTarget::ShowImGui()
         }
         else
         {
+            static const float kZero[3] = {0.0f, 0.0f, 0.0f};
+            static const float kOne[3] = {1.0f, 1.0f, 1.0f};
             if (translate)
             {
                 if (isScreenSpace)
                 {
-                    ImGui::DragFloat2("Position (px)", &translate->x, 1.0f);
+                    CaptionText("位置 (px)");
+                    ImGui::SetNextItemWidth(-1);
+                    ImGui::DragFloat2("##ftPos2", &translate->x, 1.0f);
+                    FloatNContextMenu("##ftPos2Ctx", &translate->x, 2, kZero);
                 }
                 else
                 {
-                    ImGui::DragFloat3("Translation", &translate->x, 0.1f);
+                    LabeledDrag3("位置", "##ftPos", &translate->x, 0.1f, 0.0f, 0.0f, "%.2f", DebugTheme::FrameBg(DebugTheme::kAccentBlue));
+                    FloatNContextMenu("##ftPosCtx", &translate->x, 3, kZero);
                 }
             }
             if (rotate)
-                ImGui::DragFloat3("Rotation (rad)", &rotate->x, 0.01f);
+            {
+                // 中身はラジアンなので、表示と入力だけ度に直す
+                const float toDeg = 180.0f / std::numbers::pi_v<float>;
+                float degrees[3] = {rotate->x * toDeg, rotate->y * toDeg, rotate->z * toDeg};
+                if (LabeledDrag3("回転 (度)", "##ftRot", degrees, 0.5f, 0.0f, 0.0f, "%.1f°", DebugTheme::FrameBg(DebugTheme::kAccentCyan)) |
+                    FloatNContextMenu("##ftRotCtx", degrees, 3, kZero))
+                {
+                    *rotate = {degrees[0] / toDeg, degrees[1] / toDeg, degrees[2] / toDeg};
+                }
+            }
             if (scale)
-                ImGui::DragFloat3("Scale", &scale->x, 0.01f);
+            {
+                LabeledDrag3("拡縮", "##ftScale", &scale->x, 0.01f, 0.0f, 0.0f, "%.2f", DebugTheme::FrameBg(DebugTheme::kAccentGreen));
+                FloatNContextMenu("##ftScaleCtx", &scale->x, 3, kOne);
+            }
         }
         break;
 

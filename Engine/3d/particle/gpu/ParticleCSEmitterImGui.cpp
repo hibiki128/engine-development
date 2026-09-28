@@ -16,6 +16,9 @@
 #include "../utility/debug/imgui/ImGuiNotification.h"
 // DebugUIHelper.h は ImGui:: を使うので imgui.h（ImGuizmoManager.h 経由）の後に include する
 #include "../utility/debug/imgui/DebugUIHelper.h"
+#include <format>
+#include <icon/IconsFontAwesome5.h>
+#include "ParticleCSFieldLayerUI.h"
 #include <object/base/BaseObject.h>
 #include <transform/WorldTransform.h>
 
@@ -24,89 +27,86 @@ namespace Hagine {
 void ParticleCSEmitter::DrawImGui()
 {
 #ifdef USE_IMGUI
-    if (ImGui::BeginTabBar("EmitterTabBar"))
+    // 見出しは役割ごとの色。「すべて開く／閉じる」は押した次のフレームで各見出しに効かせる
+    const int openRequest = sectionOpenRequest_;
+    sectionOpenRequest_ = 0;
+    auto header = [openRequest](const std::string &label, const ImVec4 &accent, bool defaultOpen) {
+        if (openRequest != 0)
+            ImGui::SetNextItemOpen(openRequest > 0);
+        return ThemedHeader(label.c_str(), accent, defaultOpen);
+    };
+    if (ImGui::SmallButton(ICON_FA_EXPAND_ALT " すべて開く##emitterOpenAll"))
+        sectionOpenRequest_ = 1;
+    ImGui::SameLine();
+    if (ImGui::SmallButton(ICON_FA_COMPRESS_ALT " すべて閉じる##emitterCloseAll"))
+        sectionOpenRequest_ = -1;
+    ImGui::SameLine();
+    if (ImGui::SmallButton(ICON_FA_SAVE " 保存##emitterSaveTop"))
     {
-        if (ImGui::BeginTabItem(name_.c_str()))
+        SaveSetting();
+        std::unique_ptr<DataHandler> data = std::make_unique<DataHandler>("ParticleCS", name_);
+        data->Flush();
+        ImGuiNotification::Post("パーティクル設定を保存しました", {0.2f, 0.8f, 0.2f, 1.0f});
+    }
+    ImGui::SetItemTooltip("このエミッターと、付いているグループの設定を保存します");
+    ImGui::Spacing();
+
+    // ---- 見た目と動き（グループ）: いちばん触るので先頭・既定で開く ----
+    if (header(std::format("見た目と動き（グループ {} 個）###emitterGroups", particleGroups_.size()), DebugTheme::kAccentOrange, true))
+    {
+        if (!particleGroups_.empty())
         {
-            ImGuiStyle &style = ImGui::GetStyle();
-            ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.13f, 0.14f, 0.15f, 1.00f));
-
-            ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0.34f, 0.26f, 0.26f, 0.55f));
-            ImGui::PushStyleColor(ImGuiCol_HeaderHovered, ImVec4(0.42f, 0.32f, 0.32f, 0.70f));
-            ImGui::PushStyleColor(ImGuiCol_HeaderActive, ImVec4(0.50f, 0.40f, 0.40f, 0.85f));
-
-            if (ImGui::CollapsingHeader("エミッターデータ##EmitterData"))
+            // グループはタブで切り替える（1つの演出に複数の見え方を重ねるときに行き来しやすい）
+            if (ImGui::BeginTabBar("##emitterGroupTabs", ImGuiTabBarFlags_FittingPolicyScroll))
             {
-                ImGui::PopStyleColor(3);
-
-                ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kTextCaption);
-                ImGui::Text("エミッター設定:");
-                ImGui::PopStyleColor();
-
-                ImGui::Separator();
-
-                ImGui::PushStyleColor(ImGuiCol_FrameBg, DebugTheme::FrameBg(DebugTheme::kAccentGreen));
-
-                ImGui::DragFloat("発生間隔##Freq", &pEmitterMeshData_->frequency, 0.001f, 0.001f, 10.0f);
-                ImGui::DragFloat3("エミッタの座標##Translate", &pEmitterMeshData_->translate.x, 0.1f);
-
-                Vector3 currentEuler = baseRotation_.ToEulerDegrees();
-                ImGui::Text("現在の回転: %.1f° %.1f° %.1f°", currentEuler.x, currentEuler.y, currentEuler.z);
-
-                static Vector3 deltaRotation = {0.0f, 0.0f, 0.0f};
-                if (ImGui::DragFloat3("##EmitterRotation", &deltaRotation.x, 0.1f, -10.0f, 10.0f, "%.1f°"))
+                for (size_t gi = 0; gi < particleGroups_.size(); ++gi)
                 {
-                    Quaternion currentRotation = baseRotation_;
-                    Quaternion deltaQuatX = Quaternion::FromAxisAngle(Vector3(1, 0, 0), deltaRotation.x * std::numbers::pi_v<float> / 180.0f);
-                    Quaternion deltaQuatY = Quaternion::FromAxisAngle(Vector3(0, 1, 0), deltaRotation.y * std::numbers::pi_v<float> / 180.0f);
-                    Quaternion deltaQuatZ = Quaternion::FromAxisAngle(Vector3(0, 0, 1), deltaRotation.z * std::numbers::pi_v<float> / 180.0f);
-                    Quaternion deltaQuat = deltaQuatY * deltaQuatX * deltaQuatZ;
-                    Quaternion newRotation = currentRotation * deltaQuat;
-                    baseRotation_ = newRotation.Normalize();
-                    deltaRotation = {0.0f, 0.0f, 0.0f};
-                }
-
-                ImGui::SameLine();
-                if (ImGui::Button("リセット##EmitterRotation"))
-                {
-                    baseRotation_ = Quaternion::IdentityQuaternion();
-                    deltaRotation = {0.0f, 0.0f, 0.0f};
-                }
-
-                {
-                    bool bb = billboardEmitter_;
-                    if (ImGui::Checkbox("ビルボード（常にカメラへ正対）##EmitterBillboard", &bb))
-                        billboardEmitter_ = bb;
-                    if (ImGui::IsItemHovered())
-                        ImGui::SetTooltip("発生形状の向きを毎フレームカメラの回転で置き換える。\n"
-                                          "上の回転はカメラ空間でのオフセットとして残る。\n"
-                                          "渦などの「基準空間」を エミッター にしておくと、\n"
-                                          "発生形状と渦の軸が一緒にカメラへ追従して\n"
-                                          "どの角度から見ても同じ動きになる。");
-                    if (billboardEmitter_)
+                    ParticleCSGroup *group = particleGroups_[gi];
+                    ImGui::PushID(static_cast<int>(gi));
+                    if (ImGui::BeginTabItem(group->GetGroupName().c_str()))
                     {
-                        Vector3 resolved = pEmitterMeshData_->rotation.ToEulerDegrees();
-                        ImGui::TextDisabled("  解決後: %.1f° %.1f° %.1f°", resolved.x, resolved.y, resolved.z);
+                        group->SetFrequency(pEmitterMeshData_->frequency);
+                        group->DrawImGui();
+                        ImGui::EndTabItem();
                     }
+                    ImGui::PopID();
+                }
+                ImGui::EndTabBar();
+            }
+        }
+        else
+        {
+            DimText("グループがありません。下の「グループの付け外し」で付けてください");
+        }
+    }
+
+    // ---- 発生のしかた（いつ・どこから）----
+    if (header("発生のしかた（いつ・どこから）###emitterSpawn", DebugTheme::kAccentGreen, false))
+    {
+        ImGui::PushStyleColor(ImGuiCol_FrameBg, DebugTheme::FrameBg(DebugTheme::kAccentGreen));
+                ImGui::DragFloat("発生間隔##Freq", &pEmitterMeshData_->frequency, 0.001f, 0.001f, 10.0f);
+
+                ImGui::DragFloat("発生の立ち上がり(秒)##EmitRamp", &emitRampTime_, 0.01f, 0.0f, 10.0f, "%.2f");
+                if (ImGui::IsItemHovered())
+                {
+                    ImGui::SetTooltip("出し始めてから最大の発生数になるまでの秒数。\n"
+                                      "0 = 最初から最大（従来どおり）。\n\n"
+                                      "溜め始めた瞬間に最大数がドッと出るのを避けたいときに使う。\n"
+                                      "ぶら下げている全グループの発生数へまとめて 0→1 の係数が掛かるので、\n"
+                                      "複数グループでも足並みが揃う。\n"
+                                      "※ 自動発生が OFF→ON になった瞬間にやり直される。");
+                }
+                if (emitRampTime_ > 0.0f)
+                {
+                    ImGui::SameLine();
+                    ImGui::TextColored(DebugTheme::kTextDim, "(今 %.0f%%)", emitRateScale_ * 100.0f);
                 }
 
-                ImGui::DragFloat3("エミッタの大きさ##Scale", &pEmitterMeshData_->scale.x, 0.1f);
-
-                ImGui::PopStyleColor();
-
-                ImGui::Spacing();
-                ImGui::Separator();
-
-                ImGui::Spacing();
-                ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kTextCaption);
-                ImGui::Text("アンカーポイント:");
-                ImGui::PopStyleColor();
-
+        ImGui::PopStyleColor();
+        ImGui::Spacing();
+        CaptionText("アンカーポイント（発生位置のずらし）");
                 ImGui::DragFloat3("基準点##AnchorPoint", &pEmitterMeshData_->anchorPoint.x, 0.01f, 0.0f, 1.0f, "%.2f");
-
-                ImGui::Spacing();
-                ImGui::Separator();
-
+        ImGui::Spacing();
                 // 発生位置設定（ラジオボタンで3択）
                 if (pEmitterMeshData_->triangleCount > 0 || pEmitterMeshData_->edgeCount > 0)
                 {
@@ -119,7 +119,16 @@ void ParticleCSEmitter::DrawImGui()
 
                     int emitMode = static_cast<int>(pEmitterMeshData_->emitFromSurface);
 
-                    ImGui::RadioButton("内部から発生##EmitInternal", &emitMode, 0);
+                    ImGui::RadioButton("箱の内部##EmitInternal", &emitMode, 0);
+                    if (ImGui::IsItemHovered())
+                        ImGui::SetTooltip("モデルを囲む箱（±1×スケール）の中から発生します。\nモデルの形には沿いません");
+                    ImGui::SameLine();
+                    ImGui::RadioButton("形の内部##EmitVolume", &emitMode, 3);
+                    if (ImGui::IsItemHovered())
+                        ImGui::SetTooltip("モデルの形どおりに中身を埋めるように発生します。\n"
+                                          "表面の点をモデルの原点へ寄せて作るので、重さは表面発生と同じです。\n"
+                                          "原点から表面が見通せる形（岩・球・卵など）なら形どおりになります。\n"
+                                          "ドーナツやU字のようにくぼんだ形では、くぼみの中にも出ます");
                     ImGui::SameLine();
                     ImGui::RadioButton("表面から発生##EmitSurface", &emitMode, 1);
                     ImGui::SameLine();
@@ -134,7 +143,7 @@ void ParticleCSEmitter::DrawImGui()
                     {
                         const char *tooltip = "";
                         if (emitMode == 0)
-                            tooltip = "メッシュの内側全体からパーティクルが発生します";
+                            tooltip = "モデルを囲む箱の中からパーティクルが発生します";
                         else if (emitMode == 1)
                             tooltip = "メッシュの表面からパーティクルが発生します";
                         else if (emitMode == 2)
@@ -210,6 +219,59 @@ void ParticleCSEmitter::DrawImGui()
                                     ImGui::SetTooltip("円の幅 = 外半径 - 内半径");
                             }
 
+                            // 岩は球をノイズででこぼこにしたもの。種を変えると同じ設定でも別の形になる。
+                            if (primitiveType_ == PrimitiveType::Rock)
+                            {
+                                int seed = static_cast<int>(primitiveParams_.rockSeed);
+                                ImGui::SetNextItemWidth(180.0f);
+                                if (ImGui::DragInt("形の種##rockSeed", &seed, 1.0f, 0, 100000))
+                                {
+                                    primitiveParams_.rockSeed = static_cast<uint32_t>(seed < 0 ? 0 : seed);
+                                }
+                                if (ImGui::IsItemDeactivatedAfterEdit())
+                                    rebuild = true;
+                                if (ImGui::IsItemHovered())
+                                    ImGui::SetTooltip("値を変えると、同じ設定のまま別の形の岩になります");
+                                ImGui::SameLine();
+                                if (ImGui::SmallButton("振り直す##rockReroll"))
+                                {
+                                    primitiveParams_.rockSeed += 1;
+                                    rebuild = true;
+                                }
+
+                                ImGui::SetNextItemWidth(180.0f);
+                                ImGui::DragFloat("でこぼこの深さ##rockAmount", &primitiveParams_.rockNoiseAmount, 0.005f, 0.0f, 0.9f, "%.3f");
+                                if (ImGui::IsItemDeactivatedAfterEdit())
+                                    rebuild = true;
+                                if (ImGui::IsItemHovered())
+                                    ImGui::SetTooltip("0で真球。上げるほど荒々しい岩になります");
+
+                                ImGui::SetNextItemWidth(180.0f);
+                                ImGui::DragFloat("でこぼこの細かさ##rockScale", &primitiveParams_.rockNoiseScale, 0.02f, 0.1f, 12.0f, "%.2f");
+                                if (ImGui::IsItemDeactivatedAfterEdit())
+                                    rebuild = true;
+                                if (ImGui::IsItemHovered())
+                                    ImGui::SetTooltip("小さいほど大きなうねり、大きいほど細かい凹凸になります");
+
+                                int octaves = static_cast<int>(primitiveParams_.rockOctaves);
+                                ImGui::SetNextItemWidth(180.0f);
+                                if (ImGui::DragInt("ノイズの重ね回数##rockOctaves", &octaves, 0.1f, 1, 8))
+                                {
+                                    primitiveParams_.rockOctaves = static_cast<uint32_t>(octaves < 1 ? 1 : octaves);
+                                }
+                                if (ImGui::IsItemDeactivatedAfterEdit())
+                                    rebuild = true;
+                                if (ImGui::IsItemHovered())
+                                    ImGui::SetTooltip("多いほど細部が増えます（分割数が少ないと違いが出ません）");
+
+                                ImGui::SetNextItemWidth(180.0f);
+                                ImGui::DragFloat("縦の潰し##rockFlatten", &primitiveParams_.rockFlattenY, 0.01f, 0.1f, 2.0f, "%.2f");
+                                if (ImGui::IsItemDeactivatedAfterEdit())
+                                    rebuild = true;
+                                if (ImGui::IsItemHovered())
+                                    ImGui::SetTooltip("1で球。小さくすると平たい岩、大きくすると縦長になります");
+                            }
+
                             if (rebuild)
                             {
                                 // 内半径が外半径を超えないようクランプしてから作り直す。
@@ -256,16 +318,61 @@ void ParticleCSEmitter::DrawImGui()
                 }
                 ImGui::Checkbox("エミッター表示##Visible", &isVisible_);
                 ImGui::PopStyleColor();
-            }
-            else
-            {
-                ImGui::PopStyleColor(3);
-            }
+    }
 
-            ImGui::Separator();
-            ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kTextCaption);
-            ImGui::TextUnformatted("フィールド影響設定");
-            ImGui::PopStyleColor();
+    // ---- 位置・向き・大きさ ----
+    if (header("位置・向き・大きさ###emitterTransform", DebugTheme::kAccentBlue, false))
+    {
+        ImGui::PushStyleColor(ImGuiCol_FrameBg, DebugTheme::FrameBg(DebugTheme::kAccentBlue));
+                ImGui::DragFloat3("エミッタの座標##Translate", &pEmitterMeshData_->translate.x, 0.1f);
+
+                Vector3 currentEuler = baseRotation_.ToEulerDegrees();
+                ImGui::Text("現在の回転: %.1f° %.1f° %.1f°", currentEuler.x, currentEuler.y, currentEuler.z);
+
+                static Vector3 deltaRotation = {0.0f, 0.0f, 0.0f};
+                if (ImGui::DragFloat3("##EmitterRotation", &deltaRotation.x, 0.1f, -10.0f, 10.0f, "%.1f°"))
+                {
+                    Quaternion currentRotation = baseRotation_;
+                    Quaternion deltaQuatX = Quaternion::FromAxisAngle(Vector3(1, 0, 0), deltaRotation.x * std::numbers::pi_v<float> / 180.0f);
+                    Quaternion deltaQuatY = Quaternion::FromAxisAngle(Vector3(0, 1, 0), deltaRotation.y * std::numbers::pi_v<float> / 180.0f);
+                    Quaternion deltaQuatZ = Quaternion::FromAxisAngle(Vector3(0, 0, 1), deltaRotation.z * std::numbers::pi_v<float> / 180.0f);
+                    Quaternion deltaQuat = deltaQuatY * deltaQuatX * deltaQuatZ;
+                    Quaternion newRotation = currentRotation * deltaQuat;
+                    baseRotation_ = newRotation.Normalize();
+                    deltaRotation = {0.0f, 0.0f, 0.0f};
+                }
+
+                ImGui::SameLine();
+                if (ImGui::Button("リセット##EmitterRotation"))
+                {
+                    baseRotation_ = Quaternion::IdentityQuaternion();
+                    deltaRotation = {0.0f, 0.0f, 0.0f};
+                }
+
+                {
+                    bool bb = billboardEmitter_;
+                    if (ImGui::Checkbox("ビルボード（常にカメラへ正対）##EmitterBillboard", &bb))
+                        billboardEmitter_ = bb;
+                    if (ImGui::IsItemHovered())
+                        ImGui::SetTooltip("発生形状の向きを毎フレームカメラの回転で置き換える。\n"
+                                          "上の回転はカメラ空間でのオフセットとして残る。\n"
+                                          "渦などの「基準空間」を エミッター にしておくと、\n"
+                                          "発生形状と渦の軸が一緒にカメラへ追従して\n"
+                                          "どの角度から見ても同じ動きになる。");
+                    if (billboardEmitter_)
+                    {
+                        Vector3 resolved = pEmitterMeshData_->rotation.ToEulerDegrees();
+                        ImGui::TextDisabled("  解決後: %.1f° %.1f° %.1f°", resolved.x, resolved.y, resolved.z);
+                    }
+                }
+
+                ImGui::DragFloat3("エミッタの大きさ##Scale", &pEmitterMeshData_->scale.x, 0.1f);
+        ImGui::PopStyleColor();
+    }
+
+    // ---- フィールド ----
+    if (header(std::format("フィールド{}###emitterField", receiveFields_ ? "" : "（受けない）"), DebugTheme::kAccentPurple, false))
+    {
             bool rf = receiveFields_;
             if (ImGui::Checkbox("フィールドの影響を受ける", &rf))
             {
@@ -279,26 +386,22 @@ void ParticleCSEmitter::DrawImGui()
             if (receiveFields_)
             {
                 ImGui::Indent();
-                ImGui::PushItemWidth(120.0f);
-                int fgid = fieldGroupId_;
-                if (ImGui::DragInt("フィールドグループID##fgid", &fgid, 1, -1, 255))
-                {
-                    fieldGroupId_ = std::max(-1, fgid);
-                }
-                ImGui::PopItemWidth();
+                ImGui::AlignTextToFramePadding();
+                ImGui::TextUnformatted("受けるレイヤー");
                 ImGui::SameLine();
-                ImGui::TextDisabled("(?)");
-                if (ImGui::IsItemHovered())
-                    ImGui::SetTooltip(
-                        "-1 = 全フィールドから影響を受ける（デフォルト）\n"
-                        "0以上 = 同じIDのフィールドのみから影響を受ける");
-                if (fieldGroupId_ == -1)
+                FieldLayerUI::DrawLayerChips("##fieldLayers", fieldLayers_);
+                ImGui::SetItemTooltip("フィールド側の「効くレイヤー」と1つでも重なれば影響を受けます");
                 {
-                    ImGui::TextDisabled("  全フィールド対象");
-                }
-                else
-                {
-                    ImGui::Text("  ID: %d のフィールドのみ対象", fieldGroupId_);
+                    // 今このエミッターに効いているフィールド
+                    std::string names;
+                    for (const ParticleField &field : ParticleCSFieldManager::GetInstance()->GetFields())
+                    {
+                        if (field.enabled && field.AffectsParticles() && (field.layers & fieldLayers_) != 0)
+                        {
+                            names += names.empty() ? field.name : "、" + field.name;
+                        }
+                    }
+                    ImGui::TextDisabled("  効いているフィールド: %s", names.empty() ? "なし" : names.c_str());
                 }
 
                 ImGui::Spacing();
@@ -321,40 +424,33 @@ void ParticleCSEmitter::DrawImGui()
 
                     // 発生数・間隔・寿命はフィールド側に一本化されている。
                     // ここでは対象フィールドの状態を読み取り専用で表示し、迷子を防ぐ。
-                    ImGui::TextDisabled("発生数・間隔・寿命はフィールド側の「接触Emit」で設定します");
+                    ImGui::TextDisabled("発生数・間隔・寿命はフィールド側の「この範囲から発生」で設定します");
 
                     int matchCount = 0;
                     for (const auto &field : ParticleCSFieldManager::GetInstance()->GetFields())
                     {
-                        if (!field.enabled || !field.data.enableEmitSpawn)
-                            continue;
-                        bool groupMatch = (field.data.groupId == -1) ||
-                                          (fieldGroupId_ == -1) ||
-                                          (field.data.groupId == fieldGroupId_);
-                        if (!groupMatch)
+                        if (!field.enabled || !field.spawn.enabled || (field.layers & fieldLayers_) == 0)
                             continue;
                         ++matchCount;
-                        if (field.emitSpawnInterval > 0.0f)
+                        if (field.spawn.interval > 0.0f)
                         {
-                            ImGui::Text("  %s : %u個 / %.2fs間隔",
-                                        field.name.c_str(), field.emitSpawnCount, field.emitSpawnInterval);
+                            ImGui::Text("  %s : %u個 / %.2fs間隔", field.name.c_str(), field.spawn.count, field.spawn.interval);
                         }
                         else
                         {
-                            ImGui::Text("  %s : %u個 / 毎フレーム",
-                                        field.name.c_str(), field.emitSpawnCount);
+                            ImGui::Text("  %s : %u個 / 毎フレーム", field.name.c_str(), field.spawn.count);
                         }
                     }
                     if (matchCount == 0)
                     {
-                        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.9f, 0.6f, 0.3f, 1.0f));
+                        ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kAccentOrange);
                         ImGui::TextUnformatted("  対象フィールドがありません（発生しません）");
                         ImGui::PopStyleColor();
                         if (ImGui::IsItemHovered())
                             ImGui::SetTooltip(
                                 "パーティクルフィールド管理ウィンドウで\n"
-                                "「接触Emit」を有効にしたフィールドを用意し、\n"
-                                "グループIDをこのエミッターと合わせてください。");
+                                "「この範囲から発生」を足したフィールドを用意し、\n"
+                                "レイヤーをこのエミッターと重ねてください。");
                     }
 
                     ImGui::Unindent();
@@ -363,10 +459,12 @@ void ParticleCSEmitter::DrawImGui()
                 ImGui::Unindent();
             }
 
-            ImGui::Separator();
-            ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kTextCaption);
-            ImGui::TextUnformatted("発光（周囲を照らす）");
-            ImGui::PopStyleColor();
+    }
+
+    // ---- 発光 ----
+    if (header(std::format("発光{}###emitterLight", (lightEnabled_ || particleLightEnabled_) ? "  ●" : ""), DebugTheme::kAccentYellow, false))
+    {
+        CaptionText("発光（周囲を照らす）");
             ImGui::Checkbox("発光する##LightEnabled", &lightEnabled_);
             if (ImGui::IsItemHovered())
             {
@@ -470,60 +568,11 @@ void ParticleCSEmitter::DrawImGui()
 
             ImGui::Spacing();
 
-            // パーティクルグループ設定セクション（既存のコードと同じ）
-            if (!particleGroups_.empty())
-            {
-                static int selectedGroupIndex = 0;
-                if (selectedGroupIndex >= static_cast<int>(particleGroups_.size()))
-                {
-                    selectedGroupIndex = 0;
-                }
+    }
 
-                std::vector<std::string> groupNames;
-                for (const auto &group : particleGroups_)
-                {
-                    groupNames.push_back(group->GetGroupName());
-                }
-
-                std::vector<const char *> groupNameCStrs;
-                for (auto &n : groupNames)
-                    groupNameCStrs.push_back(n.c_str());
-
-                ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.16f, 0.18f, 0.22f, 0.85f));
-                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.22f, 0.34f, 0.48f, 0.85f));
-                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.30f, 0.44f, 0.60f, 0.95f));
-
-                ImGui::SetNextItemWidth(200.0f);
-                ImGui::Combo("選択中のグループ##GroupCombo", &selectedGroupIndex, groupNameCStrs.data(), static_cast<int>(groupNameCStrs.size()));
-
-                ImGui::PopStyleColor(3);
-
-                if (selectedGroupIndex >= 0 && selectedGroupIndex < static_cast<int>(particleGroups_.size()))
-                {
-                    ImGui::Separator();
-                    particleGroups_[selectedGroupIndex]->SetFrequency(pEmitterMeshData_->frequency);
-                    particleGroups_[selectedGroupIndex]->DrawImGui();
-                }
-            }
-            else
-            {
-                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.8f, 0.6f, 0.6f, 1.0f));
-                ImGui::Text("GPUパーティクルグループがありません");
-                ImGui::PopStyleColor();
-            }
-
-            ImGui::Spacing();
-            ImGui::Separator();
-            ImGui::Spacing();
-
-            // グループ管理セクション
-            ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0.28f, 0.32f, 0.40f, 0.55f));
-            ImGui::PushStyleColor(ImGuiCol_HeaderHovered, ImVec4(0.34f, 0.40f, 0.50f, 0.70f));
-            ImGui::PushStyleColor(ImGuiCol_HeaderActive, ImVec4(0.42f, 0.48f, 0.58f, 0.85f));
-
-            if (ImGui::CollapsingHeader("GPUグループ管理##GPUGroupManagement"))
-            {
-                ImGui::PopStyleColor(3);
+    // ---- グループの付け外し ----
+    if (header("グループの付け外し###emitterGroupMgmt", DebugTheme::kAccentCyan, false))
+    {
 
                 ImGui::Spacing();
 
@@ -734,57 +783,6 @@ void ParticleCSEmitter::DrawImGui()
                 ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.7f, 0.7f, 0.7f, 1.0f));
                 ImGui::Text("操作: Ctrlキー + クリックで複数選択, ダブルクリックで追加/削除");
                 ImGui::PopStyleColor();
-            }
-            else
-            {
-                ImGui::PopStyleColor(3);
-            }
-
-            ImGui::Spacing();
-            ImGui::Separator();
-            ImGui::Spacing();
-
-            // ファイル操作セクション
-            ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0.38f, 0.32f, 0.26f, 0.55f));
-            ImGui::PushStyleColor(ImGuiCol_HeaderHovered, ImVec4(0.46f, 0.38f, 0.30f, 0.70f));
-            ImGui::PushStyleColor(ImGuiCol_HeaderActive, ImVec4(0.52f, 0.44f, 0.36f, 0.85f));
-
-            if (ImGui::CollapsingHeader("GPUファイル操作##GPUFileOperations"))
-            {
-                ImGui::PopStyleColor(3);
-
-                ImGui::Spacing();
-
-                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.22f, 0.34f, 0.48f, 0.85f));
-                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.30f, 0.44f, 0.60f, 0.95f));
-                ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.36f, 0.52f, 0.70f, 1.0f));
-
-                if (ImGui::Button("GPU設定を保存##GPUSaveButton", ImVec2(120, 35)))
-                {
-                    SaveSetting();
-                    std::unique_ptr<DataHandler> data = std::make_unique<DataHandler>("ParticleCS", name_);
-                    data->Flush();
-                    ImGuiNotification::Post("パーティクル設定を保存しました", {0.2f, 0.8f, 0.2f, 1.0f});
-                }
-                ImGui::PopStyleColor(3);
-
-                if (ImGui::IsItemHovered())
-                {
-                    ImGui::SetTooltip("現在のGPUパーティクル設定をファイルに保存します");
-                }
-
-                ImGui::Spacing();
-            }
-            else
-            {
-                ImGui::PopStyleColor(3);
-            }
-
-            // メインウィンドウの背景色をポップ
-            ImGui::PopStyleColor();
-            ImGui::EndTabItem();
-        }
-        ImGui::EndTabBar();
     }
 #endif // USE_IMGUI
 }

@@ -143,6 +143,15 @@ class TextureManager
     const DirectX::TexMetadata &GetMetaData(const std::string &filePath);
 
     /// <summary>
+    /// ファイルパスからテクスチャリソースそのものを取得する。
+    /// シェーダー可視ヒープのデスクリプタはコピーできないので、
+    /// 別のテーブルへ差したい側がSRVを作り直すために使う
+    /// </summary>
+    /// <param name="filePath">ファイルパス</param>
+    /// <returns>ID3D12Resource*: 読み込まれていなければ nullptr</returns>
+    ID3D12Resource *GetTextureResource(const std::string &filePath);
+
+    /// <summary>
     /// フォントキーからフォントアトラスデータを取得する
     /// フォントキーは MakeFontKey() で生成したものを使用すること
     /// 見つからない場合は nullptr を返す

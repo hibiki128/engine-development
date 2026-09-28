@@ -101,6 +101,13 @@ class ShadowMap
     uint32_t GetShadowSrvIndex() const { return srvIndex_; }
 
     /// <summary>
+    /// シャドウマップの深度リソースを取得
+    /// ポストエフェクトのように、自前でSRVを作って読みたい場合に使う
+    /// </summary>
+    /// <returns>ID3D12Resource*: 深度リソース</returns>
+    ID3D12Resource *GetDepthResource() const { return depthResource_.Get(); }
+
+    /// <summary>
     /// ShadowData定数バッファのGPUアドレスを取得
     /// </summary>
     /// <returns>D3D12_GPU_VIRTUAL_ADDRESS: GPU仮想アドレス</returns>
@@ -196,10 +203,15 @@ class ShadowMap
     /// </summary>
     struct ShadowDataGPU
     {
-        int32_t enabled; // 有効フラグ
-        float bias;      // 深度バイアス
-        float strength;  // 影の濃さ
-        float padding;   // パディング
+        int32_t enabled;  // 有効フラグ
+        float bias;       // 深度バイアス
+        float strength;   // 影の濃さ
+        float normalBias; // 面が光に対して浅いときに足すバイアス（縞状の影の対策）
+
+        float softness;      // 影の縁のぼかし幅（シャドウマップのテクセル単位）
+        int32_t sampleCount; // ぼかしのサンプル数（多いほど滑らかで重い）
+        float mapSize;       // シャドウマップの解像度（シェーダー側の決め打ちをやめる）
+        float padding;       // パディング
     };
     Microsoft::WRL::ComPtr<ID3D12Resource> shadowDataResource_; // ShadowData定数バッファ
     ShadowDataGPU *pShadowDataPtr_ = nullptr;                    // 定数バッファのマップ先
@@ -216,6 +228,9 @@ class ShadowMap
     float farZ_ = 200.0f;                      // ファークリップ
     float bias_ = 0.001f;                      // 深度バイアス
     float strength_ = 0.7f;                    // 影の濃さ
+    float normalBias_ = 0.0025f;               // 面が浅いときに足すバイアス（縞状の影の対策）
+    float softness_ = 1.5f;                    // 影の縁のぼかし幅（テクセル単位）
+    int32_t sampleCount_ = 8;                  // ぼかしのサンプル数
     bool enabled_ = true;                      // シャドウ有効フラグ
     bool shadowPassActive_ = false;            // シャドウパス実行中フラグ
     bool syncWithDirectionalLight_ = true;     // DirectionalLightの方向を自動同期するか

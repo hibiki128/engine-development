@@ -7,6 +7,27 @@
 #endif // USE_IMGUI
 #include "MyMath.h"
 #include <line/LineRenderer.h>
+#ifdef USE_IMGUI
+#include <algorithm>
+#include <asset/AssetPath.h>
+#include <edit/undo/ImGuiUndoTracker.h>
+#include <filesystem>
+#include <format>
+#include <icon/IconsFontAwesome5.h>
+#include <implot.h>
+#include <numbers>
+namespace {
+// モーション窓の編集ジェスチャを Undo 履歴へ積むトラッカー
+Hagine::ImGuiUndoTracker g_motionUndoTracker;
+// MotionEasingType と同じ並び
+const char *const kMotionEasingNames[] = {
+    "リニア", "InSine", "OutSine", "InOutSine", "InBack", "OutBack", "InOutBack", "InQuint", "OutQuint", "InOutQuint",
+    "InCirc", "OutCirc", "InOutCirc", "InExpo", "OutExpo", "InOutExpo", "OutCubic", "InCubic", "InOutCubic", "InQuad",
+    "OutQuad", "InOutQuad", "InQuart", "OutQuart", "InBounce", "OutBounce", "InOutBounce", "InElastic", "OutElastic", "InOutElastic"};
+static_assert(std::size(kMotionEasingNames) == static_cast<size_t>(Hagine::MotionEasingType::EaseInOutElastic) + 1,
+              "kMotionEasingNames は MotionEasingType と同数にすること");
+} // namespace
+#endif // USE_IMGUI
 
 namespace Hagine {
 const float MotionEditor::ATTACK_END_INTERVAL = 0.1f;
@@ -385,24 +406,7 @@ void MotionEditor::Update(float deltaTime)
         }
 
         // 補間計算
-        float t = motion.currentTime / motion.totalTime;
-        if (motion.useCatmullRom && motion.controlPoints.size() >= 4)
-        {
-            Vector3 localOffset = CatmullRomInterpolation(motion.controlPoints, t);
-            motion.pTarget->GetLocalPosition() = motion.basePos + localOffset;
-        }
-        else
-        {
-            float easedT = ApplyMotionEasing(motion.easingType, t, 1.0f);
-            Vector3 actualStartPos = motion.basePos + motion.startPosOffset;
-            Vector3 actualEndPos = motion.basePos + motion.endPosOffset;
-            motion.pTarget->GetLocalPosition() = Lerp(actualStartPos, actualEndPos, easedT);
-        }
-
-        float easedT = ApplyMotionEasing(motion.easingType, t, 1.0f);
-        Quaternion interpolatedRot = Slerp(motion.actualStartRot, motion.actualEndRot, easedT);
-        motion.pTarget->GetWorldTransform()->quaternionRotation_ = interpolatedRot;
-        motion.pTarget->GetLocalScale() = Lerp(motion.actualStartScale, motion.actualEndScale, easedT);
+        ApplyPose(motion, motion.currentTime / motion.totalTime);
 
         // コライダー制御
         bool enable = motion.currentTime >= motion.colliderOnTime && motion.currentTime <= motion.colliderOffTime;
@@ -419,6 +423,40 @@ void MotionEditor::Update(float deltaTime)
     CleanupFinishedTemporaryMotions();
     DrawControlPoints();
     DrawCatmullRomCurve();
+}
+
+void MotionEditor::ApplyPose(Motion &motion, float t)
+{
+    // t は 0〜1（開始→終了）。位置は曲線か2点の補間、回転と大きさは開始→終了
+    if (motion.useCatmullRom && motion.controlPoints.size() >= 4)
+    {
+        Vector3 localOffset = CatmullRomInterpolation(motion.controlPoints, t);
+        motion.pTarget->GetLocalPosition() = motion.basePos + localOffset;
+    }
+    else
+    {
+        float easedT = ApplyMotionEasing(motion.easingType, t, 1.0f);
+        Vector3 actualStartPos = motion.basePos + motion.startPosOffset;
+        Vector3 actualEndPos = motion.basePos + motion.endPosOffset;
+        motion.pTarget->GetLocalPosition() = Lerp(actualStartPos, actualEndPos, easedT);
+    }
+
+    float easedT = ApplyMotionEasing(motion.easingType, t, 1.0f);
+    Quaternion interpolatedRot = Slerp(motion.actualStartRot, motion.actualEndRot, easedT);
+    motion.pTarget->GetWorldTransform()->quaternionRotation_ = interpolatedRot;
+    motion.pTarget->GetLocalScale() = Lerp(motion.actualStartScale, motion.actualEndScale, easedT);
+}
+
+void MotionEditor::PrepareBase(Motion &motion)
+{
+    // 今の姿勢を基準にして、補間の両端（回転・大きさ）を決める
+    motion.basePos = motion.pTarget->GetLocalPosition();
+    motion.baseRot = motion.pTarget->GetLocalRotation().ToEulerAngles();
+    motion.baseScale = motion.pTarget->GetLocalScale();
+    motion.actualStartRot = Quaternion::FromEulerAngles(motion.baseRot + motion.startRotOffset);
+    motion.actualEndRot = Quaternion::FromEulerAngles(motion.baseRot + motion.endRotOffset);
+    motion.actualStartScale = motion.baseScale + motion.startScaleOffset;
+    motion.actualEndScale = motion.baseScale + motion.endScaleOffset;
 }
 
 void MotionEditor::Play(const std::string &jsonName)
@@ -438,15 +476,7 @@ void MotionEditor::Play(const std::string &jsonName)
         motion.hasInitialTransform = true;
     }
 
-    motion.basePos = motion.pTarget->GetLocalPosition();
-    motion.baseRot = motion.pTarget->GetLocalRotation().ToEulerAngles();
-    motion.baseScale = motion.pTarget->GetLocalScale();
-
-    // 補間用の回転・スケール値を計算
-    motion.actualStartRot = Quaternion::FromEulerAngles(motion.baseRot + motion.startRotOffset);
-    motion.actualEndRot = Quaternion::FromEulerAngles(motion.baseRot + motion.endRotOffset);
-    motion.actualStartScale = motion.baseScale + motion.startScaleOffset;
-    motion.actualEndScale = motion.baseScale + motion.endScaleOffset;
+    PrepareBase(motion);
 
     motion.currentTime = 0.0f;
     motion.status = MotionStatus::Playing;
@@ -493,14 +523,7 @@ bool MotionEditor::PlayFromFile(BaseObject *pTarget, const std::string &fileName
     motion.initialScale = pTarget->GetLocalScale();
     motion.hasInitialTransform = true;
 
-    motion.basePos = pTarget->GetLocalPosition();
-    motion.baseRot = pTarget->GetLocalRotation().ToEulerAngles();
-    motion.baseScale = pTarget->GetLocalScale();
-
-    motion.actualStartRot = Quaternion::FromEulerAngles(motion.baseRot + motion.startRotOffset);
-    motion.actualEndRot = Quaternion::FromEulerAngles(motion.baseRot + motion.endRotOffset);
-    motion.actualStartScale = motion.baseScale + motion.startScaleOffset;
-    motion.actualEndScale = motion.baseScale + motion.endScaleOffset;
+    PrepareBase(motion);
 
     motion.currentTime = 0.0f;
     motion.status = MotionStatus::Playing;
@@ -816,88 +839,490 @@ void MotionEditor::DrawControlPointPreview(const Motion &motion)
 void MotionEditor::DrawImGui()
 {
 #ifdef USE_IMGUI
-    if (!motions_.empty())
+    // 同じフレームに2か所から呼ばれる（専用窓とシーン設定窓）ことがあるので、2回目は案内だけ出す
+    const int frame = ImGui::GetFrameCount();
+    if (lastDrawFrame_ == frame)
     {
-        std::vector<const char *> names;
-        for (auto &[name, _] : motions_)
-            names.push_back(name.c_str());
-        int index = 0;
-        for (size_t i = 0; i < names.size(); ++i)
-        {
-            if (names[i] == selectedName_)
-                index = static_cast<int>(i);
-        }
-        if (ImGui::Combo("対象オブジェクト", &index, names.data(), static_cast<int>(names.size())))
-        {
-            selectedName_ = names[index];
-        }
+        DimText("モーションは「モーションエディター」窓で編集します（表示 → モーションエディター）");
+        return;
     }
+    lastDrawFrame_ = frame;
 
-    if (!selectedName_.empty())
+    g_motionUndoTracker.Begin([this] { return CaptureUndoState(); });
+
+    // ---- 対象（登録されているオブジェクト）----
+    SectionHeader("[ 対象 ]", DebugTheme::kAccentBlue);
+    if (motions_.empty())
     {
-        Motion &m = motions_[selectedName_];
-
-        ImGui::SliderFloat("経過時間", &m.currentTime, 0.0f, m.totalTime);
-        ImGui::DragFloat("トータル時間", &m.totalTime, 0.1f, 0.1f, 30.0f);
-        ImGui::DragFloat("コライダーON", &m.colliderOnTime, 0.01f);
-        ImGui::DragFloat("コライダーOFF", &m.colliderOffTime, 0.01f);
-
-        if (ImGui::Button("再生"))
-            Play(selectedName_);
-        ImGui::SameLine();
-        if (ImGui::Button("停止"))
-            Stop(selectedName_);
-        ImGui::SameLine();
-        if (ImGui::Button("全停止"))
-            StopAll();
-
-        ImGui::Separator();
-        if (ImGui::Checkbox("Catmull-Rom曲線", &m.useCatmullRom))
+        DimText("登録されているオブジェクトがありません（コードから MotionEditor::Register で登録します）");
+        g_motionUndoTracker.End("モーション編集", [this] { return CaptureUndoState(); },
+                                [](const nlohmann::json &s) { MotionEditor::GetInstance()->RestoreUndoState(s); });
+        return;
+    }
+    {
+        std::vector<std::string> names;
+        for (const auto &[name, motion] : motions_)
         {
+            if (!motion.isTemporary)
+                names.push_back(name);
         }
-
-        if (m.useCatmullRom)
+        std::sort(names.begin(), names.end());
+        if (selectedName_.empty() || motions_.find(selectedName_) == motions_.end())
         {
-            if (ImGui::Button("制御点追加"))
-                m.controlPoints.push_back({0, 0, 0});
+            selectedName_ = names.empty() ? std::string() : names.front();
+        }
+        ImGui::BeginChild("##motionTargets", ImVec2(0.0f, 4.5f * ImGui::GetTextLineHeightWithSpacing()), ImGuiChildFlags_Borders | ImGuiChildFlags_ResizeY);
+        for (const std::string &name : names)
+        {
+            const Motion &motion = motions_[name];
+            const bool playing = motion.status == MotionStatus::Playing;
+            ImGui::TextColored(playing ? DebugTheme::kAccentGreen : DebugTheme::kTextDim, playing ? ICON_FA_PLAY : ICON_FA_CUBE);
             ImGui::SameLine();
-            if (ImGui::Button("制御点削除") && selectedControlPoint_ >= 0)
+            if (ImGui::Selectable(name.c_str(), selectedName_ == name))
             {
-                m.controlPoints.erase(m.controlPoints.begin() + selectedControlPoint_);
+                selectedName_ = name;
                 selectedControlPoint_ = -1;
             }
-
-            for (int i = 0; i < static_cast<int>(m.controlPoints.size()); ++i)
-            {
-                if (ImGui::Selectable(("制御点 " + std::to_string(i)).c_str(), selectedControlPoint_ == i))
-                    selectedControlPoint_ = i;
-            }
-
-            if (selectedControlPoint_ >= 0)
-            {
-                ImGui::DragFloat3("位置", &m.controlPoints[selectedControlPoint_].x, 0.1f);
-            }
-
-            DrawControlPointPreview(m);
         }
-        else
+        ImGui::EndChild();
+    }
+    if (selectedName_.empty())
+    {
+        g_motionUndoTracker.End("モーション編集", [this] { return CaptureUndoState(); },
+                                [](const nlohmann::json &s) { MotionEditor::GetInstance()->RestoreUndoState(s); });
+        return;
+    }
+    Motion &m = motions_[selectedName_];
+
+    // ---- ファイル（AttackData）----
+    SectionHeader("[ ファイル ]", DebugTheme::kAccentPurple);
+    {
+        // 保存済みのモーション一覧（jsons/AttackData/*.json）
+        std::vector<std::string> files;
+        std::error_code error;
+        const std::filesystem::path folder = std::filesystem::path(AssetPath::JsonRoot()) / "AttackData";
+        for (const auto &entry : std::filesystem::directory_iterator(folder, error))
         {
-            ImGui::DragFloat3("開始PosOff", &m.startPosOffset.x, 0.1f);
-            ImGui::DragFloat3("終了PosOff", &m.endPosOffset.x, 0.1f);
-            ImGui::DragFloat3("開始RotOff", &m.startRotOffset.x, 0.1f);
-            ImGui::DragFloat3("終了RotOff", &m.endRotOffset.x, 0.1f);
+            if (entry.is_regular_file() && entry.path().extension() == ".json")
+                files.push_back(entry.path().stem().string());
         }
-
-        // std::string を直接編集できるので中間バッファは不要（imgui_stdlib）
-        ImGui::InputText("セーブ名", &jsonName_);
-        if (ImGui::Button("セーブ"))
+        std::sort(files.begin(), files.end());
+        ImGui::SetNextItemWidth(-190.0f);
+        if (ImGui::BeginCombo("##motionFile", jsonName_.empty() ? "（読み込むファイルを選ぶ）" : jsonName_.c_str()))
+        {
+            for (const std::string &file : files)
+            {
+                if (ImGui::Selectable(file.c_str(), jsonName_ == file))
+                    jsonName_ = file;
+            }
+            ImGui::EndCombo();
+        }
+        ImGui::SameLine();
+        ImGui::BeginDisabled(jsonName_.empty() || std::find(files.begin(), files.end(), jsonName_) == files.end());
+        if (NeutralButton(ICON_FA_UPLOAD " 読み込む"))
+        {
+            // 読み込むのは中身だけ。対象・基準の姿勢はそのまま
+            Motion loaded = Load(jsonName_);
+            loaded.pTarget = m.pTarget;
+            loaded.objectName = m.objectName;
+            loaded.initialPos = m.initialPos;
+            loaded.initialRot = m.initialRot;
+            loaded.initialScale = m.initialScale;
+            loaded.hasInitialTransform = m.hasInitialTransform;
+            m = loaded;
+            selectedControlPoint_ = -1;
+        }
+        ImGui::EndDisabled();
+        ImGui::SameLine();
+        ImGui::BeginDisabled(jsonName_.empty());
+        if (PrimaryButton(ICON_FA_SAVE " 保存"))
         {
             Save(jsonName_);
-            jsonName_.clear();
         }
+        ImGui::EndDisabled();
+        ImGui::SetNextItemWidth(-190.0f);
+        ImGui::InputTextWithHint("##motionSaveName", "保存する名前（新しい名前なら新規）", &jsonName_);
+        ImGui::SameLine();
+        ImGui::TextDisabled("コードからは PlayFromFile(対象, \"名前\")");
     }
+
+    // ---- 再生と時間 ----
+    SectionHeader("[ 再生 ]", DebugTheme::kAccentGreen);
+    {
+        const bool playing = m.status == MotionStatus::Playing;
+        if (playing ? ConfirmButton(ICON_FA_PAUSE " 再生中") : PrimaryButton(ICON_FA_PLAY " 再生"))
+        {
+            if (!playing)
+            {
+                // 前の再生やつまみで動かした姿勢から始めないよう、基準の姿勢に戻してから再生する
+                if (m.hasInitialTransform && m.pTarget)
+                {
+                    m.pTarget->GetLocalPosition() = m.initialPos;
+                    m.pTarget->GetLocalRotation() = Quaternion::FromEulerAngles(m.initialRot);
+                    m.pTarget->GetLocalScale() = m.initialScale;
+                }
+                Play(selectedName_);
+            }
+        }
+        ImGui::SameLine();
+        if (NeutralButton(ICON_FA_STOP " 止めて戻す"))
+            Stop(selectedName_);
+        ImGui::SetItemTooltip("再生を止めて、基準の姿勢に戻します");
+        ImGui::SameLine();
+        if (NeutralButton("全部止める"))
+            StopAll();
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(90.0f);
+        ImGui::DragFloat("長さ", &m.totalTime, 0.01f, 0.05f, 30.0f, "%.2f 秒");
+        FloatNContextMenu("##totalMenu", &m.totalTime, 1);
+
+        DrawTimelineStrip(m);
+    }
+
+    // ---- 基準の姿勢 ----
+    SectionHeader("[ 基準の姿勢 ]", DebugTheme::kAccentCyan);
+    DimText("オフセットは基準の姿勢からのずれです。ギズモで対象を動かして「今の姿勢 → 開始/終了」を押すと数値を打たずに作れます");
+    if (NeutralButton(ICON_FA_MAP_PIN " 今の姿勢を基準にする"))
+    {
+        ResetInitialPosition(selectedName_);
+        ImGuiNotification::Post("基準の姿勢を今の姿勢にしました", {0.42f, 0.66f, 0.68f, 1.0f});
+    }
+    ImGui::SetItemTooltip("再生の始まりと「止めて戻す」の戻り先になります");
+
+    // ---- 動き方 ----
+    SectionHeader("[ 動き方 ]", DebugTheme::kAccentOrange);
+    {
+        int mode = m.useCatmullRom ? 1 : 0;
+        if (ImGui::RadioButton("2点の補間（開始 → 終了）", &mode, 0))
+            m.useCatmullRom = false;
+        ImGui::SameLine();
+        if (ImGui::RadioButton("曲線（制御点を通る）", &mode, 1))
+            m.useCatmullRom = true;
+        ImGui::SetItemTooltip("位置だけ制御点を通る曲線（Catmull-Rom）で動かします。回転と大きさは開始 → 終了のまま");
+    }
+
+    // 今の姿勢 − 基準 をオフセットとして取り込む
+    auto captureOffsets = [&](Vector3 &pos, Vector3 &rot, Vector3 &scale) {
+        if (!m.pTarget)
+            return;
+        if (!m.hasInitialTransform)
+            ResetInitialPosition(selectedName_);
+        pos = m.pTarget->GetLocalPosition() - m.initialPos;
+        rot = m.pTarget->GetLocalRotation().ToEulerAngles() - m.initialRot;
+        scale = m.pTarget->GetLocalScale() - m.initialScale;
+    };
+    constexpr float kToDeg = 180.0f / std::numbers::pi_v<float>;
+    static const float kZero3[3] = {0.0f, 0.0f, 0.0f};
+    auto drawOffsetRow = [&](const char *title, Vector3 &pos, Vector3 &rot, Vector3 &scale, const char *id, bool showPosition) {
+        ImGui::PushID(id);
+        CaptionText(title);
+        ImGui::SameLine();
+        if (ImGui::SmallButton(ICON_FA_CAMERA " 今の姿勢から"))
+            captureOffsets(pos, rot, scale);
+        ImGui::SetItemTooltip("対象の今の姿勢と基準の差を取り込みます");
+        ImGui::PushItemWidth(-90.0f);
+        if (showPosition)
+        {
+            ImGui::DragFloat3("位置", &pos.x, 0.05f);
+            FloatNContextMenu("##posMenu", &pos.x, 3, kZero3);
+        }
+        float degrees[3] = {rot.x * kToDeg, rot.y * kToDeg, rot.z * kToDeg};
+        bool rotChanged = ImGui::DragFloat3("回転(度)", degrees, 0.5f);
+        rotChanged |= FloatNContextMenu("##rotMenu", degrees, 3, kZero3);
+        if (rotChanged)
+            rot = {degrees[0] / kToDeg, degrees[1] / kToDeg, degrees[2] / kToDeg};
+        ImGui::DragFloat3("大きさ(差)", &scale.x, 0.01f);
+        FloatNContextMenu("##sclMenu", &scale.x, 3, kZero3);
+        ImGui::SetItemTooltip("基準の大きさに足す量（0 で変えない）");
+        ImGui::PopItemWidth();
+        ImGui::PopID();
+    };
+
+    if (!m.useCatmullRom)
+    {
+        drawOffsetRow("開始", m.startPosOffset, m.startRotOffset, m.startScaleOffset, "start", true);
+        drawOffsetRow("終了", m.endPosOffset, m.endRotOffset, m.endScaleOffset, "end", true);
+    }
+    else
+    {
+        // 曲線: 位置は制御点、回転と大きさは開始 → 終了
+        CaptionText("制御点（基準の位置からのずれ）");
+        if (m.controlPoints.size() < 4)
+        {
+            ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kAccentOrange);
+            ImGui::TextWrapped("曲線にするには制御点が4つ以上いります（今 %d 個。足りない間は開始 → 終了で動きます）",
+                               static_cast<int>(m.controlPoints.size()));
+            ImGui::PopStyleColor();
+        }
+        if (PrimaryButton(ICON_FA_PLUS " 点を足す"))
+        {
+            m.controlPoints.push_back(m.controlPoints.empty() ? Vector3{0.0f, 0.0f, 0.0f} : m.controlPoints.back());
+            selectedControlPoint_ = static_cast<int>(m.controlPoints.size()) - 1;
+        }
+        ImGui::SameLine();
+        if (NeutralButton(ICON_FA_CAMERA " 今の位置で足す") && m.pTarget)
+        {
+            if (!m.hasInitialTransform)
+                ResetInitialPosition(selectedName_);
+            m.controlPoints.push_back(m.pTarget->GetLocalPosition() - m.initialPos);
+            selectedControlPoint_ = static_cast<int>(m.controlPoints.size()) - 1;
+        }
+        ImGui::SetItemTooltip("ギズモで対象を置いてから押すと、その位置を点にします");
+
+        int pendingRemove = -1;
+        int moveFrom = -1;
+        int moveTo = -1;
+        for (int i = 0; i < static_cast<int>(m.controlPoints.size()); ++i)
+        {
+            ImGui::PushID(i);
+            const char *marker = (i == 0) ? "始点" : ((i == static_cast<int>(m.controlPoints.size()) - 1) ? "終点" : "");
+            const std::string label = std::format("{}. ({:.2f}, {:.2f}, {:.2f}) {}", i, m.controlPoints[i].x, m.controlPoints[i].y,
+                                                  m.controlPoints[i].z, marker);
+            const float buttons = ImGui::GetFrameHeight() * 3.0f + ImGui::GetStyle().ItemSpacing.x * 3.0f;
+            if (ImGui::Selectable(label.c_str(), selectedControlPoint_ == i, ImGuiSelectableFlags_AllowOverlap,
+                                  ImVec2(ImGui::GetContentRegionAvail().x - buttons, 0.0f)))
+                selectedControlPoint_ = i;
+            ImGui::SameLine();
+            ScopedButtonColors ghost(DebugTheme::kButtonGhost, DebugTheme::kButtonGhostHover);
+            const float size = ImGui::GetFrameHeight();
+            if (ImGui::Button(ICON_FA_ARROW_UP, ImVec2(size, size)) && i > 0)
+            {
+                moveFrom = i;
+                moveTo = i - 1;
+            }
+            ImGui::SameLine();
+            if (ImGui::Button(ICON_FA_ARROW_DOWN, ImVec2(size, size)) && i + 1 < static_cast<int>(m.controlPoints.size()))
+            {
+                moveFrom = i;
+                moveTo = i + 1;
+            }
+            ImGui::SameLine();
+            if (ImGui::Button(ICON_FA_TIMES, ImVec2(size, size)))
+                pendingRemove = i;
+            ImGui::PopID();
+        }
+        if (moveFrom >= 0)
+        {
+            std::swap(m.controlPoints[moveFrom], m.controlPoints[moveTo]);
+            selectedControlPoint_ = moveTo;
+        }
+        if (pendingRemove >= 0)
+        {
+            m.controlPoints.erase(m.controlPoints.begin() + pendingRemove);
+            selectedControlPoint_ = -1;
+        }
+        if (selectedControlPoint_ >= 0 && selectedControlPoint_ < static_cast<int>(m.controlPoints.size()))
+        {
+            ImGui::SetNextItemWidth(-90.0f);
+            ImGui::DragFloat3("選択中の点", &m.controlPoints[selectedControlPoint_].x, 0.05f);
+            FloatNContextMenu("##cpMenu", &m.controlPoints[selectedControlPoint_].x, 3, kZero3);
+        }
+        DrawControlPointPreview(m);
+
+        ImGui::Spacing();
+        // 曲線のときも回転と大きさは開始 → 終了で動く（位置は制御点が決めるので出さない）
+        drawOffsetRow("回転・大きさ（開始）", m.startPosOffset, m.startRotOffset, m.startScaleOffset, "cstart", false);
+        drawOffsetRow("回転・大きさ（終了）", m.endPosOffset, m.endRotOffset, m.endScaleOffset, "cend", false);
+    }
+
+    // ---- イージング ----
+    SectionHeader("[ 動きの緩急（イージング）]", DebugTheme::kAccentYellow);
+    DrawEasingPreview(m);
+
+    g_motionUndoTracker.End("モーション編集", [this] { return CaptureUndoState(); },
+                            [](const nlohmann::json &s) { MotionEditor::GetInstance()->RestoreUndoState(s); });
 #endif
 }
+
+#ifdef USE_IMGUI
+void MotionEditor::DrawTimelineStrip(Motion &m)
+{
+    // 横長の帯: 再生位置（つまんで動かすとその時点の姿勢を見られる）と、コライダーが有効な区間（両端をつまんで調整）
+    const float width = ImGui::GetContentRegionAvail().x;
+    const float height = 40.0f;
+    const ImVec2 min = ImGui::GetCursorScreenPos();
+    const ImVec2 max = ImVec2(min.x + width, min.y + height);
+    ImGui::InvisibleButton("##motionStrip", ImVec2(width, height));
+    const bool hovered = ImGui::IsItemHovered();
+    const bool active = ImGui::IsItemActive();
+    ImDrawList *drawList = ImGui::GetWindowDrawList();
+
+    const float total = (std::max)(m.totalTime, 0.001f);
+    auto timeToX = [&](float t) { return min.x + std::clamp(t / total, 0.0f, 1.0f) * width; };
+    auto xToTime = [&](float x) { return std::clamp((x - min.x) / width, 0.0f, 1.0f) * total; };
+
+    drawList->AddRectFilled(min, max, ImGui::GetColorU32(ImGuiCol_FrameBg), 4.0f);
+    // 0.1 秒ごとの目盛り
+    for (float t = 0.0f; t <= total + 1e-4f; t += 0.1f)
+    {
+        const float x = timeToX(t);
+        const bool major = std::fmod(t + 1e-4f, 0.5f) < 2e-4f;
+        drawList->AddLine(ImVec2(x, max.y - (major ? 10.0f : 5.0f)), ImVec2(x, max.y), IM_COL32(120, 124, 136, 200));
+    }
+    // コライダー区間
+    const float onX = timeToX(m.colliderOnTime);
+    const float offX = timeToX(m.colliderOffTime);
+    const ImVec4 hitColor = DebugTheme::kAccentRed;
+    drawList->AddRectFilled(ImVec2(onX, min.y + 4.0f), ImVec2(offX, max.y - 12.0f),
+                            ImGui::ColorConvertFloat4ToU32(ImVec4(hitColor.x, hitColor.y, hitColor.z, 0.35f)), 3.0f);
+    drawList->AddLine(ImVec2(onX, min.y + 2.0f), ImVec2(onX, max.y - 10.0f), ImGui::ColorConvertFloat4ToU32(hitColor), 3.0f);
+    drawList->AddLine(ImVec2(offX, min.y + 2.0f), ImVec2(offX, max.y - 10.0f), ImGui::ColorConvertFloat4ToU32(hitColor), 3.0f);
+    drawList->AddText(ImVec2(onX + 4.0f, min.y + 6.0f), IM_COL32(240, 220, 220, 230), "当たり判定");
+    // 再生位置
+    const float playX = timeToX(m.currentTime);
+    drawList->AddLine(ImVec2(playX, min.y), ImVec2(playX, max.y), IM_COL32(240, 200, 100, 255), 2.0f);
+    drawList->AddTriangleFilled(ImVec2(playX - 5.0f, min.y), ImVec2(playX + 5.0f, min.y), ImVec2(playX, min.y + 7.0f), IM_COL32(240, 200, 100, 255));
+
+    // つまむ物を押した瞬間に決める（コライダーの端を優先）
+    const ImVec2 mouse = ImGui::GetMousePos();
+    if (ImGui::IsItemActivated())
+    {
+        if (std::fabs(mouse.x - onX) <= 6.0f)
+            stripDrag_ = 1;
+        else if (std::fabs(mouse.x - offX) <= 6.0f)
+            stripDrag_ = 2;
+        else
+            stripDrag_ = 3;
+    }
+    if (hovered && (std::fabs(mouse.x - onX) <= 6.0f || std::fabs(mouse.x - offX) <= 6.0f))
+        ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
+    if (active)
+    {
+        const float t = std::round(xToTime(mouse.x) * 100.0f) / 100.0f; // 0.01 秒刻み
+        if (stripDrag_ == 1)
+            m.colliderOnTime = (std::min)(t, m.colliderOffTime);
+        else if (stripDrag_ == 2)
+            m.colliderOffTime = (std::max)(t, m.colliderOnTime);
+        else if (m.status != MotionStatus::Playing)
+            PreviewAt(m, t);
+    }
+    else
+    {
+        stripDrag_ = 0;
+    }
+    if (hovered && !active)
+        ImGui::SetTooltip("つまんで動かすと、その時点の姿勢を見られます\n赤い区間の両端をつまむと当たり判定の時間を変えられます");
+
+    ImGui::Text("%.2f / %.2f 秒", m.currentTime, m.totalTime);
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(90.0f);
+    ImGui::DragFloat("当たり ON", &m.colliderOnTime, 0.01f, 0.0f, m.totalTime, "%.2f 秒");
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(90.0f);
+    ImGui::DragFloat("OFF", &m.colliderOffTime, 0.01f, 0.0f, m.totalTime, "%.2f 秒");
+}
+
+void MotionEditor::DrawEasingPreview(Motion &m)
+{
+    ImGui::SetNextItemWidth(220.0f);
+    if (ImGui::BeginCombo("緩急", kMotionEasingNames[static_cast<int>(m.easingType)]))
+    {
+        for (int i = 0; i < static_cast<int>(std::size(kMotionEasingNames)); ++i)
+        {
+            if (ImGui::Selectable(kMotionEasingNames[i], static_cast<int>(m.easingType) == i))
+                m.easingType = static_cast<MotionEasingType>(i);
+        }
+        ImGui::EndCombo();
+    }
+    ImGui::SetItemTooltip("開始 → 終了の進み方。回転と大きさ、2点の補間の位置に効きます");
+
+    // 進み具合のグラフ（横: 時間 / 縦: 開始→終了の割合）と、今の再生位置
+    constexpr int kSamples = 64;
+    float xs[kSamples];
+    float ys[kSamples];
+    for (int i = 0; i < kSamples; ++i)
+    {
+        const float t = static_cast<float>(i) / static_cast<float>(kSamples - 1);
+        xs[i] = t;
+        ys[i] = ApplyMotionEasing(m.easingType, t, 1.0f);
+    }
+    if (ImPlot::BeginPlot("##motionEasing", ImVec2(-1.0f, 120.0f), ImPlotFlags_NoMenus | ImPlotFlags_NoBoxSelect | ImPlotFlags_NoMouseText | ImPlotFlags_NoLegend))
+    {
+        ImPlot::SetupAxes("時間", "開始→終了", ImPlotAxisFlags_NoHighlight, ImPlotAxisFlags_NoHighlight);
+        ImPlot::SetupAxesLimits(0.0, 1.0, -0.3, 1.3, ImPlotCond_Always);
+        ImPlot::SetNextLineStyle(DebugTheme::kAccentYellow, 2.0f);
+        ImPlot::PlotLine("##curve", xs, ys, kSamples);
+        const float now = (m.totalTime > 0.0f) ? std::clamp(m.currentTime / m.totalTime, 0.0f, 1.0f) : 0.0f;
+        const float nowY = ApplyMotionEasing(m.easingType, now, 1.0f);
+        ImPlot::SetNextMarkerStyle(ImPlotMarker_Circle, 5.0f, DebugTheme::kAccentRed);
+        ImPlot::PlotScatter("##now", &now, &nowY, 1);
+        ImPlot::EndPlot();
+    }
+}
+
+void MotionEditor::PreviewAt(Motion &m, float time)
+{
+    // 基準の姿勢から、指定の時刻の姿勢を作って当てる（再生と同じ式）
+    if (!m.pTarget)
+        return;
+    if (!m.hasInitialTransform)
+        ResetInitialPosition(m.objectName);
+    m.pTarget->GetLocalPosition() = m.initialPos;
+    m.pTarget->GetLocalRotation() = Quaternion::FromEulerAngles(m.initialRot);
+    m.pTarget->GetLocalScale() = m.initialScale;
+    PrepareBase(m);
+    m.currentTime = std::clamp(time, 0.0f, m.totalTime);
+    ApplyPose(m, (m.totalTime > 0.0f) ? m.currentTime / m.totalTime : 0.0f);
+}
+
+nlohmann::json MotionEditor::CaptureUndoState() const
+{
+    nlohmann::json state = nlohmann::json::object();
+    for (const auto &[name, m] : motions_)
+    {
+        if (m.isTemporary)
+            continue;
+        nlohmann::json j;
+        j["totalTime"] = m.totalTime;
+        j["colliderOn"] = m.colliderOnTime;
+        j["colliderOff"] = m.colliderOffTime;
+        j["startPos"] = m.startPosOffset;
+        j["endPos"] = m.endPosOffset;
+        j["startRot"] = m.startRotOffset;
+        j["endRot"] = m.endRotOffset;
+        j["startScale"] = m.startScaleOffset;
+        j["endScale"] = m.endScaleOffset;
+        j["easing"] = static_cast<int>(m.easingType);
+        j["curve"] = m.useCatmullRom;
+        nlohmann::json points = nlohmann::json::array();
+        for (const Vector3 &p : m.controlPoints)
+            points.push_back(p);
+        j["points"] = points;
+        state[name] = j;
+    }
+    return state;
+}
+
+void MotionEditor::RestoreUndoState(const nlohmann::json &state)
+{
+    for (auto it = state.begin(); it != state.end(); ++it)
+    {
+        auto found = motions_.find(it.key());
+        if (found == motions_.end())
+            continue;
+        Motion &m = found->second;
+        const nlohmann::json &j = it.value();
+        m.totalTime = j.value("totalTime", m.totalTime);
+        m.colliderOnTime = j.value("colliderOn", m.colliderOnTime);
+        m.colliderOffTime = j.value("colliderOff", m.colliderOffTime);
+        m.startPosOffset = j.value("startPos", m.startPosOffset);
+        m.endPosOffset = j.value("endPos", m.endPosOffset);
+        m.startRotOffset = j.value("startRot", m.startRotOffset);
+        m.endRotOffset = j.value("endRot", m.endRotOffset);
+        m.startScaleOffset = j.value("startScale", m.startScaleOffset);
+        m.endScaleOffset = j.value("endScale", m.endScaleOffset);
+        m.easingType = static_cast<MotionEasingType>(j.value("easing", static_cast<int>(m.easingType)));
+        m.useCatmullRom = j.value("curve", m.useCatmullRom);
+        m.controlPoints.clear();
+        if (j.contains("points"))
+        {
+            for (const nlohmann::json &p : j["points"])
+                m.controlPoints.push_back(p.get<Vector3>());
+        }
+    }
+    selectedControlPoint_ = -1;
+}
+#endif // USE_IMGUI
 
 void MotionEditor::Save(const std::string &fileName)
 {

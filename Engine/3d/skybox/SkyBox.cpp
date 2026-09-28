@@ -14,6 +14,11 @@ void SkyBox::Finalize()
     indexResource_.Reset();
     skyBoxResource_.Reset();
     cameraResource_.Reset();
+    for (auto &resource : viewCameraResources_)
+    {
+        resource.Reset();
+    }
+    pViewCameraData_ = {};
 }
 
 void SkyBox::Initialize(std::string filePath)
@@ -28,6 +33,7 @@ void SkyBox::Initialize(std::string filePath)
     CreateCamera();
     TextureManager::GetInstance()->LoadTexture(filePath);
     textureIndex_ = TextureManager::GetInstance()->GetTextureIndexByFilePath(filePath);
+    textureFilePath_ = filePath;
 }
 
 void SkyBox::Update(const ViewProjection &viewProjection)
@@ -54,9 +60,20 @@ void SkyBox::Update(const ViewProjection &viewProjection)
     // ビュー×プロジェクション
     Matrix4x4 viewProjectionMatrix = viewWithoutTranslation * viewProjection.matProjection_;
 
-    // GPUに送信
-    pCameraData_->viewProjection = viewProjectionMatrix;
-    pCameraData_->worldPosition = cameraPosition;
+    // GPUに送信（カメラビュー窓の描画中はそのビュー用のバッファへ）
+    CameraDataForGPU *pData = pCameraData_;
+    const int view = RenderView::Current();
+    if (view != 0)
+    {
+        if (!viewCameraResources_[view])
+        {
+            viewCameraResources_[view] = pDxCommon_->CreateBufferResource(sizeof(CameraDataForGPU));
+            viewCameraResources_[view]->Map(0, nullptr, reinterpret_cast<void **>(&pViewCameraData_[view]));
+        }
+        pData = pViewCameraData_[view];
+    }
+    pData->viewProjection = viewProjectionMatrix;
+    pData->worldPosition = cameraPosition;
 }
 
 void SkyBox::Draw(const ViewProjection &viewProjection)
@@ -78,7 +95,10 @@ void SkyBox::Draw(const ViewProjection &viewProjection)
     // SkyBoxData（ワールド行列）を b0 に設定
     pCommandList->SetGraphicsRootConstantBufferView(rootSignature->GetCbvIndex(0), skyBoxResource_->GetGPUVirtualAddress());
     // CameraData（ビュープロジェクション行列とカメラ位置）を b1 に設定
-    pCommandList->SetGraphicsRootConstantBufferView(rootSignature->GetCbvIndex(1), cameraResource_->GetGPUVirtualAddress());
+    const int view = RenderView::Current();
+    pCommandList->SetGraphicsRootConstantBufferView(
+        rootSignature->GetCbvIndex(1), (view != 0 && viewCameraResources_[view]) ? viewCameraResources_[view]->GetGPUVirtualAddress()
+                                                                                 : cameraResource_->GetGPUVirtualAddress());
     // テクスチャを t0 に設定
     pCommandList->SetGraphicsRootDescriptorTable(rootSignature->GetSrvIndex(0), pSrvManager_->GetGPUDescriptorHandle(textureIndex_));
 

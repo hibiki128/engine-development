@@ -100,10 +100,73 @@ void DXDevice::Initialize()
         // 指定したメッセージの表示を抑制する
         infoQueue->PushStorageFilter(&filter);
 
+        // エラーの文面を GameLog.txt にも残す。デバッガを付けずに起動してエラーで止まった場合でも、
+        // ログを見れば何が起きたか分かるようにする（止まる前にこのコールバックが呼ばれる）
+        ID3D12InfoQueue1 *infoQueue1 = nullptr;
+        if (SUCCEEDED(infoQueue->QueryInterface(IID_PPV_ARGS(&infoQueue1))))
+        {
+            DWORD cookie = 0;
+            infoQueue1->RegisterMessageCallback(
+                [](D3D12_MESSAGE_CATEGORY, D3D12_MESSAGE_SEVERITY severity, D3D12_MESSAGE_ID id,
+                   LPCSTR description, void *) {
+                    if (severity <= D3D12_MESSAGE_SEVERITY_WARNING)
+                    {
+                        Logger::Log(severity <= D3D12_MESSAGE_SEVERITY_ERROR ? Logger::LogLevel::Error
+                                                                             : Logger::LogLevel::Warning,
+                                    std::format("D3D12 (id={}): {}", static_cast<int>(id), description));
+                    }
+                },
+                D3D12_MESSAGE_CALLBACK_FLAG_NONE, nullptr, &cookie);
+            infoQueue1->Release();
+        }
+
         // 解放
         infoQueue->Release();
     }
 #endif
+
+    QueryRaytracingSupport();
+}
+
+void DXDevice::QueryRaytracingSupport()
+{
+    // 加速構造を作るには ID3D12Device5 が要る。古い環境では取れないので、
+    // 取れなかった時点でレイトレーシングは無効として扱う
+    if (FAILED(device_->QueryInterface(IID_PPV_ARGS(&device5_))))
+    {
+        Log("Raytracing: ID3D12Device5 を取得できませんでした（レイトレーシングは無効）\n");
+        return;
+    }
+
+    D3D12_FEATURE_DATA_D3D12_OPTIONS5 options5{};
+    if (FAILED(device_->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS5, &options5, sizeof(options5))))
+    {
+        Log("Raytracing: 対応状況を問い合わせられませんでした（レイトレーシングは無効）\n");
+        return;
+    }
+    raytracingTier_ = options5.RaytracingTier;
+
+    // インラインRT（RayQuery）は Tier 1.1 から。1.0 ではフルDXRパイプラインしか使えない
+    if (raytracingTier_ < D3D12_RAYTRACING_TIER_1_1)
+    {
+        Log(std::format("Raytracing: Tier が足りません（RayQuery には 1.1 以上が必要 / 現在 tier={}）\n",
+                        static_cast<int>(raytracingTier_)));
+        return;
+    }
+
+    // RayQuery はシェーダーモデル 6.5 以上でしか書けない
+    D3D12_FEATURE_DATA_SHADER_MODEL shaderModel{D3D_SHADER_MODEL_6_5};
+    if (FAILED(device_->CheckFeatureSupport(D3D12_FEATURE_SHADER_MODEL, &shaderModel, sizeof(shaderModel))) ||
+        shaderModel.HighestShaderModel < D3D_SHADER_MODEL_6_5)
+    {
+        Log("Raytracing: シェーダーモデル 6.5 に対応していません（レイトレーシングは無効）\n");
+        return;
+    }
+
+    raytracingSupported_ = true;
+    Log(std::format("Raytracing: 利用可能（tier={} / shaderModel=0x{:x}）\n",
+                    static_cast<int>(raytracingTier_),
+                    static_cast<int>(shaderModel.HighestShaderModel)));
 }
 
 Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> DXDevice::CreateDescriptorHeap(D3D12_DESCRIPTOR_HEAP_TYPE heapType, UINT numDescriptors, bool shaderVisible)

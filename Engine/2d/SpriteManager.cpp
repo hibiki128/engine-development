@@ -13,7 +13,17 @@
 #include <browser/ShowFolder.h>
 #include "render/DrawGroupManager.h"
 #include <filesystem>
+#include <algorithm>
+#include <icon/IconsFontAwesome5.h>
 
+#ifdef USE_IMGUI
+#include <edit/undo/ImGuiUndoTracker.h>
+namespace {
+// UI の編集ジェスチャを Undo 履歴へ積むトラッカー。シングルトンなので1つでよい。
+// ヘッダーのメンバーにすると Undo 関連のヘッダーが 100 本以上の .cpp へ広がるので、ここに置く
+Hagine::ImGuiUndoTracker g_undoTracker;
+} // namespace
+#endif // USE_IMGUI
 namespace Hagine {
 namespace fs = std::filesystem;
 
@@ -628,7 +638,7 @@ void SpriteManager::DrawSpriteCreationModal()
                 "スプライト作成: " + std::string(nameBuf), std::move(diffBefore), std::move(diffAfter),
                 [](const nlohmann::json &s) { SpriteManager::GetInstance()->RestoreUndoState(s); }));
             // マネージャウィンドウ側トラッカーとの二重登録を防ぐ
-            undoTracker_.SkipCurrentGesture();
+            g_undoTracker.SkipCurrentGesture();
             ResetModal();
             ImGui::CloseCurrentPopup();
         }
@@ -651,7 +661,7 @@ void SpriteManager::DrawSpriteManager()
 {
 #ifdef USE_IMGUI
     // このウィンドウでの編集ジェスチャをUndo履歴として追跡する
-    undoTracker_.Begin([this] { return CaptureUndoState(); });
+    g_undoTracker.Begin([this] { return CaptureUndoState(); });
 
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(6, 3));
     ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(5, 3));
@@ -679,6 +689,29 @@ void SpriteManager::DrawSpriteManager()
         static std::string selectedName;
         static std::unordered_map<std::string, int> selectedInstanceMap;
 
+        static std::string searchText;       // 一覧の絞り込み
+        static int sortMode = 0;             // 0=描画順 1=名前順
+        static bool visibleOnly = false;     // 表示中の物だけ
+        static std::string lastGizmoPick;    // シーンで最後に掴んだスプライト（一覧へ反映済みか）
+
+        // シーン上でスプライトをクリックして掴んだら、一覧でもそれを選ぶ
+        {
+            auto *gizmo = ImGuizmoManager::GetInstance();
+            const auto &picked = gizmo->GetSelectedNames();
+            std::string pickedSprite;
+            for (const std::string &name : picked)
+            {
+                if (FindSpriteByName(name))
+                {
+                    pickedSprite = name;
+                    break;
+                }
+            }
+            if (!pickedSprite.empty() && pickedSprite != lastGizmoPick)
+                selectedName = pickedSprite;
+            lastGizmoPick = pickedSprite;
+        }
+
         // 選択スプライトが消えていたら先頭を選び直す
         if (!FindSpriteByName(selectedName))
             selectedName = sprites_.front()->name;
@@ -688,7 +721,48 @@ void SpriteManager::DrawSpriteManager()
         // ====================================================
         SectionHeader("[ スプライト一覧 (上が手前に描画 / 名前クリックで選択) ]", DebugTheme::kAccentBlue);
 
-        float tableH = std::min(static_cast<float>(sprites_.size()) * 26.f + 36.f, 160.f);
+        // ---- 絞り込み・並べ替え ----
+        ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.5f);
+        ImGui::InputTextWithHint("##sprSearch", ICON_FA_SEARCH " 名前・画像で絞り込み", &searchText);
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(90.0f);
+        const char *kSortModes[] = {"描画順", "名前順"};
+        ImGui::Combo("##sprSort", &sortMode, kSortModes, IM_ARRAYSIZE(kSortModes));
+        ImGui::SameLine();
+        ImGui::Checkbox("表示中だけ", &visibleOnly);
+
+        auto lower = [](std::string text) {
+            for (char &c : text)
+            {
+                if (c >= 'A' && c <= 'Z')
+                    c = static_cast<char>(c - 'A' + 'a');
+            }
+            return text;
+        };
+        const std::string query = lower(searchText);
+        std::vector<size_t> rows;
+        for (size_t i = 0; i < sprites_.size(); ++i)
+        {
+            const auto &sp = sprites_[i];
+            if (visibleOnly && !sp->isVisible)
+                continue;
+            if (!query.empty() && lower(sp->name).find(query) == std::string::npos &&
+                lower(sp->textureFilePath).find(query) == std::string::npos)
+                continue;
+            rows.push_back(i);
+        }
+        if (sortMode == 1)
+        {
+            std::sort(rows.begin(), rows.end(), [this](size_t a, size_t b) { return sprites_[a]->name < sprites_[b]->name; });
+        }
+        // 描画順を入れ替えられるのは、全部を描画順で並べているときだけ
+        const bool canReorder = sortMode == 0 && query.empty() && !visibleOnly;
+        if (!canReorder)
+        {
+            DimText("絞り込み・名前順の間は描画順を入れ替えられません");
+        }
+
+        float tableH = std::min(static_cast<float>(rows.size()) * 26.f + 36.f, 260.f);
 
         if (ImGui::BeginTable("SprList", 6,
                               ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg |
@@ -705,20 +779,38 @@ void SpriteManager::DrawSpriteManager()
             ImGui::TableHeadersRow();
 
             std::vector<std::string> toDelete;
-            for (size_t i = 0; i < sprites_.size(); ++i)
+            bool reordered = false;
+            for (size_t i : rows)
             {
+                if (reordered)
+                    break; // 入れ替えたフレームは並びが変わるので描き終える
                 auto &sp = sprites_[i];
                 ImGui::TableNextRow();
-                ImGui::PushID(static_cast<int>(i));
+                ImGui::PushID(sp->name.c_str());
 
                 // 順序 & 矢印
                 ImGui::TableNextColumn();
                 ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(1, 1));
-                if (i > 0 && ImGui::ArrowButton("U", ImGuiDir_Up))
+                if (canReorder && i > 0 && ImGui::ArrowButton("U", ImGuiDir_Up))
+                {
                     std::swap(sprites_[i], sprites_[i - 1]);
-                if (i < sprites_.size() - 1 && ImGui::ArrowButton("D", ImGuiDir_Down))
+                    reordered = true;
+                }
+                if (canReorder && !reordered && i < sprites_.size() - 1 && ImGui::ArrowButton("D", ImGuiDir_Down))
+                {
                     std::swap(sprites_[i], sprites_[i + 1]);
+                    reordered = true;
+                }
+                if (!canReorder)
+                {
+                    ImGui::TextDisabled("%zu", i + 1);
+                }
                 ImGui::PopStyleVar();
+                if (reordered)
+                {
+                    ImGui::PopID();
+                    break;
+                }
 
                 // 名前（クリックで選択。選択中の行はハイライト表示）
                 ImGui::TableNextColumn();
@@ -732,6 +824,9 @@ void SpriteManager::DrawSpriteManager()
                 if (ImGui::Selectable(sp->name.c_str(), isSelected))
                 {
                     selectedName = sp->name;
+                    // シーンのギズモでもこのスプライトを掴んだ状態にする
+                    ImGuizmoManager::GetInstance()->SelectOnly(sp->name);
+                    lastGizmoPick = sp->name;
                 }
 
                 // 表示チェック
@@ -1212,7 +1307,7 @@ void SpriteManager::DrawSpriteManager()
     ImGui::PopStyleVar(3);
 
     // 編集ジェスチャが確定していたら差分をUndo履歴へ積む
-    undoTracker_.End(
+    g_undoTracker.End(
         "スプライト編集",
         [this] { return CaptureUndoState(); },
         [](const nlohmann::json &s) { SpriteManager::GetInstance()->RestoreUndoState(s); });
@@ -1491,6 +1586,9 @@ void SpriteManager::RestoreUndoState(const nlohmann::json &state)
     {
         return;
     }
+
+    // 復元は人が押した操作ではないので、登録・削除のトーストは止める（履歴には残る）
+    ImGuiNotification::ScopedMute mute;
 
     for (auto it = state.begin(); it != state.end(); ++it)
     {

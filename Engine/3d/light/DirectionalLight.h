@@ -3,6 +3,9 @@
 #include "d3d12.h"
 #include "wrl.h"
 #include <string>
+#ifdef USE_IMGUI
+#include <nlohmann/json.hpp>
+#endif // USE_IMGUI
 
 namespace Hagine {
 class DirectXCommon;
@@ -88,6 +91,21 @@ class DirectionalLight
     /// </summary>
     /// <param name="handler">読み込み元</param>
     void Load(DataHandler *handler);
+
+#ifdef USE_IMGUI
+    /// <summary>
+    /// Undo と Play モードのスナップショット用に、今の設定をJSONへ写す
+    /// （Save と違いファイルを経由しないので毎フレーム呼んでよい）
+    /// </summary>
+    /// <returns>nlohmann::json: 状態JSON</returns>
+    nlohmann::json CaptureState() const;
+
+    /// <summary>
+    /// CaptureState で得た状態を反映する
+    /// </summary>
+    /// <param name="state">反映する状態</param>
+    void RestoreState(const nlohmann::json &state);
+#endif // USE_IMGUI
 
   private:
     DirectXCommon *pDxCommon_ = nullptr;                  // DirectX基盤

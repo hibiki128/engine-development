@@ -129,6 +129,17 @@ class Model
     size_t GetMeshCount() const { return meshes_.size(); }
     Mesh *GetMesh(uint32_t index) { return (index < meshes_.size()) ? meshes_[index].get() : nullptr; }
     Animator *GetAnimator() { return pAnimator_; }
+    Skin *GetSkin() const { return pSkin_; }
+
+    /// <summary>
+    /// スキニングで動くモデルか（gltf・アニメーション・ボーンが揃っているか）。
+    /// 頂点がGPU上で毎フレーム書き換わるので、描画も加速構造も扱いを分ける必要がある
+    /// </summary>
+    /// <returns>bool: スキニングで動くなら true</returns>
+    bool IsSkinned() const
+    {
+        return isGltf_ && pAnimator_ && modelData_.hasAnimations && modelData_.hasBones;
+    }
 
     /// <summary>
     /// Setter
@@ -188,9 +199,9 @@ class Model
     std::vector<std::unique_ptr<Mesh>> meshes_; // メッシュ配列
 
     // アニメーション関連
-    Animator *pAnimator_; // アニメーター
-    Skin *pSkin_;         // スキン
-    Bone *pBone_;         // ボーン
+    Animator *pAnimator_ = nullptr; // アニメーター
+    Skin *pSkin_ = nullptr;         // スキン
+    Bone *pBone_ = nullptr;         // ボーン
 
     bool skinOutputInVertexState_ = false; // skin出力バッファの現在の状態追跡
 };

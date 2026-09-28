@@ -2,6 +2,7 @@
 #include <cstdint>
 #include <d3d12.h>
 #include <queue> // 空きインデックスの管理用
+#include <vector>
 #include <wrl.h>
 #include "DirectXTex/DirectXTex.h"
 
@@ -27,6 +28,17 @@ class SrvManager
     uint32_t useIndex_ = 0;
     // 空きインデックスを管理するキュー
     std::queue<uint32_t> freeIndices_; // 解放されたSRVインデックスを保存
+
+    /// <summary>解放待ちのインデックス（GPU が触り終わるまで抱えておく）</summary>
+    struct PendingFree
+    {
+        uint32_t srvIndex = 0; //!< Allocate() が返した予約番号
+        int framesLeft = 0;    //!< あと何フレーム待つか
+    };
+    // バックバッファは2枚で、PostDraw は「2フレーム前の完了」までしか保証しない。
+    // それより1フレーム多く待ってから解放する（ModelManager と同じ考え方）
+    static constexpr int kFreeDelayFrames = 3;
+    std::vector<PendingFree> pendingFrees_;
 
   public:
     // 最大SRV数(最大テクスチャ枚数)
@@ -94,6 +106,34 @@ class SrvManager
     void CreateSRVforDepth(uint32_t srvIndex, ID3D12Resource *pResource);
 
     /// <summary>
+    /// SRV生成(シャドウマップ用)
+    /// シャドウマップは D32_FLOAT なのでシーンの深度（D24_UNORM_S8_UINT）とフォーマットが違う。
+    /// 同じ CreateSRVforDepth を使うと読めない値になるため別にしてある
+    /// </summary>
+    /// <param name="srvIndex">SRVインデックス</param>
+    /// <param name="pResource">シャドウマップの深度リソース</param>
+    void CreateSRVforShadowDepth(uint32_t srvIndex, ID3D12Resource *pResource);
+
+    /// <summary>
+    /// SRV生成(キューブマップ用)。
+    /// 環境マップを別のテーブルへ差したいときに、同じリソースからSRVを作り直すために使う
+    /// </summary>
+    /// <param name="srvIndex">SRVインデックス</param>
+    /// <param name="pResource">キューブマップのリソース</param>
+    /// <param name="format">読み取りフォーマット</param>
+    /// <param name="mipLevels">ミップ数</param>
+    void CreateSRVforTextureCube(uint32_t srvIndex, ID3D12Resource *pResource,
+                                 DXGI_FORMAT format, UINT mipLevels);
+
+    /// <summary>
+    /// SRV生成(レイトレーシングの加速構造用)。
+    /// 加速構造のSRVは「リソースではなくGPUアドレス」を指すので、渡すのはアドレス
+    /// </summary>
+    /// <param name="srvIndex">SRVインデックス</param>
+    /// <param name="address">TLASのGPUアドレス</param>
+    void CreateSRVforTlas(uint32_t srvIndex, D3D12_GPU_VIRTUAL_ADDRESS address);
+
+    /// <summary>
     /// UAV作成
     /// </summary>
     /// <param name="srvIndex"></param>
@@ -118,13 +158,41 @@ class SrvManager
     uint32_t Allocate();
 
     /// <summary>
-    /// インデックス解放
+    /// インデックス解放。
+    /// **+1規約なので、渡すのは `Allocate()` が返した予約番号**（＝使っている番号 - 1）。
+    /// 呼ぶ前に GPU の完了が保証できていること（できないなら FreeDeferred を使う）
     /// </summary>
-    /// <param name="srvIndex"></param>
+    /// <param name="srvIndex">Allocate() が返した予約番号</param>
     void Free(uint32_t srvIndex);
+
+    /// <summary>
+    /// インデックスを数フレーム後に解放する。
+    ///
+    /// Free はディスクリプタを潰したうえで番号を空きリストへ戻すので、
+    /// GPU がまだ前のフレームのコマンドでそのスロットを読んでいると壊れる。
+    /// フレームの途中でオブジェクトが壊れる経路（キャラの破棄など）はこちらを使う。
+    /// 実際に解放するのは Update() の仕事
+    /// </summary>
+    /// <param name="srvIndex">Allocate() が返した予約番号</param>
+    void FreeDeferred(uint32_t srvIndex);
+
+    /// <summary>
+    /// 解放待ちのインデックスのうち、GPU が触り終わったものを実際に解放する。
+    /// フレームの先頭で1回だけ呼ぶこと
+    /// </summary>
+    void Update();
 
     bool CanAllocate() const;
     void ClearDescriptor(uint32_t srvIndex);
+
+    /// <summary>
+    /// これまでに払い出した番号の最大値（＝使用中 ＋ 空きリストにある数）。
+    /// 解放漏れを疑ったときに、増え続けていないかを見るための値
+    /// </summary>
+    uint32_t GetAllocatedCount() const { return useIndex_; }
+
+    /// <summary>空きリストに戻っている番号の数</summary>
+    size_t GetFreeCount() const { return freeIndices_.size(); }
     /// <summary>
     /// getter
     /// </summary>

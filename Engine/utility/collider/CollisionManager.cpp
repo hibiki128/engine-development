@@ -1,6 +1,8 @@
 #include "collider/CollisionManager.h"
 #include "MyMath.h"
 #include <algorithm>
+#include <cmath>
+#include <utility>
 #ifdef USE_IMGUI
 #include <imgui.h>
 #include <string>
@@ -36,6 +38,88 @@ const char *ColliderTypeDisplayName(ColliderType type)
 #endif
 
 namespace {
+/// <summary>
+/// 軸平行な箱とレイの判定（スラブ法）。OBB は自身のローカル空間へ移してからここへ渡す。
+/// 法線は「一番遅く入った軸」の向きで決まる
+/// </summary>
+/// <param name="box">判定する箱</param>
+/// <param name="origin">レイの始点</param>
+/// <param name="direction">レイの方向（正規化済み）</param>
+/// <param name="maxDistance">判定する最大距離</param>
+/// <param name="outDistance">始点からの距離</param>
+/// <param name="outNormal">当たった面の法線（レイと向かい合う側）</param>
+/// <returns>bool: 当たったら true</returns>
+bool RaycastAABB(const AABB &box, const Vector3 &origin, const Vector3 &direction, float maxDistance,
+                 float &outDistance, Vector3 &outNormal)
+{
+    const float boxMin[3] = {box.min.x, box.min.y, box.min.z};
+    const float boxMax[3] = {box.max.x, box.max.y, box.max.z};
+    const float rayOrigin[3] = {origin.x, origin.y, origin.z};
+    const float rayDirection[3] = {direction.x, direction.y, direction.z};
+
+    float tNear = 0.0f;
+    float tFar = maxDistance;
+    int nearAxis = -1;
+    float nearSign = 0.0f;
+
+    for (int axis = 0; axis < 3; ++axis)
+    {
+        if (std::abs(rayDirection[axis]) < 1e-8f)
+        {
+            // この軸に進んでいない。範囲の外にいるなら当たりようがない
+            if (rayOrigin[axis] < boxMin[axis] || rayOrigin[axis] > boxMax[axis])
+            {
+                return false;
+            }
+            continue;
+        }
+
+        const float inverse = 1.0f / rayDirection[axis];
+        float t1 = (boxMin[axis] - rayOrigin[axis]) * inverse;
+        float t2 = (boxMax[axis] - rayOrigin[axis]) * inverse;
+        float sign = -1.0f; // t1 側（min面）から入ったときの法線の向き
+        if (t1 > t2)
+        {
+            std::swap(t1, t2);
+            sign = 1.0f;
+        }
+
+        if (t1 > tNear)
+        {
+            tNear = t1;
+            nearAxis = axis;
+            nearSign = sign;
+        }
+        tFar = (std::min)(tFar, t2);
+
+        if (tNear > tFar)
+        {
+            return false;
+        }
+    }
+
+    outDistance = tNear;
+    outNormal = {0.0f, 0.0f, 0.0f};
+    if (nearAxis == 0)
+    {
+        outNormal.x = nearSign;
+    }
+    else if (nearAxis == 1)
+    {
+        outNormal.y = nearSign;
+    }
+    else if (nearAxis == 2)
+    {
+        outNormal.z = nearSign;
+    }
+    else
+    {
+        // 始点が箱の中：面を特定できないのでレイの逆向きを返す
+        outNormal = -direction;
+    }
+    return true;
+}
+
 /// <summary>円柱をAABBで近似する（メッシュ判定用の簡易変換）</summary>
 AABB CylinderToAABB(CylinderCollider *cyl)
 {
@@ -340,6 +424,12 @@ void CollisionManager::Unregister(ColliderBase *pCollider)
 
     const std::string &tag = pCollider->GetTag();
     auto it = collidersByTag_.find(tag);
+#ifdef USE_IMGUI
+    // エディタが覚えているポインタも外す（破棄後に触らないように）
+    if (pInspectorSelected_ == pCollider)
+        pInspectorSelected_ = nullptr;
+    colorsBeforeTagTint_.erase(pCollider);
+#endif
     if (it != collidersByTag_.end())
     {
         auto &colliders = it->second;
@@ -649,6 +739,140 @@ bool CollisionManager::TestCollision(ColliderBase *a, ColliderBase *b)
     return false;
 }
 
+bool CollisionManager::RaycastCollider(const ColliderBase *pCollider, const Vector3 &origin, const Vector3 &direction,
+                                       float maxDistance, float &outDistance, Vector3 &outNormal)
+{
+    switch (pCollider->GetType())
+    {
+    case ColliderType::Mesh:
+        // メッシュだけは形状側が三角形単位の正確な判定を持っている
+        return static_cast<const MeshCollider *>(pCollider)->Raycast(origin, direction, maxDistance, outDistance,
+                                                                     outNormal);
+
+    case ColliderType::Sphere: {
+        // |origin + t*dir - center|^2 = r^2 を t について解く
+        const Sphere sphere = static_cast<const SphereCollider *>(pCollider)->GetSphere();
+        const Vector3 toCenter = origin - sphere.center;
+        const float b = toCenter.Dot(direction);
+        const float c = toCenter.LengthSq() - sphere.radius * sphere.radius;
+        const float discriminant = b * b - c;
+        if (discriminant < 0.0f)
+        {
+            return false;
+        }
+        const float sqrtD = std::sqrt(discriminant);
+        // 手前の解を優先し、始点が内側なら奥の解を使う
+        float t = -b - sqrtD;
+        if (t < 0.0f)
+        {
+            t = -b + sqrtD;
+        }
+        if (t < 0.0f || t > maxDistance)
+        {
+            return false;
+        }
+        outDistance = t;
+        outNormal = (origin + direction * t - sphere.center).Normalize();
+        // レイと向かい合う側を返す（内側から当たった場合に裏返す）
+        if (outNormal.Dot(direction) > 0.0f)
+        {
+            outNormal = -outNormal;
+        }
+        return true;
+    }
+
+    case ColliderType::AABB: {
+        const AABB aabb = static_cast<const AABBCollider *>(pCollider)->GetAABB();
+        return RaycastAABB(aabb, origin, direction, maxDistance, outDistance, outNormal);
+    }
+
+    case ColliderType::OBB: {
+        // レイをOBBのローカル空間へ移してしまえば、中身はAABB判定と同じ
+        const OBB obb = static_cast<const OBBCollider *>(pCollider)->GetOBB();
+        const Vector3 &center = obb.scaleCenterRotated;
+        const Vector3 toOrigin = origin - center;
+
+        const Vector3 localOrigin = {toOrigin.Dot(obb.orientations[0]), toOrigin.Dot(obb.orientations[1]),
+                                     toOrigin.Dot(obb.orientations[2])};
+        const Vector3 localDirection = {direction.Dot(obb.orientations[0]), direction.Dot(obb.orientations[1]),
+                                        direction.Dot(obb.orientations[2])};
+
+        const AABB localBox = {-obb.size, obb.size};
+        Vector3 localNormal{};
+        if (!RaycastAABB(localBox, localOrigin, localDirection, maxDistance, outDistance, localNormal))
+        {
+            return false;
+        }
+        // 法線をワールドへ戻す
+        outNormal = (obb.orientations[0] * localNormal.x + obb.orientations[1] * localNormal.y +
+                     obb.orientations[2] * localNormal.z)
+                        .Normalize();
+        return true;
+    }
+
+    case ColliderType::Cylinder:
+        // Y軸直立の近似しか持たないうえ、側面と底面で法線の扱いが分かれる。
+        // 足IK・遮蔽判定のどちらでも要らないので対象外にしている
+        return false;
+    }
+    return false;
+}
+
+bool CollisionManager::RaycastClosest(const Vector3 &origin, const Vector3 &direction, float maxDistance,
+                                      const std::vector<std::string> &tagFilter, RaycastHit &outHit,
+                                      const std::string &ignoreOwnerName, const ColliderBase *pIgnore) const
+{
+    const Vector3 rayDirection = direction.Normalize();
+    if (rayDirection.LengthSq() <= 0.0f || maxDistance <= 0.0f)
+    {
+        return false;
+    }
+
+    bool hitAny = false;
+    float nearestDistance = maxDistance;
+
+    for (const auto &[tag, colliders] : collidersByTag_)
+    {
+        // タグ指定があれば、そこに載っていないグループは丸ごと飛ばす
+        if (!tagFilter.empty() && std::find(tagFilter.begin(), tagFilter.end(), tag) == tagFilter.end())
+        {
+            continue;
+        }
+
+        for (ColliderBase *pCollider : colliders)
+        {
+            if (!pCollider || pCollider == pIgnore || !pCollider->IsEnabled())
+            {
+                continue;
+            }
+            if (!ignoreOwnerName.empty() && pCollider->GetOwnerName() == ignoreOwnerName)
+            {
+                continue;
+            }
+
+            float distance = 0.0f;
+            Vector3 normal{};
+            if (!RaycastCollider(pCollider, origin, rayDirection, nearestDistance, distance, normal))
+            {
+                continue;
+            }
+            if (distance > nearestDistance)
+            {
+                continue;
+            }
+
+            nearestDistance = distance;
+            outHit.pCollider = pCollider;
+            outHit.distance = distance;
+            outHit.position = origin + rayDirection * distance;
+            outHit.normal = normal;
+            hitAny = true;
+        }
+    }
+
+    return hitAny;
+}
+
 void CollisionManager::DebugDraw(const ViewProjection &viewProjection)
 {
     if (isVisible_)
@@ -661,9 +885,83 @@ void CollisionManager::DebugDraw(const ViewProjection &viewProjection)
             }
         }
     }
+#ifdef USE_IMGUI
+    // インスペクタで選んだコライダーは、全体の表示を切っていても点滅させて場所を見せる
+    if (highlightSelected_ && pInspectorSelected_ && IsRegistered(pInspectorSelected_))
+    {
+        ColliderBase *c = pInspectorSelected_;
+        const Vector4 color = c->GetColor();
+        const bool visible = c->IsVisible();
+        const bool enabled = c->IsEnabled();
+        const bool blink = std::fmod(ImGui::GetTime() * 3.0, 1.0) < 0.5;
+        c->SetColor(blink ? Vector4{1.0f, 0.95f, 0.2f, 1.0f} : Vector4{1.0f, 1.0f, 1.0f, 1.0f});
+        c->SetVisible(true);
+        c->SetEnabled(true);
+        c->DebugDraw(viewProjection);
+        c->SetEnabled(enabled);
+        c->SetVisible(visible);
+        c->SetColor(color);
+    }
+#endif
 }
 
 #ifdef USE_IMGUI
+namespace {
+// タグ名から決まる見分けやすい色（同じタグはいつも同じ色）
+Vector4 TagColor(const std::string &tag)
+{
+    const size_t hash = std::hash<std::string>{}(tag);
+    const float hue = static_cast<float>(hash % 360u) / 360.0f;
+    float r = 0.0f, g = 0.0f, b = 0.0f;
+    ImGui::ColorConvertHSVtoRGB(hue, 0.65f, 0.95f, r, g, b);
+    return {r, g, b, 1.0f};
+}
+
+const char *const kTypeFilterNames[] = {"すべての種類", "球", "AABB", "OBB", "円柱", "メッシュ"}; // ColliderType と同じ並び（先頭だけ「すべて」）
+} // namespace
+
+bool CollisionManager::IsRegistered(const ColliderBase *pCollider) const
+{
+    for (const auto &[tag, colliders] : collidersByTag_)
+    {
+        for (const ColliderBase *c : colliders)
+        {
+            if (c == pCollider)
+                return true;
+        }
+    }
+    return false;
+}
+
+void CollisionManager::SetColorByTag(bool enable)
+{
+    if (enable == colorByTag_)
+        return;
+    colorByTag_ = enable;
+    if (enable)
+    {
+        colorsBeforeTagTint_.clear();
+        for (auto &[tag, colliders] : collidersByTag_)
+        {
+            const Vector4 color = TagColor(tag);
+            for (auto *c : colliders)
+            {
+                colorsBeforeTagTint_[c] = c->GetColor();
+                c->SetColor(color);
+            }
+        }
+    }
+    else
+    {
+        for (auto &[c, color] : colorsBeforeTagTint_)
+        {
+            if (IsRegistered(c))
+                c->SetColor(color);
+        }
+        colorsBeforeTagTint_.clear();
+    }
+}
+
 void CollisionManager::ImGuiColliderInspector()
 {
     // ── 全体操作 ──
@@ -704,6 +1002,45 @@ void CollisionManager::ImGuiColliderInspector()
         ImGuiNotification::Post(std::to_string(saved) + " 個のコライダーを保存しました", {0.45f, 0.68f, 0.52f, 1.0f});
     }
 
+    ImGui::PushStyleColor(ImGuiCol_CheckMark, DebugTheme::kAccentYellow);
+    ImGui::Checkbox("選んだ物をシーンで点滅", &highlightSelected_);
+    ImGui::PopStyleColor();
+    ImGui::SetItemTooltip("一覧で選んだコライダーを、全体の表示を切っていても黄色く点滅させて場所を見せる");
+    ImGui::SameLine();
+    bool colorByTag = colorByTag_;
+    if (ImGui::Checkbox("タグの色で塗り分け", &colorByTag))
+        SetColorByTag(colorByTag);
+    ImGui::SetItemTooltip("タグごとに決まった色で描く（外すと元の色に戻る。塗り分けたまま保存すると色も保存される）");
+
+    // ---- 絞り込み ----
+    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.45f);
+    ImGui::InputTextWithHint("##colliderSearch", "名前・タグで絞り込み", &inspectorSearch_);
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(110.0f);
+    int typeIndex = inspectorTypeFilter_ + 1;
+    if (ImGui::Combo("##colliderType", &typeIndex, kTypeFilterNames, IM_ARRAYSIZE(kTypeFilterNames)))
+        inspectorTypeFilter_ = typeIndex - 1;
+    ImGui::SameLine();
+    ImGui::Checkbox("有効な物だけ", &inspectorEnabledOnly_);
+    auto lower = [](std::string text) {
+        for (char &ch : text)
+        {
+            if (ch >= 'A' && ch <= 'Z')
+                ch = static_cast<char>(ch - 'A' + 'a');
+        }
+        return text;
+    };
+    const std::string query = lower(inspectorSearch_);
+    auto passes = [&](ColliderBase *c, const std::string &tag) {
+        if (inspectorEnabledOnly_ && !c->IsEnabled())
+            return false;
+        if (inspectorTypeFilter_ >= 0 && static_cast<int>(c->GetType()) != inspectorTypeFilter_)
+            return false;
+        if (query.empty())
+            return true;
+        return lower(c->GetName()).find(query) != std::string::npos || lower(tag).find(query) != std::string::npos;
+    };
+
     int total = 0;
     for (auto &[tag, colliders] : collidersByTag_)
         total += static_cast<int>(colliders.size());
@@ -737,17 +1074,34 @@ void CollisionManager::ImGuiColliderInspector()
         tags.push_back(tag);
     std::sort(tags.begin(), tags.end());
 
+    int shownTotal = 0;
     for (const auto &tag : tags)
     {
         auto &colliders = collidersByTag_[tag];
-        if (colliders.empty())
+        int matched = 0;
+        for (auto *c : colliders)
+        {
+            if (passes(c, tag))
+                ++matched;
+        }
+        if (matched == 0)
             continue;
+        shownTotal += matched;
 
-        std::string header = tag + "  (" + std::to_string(colliders.size()) + ")";
+        // タグの色の印（塗り分けに使う色）
+        const Vector4 tagColor = TagColor(tag);
+        ImGui::ColorButton(("##tagColor" + tag).c_str(), ImVec4(tagColor.x, tagColor.y, tagColor.z, 1.0f),
+                           ImGuiColorEditFlags_NoTooltip | ImGuiColorEditFlags_NoBorder, ImVec2(10.0f, 10.0f));
+        ImGui::SameLine();
+        std::string header = tag + "  (" + std::to_string(matched) + ")";
+        if (!query.empty() || inspectorTypeFilter_ >= 0 || inspectorEnabledOnly_)
+            ImGui::SetNextItemOpen(true);
         if (ImGui::TreeNodeEx(header.c_str(), ImGuiTreeNodeFlags_DefaultOpen))
         {
             for (auto *c : colliders)
             {
+                if (!passes(c, tag))
+                    continue;
                 ImGui::PushID(c);
 
                 // 個別の表示トグル
@@ -760,13 +1114,20 @@ void CollisionManager::ImGuiColliderInspector()
                 // 選択
                 const std::string &name = c->GetName();
                 std::string label = name.empty() ? "(名前なし)" : name;
+                if (!c->IsEnabled())
+                    label += "  (無効)";
                 if (ImGui::Selectable(label.c_str(), pInspectorSelected_ == c))
                     pInspectorSelected_ = c;
+                ImGui::SetItemTooltip("%s / %s", ColliderTypeDisplayName(c->GetType()), tag.c_str());
 
                 ImGui::PopID();
             }
             ImGui::TreePop();
         }
+    }
+    if (shownTotal == 0)
+    {
+        ImGui::TextDisabled(total == 0 ? "コライダーがありません" : "一致するコライダーがありません");
     }
     ImGui::EndChild();
 
@@ -876,14 +1237,11 @@ void CollisionManager::ImGuiColliderInspector()
 
         // jsons/Collider/<名前>.json への保存・読込
         float bw = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
-        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.20f, 0.45f, 0.20f, 0.85f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.26f, 0.55f, 0.26f, 0.95f));
-        if (ImGui::Button("保存", ImVec2(bw, 0.0f)))
+        if (ConfirmButton("保存", ImVec2(bw, 0.0f)))
         {
             c->SaveToJson();
             ImGuiNotification::Post("コライダーを保存しました: " + (name.empty() ? std::string("(名前なし)") : name), {0.45f, 0.68f, 0.52f, 1.0f});
         }
-        ImGui::PopStyleColor(2);
         ImGui::SameLine();
         if (ImGui::Button("読込", ImVec2(bw, 0.0f)))
         {

@@ -51,6 +51,9 @@ struct GizmoTarget
     bool selectable = true;        // ギズモによる選択を許可するか
     bool isScreenSpace = false;    // スクリーン空間座標（ピクセル単位）かどうか（Sprite用）
     float screenHitRadius = 50.0f; // 2Dマウス選択の当たり判定半径（スプライト座標系ピクセル単位）
+    // シーンにアイコンを出すか（パーティクルのエミッター用）。
+    // フィールドのように専用のアイコンを別に描く物は false にして二重に出さない
+    bool sceneIcon = true;
 
     // Type::BaseObject 用
     BaseObject *baseObject = nullptr;
@@ -146,9 +149,10 @@ class ImGuizmoManager
     bool isMultiSelecting_ = false;
     bool isDrawDebug_ = true;
 
-    // 操作対象フィルタ。GizmoCategory ごとに ON/OFF。
-    // 無効な種類は選択・マウスピック・ギズモ表示・デバッグ描画の対象外になる。
-    bool categoryEnabled_[kGizmoCategoryCount] = {true, true, true, true};
+    // シーンのクリック対象フィルタ。GizmoCategory ごとに ON/OFF。
+    // 効くのはシーン上のクリック・矩形選択だけで、階層やインスペクタからは OFF の種類も選べる。
+    // スプライトは 3D を触っているときに画面上の UI を掴む事故が多いので既定で OFF。
+    bool categoryEnabled_[kGizmoCategoryCount] = {true, false, true, true};
 
     // カメラのビュープロジェクション
     const ViewProjection *pViewProjection_ = nullptr;
@@ -173,6 +177,8 @@ class ImGuizmoManager
     // 単体選択はこれを見て確定する（押した瞬間に選ぶと、矩形ドラッグの開始点にある物を
     // 一度掴んでしまい、選択が一瞬ちらつくため）。
     bool clickSelectRequested_ = false;
+    // シーンのアイコンがこのフレームのクリックを使った（クリック選択を飛ばす）
+    bool sceneClickConsumed_ = false;
     // これ未満のドラッグは「クリック」として扱い、矩形選択にしない（ピクセル）
     static constexpr float kBoxSelectThreshold = 6.0f;
 
@@ -195,6 +201,72 @@ class ImGuizmoManager
     // Tab キーによる重複オブジェクトのサイクル選択用
     std::vector<std::pair<std::string, float>> overlapCandidates_; // (name, rayDistance)
     int overlapCycleIndex_ = 0;
+
+    // ---- インスペクタ ----
+    bool inspectorWindowOpen_ = false; // インスペクタ窓が開いているか（開いていればギズモ窓に詳細を出さない）
+    std::string pinnedName_;           // ピン留め中の対象（空なら選択に追従）
+    // インスペクタで見た物の履歴（ブラウザの戻る・進むと同じ。マウスのサイドボタンでも動く）
+    std::vector<std::string> inspectorHistory_;
+    int inspectorHistoryIndex_ = -1;
+    static constexpr size_t kInspectorHistoryMax = 32;
+
+    /// <summary>トランスフォームのコピー（インスペクタの「…」メニューから貼れる）</summary>
+    struct TransformClipboard
+    {
+        bool valid = false;
+        Vector3 translation = {0.0f, 0.0f, 0.0f};
+        Quaternion rotation = Quaternion::IdentityQuaternion();
+        Vector3 scale = {1.0f, 1.0f, 1.0f};
+    };
+    TransformClipboard transformClipboard_;
+
+    // プレハブ保存ダイアログ
+    bool prefabDialogRequested_ = false;
+    std::string prefabDialogRoot_;
+    std::string prefabDialogName_;
+
+    // 複数選択の一括拡縮（ドラッグ中の倍率。離したら 1 に戻す）
+    float multiScaleFactor_ = 1.0f;
+
+    // ---- 視点そろえ・スナップグリッド ----
+    bool viewAlignRequested_ = false;
+    float viewAlignPitch_ = 0.0f;
+    float viewAlignYaw_ = 0.0f;
+    bool showSnapGrid_ = true; // 移動スナップ中にグリッドを描く
+
+    // ---- 配置ツール（ImGuizmoManagerPlacement.cpp）----
+    struct PlacementSettings
+    {
+        int mode = 0; // 0=直線 1=格子 2=円 3=ばらまき
+        int lineCount = 5;
+        Vector3 lineStep = {2.0f, 0.0f, 0.0f};
+        int gridColumns = 3;
+        int gridRows = 3;
+        float gridSpacingX = 2.0f;
+        float gridSpacingZ = 2.0f;
+        int ringCount = 8;
+        float ringRadius = 6.0f;
+        bool ringFaceOutward = true;
+        int scatterCount = 12;
+        float scatterRadius = 12.0f;
+        float scatterMinDistance = 1.5f;
+        uint32_t seed = 1;
+        float randomYawDegrees = 0.0f;
+        float scaleMin = 1.0f;
+        float scaleMax = 1.0f;
+        bool snapToGround = false;
+        bool keepSource = true;
+    };
+    /// <summary>置く1か所</summary>
+    struct PlacementPoint
+    {
+        Vector3 position;
+        float yawDegrees = 0.0f;
+        float scale = 1.0f;
+    };
+    PlacementSettings placement_;
+    std::vector<PlacementPoint> BuildPlacementPoints(const Vector3 &origin) const;
+    void ExecutePlacement(BaseObject *pSource);
 
   public:
     static ImGuizmoManager *GetInstance()
@@ -357,6 +429,16 @@ class ImGuizmoManager
         }
     }
 
+    // シーンにアイコンを出すかを設定する（AddTarget後に呼ぶ）
+    void SetSceneIcon(const std::string &name, bool show)
+    {
+        auto it = transformMap_.find(name);
+        if (it != transformMap_.end())
+        {
+            it->second.sceneIcon = show;
+        }
+    }
+
     // 操作対象の大分類を設定する（フィルタUIの分類に反映。AddTarget後に呼ぶ）
     void SetCategory(const std::string &name, GizmoCategory category)
     {
@@ -367,11 +449,57 @@ class ImGuizmoManager
         }
     }
 
-    // 指定分類が操作対象フィルタで有効か
+    // 指定分類がシーンのクリック対象になっているか
     bool IsCategoryEnabled(GizmoCategory category) const
     {
         return categoryEnabled_[static_cast<int>(category)];
     }
+
+    /// <summary>
+    /// シーンのクリック対象に含めるかを種類ごとに切り替える
+    /// </summary>
+    void SetCategoryEnabled(GizmoCategory category, bool enabled);
+
+    /// <summary>
+    /// 種類のクリック対象を反転する
+    /// </summary>
+    void ToggleCategory(GizmoCategory category);
+
+    /// <summary>
+    /// その種類だけをクリック対象にする。すでにその種類だけなら全部に戻す
+    /// </summary>
+    void SoloCategory(GizmoCategory category);
+
+    /// <summary>
+    /// 全種類をクリック対象にする
+    /// </summary>
+    void EnableAllCategories();
+
+    /// <summary>
+    /// クリック対象の ON/OFF をビットにまとめて返す（bit i = GizmoCategory i）。保存・ワークスペース用
+    /// </summary>
+    uint32_t GetCategoryMask() const;
+
+    /// <summary>
+    /// クリック対象の ON/OFF をビットでまとめて設定する
+    /// </summary>
+    void SetCategoryMask(uint32_t mask);
+
+    /// <summary>
+    /// 直前のクリックで重なっていた候補の数（Tab で順に選べる）。
+    /// 選択がその候補から変わっていれば 0
+    /// </summary>
+    int GetOverlapCount() const;
+
+    /// <summary>
+    /// 重なり候補の中で今選んでいる番号（0 始まり）
+    /// </summary>
+    int GetOverlapIndex() const { return overlapCycleIndex_; }
+
+    /// <summary>
+    /// 重なり候補の次のものを選ぶ（Tab と同じ）
+    /// </summary>
+    void CycleOverlap() { CycleOverlapSelection(); }
 
     /// <summary>
     /// 指定した名前だけを選択状態にする（他ウィンドウの一覧とギズモ選択を同期させる用途）
@@ -393,6 +521,188 @@ class ImGuizmoManager
     {
         return selectedNames_.find(name) != selectedNames_.end();
     }
+
+    /// <summary>
+    /// 指定した名前を選択に加える（Shift+クリックの範囲選択用）。未登録なら何もしない
+    /// </summary>
+    void AddToSelection(const std::string &name)
+    {
+        if (transformMap_.find(name) != transformMap_.end())
+        {
+            selectedNames_.insert(name);
+        }
+    }
+
+    /// <summary>
+    /// 指定した名前の選択を反転する（Ctrl+クリックでの追加・解除用）
+    /// </summary>
+    /// <param name="name">登録名。未登録なら何もしない</param>
+    void ToggleSelect(const std::string &name)
+    {
+        if (transformMap_.find(name) == transformMap_.end())
+        {
+            return;
+        }
+        if (!selectedNames_.erase(name))
+        {
+            selectedNames_.insert(name);
+        }
+    }
+
+    /// <summary>選択中の登録名の一覧</summary>
+    const std::unordered_set<std::string> &GetSelectedNames() const { return selectedNames_; }
+
+    /// <summary>
+    /// 選択中の物へシーンカメラを寄せる（F キーと同じ）。一覧のダブルクリックなどから使う
+    /// </summary>
+    void FocusOnSelection() { RequestFocusOnSelection(); }
+
+    /// ===================================================
+    /// インスペクタ（ImGuizmoManagerInspector.cpp）
+    /// ===================================================
+
+    /// <summary>
+    /// インスペクタ窓の中身を描く（窓の Begin/End は呼び出し元）。
+    /// 1つ選択ならその詳細、複数選択なら共通項目のまとめて編集を出す
+    /// </summary>
+    void DrawInspector();
+
+    /// <summary>
+    /// インスペクタ窓が開いているかを伝える。開いている間はギズモ窓に詳細を重ねて出さない
+    /// </summary>
+    void SetInspectorWindowOpen(bool open) { inspectorWindowOpen_ = open; }
+
+    /// <summary>
+    /// プレハブ保存の名前入力ダイアログを開く（実際の描画は DrawEditorModals）
+    /// </summary>
+    /// <param name="rootName">根にするオブジェクト名</param>
+    void OpenPrefabSaveDialog(const std::string &rootName);
+
+    /// <summary>
+    /// ギズモ側が持つダイアログ類を描く（どの窓が閉じていても出せるよう毎フレーム呼ぶ）
+    /// </summary>
+    void DrawEditorModals();
+
+    /// <summary>
+    /// プレハブを置いて選択状態にする（Undo 履歴にも積む）
+    /// </summary>
+    /// <param name="prefabName">プレハブ名</param>
+    /// <param name="position">置くワールド座標</param>
+    /// <returns>std::string: 置いた根の名前（失敗時は空）</returns>
+    std::string PlacePrefab(const std::string &prefabName, const Vector3 &position);
+
+    /// <summary>
+    /// モデルからオブジェクトを作って選択状態にする（Undo 履歴にも積む）
+    /// </summary>
+    /// <param name="modelPath">models ルートからの相対パス</param>
+    /// <param name="position">置くワールド座標</param>
+    /// <returns>std::string: 作ったオブジェクト名（失敗時は空）</returns>
+    std::string PlaceModel(const std::string &modelPath, const Vector3 &position);
+
+    /// <summary>
+    /// プレハブから置いた物の今の内容で、元のプレハブを上書きする
+    /// </summary>
+    void ApplyInstanceToPrefab(const std::string &instanceName);
+
+    /// <summary>
+    /// プレハブから置いた物を、プレハブの内容で置き直す（Undo 履歴にも積む）
+    /// </summary>
+    void RevertInstanceToPrefab(const std::string &instanceName);
+
+    /// <summary>
+    /// インスペクタ・階層・シーンの右クリックで共通に出す「プレハブ」メニューの中身（BeginMenu/Popup の内側で呼ぶ）
+    /// </summary>
+    void DrawPrefabLinkMenuItems(BaseObject *pObject);
+
+    /// <summary>
+    /// 選択中の物を、重心が指定の場所に来るようまとめて動かす（Undo 履歴にも積む）
+    /// </summary>
+    void MoveSelectionTo(const Vector3 &position);
+
+    /// <summary>
+    /// プリミティブを指定の場所に置いて選択状態にする（Undo 履歴にも積む）
+    /// </summary>
+    std::string PlacePrimitive(PrimitiveType type, const std::string &baseName, const Vector3 &position);
+
+    /// <summary>ビュープロジェクション（シーンビューの軸表示用）</summary>
+    const ViewProjection *GetViewProjection() const { return pViewProjection_; }
+
+    /// <summary>シーンに名前を出す対象（3Dのもの）</summary>
+    struct LabelTarget
+    {
+        std::string name;
+        Vector3 position;
+        GizmoCategory category = GizmoCategory::Object;
+        bool selected = false;
+    };
+
+    /// <summary>
+    /// シーンビューに名前ラベルを出す対象を集める（操作対象フィルタで外した種類は除く）
+    /// </summary>
+    /// <param name="selectedOnly">選択中のものだけにするか</param>
+    std::vector<LabelTarget> CollectLabelTargets(bool selectedOnly) const;
+
+    /// <summary>
+    /// シーンにアイコンを出す対象（3D・選択可・アイコン有り）を種類で集める。クリック対象フィルタは見ない
+    /// </summary>
+    std::vector<LabelTarget> CollectIconTargets(GizmoCategory category) const;
+
+    /// <summary>
+    /// このフレームのシーンのクリックを使ったことにする（アイコンを押したときに、
+    /// 奥の物まで一緒にクリック選択されないようにする）。ギズモの Update より先に呼ぶ
+    /// </summary>
+    void ConsumeSceneClick() { sceneClickConsumed_ = true; }
+
+    /// <summary>
+    /// 指定の場所へシーンカメラを寄せる要求を出す（ギズモ未登録のカメラのアイコン用）
+    /// </summary>
+    void RequestFocus(const Vector3 &target, float radius)
+    {
+        focusTarget_ = target;
+        focusRadius_ = (std::max)(radius, 0.5f);
+        focusRequested_ = true;
+    }
+
+    /// ===================================================
+    /// シーンビューのオーバーレイ用
+    /// ===================================================
+
+    ImGuizmo::OPERATION GetOperation() const { return currentOperation_; }
+    void SetOperation(ImGuizmo::OPERATION operation) { currentOperation_ = operation; }
+    ImGuizmo::MODE GetMode() const { return currentMode_; }
+    void SetMode(ImGuizmo::MODE mode) { currentMode_ = mode; }
+    bool &UseSnap() { return useSnap_; }
+    float &SnapTranslate() { return snapTranslate_; }
+    float &SnapRotateDegree() { return snapRotateDegree_; }
+    float &SnapScale() { return snapScale_; }
+    bool &ShowSnapGrid() { return showSnapGrid_; }
+
+    /// <summary>
+    /// 視点を軸方向へそろえる要求を出す（シーンビュー右上の軸表示から）。
+    /// 実際にカメラを回すのは DebugCamera 側で、ConsumeViewAlignRequest で受け取る
+    /// </summary>
+    /// <param name="pitch">X軸回りの角度（ラジアン）</param>
+    /// <param name="yaw">Y軸回りの角度（ラジアン）</param>
+    void RequestViewAlign(float pitch, float yaw)
+    {
+        viewAlignRequested_ = true;
+        viewAlignPitch_ = pitch;
+        viewAlignYaw_ = yaw;
+    }
+
+    /// <summary>視点そろえ要求を取り出す（無ければ false）。注視点は選択物の重心（無ければ前方）</summary>
+    bool ConsumeViewAlignRequest(float &outPitch, float &outYaw, bool &outHasPivot, Vector3 &outPivot);
+
+    /// <summary>
+    /// 移動スナップ中に、選択物のまわりへ刻み幅のグリッドを描く（ギズモ操作中のみ）
+    /// </summary>
+    void DrawSnapGrid();
+
+    /// <summary>
+    /// 配置ツールの中身（選択中のオブジェクトを直線・格子・円・ばらまきで並べて複製する）。
+    /// 窓の Begin/End は呼び出し元。窓が開いている間は置く場所をシーンに下描きする
+    /// </summary>
+    void DrawPlacementTool();
 
     /// <summary>
     /// 指定した名前が登録済みか
@@ -447,8 +757,16 @@ class ImGuizmoManager
 
   private:
     void ShowSelectedObjectImGui();
-    // 操作対象フィルタで無効化された分類の選択を解除する
-    void PruneSelectionByFilter();
+    // インスペクタの見出し（アイコン・名前・種類・親・表示/フォーカス/ピン留め/メニュー）
+    void DrawInspectorHeader(GizmoTarget &target);
+    // 複数選択時の「まとめて編集」
+    void DrawMultiSelectionInspector();
+    // インスペクタの履歴（戻る・進む）
+    void RecordInspectorHistory(const std::string &name);
+    void NavigateInspectorHistory(int step);
+    // トランスフォームのコピー・貼り付け
+    void CopyTransformFrom(const GizmoTarget &target);
+    void PasteTransformToSelection(bool translation, bool rotation, bool scale);
     void HandleMouseSelection(const ImVec2 &scenePosition, const ImVec2 &sceneSize, bool sceneHovered);
     void CycleOverlapSelection();
     // シーンウィンドウ上でのみ効くギズモ操作のホットキーを処理する

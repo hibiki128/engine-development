@@ -140,6 +140,18 @@ class CameraManager
     /// <summary>登録されているカメラ名の一覧を取得する</summary>
     std::vector<std::string> GetCameraNames() const;
 
+    /// <summary>エディタで選択中のカメラ名（シーンのアイコンから選ぶとき用）</summary>
+    const std::string &GetSelectedName() const { return selectedName_; }
+
+    /// <summary>エディタで選択するカメラを変える（未登録の名前なら何もしない）</summary>
+    void SetSelectedName(const std::string &name)
+    {
+        if (cameras_.find(name) != cameras_.end())
+        {
+            selectedName_ = name;
+        }
+    }
+
   private:
     /// ===================================================
     /// private method

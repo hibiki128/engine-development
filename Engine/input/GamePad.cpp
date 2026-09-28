@@ -1,5 +1,11 @@
+#define NOMINMAX
 #include "GamePad.h"
+#include <Frame.h>
 #include <algorithm>
+
+namespace {
+float gVibrationScale = 1.0f; // 全体の振動の強さ（オプション）
+} // namespace
 
 namespace Hagine {
 void GamePad::Init(int32_t playerIndex)
@@ -35,6 +41,58 @@ void GamePad::Update()
 
     // 接続状態を更新
     isConnected_ = (result == ERROR_SUCCESS);
+
+    // 時間つき振動を進める（ヒットストップで止まらないよう実時間）
+    if (rumbleTimer_ > 0.0f)
+    {
+        rumbleTimer_ -= Frame::UnscaledDeltaTime();
+        if (rumbleTimer_ <= 0.0f)
+        {
+            rumbleTimer_ = 0.0f;
+            rumbleLow_ = 0.0f;
+            rumbleHigh_ = 0.0f;
+            StopVibration();
+        }
+    }
+}
+
+GamePad::~GamePad()
+{
+    if (rumbleTimer_ > 0.0f)
+    {
+        StopVibration();
+    }
+}
+
+void GamePad::Rumble(float lowStrength, float highStrength, float seconds)
+{
+    if (!isConnected_ || seconds <= 0.0f)
+        return;
+    const float scale = std::clamp(gVibrationScale, 0.0f, 2.0f);
+    const float low = std::clamp(lowStrength * scale, 0.0f, 1.0f);
+    const float high = std::clamp(highStrength * scale, 0.0f, 1.0f);
+    if (low <= 0.0f && high <= 0.0f)
+        return;
+    // 強い方を残す（弱い振動で強い振動を消さない）
+    if (rumbleTimer_ > 0.0f && low + high < rumbleLow_ + rumbleHigh_)
+    {
+        rumbleTimer_ = (std::max)(rumbleTimer_, seconds);
+        return;
+    }
+    rumbleLow_ = low;
+    rumbleHigh_ = high;
+    rumbleTimer_ = seconds;
+    SetVibration(static_cast<WORD>(low * 65535.0f), static_cast<WORD>(high * 65535.0f));
+}
+
+void GamePad::SetVibrationScale(float scale)
+{
+    gVibrationScale = (std::max)(scale, 0.0f);
+}
+
+float GamePad::GetVibrationScale()
+{
+    return gVibrationScale;
 }
 
 // ===== ボタン入力 =====

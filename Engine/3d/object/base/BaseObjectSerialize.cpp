@@ -37,6 +37,7 @@ void BaseObject::SaveToJson() {
     objectData_->Save<bool>("isWireframe", isWireframe_);
     objectData_->Save<bool>("isRainbow", isRainbow_);
     objectData_->Save<bool>("isGizmoSelectable", isGizmoSelectable_);
+    objectData_->Save<std::string>("prefabSource", prefabSource_);
     if (pParent_) {
         objectData_->Save<std::string>("parentName", pParent_->GetName());
     }
@@ -50,12 +51,18 @@ void BaseObject::SaveToJson() {
     }
 
     objectData_->Save<bool>("isLighting", isLighting_);
+    objectData_->Save<bool>("cameraFade", cameraFadeEnabled_);
     objectData_->Save<int>("blendMode", static_cast<int>(blendMode_));
 
     SaveParentChildRelationship();
 
     // 物理（リジッドボディ）情報を保存
     SavePhysics();
+
+    // 足IK（接地）の設定を保存
+    SaveFootIk();
+    SaveLookAt();
+    SaveAnimStateMachine();
 
     // マテリアル（ノーマルマップ関連）情報を保存
     SaveMaterials();
@@ -81,6 +88,7 @@ void BaseObject::SceneSaveToJson() {
     objectData_->Save<bool>("isWireframe", isWireframe_);
     objectData_->Save<bool>("isRainbow", isRainbow_);
     objectData_->Save<bool>("isGizmoSelectable", isGizmoSelectable_);
+    objectData_->Save<std::string>("prefabSource", prefabSource_);
     if (pParent_) {
         objectData_->Save<std::string>("parentName", pParent_->GetName());
     }
@@ -95,12 +103,18 @@ void BaseObject::SceneSaveToJson() {
     }
 
     objectData_->Save<bool>("isLighting", isLighting_);
+    objectData_->Save<bool>("cameraFade", cameraFadeEnabled_);
     objectData_->Save<int>("blendMode", static_cast<int>(blendMode_));
 
     SaveParentChildRelationship();
 
     // 物理（リジッドボディ）情報を保存
     SavePhysics();
+
+    // 足IK（接地）の設定を保存
+    SaveFootIk();
+    SaveLookAt();
+    SaveAnimStateMachine();
 
     // マテリアル（ノーマルマップ関連）情報を保存
     SaveMaterials();
@@ -131,6 +145,7 @@ void BaseObject::LoadFromJson() {
     isWireframe_ = objectData_->Load<bool>("isWireframe", isWireframe_);
     isRainbow_ = objectData_->Load<bool>("isRainbow", isRainbow_);
     isGizmoSelectable_ = objectData_->Load<bool>("isGizmoSelectable", isGizmoSelectable_);
+    prefabSource_ = objectData_->Load<std::string>("prefabSource", "");
     parentName_ = objectData_->Load<std::string>("parentName", "");
 
     // モデルパスをJSONから読み込み（既に設定されている場合は上書きしない）
@@ -162,12 +177,18 @@ void BaseObject::LoadFromJson() {
     }
 
     isLighting_ = objectData_->Load<bool>("isLighting", true);
+    cameraFadeEnabled_ = objectData_->Load<bool>("cameraFade", true);
     blendMode_ = static_cast<BlendMode>(objectData_->Load<int>("blendMode", int(BlendMode::Normal)));
 
     LoadParentChildRelationship();
 
     // 物理（リジッドボディ）情報を読み込み
     LoadPhysics();
+
+    // 足IK（接地）の設定を読み込み
+    LoadFootIk();
+    LoadLookAt();
+    LoadAnimStateMachine();
 
     // コライダー情報を読み込み
     LoadColliders();
@@ -197,6 +218,7 @@ void BaseObject::LoadFromJson(std::string folderPath, std::string jsonName) {
     isWireframe_ = objectData_->Load<bool>("isWireframe", isWireframe_);
     isRainbow_ = objectData_->Load<bool>("isRainbow", isRainbow_);
     isGizmoSelectable_ = objectData_->Load<bool>("isGizmoSelectable", isGizmoSelectable_);
+    prefabSource_ = objectData_->Load<std::string>("prefabSource", "");
     parentName_ = objectData_->Load<std::string>("parentName", "");
 
     // モデルパスをJSONから読み込み（既に設定されている場合は上書きしない）
@@ -228,12 +250,18 @@ void BaseObject::LoadFromJson(std::string folderPath, std::string jsonName) {
     }
 
     isLighting_ = objectData_->Load<bool>("isLighting", true);
+    cameraFadeEnabled_ = objectData_->Load<bool>("cameraFade", true);
     blendMode_ = static_cast<BlendMode>(objectData_->Load<int>("blendMode", int(BlendMode::Normal)));
 
     LoadParentChildRelationship();
 
     // 物理（リジッドボディ）情報を読み込み
     LoadPhysics();
+
+    // 足IK（接地）の設定を読み込み
+    LoadFootIk();
+    LoadLookAt();
+    LoadAnimStateMachine();
 
     // コライダー情報を読み込み
     LoadColliders();
@@ -264,6 +292,7 @@ void BaseObject::SaveMaterials() {
         objectData_->Save<float>(prefix + "proceduralScale", md.proceduralScale);
         objectData_->Save<float>(prefix + "normalStrength", md.normalStrength);
         objectData_->Save<bool>(prefix + "enableToon", md.enableToon);
+        objectData_->Save<float>(prefix + "emissiveStrength", md.emissiveStrength);
 
         // UV（タイリング・オフセット・回転）
         objectData_->Save<Vector2>(prefix + "uvSize", md.uvSize);
@@ -300,6 +329,7 @@ void BaseObject::LoadMaterials() {
         mat->SetNormalStrength(objectData_->Load<float>(prefix + "normalStrength", md.normalStrength));
         // 後から足した項目なので、キーが無い既存データでは現在値（既定は適用する）のままにする
         md.enableToon = objectData_->Load<bool>(prefix + "enableToon", md.enableToon);
+        md.emissiveStrength = objectData_->Load<float>(prefix + "emissiveStrength", md.emissiveStrength);
 
         // UV（タイリング・オフセット・回転）。uvTransform は Draw で毎フレーム組み直される
         md.uvSize = objectData_->Load<Vector2>(prefix + "uvSize", md.uvSize);

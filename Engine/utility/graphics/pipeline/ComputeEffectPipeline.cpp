@@ -20,7 +20,8 @@ void ComputeEffectPipeline::Finalize()
 
 const ComputeEffectProgram *ComputeEffectPipeline::Get(
     const std::string &shaderFileName,
-    const std::vector<ShaderRootSignature::SamplerPreset> &samplerPresets)
+    const std::vector<ShaderRootSignature::SamplerPreset> &samplerPresets,
+    const wchar_t *profile)
 {
     // 生成済みならそれを返す（毎フレーム作り直さないためのキャッシュ）
     auto it = programs_.find(shaderFileName);
@@ -30,7 +31,7 @@ const ComputeEffectProgram *ComputeEffectPipeline::Get(
     }
 
     ComputeEffectProgram program;
-    if (!Build(shaderFileName, samplerPresets, program))
+    if (!Build(shaderFileName, samplerPresets, profile, program))
     {
         // 失敗したことも記録しておき、毎フレーム再試行してログが溢れるのを防ぐ
         programs_.emplace(shaderFileName, ComputeEffectProgram{});
@@ -43,6 +44,7 @@ const ComputeEffectProgram *ComputeEffectPipeline::Get(
 
 bool ComputeEffectPipeline::Build(const std::string &shaderFileName,
                                   const std::vector<ShaderRootSignature::SamplerPreset> &samplerPresets,
+                                  const wchar_t *profile,
                                   ComputeEffectProgram &outProgram)
 {
     if (!pDxCommon_)
@@ -55,7 +57,7 @@ bool ComputeEffectPipeline::Build(const std::string &shaderFileName,
 
     // コンパイルとリフレクション取得を同時に行う
     ID3D12ShaderReflection *pReflection = nullptr;
-    IDxcBlob *pShaderBlob = pDxCommon_->CompileShaderWithReflection(fullPath, L"cs_6_0", &pReflection);
+    IDxcBlob *pShaderBlob = pDxCommon_->CompileShaderWithReflection(fullPath, profile, &pReflection);
     if (!pShaderBlob || !pReflection)
     {
         Logger::Error("ComputeEffectPipeline: コンパイルに失敗: " + shaderFileName);

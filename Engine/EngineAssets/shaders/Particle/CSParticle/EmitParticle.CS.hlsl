@@ -28,7 +28,7 @@ RWStructuredBuffer<uint>      gRenderSlot     : register(u13); // out: 描画順
 StructuredBuffer<TriangleInfo> gTriangles : register(t0);
 StructuredBuffer<float> gTriangleCDF : register(t1);
 StructuredBuffer<EdgeInfo> gEdges : register(t2);
-StructuredBuffer<ParticleField> gFields : register(t3);
+StructuredBuffer<ParticleFieldGPU> gFields : register(t3);
 
 // -------------------------------------------------------
 // クォータニオンから回転行列を生成
@@ -85,7 +85,7 @@ uint SampleTriangleByCDF(float r)
 // -------------------------------------------------------
 // [フィールド接触Emitモード] スレッド→担当フィールドの割り当て
 //
-// CPU（ParticleCSFieldManager::Update）が各フィールドの emitSpawnCount に
+// CPU（ParticleCSFieldManager::Update）が各フィールドの emitCount に
 // 「今フレームのバースト数」を書き込んでいる（バースト無しフレームは0）。
 // エミッター側は対象フィールドのバースト合計をディスパッチしているため、
 // スレッドIDを累積和で区切ることで、各フィールドが自分の発生数ぶんの
@@ -96,19 +96,15 @@ uint SampleTriangleByCDF(float r)
 // -------------------------------------------------------
 int FindEmitTargetField(uint tid)
 {
+    // 対象は gPerFrame.fieldEmitMask のビットだけ（レイヤーの一致と今フレーム出すかは CPU で判定済み）
     uint cum = 0;
-    for (uint i = 0; i < gFieldCB.fieldCount; i++)
+    uint mask = gPerFrame.fieldEmitMask;
+    [loop]
+    while (mask != 0u)
     {
-        if (gFields[i].enableEmitSpawn == 0)
-            continue;
-
-        bool groupMatch = (gFields[i].groupId == -1) ||
-                          (gPerFrame.emitterFieldGroupId == -1) ||
-                          (gFields[i].groupId == gPerFrame.emitterFieldGroupId);
-        if (!groupMatch)
-            continue;
-
-        uint count = gFields[i].emitSpawnCount;
+        const uint i = firstbitlow(mask);
+        mask &= mask - 1u;
+        const uint count = gFields[i].emitCount;
         if (tid < cum + count)
             return (int) i;
         cum += count;
@@ -117,12 +113,14 @@ int FindEmitTargetField(uint tid)
 }
 
 // -------------------------------------------------------
-// 点が指定フィールド球の内側にあるか判定
+// 点が指定フィールドの範囲の内側にあるか判定
 // -------------------------------------------------------
 bool IsInsideField(float3 worldPos, uint fieldIdx)
 {
-    float3 diff = worldPos - gFields[fieldIdx].position;
-    return dot(diff, diff) < gFields[fieldIdx].radius * gFields[fieldIdx].radius;
+    // 形（球・箱・円柱）の内側か。影響度は使わない
+    float influence;
+    float3 local;
+    return EvaluateField(gFields[fieldIdx], worldPos, influence, local);
 }
 
 // -------------------------------------------------------
@@ -220,9 +218,12 @@ void main(uint3 DTid : SV_DispatchThreadID)
 
     // 発生数のゲート。フィールド接触Emitモードでは gEmitterMesh.emitCountOverride が発生数を決める。
     // （通常モードは override=0 なのでグループ設定 gSettings.emitCount を使う）
-    uint effectiveEmitCount = (gEmitterMesh.emitCountOverride > 0u)
-                                  ? gEmitterMesh.emitCountOverride
-                                  : gSettings.emitCount;
+    uint baseEmitCount = (gEmitterMesh.emitCountOverride > 0u)
+                             ? gEmitterMesh.emitCountOverride
+                             : gSettings.emitCount;
+    // 発生の立ち上がり（スポーン率のフェードイン）。1.0 のときは何も変わらない。
+    // グループ設定を書き換えずここで掛けるので、作者が決めた emitCount は無傷のまま
+    uint effectiveEmitCount = (uint) (baseEmitCount * gEmitterMesh.emitRateScale + 0.5f);
     if (DTid.x >= effectiveEmitCount)
         return;
 
@@ -303,7 +304,8 @@ void main(uint3 DTid : SV_DispatchThreadID)
                 randomPoint = lerp(gEdges[edgeIndex].v0, gEdges[edgeIndex].v1, t);
                 randomPoint = mul(rotMatrix, randomPoint * gEmitterMesh.scale);
             }
-            else if (gEmitterMesh.emitFromSurface == 1 && gEmitterMesh.triangleCount > 0)
+            else if ((gEmitterMesh.emitFromSurface == 1 || gEmitterMesh.emitFromSurface == 3) &&
+                     gEmitterMesh.triangleCount > 0)
             {
                 uint triIndex = SampleTriangleByCDF(generator.Generate1d());
                 float3 v0 = gTriangles[triIndex].v0;
@@ -312,6 +314,15 @@ void main(uint3 DTid : SV_DispatchThreadID)
                 float u = generator.Generate1d();
                 float v = generator.Generate1d();
                 randomPoint = RandomPointOnTriangle(v0, v1, v2, u, v);
+                if (gEmitterMesh.emitFromSurface == 3)
+                {
+                    // ---- 内部（形に沿う）----
+                    // 表面の点をモデルの原点へ向けて寄せる。寄せる割合を三乗根にすると
+                    // 球なら体積に一様な分布になる（中心に固まらない）。
+                    // 原点から表面が見通せる形（岩・球・卵など）なら形どおりに中身が埋まる。
+                    // 表面発生と同じく三角形を1つ選ぶだけなので、重さは表面発生と変わらない
+                    randomPoint *= pow(generator.Generate1d(), 1.0f / 3.0f);
+                }
                 randomPoint = mul(rotMatrix, randomPoint * gEmitterMesh.scale);
             }
             else
@@ -376,7 +387,12 @@ void main(uint3 DTid : SV_DispatchThreadID)
     float scaleValue = lerp(gSettings.scaleMin, gSettings.scaleMax, generator.Generate1d());
     float3 scale3 = float3(scaleValue, scaleValue, scaleValue);
     dc.scaleXY = PackScaleXY(scale3);
-    dc.scaleZ = PackScaleZ(scale3);
+    // 発生した瞬間のコマ番号。lifeRatio=0 なので mode=0 なら先頭コマ、
+    // mode=1（fpsループ）なら今の時刻のコマから始まる。randomStart=1 で粒ごとにずらす
+    dc.scaleZ = PackScaleZFrame(
+        scale3, ComputeParticleWord(gSettings.enableFlipbook, gSettings.flipbookCols, gSettings.flipbookRows,
+                                    gSettings.flipbookMode, gSettings.flipbookFps,
+                                    gSettings.flipbookRandomStart, 0.0f, gPerFrame.time, particleIndex));
     sc.initialScaleXY = PackScaleXY(scale3);
     sc.initialScaleZ_isTrail = PackScaleZTrail(scale3, 0u); // 通常パーティクル isTrail=0
     dc.translate = emitPosition;
@@ -425,11 +441,11 @@ void main(uint3 DTid : SV_DispatchThreadID)
     float life = lerp(gSettings.lifeTimeMin, gSettings.lifeTimeMax, generator.Generate1d());
 
     // フィールドにヒットしていれば lifeTime をフィールド値で上書き
-    if (hitFieldIndex >= 0 && gFields[hitFieldIndex].emitSpawnLifeTimeMax > 0.0f)
+    if (hitFieldIndex >= 0 && gFields[hitFieldIndex].emitLifeMax > 0.0f)
     {
         life = lerp(
-            gFields[hitFieldIndex].emitSpawnLifeTimeMin,
-            gFields[hitFieldIndex].emitSpawnLifeTimeMax,
+            gFields[hitFieldIndex].emitLifeMin,
+            gFields[hitFieldIndex].emitLifeMax,
             generator.Generate1d()
         );
     }

@@ -7,16 +7,22 @@
 #include "debug/profiler/CpuProfiler.h"
 #include "debug/profiler/GpuProfiler.h"
 #include "data/DataHandler.h"
+#include "bloom/BloomPass.h"
 #include "deferred/DeferredRenderer.h"
 #include "light/LightGroup.h"
 #include "object/Object3dInstancing.h"
 #include "utility/debug/imgui/ImGuiNotification.h"
 #include "graphics/srv/SrvManager.h"
+#include "SceneViewRenderer.h"
 #include "particle/ParticleEditor.h"
+#include "render/RenderCulling.h"
 #include "particle/gpu/ParticleCSEmitter.h"
 #include "particle/gpu/ParticleCSSpawner.h"
 #include "scene/SceneManager.h"
 #include <shadow/ShadowMap.h>
+#include "render/CameraFade.h"
+#include "raytracing/RtAoPass.h"
+#include "ssao/SsaoRenderer.h"
 #include <algorithm>
 #ifdef USE_IMGUI
 #include "particle/gpu/ParticleCSEditor.h"
@@ -25,6 +31,7 @@
 #include "imgui.h"
 #include "line/LineRenderer.h"
 #include "utility/debug/imgui/DebugUIHelper.h"
+#include <icon/IconsFontAwesome5.h>
 #include <set>
 #include <vector>
 #endif
@@ -116,10 +123,14 @@ void DrawSystem::Draw(const ViewProjection &vp)
 {
     // GPU プロファイラ: フレーム先頭で ring を進め、過去フレームの結果を取り込む
     GpuProfiler::GetInstance()->BeginFrame();
+    GpuProfiler::GetInstance()->BeginPipelineStats(pDxCommon_->GetCommandList().Get());
 
     // オブジェクトのインスタンシング描画: インスタンスバッファの書き込み位置をフレーム先頭で戻す。
     // 影 / G-Buffer / 前方描画で内容が違うので、1フレーム内では領域を使い回さない。
     Object3dInstancing::GetInstance()->BeginFrame();
+
+    // 錐台カリング: このフレームの判定数・省いた数を数え直す
+    RenderCulling::BeginFrame();
 
     // ─── GPU パーティクル Compute フェーズ（全エミッターを一括実行して Direct Queue に Wait 挿入）───
     {
@@ -188,6 +199,16 @@ void DrawSystem::Draw(const ViewProjection &vp)
             shadowMap->EndShadowPass();
         }
     }
+
+#ifdef USE_IMGUI
+    // ─── カメラビュー窓（好きなカメラから見たシーン）───
+    // 影を使うので影の後、線はメインの描画で消えるのでメインの前。
+    // 後に続くステージループが描画先とビューポートを張り直すので、戻す必要は無い
+    {
+        HAGINE_CPU_PROFILE("DS/CameraViews");
+        SceneViewRenderer::GetInstance()->Render();
+    }
+#endif
 
     // 登録済みステージ（kUILayer を除く）を昇順で処理
     std::vector<int> sortedStages;
@@ -275,9 +296,25 @@ void DrawSystem::Draw(const ViewProjection &vp)
             }
             GpuProfiler::GetInstance()->Close(pDxCommon_->GetCommandList().Get(), gpuScene);
 
+            // ソフトパーティクル用に深度を複製しておく（要求があったフレームだけ動く）。
+            // 不透明を描き終えた今が一番正しい深度で、粒子を描く前でないと意味が無い
+            pDxCommon_->CaptureDepthForRead();
+
+            // 「パーティクルだけを光らせる」ために、粒子を描く直前のシーンを控える。
+            // 描画後との差がパーティクルの寄与そのものになる（無効時は何もしない）
+            BloomPass::GetInstance()->CaptureBeforeParticles(pDxCommon_->GetOffScreenResource());
+
             // 実行時にシーンへ置かれた GPU パーティクルを、このステージに属するものだけ描画する。
             // （どのステージかは各エミッターの drawGroup から DrawGroupManager::StageOf で決まる）
             ParticleCSSpawner::GetInstance()->DrawGraphics(vp, stageIdx);
+
+            // ブルーム。デバッグ線やUIより前に掛けるので、線は光らない。
+            // トーンマップはポストエフェクトの最後なので、ここでは HDR のまま足している
+            {
+                int gpuBloom = GpuProfiler::GetInstance()->OpenGraphics(pDxCommon_->GetCommandList().Get(), "Bloom");
+                BloomPass::GetInstance()->Render(pDxCommon_->GetOffScreenResource());
+                GpuProfiler::GetInstance()->Close(pDxCommon_->GetCommandList().Get(), gpuBloom);
+            }
 
             // 注: GPUパーティクルエディタのエミッターは「プレビュー窓のみ」で確認する。
             // 以前はここで DrawAllGraphics(vp) を呼び現在のシーン pOffScreen にも描画していたが、
@@ -303,7 +340,14 @@ void DrawSystem::Draw(const ViewProjection &vp)
             {
                 pDxCommon_->PreDrawForEffects(); // 2回目以降: バックバッファ遷移なし
             }
-            stageOS->SetProjection(vp.matProjection_);
+            // フォグは深度からワールド座標まで戻すので、射影行列だけでなく
+            // ビュー行列・カメラ位置・太陽の向きもまとめて渡す
+            stageOS->SetCamera(vp.matView_, vp.matProjection_, vp.translation_,
+                               lightGroup->GetDirectionalLightDirection());
+            // HDR を画面の範囲へ収めるトーンマップは、最後のステージで一度だけ掛ける。
+            // 中間ステージの結果は次のステージの背景として重ねられるので、
+            // そこで掛けると背景にだけ二重に掛かって暗く沈む
+            stageOS->SetApplyToneMap(si + 1 == sortedStages.size());
             stageOS->DrawWithoutCopy();
             pDxCommon_->TransitionDepthBarrier();
 
@@ -313,6 +357,7 @@ void DrawSystem::Draw(const ViewProjection &vp)
 
     if (!lastOffScreen)
     {
+        GpuProfiler::GetInstance()->EndPipelineStats(pDxCommon_->GetCommandList().Get());
         GpuProfiler::GetInstance()->ResolveGraphics(pDxCommon_->GetCommandList().Get());
         ParticleEditor::GetInstance()->UpdateFrameStats();
         return;
@@ -344,7 +389,8 @@ void DrawSystem::Draw(const ViewProjection &vp)
         lastOffScreen->CopyFinalResultToBackBuffer();
     } // DS/Composite+Copy
 
-    // Graphics スパンを resolve（描画コマンド記録が全て済んだ後・リスト Close 前）
+    // Graphics スパンと描画統計を resolve（描画コマンド記録が全て済んだ後・リスト Close 前）
+    GpuProfiler::GetInstance()->EndPipelineStats(pDxCommon_->GetCommandList().Get());
     GpuProfiler::GetInstance()->ResolveGraphics(pDxCommon_->GetCommandList().Get());
 
     ParticleEditor::GetInstance()->UpdateFrameStats();
@@ -354,16 +400,129 @@ void DrawSystem::Draw(const ViewProjection &vp)
 // ImGui
 // -------------------------------------------------------
 
+#ifdef USE_IMGUI
+namespace {
+/// <summary>よく使う画質の組み合わせ</summary>
+struct QualityPreset
+{
+    const char *label;
+    const char *hint;
+    bool shadow;
+    bool ssao;
+    bool rtAo;
+    bool bloom;
+    bool cameraFade;
+};
+const QualityPreset kQualityPresets[] = {
+    {ICON_FA_GEM " 高画質", "影・レイトレの遮蔽(RT AO)・ブルーム・近接フェード。レイトレが使えない環境では SSAO になる", true, false, true, true, true},
+    {ICON_FA_STAR " 標準", "影・SSAO・ブルーム・近接フェード（ふだん使い）", true, true, false, true, true},
+    {ICON_FA_FEATHER " 軽量", "影と遮蔽を切り、ブルームだけ残す（重いときの確認用）", false, false, false, true, true},
+    {ICON_FA_EYE " 素の見た目", "影・遮蔽・ブルーム・近接フェードをすべて切る（色やモデルそのものを確かめる用）", false, false, false, false, false},
+};
+
+void ApplyQualityPreset(const QualityPreset &preset)
+{
+    const bool rtAo = preset.rtAo && RtAoPass::GetInstance()->IsSupported();
+    ShadowMap::GetInstance()->SetEnabled(preset.shadow);
+    RtAoPass::GetInstance()->SetEnabled(rtAo);
+    // RT AO が使えないときは代わりに SSAO を使う
+    SsaoRenderer::GetInstance()->SetEnabled(preset.ssao || (preset.rtAo && !rtAo));
+    BloomPass::GetInstance()->SetEnabled(preset.bloom);
+    CameraFade::GetSettings().enabled = preset.cameraFade;
+}
+
+/// <summary>今の設定がどのプリセットと同じか（どれでもなければ -1）</summary>
+int CurrentQualityPreset()
+{
+    const bool rtSupported = RtAoPass::GetInstance()->IsSupported();
+    for (int i = 0; i < static_cast<int>(std::size(kQualityPresets)); ++i)
+    {
+        const QualityPreset &p = kQualityPresets[i];
+        const bool rtAo = p.rtAo && rtSupported;
+        const bool ssao = p.ssao || (p.rtAo && !rtSupported);
+        if (ShadowMap::GetInstance()->IsEnabled() == p.shadow && RtAoPass::GetInstance()->IsEnabled() == rtAo &&
+            SsaoRenderer::GetInstance()->IsEnabled() == ssao && BloomPass::GetInstance()->IsEnabled() == p.bloom &&
+            CameraFade::GetSettings().enabled == p.cameraFade)
+        {
+            return i;
+        }
+    }
+    return -1;
+}
+
+/// <summary>画質プリセットの列と、今オンになっている物の一覧</summary>
+void DrawQualityPresets()
+{
+    ImGui::SeparatorText(ICON_FA_SLIDERS_H " 画質のプリセット");
+    const int current = CurrentQualityPreset();
+    const int count = static_cast<int>(std::size(kQualityPresets));
+    const float width = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x * (count - 1)) / static_cast<float>(count);
+    for (int i = 0; i < count; ++i)
+    {
+        if (i > 0)
+            ImGui::SameLine();
+        const bool selected = current == i;
+        if (selected ? PrimaryButton(kQualityPresets[i].label, ImVec2(width, 0.0f)) : NeutralButton(kQualityPresets[i].label, ImVec2(width, 0.0f)))
+            ApplyQualityPreset(kQualityPresets[i]);
+        ImGui::SetItemTooltip("%s", kQualityPresets[i].hint);
+    }
+    auto flag = [](const char *label, bool on) {
+        ImGui::TextColored(on ? DebugTheme::kAccentGreen : DebugTheme::kTextDim, "%s %s", on ? ICON_FA_CHECK : "-", label);
+        ImGui::SameLine();
+    };
+    flag("影", ShadowMap::GetInstance()->IsEnabled());
+    flag("SSAO", SsaoRenderer::GetInstance()->IsEnabled());
+    flag("RT AO", RtAoPass::GetInstance()->IsEnabled());
+    flag("ブルーム", BloomPass::GetInstance()->IsEnabled());
+    flag("近接フェード", CameraFade::GetSettings().enabled);
+    ImGui::NewLine();
+    DimText("細かい値は下のタブと「シャドウマップ」「ポストエフェクト」の窓で。プリセットは入切だけを切り替えます");
+}
+} // namespace
+#endif // USE_IMGUI
+
 void DrawSystem::UpdateImGui(bool *open)
 {
 #ifdef USE_IMGUI
     // 表示名は日本語、ウィンドウIDは "DrawSystem" のまま（保存済みレイアウトとの互換維持）
     if (ImGui::Begin("描画システム###DrawSystem", open, ImGuiWindowFlags_NoFocusOnAppearing))
     {
-        SectionHeader("[ ディファードレンダリング ]", DebugTheme::kAccentBlue);
-        DeferredRenderer::GetInstance()->DrawImGui();
+        DrawQualityPresets();
         ImGui::Spacing();
 
+        if (ImGui::BeginTabBar("##drawSystemTabs"))
+        {
+        // 影とライト（ディファードの光・遮蔽）を先に、次に画面全体の効果、最後に描画の順番
+        if (ImGui::BeginTabItem(ICON_FA_LIGHTBULB " 影・ライト"))
+        {
+            SectionHeader("[ 影 ]", DebugTheme::kAccentYellow);
+            bool shadow = ShadowMap::GetInstance()->IsEnabled();
+            if (ToggleRow("影を描く", "##shadowEnabled", &shadow, DebugTheme::kAccentYellow))
+                ShadowMap::GetInstance()->SetEnabled(shadow);
+            DimText("影のやわらかさ・範囲などは「シャドウマップ」窓で調整します");
+            ImGui::Spacing();
+            SectionHeader("[ ライト・遮蔽（ディファード） ]", DebugTheme::kAccentBlue);
+            DimText("たくさんの光を安く当てる描き方。SSAO と RT AO（レイトレの遮蔽）もここ");
+            DeferredRenderer::GetInstance()->DrawImGui();
+            ImGui::EndTabItem();
+        }
+        if (ImGui::BeginTabItem(ICON_FA_MAGIC " ポストエフェクト"))
+        {
+            SectionHeader("[ ブルーム ]", DebugTheme::kAccentOrange);
+            DimText("明るい所をにじませて光らせる。粒子の発光もここで効く");
+            BloomPass::GetInstance()->DrawImGui();
+            ImGui::Spacing();
+            DimText("色味・ぼかし・白黒などは「ポストエフェクト」窓で調整します");
+            ImGui::EndTabItem();
+        }
+        if (ImGui::BeginTabItem(ICON_FA_EYE_SLASH " 近接フェード"))
+        {
+            DimText("カメラの近くに来た物を透かして、キャラが隠れないようにする");
+            CameraFade::DrawImGui();
+            ImGui::EndTabItem();
+        }
+        if (ImGui::BeginTabItem(ICON_FA_LIST_OL " 描画の順番"))
+        {
         SectionHeader("[ 描画エントリ ]", DebugTheme::kAccentBlue);
         ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kTextDim);
         ImGui::Text("登録: %zu 件", entries_.size());
@@ -660,21 +819,19 @@ void DrawSystem::UpdateImGui(bool *open)
         ImGui::Spacing();
         SectionHeader("[ セーブ / ロード ]", DebugTheme::kAccentPurple);
         float bw = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
-        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.20f, 0.42f, 0.58f, 0.85f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.26f, 0.52f, 0.70f, 0.95f));
-        if (ImGui::Button("保存", ImVec2(bw, 0)))
+        if (PrimaryButton("保存", ImVec2(bw, 0)))
         {
             SaveConfig();
         }
-        ImGui::PopStyleColor(2);
         ImGui::SameLine();
-        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.20f, 0.48f, 0.40f, 0.85f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.26f, 0.60f, 0.50f, 0.95f));
-        if (ImGui::Button("読み込み", ImVec2(bw, 0)))
+        if (ConfirmButton("読み込み", ImVec2(bw, 0)))
         {
             LoadConfig();
         }
-        ImGui::PopStyleColor(2);
+        ImGui::EndTabItem();
+        } // 描画の順番
+        ImGui::EndTabBar();
+        }
     }
     ImGui::End();
 #endif

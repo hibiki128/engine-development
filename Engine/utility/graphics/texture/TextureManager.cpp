@@ -406,6 +406,17 @@ const DirectX::TexMetadata &TextureManager::GetMetaData(const std::string &fileP
     return textureData.metadata;
 }
 
+ID3D12Resource *TextureManager::GetTextureResource(const std::string &filePath)
+{
+    const std::string fullPath = AssetPath::Image(filePath);
+    auto it = textureDatas_.find(fullPath);
+    if (it == textureDatas_.end())
+    {
+        return nullptr;
+    }
+    return it->second.resource.Get();
+}
+
 const TextureManager::FontData *TextureManager::GetFontData(const std::string &fontKey) const
 {
     auto it = fontDatas_.find(fontKey);

@@ -4,6 +4,7 @@
 #include "string"
 #include <graphics/srv/SrvManager.h>
 #include <model/Model.h>
+#include <vector>
 
 namespace Hagine {
 class ModelManager
@@ -38,17 +39,30 @@ class ModelManager
     }
 
     /// <summary>
-    /// モデルの検索
+    /// キーでモデルを引く（完全一致）。
+    ///
+    /// キーは LoadModel / CreatePrimitiveModel / CreateDynamicModel /
+    /// CreateGpuWritableModel の戻り値。**ファイルパスで引いてはいけない。**
+    /// gltf は同じパスから複数の実体ができるので、パスからでは
+    /// 「どの実体か」を決められない（下の LoadModel の説明を参照）
     /// </summary>
-    /// <param name="filePath"></param>
-    /// <returns></returns>
-    Model *FindModel(const std::string &filePath);
+    /// <param name="key">モデルのキー</param>
+    /// <returns>Model*: 見つからなければ nullptr</returns>
+    Model *FindModelByKey(const std::string &key) const;
 
     /// <summary>
-    /// モデルファイルの読み込み
+    /// モデルファイルを読み込み、以降そのモデルを引くためのキーを返す。
+    ///
+    /// **gltf は呼ぶたびに別の実体を作る。** スキンの出力頂点バッファとパレットSRVを
+    /// Model が持っており、描画時に `pSkin_` から引いているため、同じファイルでも
+    /// 体ごとに分けないと全員が最後にバインドされた1体と同じポーズになるため。
+    ///
+    /// したがって**戻り値のキーを必ず保持し、FindModelByKey で引くこと。**
+    /// パスで引き直すと、同じパスの別の実体が返ってきて他のキャラと共有してしまう。
     /// </summary>
-    /// <param name="filePath"></param>
-    void LoadModel(const std::string &filePath);
+    /// <param name="filePath">モデルファイルのパス</param>
+    /// <returns>std::string: FindModelByKey に渡すキー</returns>
+    std::string LoadModel(const std::string &filePath);
 
     /// <summary>
     /// プリミティブモデルの作成
@@ -77,9 +91,22 @@ class ModelManager
     std::string CreateGpuWritableModel(uint32_t maxVertexCount);
 
     /// <summary>
-    /// モデルを破棄する（動的モデルは使い捨てなので、オブジェクト破棄時に呼ぶ）
+    /// モデルを破棄する（オブジェクト専用に作られたモデルを、そのオブジェクトの破棄時に返す）。
+    ///
+    /// 一覧からは即座に外すが、**実体を捨てるのは数フレーム後**。
+    /// GPU はまだ前のフレームのコマンドを実行している最中で、そこで使われている
+    /// 頂点バッファをその場で解放すると、デバッグレイヤーが
+    /// 「使用中リソースの解放」を ERROR で止める。
+    /// 実際に捨てるのは Update() の仕事
     /// </summary>
+    /// <param name="key">破棄するモデルのキー</param>
     void RemoveModel(const std::string &key);
+
+    /// <summary>
+    /// 破棄を待っているモデルのうち、GPU が触り終わったものを実際に捨てる。
+    /// フレームの先頭で1回だけ呼ぶこと
+    /// </summary>
+    void Update();
 
     /// <summary>
     /// プリミティブモデルの共有キー（同じ形なら同じキー＝同じ実体になる）
@@ -100,6 +127,21 @@ class ModelManager
     std::unordered_map<std::string, std::unique_ptr<Model>> models_;
 
   private:
+    /// <summary>
+    /// 破棄待ちのモデル。GPU が触り終わるまで持っておくための待避所
+    /// </summary>
+    struct PendingRelease
+    {
+        std::unique_ptr<Model> model; //!< 捨てる実体
+        int framesLeft = 0;           //!< あと何フレーム持っておくか
+    };
+
+    // バックバッファは2枚で、PostDraw は「2フレーム前の完了」までしか保証しない。
+    // それより1フレーム多く待ってから捨てる
+    static constexpr int kReleaseDelayFrames = 3;
+
+    std::vector<PendingRelease> pendingRelease_;
+
     ModelCommon *pModelCommon_ = nullptr;
     SrvManager *pSrvManager_ = nullptr;
 };

@@ -650,6 +650,27 @@ void MeshCollider::LoadShapeFromJson(DataHandler &json)
     isWireframeVisible_ = json.Load<bool>("wireframeVisible", isWireframeVisible_);
 }
 
+#ifdef USE_IMGUI
+void MeshCollider::CaptureShape(nlohmann::json &shape) const
+{
+    // 三角形とBVHはモデルから組み直せるので積まない（毎フレーム比較する状態なので軽さを優先）
+    shape["sourceModelPath"] = sourceModelPath_;
+    shape["wireframeVisible"] = isWireframeVisible_;
+}
+
+void MeshCollider::ApplyShape(const nlohmann::json &shape)
+{
+    if (shape.contains("sourceModelPath"))
+    {
+        sourceModelPath_ = shape["sourceModelPath"].get<std::string>();
+    }
+    if (shape.contains("wireframeVisible"))
+    {
+        isWireframeVisible_ = shape["wireframeVisible"].get<bool>();
+    }
+}
+#endif // USE_IMGUI
+
 bool MeshCollider::Intersect(const Sphere &sphere) const
 {
     if (triangles_.empty())

@@ -15,6 +15,7 @@ void PrimitiveModel::Initialize()
     CreateCone();
     CreatePyramid();
     CreateClosedCylinder();
+    CreateRock();
 }
 
 void PrimitiveModel::Finalize()
@@ -27,8 +28,85 @@ bool IsParametricPrimitive(PrimitiveType type)
     return type == PrimitiveType::Ring ||
            type == PrimitiveType::Sphere ||
            type == PrimitiveType::Cylinder ||
-           type == PrimitiveType::Cone;
+           type == PrimitiveType::Cone ||
+           type == PrimitiveType::Rock;
 }
+
+namespace {
+/// <summary>
+/// 格子点の擬似乱数値を返す（0〜1）。同じ座標とシードなら必ず同じ値になる
+/// </summary>
+float RockHash(int32_t x, int32_t y, int32_t z, uint32_t seed)
+{
+    uint32_t h = seed * 0x9e3779b9u;
+    h ^= static_cast<uint32_t>(x) * 0x8da6b343u;
+    h ^= static_cast<uint32_t>(y) * 0xd8163841u;
+    h ^= static_cast<uint32_t>(z) * 0xcb1ab31fu;
+    h ^= h >> 15;
+    h *= 0x2c1b3c6du;
+    h ^= h >> 12;
+    h *= 0x297a2d39u;
+    h ^= h >> 15;
+    return static_cast<float>(h & 0x00ffffffu) / static_cast<float>(0x00ffffffu);
+}
+
+/// <summary>
+/// 3次元バリューノイズ（格子点の乱数を滑らかに補間したもの）
+/// </summary>
+float RockValueNoise(float x, float y, float z, uint32_t seed)
+{
+    const float fx = std::floorf(x);
+    const float fy = std::floorf(y);
+    const float fz = std::floorf(z);
+    const int32_t ix = static_cast<int32_t>(fx);
+    const int32_t iy = static_cast<int32_t>(fy);
+    const int32_t iz = static_cast<int32_t>(fz);
+
+    // 補間は smoothstep で角を丸める（線形のままだと格子が目に見える）
+    auto fade = [](float t) { return t * t * (3.0f - 2.0f * t); };
+    const float tx = fade(x - fx);
+    const float ty = fade(y - fy);
+    const float tz = fade(z - fz);
+
+    auto lerp = [](float a, float b, float t) { return a + (b - a) * t; };
+
+    const float c000 = RockHash(ix, iy, iz, seed);
+    const float c100 = RockHash(ix + 1, iy, iz, seed);
+    const float c010 = RockHash(ix, iy + 1, iz, seed);
+    const float c110 = RockHash(ix + 1, iy + 1, iz, seed);
+    const float c001 = RockHash(ix, iy, iz + 1, seed);
+    const float c101 = RockHash(ix + 1, iy, iz + 1, seed);
+    const float c011 = RockHash(ix, iy + 1, iz + 1, seed);
+    const float c111 = RockHash(ix + 1, iy + 1, iz + 1, seed);
+
+    const float x00 = lerp(c000, c100, tx);
+    const float x10 = lerp(c010, c110, tx);
+    const float x01 = lerp(c001, c101, tx);
+    const float x11 = lerp(c011, c111, tx);
+    return lerp(lerp(x00, x10, ty), lerp(x01, x11, ty), tz);
+}
+
+/// <summary>
+/// バリューノイズを周波数を上げながら重ねたもの（大きなうねり＋細かい凹凸）
+/// </summary>
+float RockFbm(float x, float y, float z, uint32_t seed, uint32_t octaves)
+{
+    float sum = 0.0f;
+    float amplitude = 1.0f;
+    float normalize = 0.0f;
+    for (uint32_t i = 0; i < octaves; ++i)
+    {
+        sum += RockValueNoise(x, y, z, seed + i * 131u) * amplitude;
+        normalize += amplitude;
+        // 2倍ぴったりだと格子が揃って模様が出るので、少しずらして重ねる
+        x *= 2.03f;
+        y *= 2.03f;
+        z *= 2.03f;
+        amplitude *= 0.5f;
+    }
+    return (normalize > 0.0f) ? (sum / normalize) : 0.0f;
+}
+} // namespace
 
 PrimitiveModel::PrimitiveData PrimitiveModel::BuildParametricData(const PrimitiveType &type, const PrimitiveParams &params)
 {
@@ -38,6 +116,8 @@ PrimitiveModel::PrimitiveData PrimitiveModel::BuildParametricData(const Primitiv
     {
     case PrimitiveType::Sphere:
         return BuildSphere(divide);
+    case PrimitiveType::Rock:
+        return BuildRock(divide, params);
     case PrimitiveType::Cylinder:
         return BuildCylinder(divide, params.heightDivide);
     case PrimitiveType::Cone:
@@ -108,6 +188,136 @@ PrimitiveModel::PrimitiveData PrimitiveModel::BuildSphere(uint32_t divide)
             primitiveData.indices.push_back(second);
             primitiveData.indices.push_back(second + 1);
             primitiveData.indices.push_back(first + 1);
+        }
+    }
+
+    primitiveData.color = {1.0f, 1.0f, 1.0f, 1.0f};
+    primitiveData.uvMatrix = MakeIdentity4x4();
+
+    return primitiveData;
+}
+
+void PrimitiveModel::CreateRock()
+{
+    primitiveDataMap_.insert(std::make_pair(PrimitiveType::Rock, BuildRock(32, PrimitiveParams{})));
+}
+
+PrimitiveModel::PrimitiveData PrimitiveModel::BuildRock(uint32_t divide, const PrimitiveParams &params)
+{
+    // 球を作ってから、中心からの距離をノイズで伸び縮みさせて岩にする。
+    // ノイズは「中心から見た方向」だけで決まるので、経度の継ぎ目や極でも値が食い違わず形が割れない。
+    PrimitiveData primitiveData{};
+
+    const uint32_t kSubdivision = divide;
+    const float kLonEvery = std::numbers::pi_v<float> * 2.0f / static_cast<float>(kSubdivision);
+    const float kLatEvery = std::numbers::pi_v<float> / static_cast<float>(kSubdivision);
+    const uint32_t octaves = (params.rockOctaves < 1u) ? 1u : params.rockOctaves;
+
+    for (uint32_t latIndex = 0; latIndex <= kSubdivision; ++latIndex)
+    {
+        const float lat = -std::numbers::pi_v<float> / 2.0f + kLatEvery * latIndex;
+        const float sinLat = std::sinf(lat);
+        const float cosLat = std::cosf(lat);
+
+        for (uint32_t lonIndex = 0; lonIndex <= kSubdivision; ++lonIndex)
+        {
+            // 一周した先の頂点は 0 番と完全に同じ方向にする（継ぎ目でノイズ値がずれないように）
+            const uint32_t lonWrapped = (lonIndex == kSubdivision) ? 0u : lonIndex;
+            const float lon = kLonEvery * lonWrapped;
+            const float sinLon = std::sinf(lon);
+            const float cosLon = std::cosf(lon);
+
+            const float dirX = cosLat * cosLon;
+            const float dirY = sinLat;
+            const float dirZ = cosLat * sinLon;
+
+            // ノイズを -1〜1 にして半径へ乗せる
+            const float noise = RockFbm(dirX * params.rockNoiseScale,
+                                        dirY * params.rockNoiseScale,
+                                        dirZ * params.rockNoiseScale,
+                                        params.rockSeed, octaves) *
+                                    2.0f -
+                                1.0f;
+            const float radius = 1.0f + noise * params.rockNoiseAmount;
+
+            VertexData vertex{};
+            vertex.position = {dirX * radius, dirY * radius * params.rockFlattenY, dirZ * radius, 1.0f};
+            // 法線はあとで面から作り直すので、ここでは仮に球の法線を入れておく
+            vertex.normal = {dirX, dirY, dirZ};
+            vertex.texcoord = {static_cast<float>(lonIndex) / static_cast<float>(kSubdivision),
+                               1.0f - static_cast<float>(latIndex) / static_cast<float>(kSubdivision)};
+            primitiveData.vertices.push_back(vertex);
+        }
+    }
+
+    for (uint32_t latIndex = 0; latIndex < kSubdivision; ++latIndex)
+    {
+        for (uint32_t lonIndex = 0; lonIndex < kSubdivision; ++lonIndex)
+        {
+            const uint32_t first = latIndex * (kSubdivision + 1) + lonIndex;
+            const uint32_t second = first + kSubdivision + 1;
+
+            primitiveData.indices.push_back(first);
+            primitiveData.indices.push_back(second);
+            primitiveData.indices.push_back(first + 1);
+
+            primitiveData.indices.push_back(second);
+            primitiveData.indices.push_back(second + 1);
+            primitiveData.indices.push_back(first + 1);
+        }
+    }
+
+    // でこぼこにしたぶん法線が合わなくなるので、面の向きから作り直す。
+    // 継ぎ目と極は同じ位置に複数の頂点がいるので、代表の1つへ足し込んでから配り直す
+    // （そうしないと継ぎ目にだけ陰影の線が出る）
+    auto canonicalIndex = [&](uint32_t vertexIndex) {
+        const uint32_t latIndex = vertexIndex / (kSubdivision + 1);
+        uint32_t lonIndex = vertexIndex % (kSubdivision + 1);
+        if (lonIndex == kSubdivision)
+        {
+            lonIndex = 0; // 経度の継ぎ目
+        }
+        if (latIndex == 0 || latIndex == kSubdivision)
+        {
+            lonIndex = 0; // 極は1点に集約
+        }
+        return latIndex * (kSubdivision + 1) + lonIndex;
+    };
+
+    std::vector<Vector3> accumulated(primitiveData.vertices.size(), Vector3{0.0f, 0.0f, 0.0f});
+    for (size_t i = 0; i + 2 < primitiveData.indices.size(); i += 3)
+    {
+        const uint32_t i0 = primitiveData.indices[i];
+        const uint32_t i1 = primitiveData.indices[i + 1];
+        const uint32_t i2 = primitiveData.indices[i + 2];
+
+        const Vector4 &p0 = primitiveData.vertices[i0].position;
+        const Vector4 &p1 = primitiveData.vertices[i1].position;
+        const Vector4 &p2 = primitiveData.vertices[i2].position;
+
+        const Vector3 edge1 = {p1.x - p0.x, p1.y - p0.y, p1.z - p0.z};
+        const Vector3 edge2 = {p2.x - p0.x, p2.y - p0.y, p2.z - p0.z};
+        // 外積（面積ぶんの重みが乗るので、大きい面ほど強く効く）
+        const Vector3 faceNormal = {edge1.y * edge2.z - edge1.z * edge2.y,
+                                    edge1.z * edge2.x - edge1.x * edge2.z,
+                                    edge1.x * edge2.y - edge1.y * edge2.x};
+
+        for (uint32_t index : {i0, i1, i2})
+        {
+            Vector3 &target = accumulated[canonicalIndex(index)];
+            target.x += faceNormal.x;
+            target.y += faceNormal.y;
+            target.z += faceNormal.z;
+        }
+    }
+
+    for (size_t i = 0; i < primitiveData.vertices.size(); ++i)
+    {
+        const Vector3 &sum = accumulated[canonicalIndex(static_cast<uint32_t>(i))];
+        const float length = std::sqrtf(sum.x * sum.x + sum.y * sum.y + sum.z * sum.z);
+        if (length > 1e-6f)
+        {
+            primitiveData.vertices[i].normal = {sum.x / length, sum.y / length, sum.z / length};
         }
     }
 

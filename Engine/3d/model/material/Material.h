@@ -52,6 +52,27 @@ class Material {
     /// </summary>
     void SetTexture(const std::string &texturePath);
     void SetEnvironmentCoefficients(float environmentCoefficients);
+
+    /// <summary>
+    /// 自己発光の強さを設定する
+    /// ライトに当たっていなくても光る分で、発光色はアルベド（色×テクスチャ）を流用する。
+    /// 1を超えるとブルームが拾って滲むので、溜め・被弾の点滅などに使える
+    /// </summary>
+    /// <param name="strength">発光の強さ（0で発光なし。ディファード時の上限は8）</param>
+    void SetEmissiveStrength(float strength);
+
+    /// <summary>
+    /// カメラに近いときの見え具合（1=普通 / 0=完全に消える）。網目状に抜いて透けさせる。
+    /// インスタンシングでまとめて描く場合もあるので、定数バッファへもすぐ書く
+    /// </summary>
+    void SetCameraFade(float fade)
+    {
+        cameraFade_ = fade;
+        if (pMaterialDataGPU_)
+        {
+            pMaterialDataGPU_->cameraFade = fade;
+        }
+    }
     void SetUVPosition(const Vector2 &pos) { materialData_.uvPosition = pos; }
     void SetUVSize(const Vector2 &size) { materialData_.uvSize = size; }
     void SetUVRotate(const float &rotate) { materialData_.uvRotate = rotate; }
@@ -150,5 +171,6 @@ class Material {
     MaterialData materialData_;                               // CPU側マテリアルデータ
     Microsoft::WRL::ComPtr<ID3D12Resource> materialResource_; // GPUバッファリソース
     MaterialDataGPU *pMaterialDataGPU_ = nullptr;             // GPUバッファデータポインタ
+    float cameraFade_ = 1.0f;                                  // カメラに近いときの見え具合
 };
 } // namespace Hagine

@@ -1,5 +1,7 @@
 #include "ColliderBase.h"
 #include "collider/CollisionManager.h"
+#include <algorithm>
+#include <vector>
 #ifdef USE_IMGUI
 #include "utility/debug/imgui/DebugUIHelper.h"
 #endif // USE_IMGUI
@@ -104,6 +106,54 @@ void ColliderBase::LoadFromJson()
 }
 
 #ifdef USE_IMGUI
+nlohmann::json ColliderBase::CaptureState() const
+{
+    nlohmann::json state = nlohmann::json::object();
+    state["type"] = static_cast<int>(GetType());
+    state["tag"] = tag_;
+    state["isEnabled"] = isEnabled_;
+    state["isVisible"] = isVisible_;
+    state["collideWithAll"] = collideWithAll_;
+
+    // collisionMask_ は unordered_set なので並びが実行ごとに変わる。
+    // Undo トラッカーは毎フレーム JSON 同士を比べているので、
+    // 並べてから積まないと「何も変えていないのに差分あり」になってしまう
+    std::vector<std::string> maskList(collisionMask_.begin(), collisionMask_.end());
+    std::sort(maskList.begin(), maskList.end());
+    state["collisionMask"] = maskList;
+
+    CaptureShape(state);
+    return state;
+}
+
+void ColliderBase::RestoreState(const nlohmann::json &state)
+{
+    if (!state.is_object())
+    {
+        return;
+    }
+
+    // SetTag と違い未登録のタグでも捨てない（タグ登録より先に戻される場合があるため）
+    ApplyLoadedTag(state.value("tag", tag_));
+    isEnabled_ = state.value("isEnabled", isEnabled_);
+    isVisible_ = state.value("isVisible", isVisible_);
+    collideWithAll_ = state.value("collideWithAll", collideWithAll_);
+
+    if (state.contains("collisionMask") && state["collisionMask"].is_array())
+    {
+        collisionMask_.clear();
+        for (const nlohmann::json &mask : state["collisionMask"])
+        {
+            if (mask.is_string())
+            {
+                AddCollisionMask(mask.get<std::string>());
+            }
+        }
+    }
+
+    ApplyShape(state);
+}
+
 void ColliderBase::ImGuiTagSettings()
 {
     // タグ・マスクを無視して全コライダーと判定する（押し戻し検証用）

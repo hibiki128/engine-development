@@ -11,6 +11,7 @@ std::chrono::high_resolution_clock::time_point Frame::fpsCalcTime_ = std::chrono
 std::chrono::high_resolution_clock::time_point Frame::startTime_ = std::chrono::high_resolution_clock::now();
 float Frame::deltaTime_ = 0.0f;
 float Frame::fps_ = 0.0f;
+float Frame::timeScale_ = 1.0f;
 int Frame::frameCount_ = 0;
 
 /// <summary>
@@ -63,7 +64,17 @@ void Frame::Update()
 /// <returns>前回の更新からの経過時間</returns>
 float Frame::DeltaTime()
 {
+    return deltaTime_ * timeScale_;
+}
+
+float Frame::UnscaledDeltaTime()
+{
     return deltaTime_;
+}
+
+void Frame::SetTimeScale(float scale)
+{
+    timeScale_ = (scale > 0.0f) ? scale : 0.0f;
 }
 
 /// <summary>

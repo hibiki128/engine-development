@@ -47,11 +47,20 @@ class DXCommandList
     ID3D12GraphicsCommandList *Get() const { return commandList_.Get(); }
     Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> GetComPtr() const { return commandList_; }
 
+    /// <summary>
+    /// レイトレーシング用のコマンドリストインターフェースを取得する。
+    /// 加速構造の構築（BuildRaytracingAccelerationStructure）にはこちらが要る
+    /// </summary>
+    /// <returns>ID3D12GraphicsCommandList4*: 非対応環境では nullptr</returns>
+    ID3D12GraphicsCommandList4 *Get4() const { return commandList4_.Get(); }
+
   private:
     // フレームごとのコマンドアロケータ
     Microsoft::WRL::ComPtr<ID3D12CommandAllocator> commandAllocators_[kFrameCount];
     // コマンドリスト
     Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> commandList_;
+    // 同じリストのレイトレーシング用インターフェース（非対応環境では null のまま）
+    Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList4> commandList4_;
     // 記録中かどうか
     bool isOpen_ = false;
 };

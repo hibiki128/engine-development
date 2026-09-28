@@ -226,6 +226,8 @@ class ParticleCSGroupManager
     {
         // メタデータ登録簿からも削除（以降の遅延生成・一覧表示から除外する）
         groupDescs_.erase(groupName);
+        // 再利用プールに残っている同じ名前の分も手放す
+        groupPool_.erase(groupName);
         // particleGroups_ から削除
         particleGroups_.erase(
             std::remove_if(particleGroups_.begin(), particleGroups_.end(),
@@ -241,6 +243,31 @@ class ParticleCSGroupManager
                            }),
             independentGroups_.end());
     }
+
+    /// <summary>
+    /// 再利用プールに貯まっているグループの数と、その粒の最大数の合計（VRAM の目安）
+    /// </summary>
+    void GetPoolUsage(size_t &outGroups, size_t &outParticles) const
+    {
+        outGroups = 0;
+        outParticles = 0;
+        for (const auto &[name, pool] : groupPool_)
+        {
+            for (const auto &group : pool)
+            {
+                if (!group)
+                    continue;
+                ++outGroups;
+                outParticles += group->GetMaxParticleCount();
+            }
+        }
+    }
+
+    /// <summary>
+    /// 再利用プールを空にして GPU バッファを返す（使っていない分だけ。使用中の独立グループは残す）。
+    /// 直前のフレームで使っていたかもしれないので、呼ぶ前に GPU の完了を待つこと
+    /// </summary>
+    void ClearPool() { groupPool_.clear(); }
 
     void RemoveUnusedIndependentGroups(const std::unordered_set<std::string> &usedGroupNames)
     {

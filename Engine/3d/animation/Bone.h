@@ -6,6 +6,8 @@
 /// スケルトン構造の構築、アニメーション適用、ジョイント情報の取得を行う
 /// </summary>
 namespace Hagine {
+struct BlendSpacePose;
+
 class Bone
 {
   public:
@@ -24,7 +26,8 @@ class Bone
     /// </summary>
     /// <param name="animation">アニメーションデータ</param>
     /// <param name="animationTime">アニメーション時間</param>
-    void Update(const Animation &animation, float animationTime);
+    /// <param name="blendSpace">重ねるブレンドスペース（無ければ nullptr）</param>
+    void Update(const Animation &animation, float animationTime, const BlendSpacePose *blendSpace = nullptr);
 
     /// <summary>
     /// レイヤー合成付きの更新処理
@@ -37,9 +40,11 @@ class Bone
     /// <param name="layerTime">レイヤーアニメーションの再生時間</param>
     /// <param name="mask">ジョイントインデックスごとの適用フラグ（1で上書き対象）</param>
     /// <param name="weight">上書きの強さ（0で基準のみ・1で完全にレイヤー）</param>
+    /// <param name="blendSpace">基準の上に重ねるブレンドスペース（無ければ nullptr）</param>
     void UpdateLayered(const Animation &baseAnimation, float baseTime,
                        const Animation &layerAnimation, float layerTime,
-                       const std::vector<uint8_t> &mask, float weight);
+                       const std::vector<uint8_t> &mask, float weight,
+                       const BlendSpacePose *blendSpace = nullptr);
 
     /// <summary>
     /// 指定ジョイントとその子孫だけを立てたマスクを生成する
@@ -75,6 +80,15 @@ class Bone
     /// Getter
     /// </summary>
     Skeleton GetSkeleton() { return skeleton_; }
+
+    /// <summary>
+    /// スケルトンの実体を参照で取得する。
+    /// アニメーション適用後のポーズを書き換える処理（足IK など）で使う。
+    /// コピーを返す GetSkeleton() では書き換えても反映されない
+    /// </summary>
+    /// <returns>Skeleton&amp;: スケルトンの実体</returns>
+    Skeleton &GetSkeletonRef() { return skeleton_; }
+    const Skeleton &GetSkeletonRef() const { return skeleton_; }
 
     /// <summary>
     /// Setter
@@ -118,6 +132,12 @@ class Bone
     /// <param name="weight">上書きの強さ（0〜1）</param>
     void ApplyLayer(const Animation &animation, float animationTime,
                     const std::vector<uint8_t> &mask, float weight);
+
+    /// <summary>
+    /// ブレンドスペースの各クリップを重みで混ぜた姿勢を、全身へ重ねる
+    /// </summary>
+    /// <param name="pose">ブレンドスペースと全体の効き</param>
+    void ApplyBlendSpace(const BlendSpacePose &pose);
 
     /// <summary>
     /// 現在のジョイントのSRTから階層行列を計算する

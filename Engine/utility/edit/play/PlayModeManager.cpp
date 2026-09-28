@@ -1,7 +1,9 @@
 #include "PlayModeManager.h"
 #ifdef USE_IMGUI
 #include "SpriteManager.h"
+#include <format>
 #include <imgui.h>
+#include <light/LightGroup.h>
 #include <object/base/BaseObjectManager.h>
 #include <scene/SceneManager.h>
 #include <utility/debug/imgui/ImGuiExtras.h> // 再生中インジケータ (imspinner)
@@ -44,6 +46,7 @@ void PlayModeManager::CaptureBaseline()
 {
     objectBaseline_ = BaseObjectManager::GetInstance()->CaptureUndoState();
     spriteBaseline_ = SpriteManager::GetInstance()->CaptureUndoState();
+    lightBaseline_ = LightGroup::GetInstance()->CaptureUndoState();
     hasBaseline_ = true;
 }
 
@@ -53,6 +56,7 @@ void PlayModeManager::OnSceneChanged()
     // 持ち越すと、停止したときに前シーンのオブジェクトが今のシーンに生成されてしまう。
     objectBaseline_ = nlohmann::json::object();
     spriteBaseline_ = nlohmann::json::object();
+    lightBaseline_ = nlohmann::json::object();
     hasBaseline_ = false;
 
     // シーンが変わったら再生中に戻す（切り替えた先が止まったままだと動かせないため）
@@ -68,10 +72,14 @@ void PlayModeManager::RestoreBaseline()
     }
     BaseObjectManager *objectManager = BaseObjectManager::GetInstance();
     SpriteManager *spriteManager = SpriteManager::GetInstance();
+    LightGroup *lightGroup = LightGroup::GetInstance();
 
     // 今ある物とスナップショットを突き合わせ、余分な物には削除指示を付けてから適用する
     objectManager->RestoreUndoState(MergeRemovals(objectBaseline_, objectManager->CaptureUndoState()));
     spriteManager->RestoreUndoState(MergeRemovals(spriteBaseline_, spriteManager->CaptureUndoState()));
+    // 光源はシーンの作り直しでは戻らない（LightGroup はシングルトンで、
+    // シーンの生死と無関係に値を持ち続けるため）。ここで明示的に戻す
+    lightGroup->RestoreUndoState(MergeRemovals(lightBaseline_, lightGroup->CaptureUndoState()));
 }
 
 void PlayModeManager::Play()
@@ -186,6 +194,20 @@ void PlayModeManager::DrawToolbar()
     ImGui::EndDisabled();
     ImGui::SetItemTooltip("更新を止め、再生を押した時点へ戻します\n"
                           "（シーンを作り直したうえで、保存していない配置の編集も戻します）");
+
+    // 停止のたびにシーンを丸ごと作り直しているので、その所要時間を出しておく。
+    // 「停止した瞬間に一拍ある」の原因がここなのかを、感覚ではなく数字で切り分けられる
+    SceneManager *sceneManager = SceneManager::GetInstance();
+    if (sceneManager->HasRebuildMeasurement())
+    {
+        const float milliseconds = sceneManager->GetLastRebuildMilliseconds();
+        ImGui::SameLine();
+        ImGui::PushStyleColor(ImGuiCol_Text, milliseconds > 100.0f ? DebugTheme::kAccentOrange : DebugTheme::kTextDim);
+        ImGui::TextUnformatted(std::format("作り直し {:.1f} ms", milliseconds).c_str());
+        ImGui::PopStyleColor();
+        ImGui::SetItemTooltip("直近の停止で「シーンの破棄 → 生成 → Initialize → 未保存編集の復元」に\n"
+                              "かかった時間です。100ms を超えると色が変わります");
+    }
 
     ImGui::SameLine();
     const char *label = isPlaying ? "再生中" : (state_ == State::Paused ? "一時停止" : "停止中");

@@ -65,6 +65,67 @@ void ImGuizmoManager::DrawSelectionMarker(const Vector3 &worldPosition)
     pLine->AddLine(topFront, topLeft, markerColor);
 }
 
+// ---- DrawSnapGrid -----------------------------------------------------
+
+// 移動スナップ中に、選択物の足元へ刻み幅のマス目を描く。
+// 「どこに吸い付くのか」が見えないと刻み幅の設定を間違えていても気付けないので、
+// 掴んでいる間だけ、対象の高さの水平面へ描く。中心から離れるほど薄くする。
+void ImGuizmoManager::DrawSnapGrid()
+{
+    if (!showSnapGrid_ || !ImGuizmo::IsUsing() || currentOperation_ != ImGuizmo::TRANSLATE)
+    {
+        return;
+    }
+    const bool snapActive = (useSnap_ != ImGui::GetIO().KeyShift);
+    if (!snapActive || snapTranslate_ <= 0.0f)
+    {
+        return;
+    }
+
+    // 選択物（3D）の重心を中心にする
+    Vector3 center = {0.0f, 0.0f, 0.0f};
+    int count = 0;
+    for (const std::string &name : selectedNames_)
+    {
+        auto it = transformMap_.find(name);
+        if (it == transformMap_.end() || it->second.isScreenSpace)
+        {
+            continue;
+        }
+        center = center + it->second.GetWorldPosition();
+        ++count;
+    }
+    if (count == 0)
+    {
+        return;
+    }
+    center = center / static_cast<float>(count);
+
+    // 刻みに乗った点を中心に、半径 kHalfCells マスぶん描く
+    constexpr int kHalfCells = 8;
+    const float step = snapTranslate_;
+    const float originX = std::round(center.x / step) * step;
+    const float originZ = std::round(center.z / step) * step;
+    const float extent = step * static_cast<float>(kHalfCells);
+    const float y = center.y;
+
+    LineRenderer *pLine = LineRenderer::GetInstance();
+    for (int i = -kHalfCells; i <= kHalfCells; ++i)
+    {
+        // 中心の線ほど濃く、外側ほど薄く
+        const float fade = 1.0f - static_cast<float>(std::abs(i)) / static_cast<float>(kHalfCells + 1);
+        const bool isAxis = (i == 0);
+        const float alpha = (isAxis ? 0.9f : 0.45f) * fade;
+        const float offset = step * static_cast<float>(i);
+
+        // X 方向に伸びる線（Z が一定）と Z 方向に伸びる線（X が一定）
+        const Vector4 colorAlongX = isAxis ? Vector4{0.95f, 0.45f, 0.45f, alpha} : Vector4{0.85f, 0.78f, 0.45f, alpha};
+        const Vector4 colorAlongZ = isAxis ? Vector4{0.45f, 0.60f, 0.95f, alpha} : Vector4{0.85f, 0.78f, 0.45f, alpha};
+        pLine->AddLine({originX - extent, y, originZ + offset}, {originX + extent, y, originZ + offset}, colorAlongX);
+        pLine->AddLine({originX + offset, y, originZ - extent}, {originX + offset, y, originZ + extent}, colorAlongZ);
+    }
+}
+
 // ---- DrawDebugRaycast / DrawAABBWireframe / DrawSphereWireframe -------
 
 // 全エントリのAABB・スフィアワイヤーフレームとレイを描画する
@@ -87,11 +148,10 @@ void ImGuizmoManager::DrawDebugRaycast()
         // スクリーン空間ターゲットは3Dデバッグ描画対象外
         if (target.isScreenSpace)
             continue;
-        // 操作対象フィルタで無効化された種類は描画しない（画面の見やすさのため）
-        if (!IsCategoryEnabled(target.category))
-            continue;
-
         bool isSelected = selectedNames_.find(pair.first) != selectedNames_.end();
+        // クリック対象から外した種類は、選択中のもの以外は描かない（画面の見やすさのため）
+        if (!isSelected && !IsCategoryEnabled(target.category))
+            continue;
         // 全オブジェクトぶんの枠を出すと配置作業中の画面が線だらけになるので、
         // 既定では選択中のものだけ描く
         if (debugSelectedOnly_ && !isSelected)

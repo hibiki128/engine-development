@@ -72,7 +72,12 @@ bool Object3dInstancing::TrySubmit(Object3d *pObject3d, const WorldTransform &wo
     // ただし影パス（深度のみ）と G-Buffer パス（不透明専用）は順序に依存しないので許可する。
     const bool shadowPass = ShadowMap::GetInstance()->IsShadowPassActive();
     const bool gBufferPass = DeferredRenderer::GetInstance()->IsGBufferPassActive();
-    if (!shadowPass && !gBufferPass && pObject3d->GetBlendMode() != BlendMode::None)
+    // カメラビュー窓（前方描画だけで描く）では、メインが G-Buffer で不透明として描く物（Normal）も
+    // メインと同じくまとめて描く。まとめ描きはマテリアル色を白にして個体色をインスタンス側で渡すので、
+    // メインとカメラビューで描き方が食い違うと、共有のマテリアル定数が片方の値になって色が狂う
+    const bool drawnAsOpaqueInMain = RenderView::IsExtra() && DeferredRenderer::GetInstance()->IsEnabled() &&
+                                     pObject3d->GetBlendMode() == BlendMode::Normal;
+    if (!shadowPass && !gBufferPass && !drawnAsOpaqueInMain && pObject3d->GetBlendMode() != BlendMode::None)
     {
         return false;
     }

@@ -15,6 +15,8 @@ void ParticleCSGroup::Initialize(uint32_t maxParticleCount)
 {
     pDxCommon_ = ParticleCommon::GetInstance()->GetDxCommon();
     pSrvManager_ = SrvManager::GetInstance();
+    // 初期化し直した場合は前の枠を捨ててから取り直す（初回は全部0なので何もしない）
+    FreeAllSrvIndices();
     particleCommon_ = ParticleCommon::GetInstance();
     pTextureManager_ = TextureManager::GetInstance();
     pCommandList_ = pDxCommon_->GetCommandList().Get();
@@ -73,6 +75,15 @@ ParticleCSGroup::~ParticleCSGroup()
     {
         perViewResource_->Unmap(0, nullptr);
     }
+    for (int i = 0; i < RenderView::kMaxViews; ++i)
+    {
+        if (viewPerViewResources_[i] && pViewPerViewData_[i])
+        {
+            viewPerViewResources_[i]->Unmap(0, nullptr);
+        }
+        pViewPerViewData_[i] = nullptr;
+        viewPerViewResources_[i].Reset();
+    }
     if (perFrameResource_)
     {
         perFrameResource_->Unmap(0, nullptr);
@@ -89,6 +100,59 @@ ParticleCSGroup::~ParticleCSGroup()
     {
         indexResource_->Unmap(0, nullptr);
     }
+
+    // 確保したSRV／UAVの枠を返す。**渡すのは予約番号なので -1 する**（+1規約）。
+    // 解放は数フレーム後（GPU がまだ前のフレームでこのスロットを読んでいる最中に
+    // ディスクリプタを潰すと絵が壊れる）
+    FreeAllSrvIndices();
+}
+
+void ParticleCSGroup::FreeSrvIndex(uint32_t &srvIndex)
+{
+    if (srvIndex == 0)
+    {
+        return; // 未確保
+    }
+    pSrvManager_->FreeDeferred(srvIndex - 1);
+    srvIndex = 0;
+}
+
+void ParticleCSGroup::FreeSoADescriptors(SoABuffer &buf)
+{
+    if (!pSrvManager_)
+    {
+        return; // Initialize されていない
+    }
+    FreeSrvIndex(buf.uavIndex);
+    FreeSrvIndex(buf.srvForVSIndex);
+}
+
+void ParticleCSGroup::FreeAllSrvIndices()
+{
+    if (!pSrvManager_)
+    {
+        return; // Initialize されていない
+    }
+
+    for (SoABuffer *pBuf : {&soaLife_, &soaDrawCore_, &soaSimCore_, &soaTrail_,
+                            &soaRotation_, &soaOverride_, &soaRenderCompact_, &soaRenderSlot_})
+    {
+        FreeSoADescriptors(*pBuf);
+    }
+
+    for (uint32_t *pSrvIndex : {&freeListIndexSrvIndex_, &freeListTrailIndexSrvIndex_, &freeListSrvIndex_,
+                                &aliveCountSrvIndex_, &visibleCounterUavIndex_, &visibleCounterSrvForVSIndex_})
+    {
+        FreeSrvIndex(*pSrvIndex);
+    }
+
+    for (uint32_t i = 0; i < kAlivePingPong; ++i)
+    {
+        FreeSrvIndex(aliveListUavIndex_[i]);
+        FreeSrvIndex(aliveListSrvForVSIndex_[i]);
+        FreeSrvIndex(aliveCounterUavIndex_[i]);
+        FreeSrvIndex(aliveCounterSrvForVSIndex_[i]);
+    }
 }
 
 ParticleCSGroupData ParticleCSGroup::CreateParticleGroup(const std::string &groupName, const std::string &filename, uint32_t maxParticleCount, const std::string &texturePath, BlendMode blendMode)
@@ -96,8 +160,8 @@ ParticleCSGroupData ParticleCSGroup::CreateParticleGroup(const std::string &grou
     Initialize(maxParticleCount);
     particleGroupData_.groupName = groupName;
     modelFilePath_ = filename;
-    ModelManager::GetInstance()->LoadModel(filename);
-    pModel_ = ModelManager::GetInstance()->FindModel(filename);
+    // 読み込みが返したキーでそのまま引く（パスで引き直すと別の実体が返りうる）
+    pModel_ = ModelManager::GetInstance()->FindModelByKey(ModelManager::GetInstance()->LoadModel(filename));
     modelData_ = pModel_->GetModelData();
     CreateVertexResource();
     CreateIndexResource();
@@ -141,7 +205,7 @@ ParticleCSGroupData ParticleCSGroup::CreatePrimitiveParticleGroup(const std::str
     Initialize(maxParticleCount);
     particleGroupData_.groupName = groupName;
     type_ = type;
-    pModel_ = ModelManager::GetInstance()->FindModel(ModelManager::GetInstance()->CreatePrimitiveModel(type, texturePath));
+    pModel_ = ModelManager::GetInstance()->FindModelByKey(ModelManager::GetInstance()->CreatePrimitiveModel(type, texturePath));
     pTextureManager_->LoadTexture(texturePath);
     modelData_ = pModel_->GetModelData();
     CreateVertexResource();
@@ -214,6 +278,9 @@ void ParticleCSGroup::InitParticle()
     pCommandList_->Dispatch(disPatchCount, 1, 1);
 
     pDxCommon_->TransitionSRVBarrier();
+
+    // この初期化が GPU で走り終わるまで、エミッターに発生を待ってもらう
+    initPending_ = true;
 }
 
 bool ParticleCSGroup::CanUseLiteUpdate(bool fieldsActive) const
@@ -446,8 +513,8 @@ void ParticleCSGroup::FetchAliveDrawCount()
 
 void ParticleCSGroup::Update(const ViewProjection &vp)
 {
-    pPerFrameData_->time += Frame::DeltaTime();
-    pPerFrameData_->deltaTime = Frame::DeltaTime();
+    pPerFrameData_->time += Frame::UnscaledDeltaTime();
+    pPerFrameData_->deltaTime = Frame::UnscaledDeltaTime();
 
     // カラーグラデーション: ストップが変更された(dirty)なら 256段 LUT を CB へ再ベイクする。
     // 有効時のみベイク（OFF のグループは LUT を読まないので無駄を省く）。
@@ -471,7 +538,7 @@ void ParticleCSGroup::Update(const ViewProjection &vp)
     if (pSettingsData_->enableAudioVibration != 0)
     {
         const float peak = Audio::GetInstance()->GetCurrentAmplitude(); // [0,1] 現在のピーク
-        const float dt = Frame::DeltaTime();
+        const float dt = Frame::UnscaledDeltaTime();
         const float onset = (std::max)(0.0f, peak - audioPrevPeak_); // 立ち上がり（増加分）
         audioPrevPeak_ = peak;
         // リリース: releaseRate[1/s] が大きいほど早く落ち着く（フレームレート非依存な指数減衰）
@@ -497,6 +564,45 @@ void ParticleCSGroup::Update(const ViewProjection &vp)
     // 回転を使わないグループは VS の回転行列計算（sincos×3＋行列積）を省くためのフラグ。
     pPerViewData_->enableRotation =
         (pSettingsData_->enableRandomRotation != 0 || pSettingsData_->enableRandomAngularVelocity != 0) ? 1u : 0u;
+    // フリップブックの格子数を描画側へ渡す（コマ番号そのものは scaleZ の上位16bit 経由）。
+    // 設定は1か所（gSettings）に置いて、描画が要る値だけをここで写す
+    pPerViewData_->enableFlipbookDraw = pSettingsData_->enableFlipbook;
+    pPerViewData_->flipbookColsDraw = (pSettingsData_->flipbookCols < 1u) ? 1u : pSettingsData_->flipbookCols;
+    pPerViewData_->flipbookRowsDraw = (pSettingsData_->flipbookRows < 1u) ? 1u : pSettingsData_->flipbookRows;
+
+    // プロシージャル形状は PS が読むので、設定をマテリアルCBへ写す。
+    // 時間だけはランタイム値なのでここで入れる（ゆらぎを動かすのに使う）
+    if (pMaterialData_)
+    {
+        pMaterialData_->shapeMode = pSettingsData_->shapeMode;
+        pMaterialData_->shapeEdge = pSettingsData_->shapeEdge;
+        pMaterialData_->shapeNoiseScale = pSettingsData_->shapeNoiseScale;
+        pMaterialData_->shapeRimWidth = pSettingsData_->shapeRimWidth;
+        pMaterialData_->shapeRimColor = pSettingsData_->shapeRimColor;
+        pMaterialData_->shapeSpeed = pSettingsData_->shapeSpeed;
+        pMaterialData_->shapeSoftness = pSettingsData_->shapeSoftness;
+        pMaterialData_->shapeFresnel = pSettingsData_->shapeFresnel;
+        pMaterialData_->uvScrollSpeed = pSettingsData_->uvScrollSpeed;
+        pMaterialData_->shapeTime += Frame::UnscaledDeltaTime();
+        // 発光の強さ。粒子ごとの色は8bitに詰めて持つので1を超えられない。
+        // 1より明るく（ブルームが乗るほどに）したいグループはここで全体を持ち上げる
+        pMaterialData_->color = Vector4(emissive_, emissive_, emissive_, 1.0f);
+        // ---- ソフトパーティクル ----
+        // 深度の複製がまだ無いフレーム（初回など）は掛けない。
+        // 射影行列の2要素を渡しておけば、PS は深度値からビュー空間の奥行きへ戻せる。
+        //   viewZ = m32 / (深度 - m22)
+        const bool softWanted = (pSettingsData_->enableSoftParticle != 0);
+        if (softWanted && pDxCommon_)
+        {
+            pDxCommon_->RequestDepthCapture();
+        }
+        const bool depthReady = (pDxCommon_ != nullptr) && (pDxCommon_->GetDepthCopySrvIndex() != 0);
+        pMaterialData_->enableSoftParticle =
+            (softWanted && depthReady) ? 1u : 0u;
+        pMaterialData_->softParticleFade = pSettingsData_->softParticleFade;
+        pMaterialData_->depthProjM22 = vp.matProjection_.m[2][2];
+        pMaterialData_->depthProjM32 = vp.matProjection_.m[3][2];
+    }
     if (pPerViewData_->enableBillboard)
     {
         pPerViewData_->billboardMatrix = vp.matView_;
@@ -576,7 +682,9 @@ void ParticleCSGroup::AllocateSoABuffer(SoABuffer &buf, uint32_t count)
     }
     buf.resource = pDxCommon_->CreateBufferResource(static_cast<size_t>(buf.stride) * count, true);
     // 既存ディスクリプタ枠を上書きすると in-flight 参照とハザードになるため、
-    // 毎回「新しい枠」を確保して作り直す（SrvManager は bump 割当なので枠は使い捨て）。
+    // 毎回「新しい枠」を確保して作り直す。旧枠は数フレーム後に SrvManager へ返す
+    // （即座に返すと空きリストから拾い直されて、まだ読んでいるスロットを潰しうる）。
+    FreeSoADescriptors(buf);
     buf.uavIndex = pSrvManager_->Allocate() + 1;
     buf.uavHandle.first = pSrvManager_->GetCPUDescriptorHandle(buf.uavIndex);
     buf.uavHandle.second = pSrvManager_->GetGPUDescriptorHandle(buf.uavIndex);
@@ -636,6 +744,34 @@ void ParticleCSGroup::EnsureUpdateOptionalBuffers(bool fieldsActive)
     // 描画順->slot index は回転グループだけが読む（VS の enableRotation と同じ条件）。
     if (needRotation && soaRenderSlot_.allocatedCount < maxCount)
         AllocateSoABuffer(soaRenderSlot_, maxCount);
+}
+
+D3D12_GPU_VIRTUAL_ADDRESS ParticleCSGroup::PreparePerViewForView(const ViewProjection &vp, int view)
+{
+    if (view <= 0 || view >= RenderView::kMaxViews || !pPerViewData_)
+    {
+        return perViewResource_->GetGPUVirtualAddress();
+    }
+    if (!viewPerViewResources_[view])
+    {
+        viewPerViewResources_[view] = pDxCommon_->CreateBufferResource(sizeof(PerView));
+        viewPerViewResources_[view]->Map(0, nullptr, reinterpret_cast<void **>(&pViewPerViewData_[view]));
+    }
+    PerView *pView = pViewPerViewData_[view];
+    *pView = *pPerViewData_;
+    pView->viewProjection = vp.matView_ * vp.matProjection_;
+    pView->cameraPosition = vp.translation_;
+    pView->projScaleY = vp.matProjection_.m[1][1];
+    if (pView->enableBillboard)
+    {
+        Matrix4x4 rotation = vp.matView_;
+        rotation.m[3][0] = 0.0f;
+        rotation.m[3][1] = 0.0f;
+        rotation.m[3][2] = 0.0f;
+        rotation.m[3][3] = 1.0f;
+        pView->billboardMatrix = Inverse(rotation);
+    }
+    return viewPerViewResources_[view]->GetGPUVirtualAddress();
 }
 
 void ParticleCSGroup::CreatePerViewResource()
@@ -708,6 +844,8 @@ void ParticleCSGroup::CreatePerFrameResource()
     pPerFrameData_->time = 0.0f;
     pPerFrameData_->deltaTime = 0.0f;
     pPerFrameData_->groupId = 0;
+    pPerFrameData_->fieldUpdateMask = 0;
+    pPerFrameData_->fieldEmitMask = 0;
 }
 
 void ParticleCSGroup::CreateFreeListIndexResource()

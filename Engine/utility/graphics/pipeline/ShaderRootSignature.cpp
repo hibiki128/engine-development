@@ -170,6 +170,9 @@ bool ShaderRootSignature::Build(DirectXCommon *pDxCommon,
             case D3D_SIT_STRUCTURED:
             case D3D_SIT_BYTEADDRESS:
             case D3D_SIT_TBUFFER:
+            // RaytracingAccelerationStructure も HLSL 上は t レジスタのSRV。
+            // デスクリプタテーブルでの扱いも普通のSRVと同じでよい
+            case D3D_SIT_RTACCELERATIONSTRUCTURE:
                 addResource(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, reg, count, stage.visibility);
                 break;
 

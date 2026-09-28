@@ -67,6 +67,12 @@ struct MaterialData
     // 全体設定（ToonSettings）がONのとき、このマテリアルにも適用してよいか。
     // 地面やエフェクトだけ従来の陰影で残したいときに個別で落とす。
     bool enableToon = true;
+
+    // ── 自己発光（エミッシブ）─────────────────────
+    // ライトに当たっていなくても光る分。発光色はアルベド（色×テクスチャ）を流用する。
+    // HDRなので1を超える値を入れられ、そのままブルームが拾って滲む。
+    // ディファード時は8bitへ詰める都合で 0〜8（DEFERRED_EMISSIVE_RANGE）が上限。
+    float emissiveStrength = 0.0f;
 };
 
 /// <summary>
@@ -85,7 +91,9 @@ struct MaterialDataGPU
     float normalStrength{};           // 法線の強さ
     float proceduralScale{};          // 手続きノイズのスケール
     int32_t enableToon{};             // トゥーン適用フラグ
-    float padding2{};                 // パディング（16バイト境界合わせ）
+    float emissiveStrength{};         // 自己発光の強さ（0で発光なし。発光色はアルベドを流用する）
+    float cameraFade = 1.0f;          // カメラに近いときの見え具合（1=普通 / 0=完全に消える）
+    float padding2[3]{};
 };
 
 /// <summary>

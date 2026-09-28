@@ -6,6 +6,7 @@
 #include <particle/gpu/ParticleCSSpawner.h>
 #include <utility/debug/imgui/ImGuiNotification.h>
 #ifdef USE_IMGUI
+#include <chrono>
 #include <edit/undo/UndoRedoManager.h>
 #include <edit/play/PlayModeManager.h>
 #endif // USE_IMGUI
@@ -215,6 +216,14 @@ bool SceneManager::RequestSceneRebuild(std::function<void()> onRebuilt) {
 }
 
 void SceneManager::RebuildCurrentScene() {
+    // 作り直しの間に飛ぶ「登録しました」「追加しました」の類は人が押した操作ではない。
+    // 停止のたびに数件流れて本当に見せたい通知を押し流すので、ここでは黙らせる（履歴には残る）
+    ImGuiNotification::ScopedMute mute;
+
+    // 重いシーンで停止したときの引っかかりを見るために所要時間を測る。
+    // 破棄・生成・Initialize・未保存編集の復元まで全部を1本で測る
+    const auto rebuildStart = std::chrono::steady_clock::now();
+
     // 先に新しいシーンを作っておく。ここで失敗しても今のシーンを壊さずに済む
     std::unique_ptr<BaseScene> rebuilt = SceneRegistry::GetInstance()->Create(currentSceneName_);
     if (!rebuilt) {
@@ -275,6 +284,10 @@ void SceneManager::RebuildCurrentScene() {
         onSceneRebuilt_ = nullptr;
         callback();
     }
+
+    const std::chrono::duration<float, std::milli> elapsed = std::chrono::steady_clock::now() - rebuildStart;
+    lastRebuildMilliseconds_ = elapsed.count();
+    hasRebuildMeasurement_ = true;
 }
 #endif // USE_IMGUI
 } // namespace Hagine

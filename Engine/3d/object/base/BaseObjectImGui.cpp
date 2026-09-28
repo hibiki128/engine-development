@@ -14,6 +14,7 @@
 #ifdef USE_IMGUI
 #include "utility/debug/imgui/AssetDragDrop.h"
 #include <asset/AssetPath.h>
+#include "utility/edit/animation/AnimationStateMachineEditor.h"
 #include <graphics/texture/TextureManager.h>
 #include <imgui_internal.h>
 #include <implot.h>
@@ -125,6 +126,11 @@ void BaseObject::DebugObject() {
                 ImGui::DragFloat3("##lpos", &transform_->translation_.x,
                                   0.1f, -1000.f, 1000.f, "%.2f");
                 ImGui::PopStyleColor();
+                {
+                    // 右クリック: 位置のコピー・貼り付け・原点へ戻す
+                    static const float kZero[3] = {0.0f, 0.0f, 0.0f};
+                    FloatNContextMenu("##lposctx", &transform_->translation_.x, 3, kZero);
+                }
                 ImGui::TableNextColumn();
                 if (SmallResetButton("[R]##rpos"))
                     transform_->translation_ = {};
@@ -151,6 +157,17 @@ void BaseObject::DebugObject() {
                     deltaRot = {};
                 }
                 ImGui::PopStyleColor();
+                // 右クリック: 今の向き（オイラー角・度）のコピー・貼り付け
+                {
+                    const float toDeg = 180.0f / std::numbers::pi_v<float>;
+                    Vector3 euler = transform_->GetRotationEuler();
+                    float degrees[3] = {euler.x * toDeg, euler.y * toDeg, euler.z * toDeg};
+                    static const float kZero[3] = {0.0f, 0.0f, 0.0f};
+                    if (FloatNContextMenu("##lrotctx", degrees, 3, kZero)) {
+                        transform_->SetRotationEuler({degrees[0] / toDeg, degrees[1] / toDeg, degrees[2] / toDeg});
+                        transform_->UpdateMatrix();
+                    }
+                }
                 ImGui::TableNextColumn();
                 if (SmallResetButton("[R]##rrot")) {
                     transform_->SetRotationQuaternion(Quaternion::IdentityQuaternion());
@@ -171,6 +188,10 @@ void BaseObject::DebugObject() {
                 ImGui::DragFloat3("##lscl", &transform_->scale_.x,
                                   0.01f, 0.01f, 10.f, "%.2f");
                 ImGui::PopStyleColor();
+                {
+                    static const float kOne[3] = {1.0f, 1.0f, 1.0f};
+                    FloatNContextMenu("##lsclctx", &transform_->scale_.x, 3, kOne);
+                }
                 ImGui::TableNextColumn();
                 if (SmallResetButton("[R]##rscl"))
                     transform_->scale_ = {1, 1, 1};
@@ -345,6 +366,15 @@ void BaseObject::DebugObject() {
 
             ImGui::Spacing();
 
+            // ---- カメラに近いと透ける ----
+            SectionHeader("[ カメラに近いと透ける ]", DebugTheme::kAccentCyan);
+            AccentCheckbox("透けさせる##camFade", &cameraFadeEnabled_, DebugTheme::kAccentCyan);
+            ImGui::SetItemTooltip("カメラが近づくと網目状に透けていき、最後は見えなくなります（影は残ります）。\n"
+                                  "地形や床など、透けてほしくない物はオフにします。\n"
+                                  "距離などの設定は「描画システム」窓の「カメラに近い物を透けさせる」");
+
+            ImGui::Spacing();
+
             // ---- ギズモ ----
             SectionHeader("[ ギズモ ]", DebugTheme::kAccentRed);
             AccentCheckbox("ギズモ選択可##gsel", &isGizmoSelectable_, DebugTheme::kAccentRed);
@@ -509,6 +539,21 @@ void BaseObject::DebugObject() {
                 ImGui::TreePop();
             }
 
+            // 自己発光（エミッシブ）
+            if (ImGui::TreeNodeEx("自己発光##emissivemat", ImGuiTreeNodeFlags_SpanAvailWidth)) {
+                if (Material *mat = GetMaterial(static_cast<uint32_t>(selMat))) {
+                    MaterialData &md = mat->GetMaterialData();
+                    ImGui::DragFloat("発光の強さ##emissivestr", &md.emissiveStrength, 0.02f, 0.0f, 8.0f);
+                    ImGui::SetItemTooltip("ライトに当たっていなくても光る分です。0で発光なし。\n"
+                                          "発光色はこのマテリアルの色×テクスチャ（アルベド）を使います。\n"
+                                          "1を超えるとブルームが拾って滲みます");
+                    ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kTextDim);
+                    ImGui::TextWrapped("滲ませたいときは、ポストエフェクトにブルームを足してください");
+                    ImGui::PopStyleColor();
+                }
+                ImGui::TreePop();
+            }
+
             // ノーマルマップ / 手続き的法線
             if (ImGui::TreeNodeEx("ノーマルマップ##nm", ImGuiTreeNodeFlags_SpanAvailWidth)) {
                 if (Material *mat = GetMaterial(static_cast<uint32_t>(selMat))) {
@@ -650,11 +695,8 @@ void BaseObject::DebugObject() {
 
                 ImGui::Spacing();
 
-                ImGui::PushStyleColor(ImGuiCol_Button, {0.25f, 0.55f, 0.20f, 0.8f});
-                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, {0.30f, 0.70f, 0.25f, 0.9f});
-                if (ImGui::Button("再生##aplay", ImVec2(-1, 0)))
+                if (PrimaryButton("再生##aplay", ImVec2(-1, 0)))
                     obj3d_->PlayAnimation();
-                ImGui::PopStyleColor(2);
 
                 ImGui::Spacing();
                 ImGui::PushStyleColor(ImGuiCol_Header, DebugTheme::kBgYellow);
@@ -664,6 +706,9 @@ void BaseObject::DebugObject() {
                     ImGui::TreePop();
                 }
                 ImGui::PopStyleColor(2);
+
+                ImGui::Spacing();
+                DrawAnimStateMachineImGui();
                 ImGui::Unindent(6.0f);
             }
         }
@@ -822,6 +867,27 @@ void BaseObject::DebugObject() {
             ImGui::Spacing();
         }
 
+        // ====================================================
+        // 足IK（接地）
+        // ====================================================
+        // 脚を持たないモデルには出さない（スキンの入った gltf だけが対象）
+        if (obj3d_ && obj3d_->GetHaveAnimation() && ThemedHeader("足IK（接地）##ikhdr", DebugTheme::kAccentPurple)) {
+            ImGui::Indent(6.0f);
+            DrawFootIkImGui();
+            ImGui::Unindent(6.0f);
+            ImGui::Spacing();
+        }
+
+        // ====================================================
+        // 注視IK（頭を見る先へ向ける）
+        // ====================================================
+        if (obj3d_ && obj3d_->GetHaveAnimation() && ThemedHeader("注視（頭を向ける）##lookhdr", DebugTheme::kAccentCyan)) {
+            ImGui::Indent(6.0f);
+            DrawLookAtImGui();
+            ImGui::Unindent(6.0f);
+            ImGui::Spacing();
+        }
+
         ImGui::EndTabItem();
     }
 
@@ -862,6 +928,280 @@ void BaseObject::DebugObject() {
     ImGui::EndTabBar();
 
     ImGui::PopStyleVar(4);
+#endif // USE_IMGUI
+}
+
+void BaseObject::DrawAnimStateMachineImGui() {
+#ifdef USE_IMGUI
+    SectionHeader("[ ステートマシン ]", DebugTheme::kAccentYellow);
+    const std::string current = animStateMachine_ ? animStateMachine_->GetAssetName() : std::string();
+    ImGui::SetNextItemWidth(-1);
+    if (ImGui::BeginCombo("##asmSelect", current.empty() ? "(使わない)" : current.c_str())) {
+        if (ImGui::Selectable("(使わない)", current.empty())) {
+            SetAnimationStateMachine("");
+        }
+        for (const std::string &name : AnimationStateMachineLibrary::ListFiles()) {
+            if (ImGui::Selectable(name.c_str(), name == current) && !SetAnimationStateMachine(name)) {
+                ImGuiNotification::Post("ステートマシンを付けられませんでした: " + name, {0.82f, 0.58f, 0.36f, 1.0f});
+            }
+        }
+        ImGui::EndCombo();
+    }
+    ImGui::SetItemTooltip("待機→走り→ジャンプのような切り替えを、ステートマシンのファイルに任せる。\n"
+                          "ファイルはアニメーションステートマシン窓で作る（シーンを保存すると付けたことも保存される）");
+
+    if (!animStateMachine_) {
+        if (NeutralButton("ステートマシン窓を開く##asmOpenEmpty", ImVec2(-1, 0))) {
+            AnimationStateMachineEditor::RequestOpen(std::string());
+        }
+        return;
+    }
+
+    // 今のステートとパラメータ（その場で値を変えて試せる）
+    const std::shared_ptr<AnimationStateMachineAsset> &asset = animStateMachine_->GetAsset();
+    const AnimStateData *pState = asset ? asset->FindState(animStateMachine_->GetCurrentStateId()) : nullptr;
+    ImGui::TextUnformatted("今のステート:");
+    ImGui::SameLine();
+    StatusBadge(pState ? pState->name.c_str() : "(なし)", DebugTheme::kAccentYellow);
+    ImGui::SameLine();
+    ImGui::TextDisabled("%.1f 周", animStateMachine_->GetNormalizedTime());
+    if (asset) {
+        for (const AnimParamDef &p : asset->params) {
+            ImGui::PushID(p.name.c_str());
+            if (p.type == AnimParamType::Float) {
+                float v = animStateMachine_->GetValue(p.name);
+                if (ImGui::DragFloat(p.name.c_str(), &v, 0.02f)) {
+                    animStateMachine_->SetFloat(p.name, v);
+                }
+            } else if (p.type == AnimParamType::Bool) {
+                bool v = animStateMachine_->GetValue(p.name) >= 0.5f;
+                if (ImGui::Checkbox(p.name.c_str(), &v)) {
+                    animStateMachine_->SetBool(p.name, v);
+                }
+            } else if (NeutralButton((std::string("合図: ") + p.name).c_str())) {
+                animStateMachine_->SetTrigger(p.name);
+            }
+            ImGui::PopID();
+        }
+    }
+    if (PrimaryButton("エディタで開く##asmOpen", ImVec2(-1, 0))) {
+        AnimationStateMachineEditor::RequestOpen(current);
+    }
+#endif // USE_IMGUI
+}
+
+void BaseObject::DrawLookAtImGui() {
+#ifdef USE_IMGUI
+    LookAtSolver *pSolver = GetLookAt();
+    if (!pSolver) {
+        ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kTextDim);
+        ImGui::TextWrapped("背骨・首・頭を少しずつ回して、見る先へ顔を向けます。\n"
+                           "見る先はゲーム側のコード（SetLookAtTarget）が毎フレーム渡します");
+        ImGui::PopStyleColor();
+        if (PrimaryButton("首と頭のジョイントを自動で拾う##lookdetect", ImVec2(-1, 0))) {
+            pSolver = AcquireLookAt();
+            ModelAnimation *pAnimation = obj3d_ ? obj3d_->GetCurrentModelAnimation() : nullptr;
+            Bone *pBone = pAnimation ? pAnimation->GetBone() : nullptr;
+            if (pSolver && pBone && pSolver->AutoDetect(pBone->GetSkeletonRef())) {
+                pSolver->GetSettings().enabled = true;
+                ImGuiNotification::Post(std::format("注視: ジョイントを{}個拾いました", pSolver->GetSettings().joints.size()),
+                                        {0.45f, 0.68f, 0.52f, 1.0f});
+            } else {
+                ImGuiNotification::Post("注視: 頭のジョイントが見つかりませんでした", {0.82f, 0.58f, 0.36f, 1.0f});
+            }
+        }
+        return;
+    }
+
+    LookAtSettings &settings = pSolver->GetSettings();
+    AccentCheckbox("注視を効かせる##lookenable", &settings.enabled, DebugTheme::kAccentCyan);
+
+    // 今の状態（見る先があるか・どれだけ向けているか）
+    ImGui::SameLine();
+    if (pSolver->HasTarget()) {
+        StatusBadge("見る先あり", DebugTheme::kAccentGreen);
+    } else {
+        StatusBadge("見る先なし", DebugTheme::kTextDim);
+    }
+    ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kTextDim);
+    ImGui::Text("左右 %+.0f°  上下 %+.0f°  効き %.0f%%", pSolver->GetYawDegrees(), pSolver->GetPitchDegrees(),
+                pSolver->GetBlend() * 100.0f);
+    ImGui::PopStyleColor();
+
+    ImGui::BeginDisabled(!settings.enabled);
+    ImGui::DragFloat("効き具合##lookweight", &settings.weight, 0.01f, 0.0f, 1.0f, "%.2f");
+    ImGui::SetItemTooltip("0で素のアニメーションのまま。見比べるときに使う");
+
+    ImGui::Spacing();
+    SectionHeader("[ 向けられる範囲 ]", DebugTheme::kAccentCyan);
+    ImGui::DragFloat("左右の上限[度]##lookyaw", &settings.maxYawDegrees, 0.5f, 0.0f, 120.0f, "%.0f");
+    ImGui::DragFloat("上下の上限[度]##lookpitch", &settings.maxPitchDegrees, 0.5f, 0.0f, 80.0f, "%.0f");
+    ImGui::DragFloat("あきらめる角度[度]##lookgiveup", &settings.giveUpYawDegrees, 0.5f, 0.0f, 180.0f, "%.0f");
+    ImGui::SetItemTooltip("見る先がこれより後ろへ回ったら、首をひねり切らずに正面へ戻す");
+
+    ImGui::Spacing();
+    SectionHeader("[ 追従の速さ ]", DebugTheme::kAccentCyan);
+    ImGui::DragFloat("向きの追従[1/秒]##lookfollow", &settings.followSpeed, 0.1f, 0.0f, 40.0f, "%.1f");
+    ImGui::SetItemTooltip("大きいほど素早く見る先へ向く。小さいとゆったり目で追う");
+    ImGui::DragFloat("出入りの速さ[1/秒]##lookblend", &settings.blendSpeed, 0.1f, 0.0f, 40.0f, "%.1f");
+    ImGui::SetItemTooltip("見る先ができた / 外れたときに、注視を効かせ始める / 抜く速さ");
+
+    ImGui::Spacing();
+    SectionHeader("[ 回すジョイント（根元から順）]", DebugTheme::kAccentCyan);
+    int removeIndex = -1;
+    for (size_t i = 0; i < settings.joints.size(); ++i) {
+        ImGui::PushID(static_cast<int>(i));
+        ImGui::TextUnformatted(settings.joints[i].name.c_str());
+        ImGui::SameLine(ImGui::GetContentRegionAvail().x * 0.55f);
+        ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - 28.0f);
+        ImGui::DragFloat("##share", &settings.joints[i].share, 0.01f, 0.0f, 1.0f, "取り分 %.2f");
+        ImGui::SameLine();
+        if (DangerButton("x", ImVec2(22.0f, 0.0f))) {
+            removeIndex = static_cast<int>(i);
+        }
+        ImGui::PopID();
+    }
+    if (removeIndex >= 0) {
+        settings.joints.erase(settings.joints.begin() + removeIndex);
+    }
+    if (NeutralButton("自動で拾い直す##lookredetect", ImVec2(-1, 0))) {
+        ModelAnimation *pAnimation = obj3d_ ? obj3d_->GetCurrentModelAnimation() : nullptr;
+        Bone *pBone = pAnimation ? pAnimation->GetBone() : nullptr;
+        if (pBone) {
+            pSolver->AutoDetect(pBone->GetSkeletonRef());
+        }
+    }
+    ImGui::EndDisabled();
+#endif // USE_IMGUI
+}
+
+void BaseObject::DrawFootIkImGui() {
+#ifdef USE_IMGUI
+    FootIkSolver *pSolver = GetFootIk();
+
+    // まだ使っていないオブジェクトには、ジョイントを拾うところから始めてもらう
+    if (!pSolver) {
+        ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kTextDim);
+        ImGui::TextWrapped("坂やでこぼこの地面で、足が地面にめり込んだり浮いたりしないように\n"
+                           "腿・すね・足首を曲げ直します。まずは脚のジョイントを拾ってください");
+        ImGui::PopStyleColor();
+        if (PrimaryButton("脚のジョイントを自動で拾う##ikdetect", ImVec2(-1, 0))) {
+            pSolver = AcquireFootIk();
+            ModelAnimation *pAnimation = obj3d_ ? obj3d_->GetCurrentModelAnimation() : nullptr;
+            Bone *pBone = pAnimation ? pAnimation->GetBone() : nullptr;
+            if (pSolver && pBone && pSolver->AutoDetect(pBone->GetSkeletonRef())) {
+                ImGuiNotification::Post(
+                    std::format("足IK: 脚を{}本拾いました", pSolver->GetSettings().legs.size()),
+                    {0.45f, 0.68f, 0.52f, 1.0f});
+            } else {
+                ImGuiNotification::Post("足IK: それらしい脚のジョイントが見つかりませんでした",
+                                        {0.82f, 0.58f, 0.36f, 1.0f});
+            }
+        }
+        ImGui::SetItemTooltip("mixamorig:LeftUpLeg / LeftLeg / LeftFoot のような名前を手がかりに探します");
+        return;
+    }
+
+    FootIkSettings &settings = pSolver->GetSettings();
+
+    AccentCheckbox("足IKを効かせる##ikenable", &settings.enabled, DebugTheme::kAccentPurple);
+    ImGui::SetItemTooltip("地面へレイを飛ばして足の高さを合わせます。\n"
+                          "対象は当たり判定が有効なコライダー（地形のメッシュコライダーなど）です");
+
+    if (settings.legs.empty()) {
+        ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kAccentOrange);
+        ImGui::TextWrapped("脚が登録されていません。下の「自動で拾い直す」を押してください");
+        ImGui::PopStyleColor();
+    }
+
+    ImGui::BeginDisabled(!settings.enabled);
+
+    ImGui::DragFloat("効き具合##ikweight", &settings.weight, 0.01f, 0.0f, 1.0f, "%.2f");
+    ImGui::SetItemTooltip("0で素のアニメーションのまま。見比べるときに使う");
+
+    ImGui::Spacing();
+    SectionHeader("[ 接地 ]", DebugTheme::kAccentPurple);
+    ImGui::DragFloat("足の高さ##ikfooth", &settings.footHeight, 0.005f, 0.0f, 1.0f, "%.3f");
+    ImGui::SetItemTooltip("足首を地面からどれだけ浮かせるか。靴の厚みぶん");
+    ImGui::DragFloat("腰を下げる上限##ikhipdrop", &settings.maxHipDrop, 0.01f, 0.0f, 2.0f, "%.2f");
+    ImGui::SetItemTooltip("段差で片足が届かないとき、ここまでなら腰を沈める。\n"
+                          "大きくし過ぎると常にしゃがんで見える");
+    ImGui::DragFloat("レイの開始高さ##ikrayup", &settings.rayUpOffset, 0.05f, 0.0f, 5.0f, "%.2f");
+    ImGui::SetItemTooltip("足首より上のここから下向きにレイを撃つ。\n"
+                          "足がすでに地面へめり込んでいる場合に拾い直すための遡り");
+    ImGui::DragFloat("レイの長さ##ikraylen", &settings.rayLength, 0.05f, 0.1f, 20.0f, "%.2f");
+    ImGui::SetItemTooltip("これより下に地面が無ければ空中とみなし、効きを抜きます");
+
+    ImGui::Spacing();
+    SectionHeader("[ 地面とみなすタグ ]", DebugTheme::kAccentPurple);
+    ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kTextDim);
+    ImGui::TextWrapped(settings.groundTags.empty()
+                           ? "1つも選んでいないので、当たり判定が有効な全コライダーが対象です"
+                           : "選んだタグのコライダーだけを地面として扱います");
+    ImGui::PopStyleColor();
+    {
+        // 自分の体は常に対象外なので、ここに出てくるのは他のオブジェクトのタグだけ
+        std::vector<std::string> tags(ColliderTagManager::GetInstance()->GetAllTags().begin(),
+                                      ColliderTagManager::GetInstance()->GetAllTags().end());
+        std::sort(tags.begin(), tags.end());
+        for (const std::string &tag : tags) {
+            auto it = std::find(settings.groundTags.begin(), settings.groundTags.end(), tag);
+            bool selected = (it != settings.groundTags.end());
+            if (AccentCheckbox((tag + "##iktag").c_str(), &selected, DebugTheme::kAccentCyan)) {
+                if (selected) {
+                    settings.groundTags.push_back(tag);
+                } else {
+                    settings.groundTags.erase(it);
+                }
+            }
+        }
+    }
+
+    ImGui::Spacing();
+    SectionHeader("[ 足の向き ]", DebugTheme::kAccentPurple);
+    AccentCheckbox("地面の傾きに合わせる##ikalign", &settings.alignFootToGround, DebugTheme::kAccentBlue);
+    ImGui::BeginDisabled(!settings.alignFootToGround);
+    ImGui::DragFloat("傾けられる上限[度]##ikmaxang", &settings.maxFootAngleDegrees, 0.5f, 0.0f, 90.0f, "%.0f");
+    ImGui::EndDisabled();
+
+    ImGui::Spacing();
+    SectionHeader("[ 追従の速さ ]", DebugTheme::kAccentPurple);
+    ImGui::DragFloat("位置##ikposspeed", &settings.positionLerpSpeed, 0.1f, 0.0f, 60.0f, "%.1f");
+    ImGui::SetItemTooltip("大きいほど地面に食いつく。小さいほど滑らかだが遅れる（0で即座）");
+    ImGui::DragFloat("傾き##ikrotspeed", &settings.rotationLerpSpeed, 0.1f, 0.0f, 60.0f, "%.1f");
+
+    ImGui::Spacing();
+    SectionHeader("[ 状態 ]", DebugTheme::kAccentPurple);
+    ReadOnlyRow("腰の沈み", "%.3f m", pSolver->GetHipOffset());
+    for (size_t i = 0; i < settings.legs.size(); ++i) {
+        ReadOnlyRow(settings.legs[i].footJoint.c_str(), "%s",
+                    pSolver->IsLegGrounded(i) ? "接地" : "空中");
+    }
+    AccentCheckbox("レイと接地点を線で描く##ikdebug", &settings.drawDebug, DebugTheme::kAccentCyan);
+
+    ImGui::EndDisabled();
+
+    ImGui::Spacing();
+    SectionHeader("[ 脚のジョイント ]", DebugTheme::kAccentPurple);
+    for (const FootIkLeg &leg : settings.legs) {
+        ReadOnlyRow("腿 / すね / 足首", "%s / %s / %s", leg.upperJoint.c_str(), leg.lowerJoint.c_str(),
+                    leg.footJoint.c_str());
+    }
+    if (NeutralButton("自動で拾い直す##ikredetect", ImVec2(-1, 0))) {
+        ModelAnimation *pAnimation = obj3d_ ? obj3d_->GetCurrentModelAnimation() : nullptr;
+        Bone *pBone = pAnimation ? pAnimation->GetBone() : nullptr;
+        // AutoDetect は SetSettings 経由で設定を作り直すので、有効フラグを引き継ぐ
+        const bool wasEnabled = settings.enabled;
+        if (pBone && pSolver->AutoDetect(pBone->GetSkeletonRef())) {
+            pSolver->GetSettings().enabled = wasEnabled;
+            ImGuiNotification::Post(std::format("足IK: 脚を{}本拾いました", pSolver->GetSettings().legs.size()),
+                                    {0.45f, 0.68f, 0.52f, 1.0f});
+        } else {
+            ImGuiNotification::Post("足IK: それらしい脚のジョイントが見つかりませんでした",
+                                    {0.82f, 0.58f, 0.36f, 1.0f});
+        }
+    }
+    ReadOnlyRow("腰", "%s", settings.hipJoint.empty() ? "（未設定）" : settings.hipJoint.c_str());
 #endif // USE_IMGUI
 }
 
@@ -1023,24 +1363,18 @@ void BaseObject::DrawScaleEaseImGui() {
 
     // ----- スタート / ストップボタン -----
     if (!scaleEase_.isActive) {
-        ImGui::PushStyleColor(ImGuiCol_Button, {0.15f, 0.55f, 0.25f, 0.9f});
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, {0.20f, 0.70f, 0.30f, 1.0f});
-        if (ImGui::Button("スタート##sePlay", ImVec2(-1.0f, 0.0f))) {
+        if (PrimaryButton("スタート##sePlay", ImVec2(-1.0f, 0.0f))) {
             scaleEase_.currentTime = 0.0f;
             scaleEase_.isActive = true;
             // スタート時点のスケールをベースとして記録する
             scaleEase_.baseScale = transform_->scale_;
         }
-        ImGui::PopStyleColor(2);
     } else {
-        ImGui::PushStyleColor(ImGuiCol_Button, {0.55f, 0.15f, 0.15f, 0.9f});
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, {0.70f, 0.20f, 0.20f, 1.0f});
-        if (ImGui::Button("ストップ##seStop", ImVec2(-1.0f, 0.0f))) {
+        if (NeutralButton("ストップ##seStop", ImVec2(-1.0f, 0.0f))) {
             scaleEase_.isActive = false;
             // ストップ時はスケールをスタート時点の値に戻す
             transform_->scale_ = scaleEase_.baseScale;
         }
-        ImGui::PopStyleColor(2);
     }
 #endif
 }
@@ -1056,12 +1390,9 @@ void BaseObject::ShowFileSelector() {
     ImGui::Spacing();
 
     if (!selectedGltfPath.empty()) {
-        ImGui::PushStyleColor(ImGuiCol_Button, {0.25f, 0.45f, 0.70f, 0.80f});
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, {0.35f, 0.55f, 0.85f, 0.90f});
-        if (ImGui::Button("アニメーション適用##applyAnima", ImVec2(-1.0f, 0.0f))) {
+        if (PrimaryButton("アニメーション適用##applyAnima", ImVec2(-1.0f, 0.0f))) {
             obj3d_->SetAnimation(selectedGltfPath);
         }
-        ImGui::PopStyleColor(2);
     }
 #endif // USE_IMGUI
 }

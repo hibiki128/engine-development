@@ -5,6 +5,9 @@
 #include <type_traits>
 #ifdef USE_IMGUI
 #include <imgui.h>
+// DebugUIHelper.h は ImGui:: を使うので imgui.h の後に include する
+#include <utility/debug/imgui/DebugUIHelper.h>
+#include <icon/IconsFontAwesome5.h>
 #endif // USE_IMGUI
 
 namespace Hagine {
@@ -154,6 +157,96 @@ void GameParamHub::CaptureOriginal(Entry &e)
     },
                e.ptr);
     e.hasOriginal = true;
+}
+
+bool GameParamHub::FindCodeDefault(const void *ptr, float outValues[4], int &outCount, std::string &outLabel) const
+{
+    for (const Entry &e : entries_)
+    {
+        const void *address = std::visit([](auto *p) { return static_cast<const void *>(p); }, e.ptr);
+        if (address != ptr || !e.hasOriginal)
+        {
+            continue;
+        }
+        outCount = 0;
+        std::visit([&](const auto &v) {
+            using T = std::decay_t<decltype(v)>;
+            if constexpr (std::is_same_v<T, float>)
+            {
+                outValues[0] = v;
+                outCount = 1;
+            }
+            else if constexpr (std::is_same_v<T, int>)
+            {
+                outValues[0] = static_cast<float>(v);
+                outCount = 1;
+            }
+            else if constexpr (std::is_same_v<T, Vector2>)
+            {
+                outValues[0] = v.x;
+                outValues[1] = v.y;
+                outCount = 2;
+            }
+            else if constexpr (std::is_same_v<T, Vector3>)
+            {
+                outValues[0] = v.x;
+                outValues[1] = v.y;
+                outValues[2] = v.z;
+                outCount = 3;
+            }
+            else if constexpr (std::is_same_v<T, Vector4>)
+            {
+                outValues[0] = v.x;
+                outValues[1] = v.y;
+                outValues[2] = v.z;
+                outValues[3] = v.w;
+                outCount = 4;
+            }
+        },
+                   e.original);
+        if (outCount == 0)
+        {
+            return false;
+        }
+        outLabel = e.owner + " / " + e.name;
+        return true;
+    }
+    return false;
+}
+
+bool GameParamHub::IsModified(const Entry &e) const
+{
+    if (!e.hasOriginal)
+    {
+        return false;
+    }
+    bool modified = false;
+    std::visit([&](auto *p) {
+        using Ptr = decltype(p);
+        using V = std::remove_cv_t<std::remove_pointer_t<Ptr>>;
+        if constexpr (std::is_same_v<Ptr, float *> || std::is_same_v<Ptr, int *> || std::is_same_v<Ptr, bool *>)
+        {
+            if (const V *v = std::get_if<V>(&e.original))
+                modified = (*p != *v);
+        }
+        else if constexpr (std::is_same_v<Ptr, Vector2 *>)
+        {
+            if (const V *v = std::get_if<V>(&e.original))
+                modified = (p->x != v->x || p->y != v->y);
+        }
+        else if constexpr (std::is_same_v<Ptr, Vector3 *>)
+        {
+            if (const V *v = std::get_if<V>(&e.original))
+                modified = (p->x != v->x || p->y != v->y || p->z != v->z);
+        }
+        else if constexpr (std::is_same_v<Ptr, Vector4 *>)
+        {
+            if (const V *v = std::get_if<V>(&e.original))
+                modified = (p->x != v->x || p->y != v->y || p->z != v->z || p->w != v->w);
+        }
+    },
+               e.ptr);
+    return modified;
 }
 
 void GameParamHub::ResetEntryToOriginal(Entry &e)
@@ -494,9 +587,14 @@ void GameParamHub::DrawParamWidget(Entry &entry)
         using Ptr = std::remove_reference_t<decltype(p)>;
         const Options &o = entry.opts;
 
+        // 右クリックの「既定値に戻す」はコードの既定値（登録したときの値）
+        using V = std::remove_cv_t<std::remove_pointer_t<Ptr>>;
+        const V *original = entry.hasOriginal ? std::get_if<V>(&entry.original) : nullptr;
+
         if constexpr (std::is_same_v<Ptr, float *>)
         {
             changed = ImGui::DragFloat(label.c_str(), p, o.speed, o.min, o.max);
+            changed |= FloatNContextMenu("##valueMenu", p, 1, original);
         }
         else if constexpr (std::is_same_v<Ptr, int *>)
         {
@@ -509,10 +607,12 @@ void GameParamHub::DrawParamWidget(Entry &entry)
         else if constexpr (std::is_same_v<Ptr, Vector2 *>)
         {
             changed = ImGui::DragFloat2(label.c_str(), &p->x, o.speed, o.min, o.max);
+            changed |= FloatNContextMenu("##valueMenu", &p->x, 2, original ? &original->x : nullptr);
         }
         else if constexpr (std::is_same_v<Ptr, Vector3 *>)
         {
             changed = ImGui::DragFloat3(label.c_str(), &p->x, o.speed, o.min, o.max);
+            changed |= FloatNContextMenu("##valueMenu", &p->x, 3, original ? &original->x : nullptr);
         }
         else if constexpr (std::is_same_v<Ptr, Vector4 *>)
         {
@@ -523,6 +623,7 @@ void GameParamHub::DrawParamWidget(Entry &entry)
             else
             {
                 changed = ImGui::DragFloat4(label.c_str(), &p->x, o.speed, o.min, o.max);
+                changed |= FloatNContextMenu("##valueMenu", &p->x, 4, original ? &original->x : nullptr);
             }
         }
         else if constexpr (std::is_same_v<Ptr, const float *>)
@@ -599,10 +700,7 @@ void GameParamHub::HandleDropTarget(const std::string &window, const std::string
 void GameParamHub::DrawDropZone(const char *label, const std::string &window, const std::string &tab, const std::string &section)
 {
     // フル幅の控えめなボタンをドロップ受け皿にする（ここへ落とすと移動）
-    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.22f, 0.30f, 0.38f, 0.55f));
-    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.30f, 0.46f, 0.60f, 0.85f));
-    ImGui::Button(label, ImVec2(-1.0f, 0.0f));
-    ImGui::PopStyleColor(2);
+    PrimaryButton(label, ImVec2(-1.0f, 0.0f));
     HandleDropTarget(window, tab, section);
 }
 
@@ -736,6 +834,22 @@ void GameParamHub::DrawParamRows(const std::vector<std::string> &keys)
 
         ImGui::SameLine();
         DrawParamWidget(*entry);
+
+        // コードの既定値から変えてある項目には印。押すと既定値へ戻す
+        if (IsModified(*entry))
+        {
+            ImGui::SameLine();
+            ScopedButtonColors colors(DebugTheme::kButtonGhost, DebugTheme::kButtonGhostHover);
+            ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kAccentOrange);
+            if (ImGui::SmallButton(ICON_FA_UNDO "##resetToOriginal"))
+            {
+                ResetEntryToOriginal(*entry);
+                if (entry->opts.onChange)
+                    entry->opts.onChange();
+            }
+            ImGui::PopStyleColor();
+            ImGui::SetItemTooltip("コードの既定値から変えてあります。押すと既定値に戻します（保存した値も消します）");
+        }
 
         ImGui::PopID();
     }
@@ -1084,9 +1198,7 @@ void GameParamHub::DrawUserWindows()
 
         // このウィンドウ内（全タブ・全区切り）の値をまとめて保存 / 初期化
         float halfW = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
-        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.20f, 0.48f, 0.40f, 0.85f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.26f, 0.60f, 0.50f, 0.95f));
-        if (ImGui::Button("このウィンドウの値を保存", ImVec2(halfW, 0.0f)))
+        if (ConfirmButton("このウィンドウの値を保存", ImVec2(halfW, 0.0f)))
         {
             std::string wn = w.name;
             RequestConfirm("「" + wn + "」内の全項目を現在の値で保存します。よろしいですか？",
@@ -1095,7 +1207,6 @@ void GameParamHub::DrawUserWindows()
                                ImGuiNotification::Post("「" + wn + "」の " + std::to_string(n) + " 項目を保存しました", {0.45f, 0.68f, 0.52f, 1.0f});
                            });
         }
-        ImGui::PopStyleColor(2);
         ImGui::SetItemTooltip("このウィンドウ内（全タブ・全区切り）の全項目の現在値を保存します");
         ImGui::SameLine();
         ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.55f, 0.35f, 0.20f, 0.85f));

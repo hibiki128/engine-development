@@ -1,6 +1,8 @@
 #define NOMINMAX
 #include "Object3d.h"
+#include "light/LightGroup.h"
 #include <asset/AssetPath.h>
+#include "animation/BlendSpace.h"
 #include "debug/log/Logger.h"
 #include "DirectXCommon.h"
 #include "graphics/model/ModelManager.h"
@@ -17,6 +19,25 @@
 #include <type/Matrix4x4.h>
 
 namespace Hagine {
+Object3d::~Object3d()
+{
+    ReleaseOwnedModel();
+}
+
+void Object3d::ReleaseOwnedModel()
+{
+    if (!ownsModel_ || modelKey_.empty())
+    {
+        return; // プリミティブや .obj は他のオブジェクトと共有しているので捨てない
+    }
+    // 実体が捨てられるのは数フレーム後（GPU が触り終わってから）。
+    // ここでは一覧から外すだけなので、今のフレームの描画には影響しない
+    ModelManager::GetInstance()->RemoveModel(modelKey_);
+    modelKey_.clear();
+    ownsModel_ = false;
+    pModel_ = nullptr;
+}
+
 void Object3d::Initialize()
 {
     objectCommon_ = std::make_unique<Object3dCommon>();
@@ -36,10 +57,15 @@ void Object3d::CreateModel(const std::string &filePath)
     // ベースモデルはデフォルトループ ON で登録
     animationLoopFlags_[modelFilePath_] = true;
 
-    ModelManager::GetInstance()->LoadModel(modelFilePath_);
-
-    // モデルを検索してセットする
-    pModel_ = ModelManager::GetInstance()->FindModel(modelFilePath_);
+    // 読み込みが返したキーでそのまま引く。
+    // パスで引き直すと、同じ gltf を使う別のキャラの実体が返ってきて
+    // Model（＝スキンの出力頂点バッファ）を共有してしまう
+    ReleaseOwnedModel();
+    modelKey_ = ModelManager::GetInstance()->LoadModel(modelFilePath_);
+    // gltf だけは体ごとに専用の実体ができる（キーがパスと違うのが目印）。
+    // それ以外はパスがそのままキーで、他のオブジェクトと共有している
+    ownsModel_ = (modelKey_ != modelFilePath_);
+    pModel_ = ModelManager::GetInstance()->FindModelByKey(modelKey_);
 
     // マテリアル配列のサイズを調整
     materials_.resize(pModel_->GetModelData().materials.size());
@@ -73,7 +99,19 @@ void Object3d::CreateModel(const std::string &filePath)
 
 void Object3d::CreatePrimitiveModel(const PrimitiveType &type, std::string texPath)
 {
-    pModel_ = ModelManager::GetInstance()->FindModel(ModelManager::GetInstance()->CreatePrimitiveModel(type, texPath));
+    pModel_ = ModelManager::GetInstance()->FindModelByKey(ModelManager::GetInstance()->CreatePrimitiveModel(type, texPath));
+    SetupPrimitiveMaterial(type, texPath);
+}
+
+void Object3d::CreatePrimitiveModel(const PrimitiveType &type, std::string texPath, const PrimitiveParams &params)
+{
+    // 同じ形（同じパラメータ）のモデルは ModelManager 側で共有される
+    pModel_ = ModelManager::GetInstance()->FindModelByKey(ModelManager::GetInstance()->CreatePrimitiveModel(type, texPath, params));
+    SetupPrimitiveMaterial(type, texPath);
+}
+
+void Object3d::SetupPrimitiveMaterial(const PrimitiveType &type, const std::string &texPath)
+{
     isPrimitive_ = true;
     materials_.resize(1);
     color_.resize(1);
@@ -92,7 +130,7 @@ void Object3d::CreateDynamicModel(std::string texPath)
 {
     // 動的モデルは形がオブジェクトごとに違うので共有できない。専用の実体を持つ
     dynamicModelKey_ = ModelManager::GetInstance()->CreateDynamicModel();
-    pModel_ = ModelManager::GetInstance()->FindModel(dynamicModelKey_);
+    pModel_ = ModelManager::GetInstance()->FindModelByKey(dynamicModelKey_);
     isPrimitive_ = false;
     materials_.resize(1);
     color_.resize(1);
@@ -111,7 +149,7 @@ void Object3d::CreateGpuWritableModel(std::string texPath, uint32_t maxVertexCou
 {
     // 動的モデルと同じく、形がオブジェクトごとに違うので専用の実体を持つ
     dynamicModelKey_ = ModelManager::GetInstance()->CreateGpuWritableModel(maxVertexCount);
-    pModel_ = ModelManager::GetInstance()->FindModel(dynamicModelKey_);
+    pModel_ = ModelManager::GetInstance()->FindModelByKey(dynamicModelKey_);
     isPrimitive_ = false;
     materials_.resize(1);
     color_.resize(1);
@@ -166,29 +204,31 @@ void Object3d::Update(const WorldTransform &worldTransform, const ViewProjection
     worldViewProjectionMatrix = worldMatrix * viewProjectionMatrix;
     Matrix4x4 worldInverseMatrix = Inverse(worldMatrix);
 
+    // カメラビュー窓の描画中は、そのビュー専用のバッファへ書く
+    TransformationMatrix *pData = CurrentTransformData();
     if (!pModel_->GetModelData().hasAnimations)
     {
-        pTransformationMatrixData_->WVP = worldViewProjectionMatrix;
-        pTransformationMatrixData_->World = worldMatrix;
-        pTransformationMatrixData_->WorldInverseTranspose = Transpose(worldInverseMatrix);
-        pTransformationMatrixData_->LightWVP = worldMatrix * ShadowMap::GetInstance()->GetLightViewProjection();
+        pData->WVP = worldViewProjectionMatrix;
+        pData->World = worldMatrix;
+        pData->WorldInverseTranspose = Transpose(worldInverseMatrix);
+        pData->LightWVP = worldMatrix * ShadowMap::GetInstance()->GetLightViewProjection();
     }
     else
     {
         if (pModel_->GetModelData().hasBones)
         {
-            pTransformationMatrixData_->WVP = worldViewProjectionMatrix;
-            pTransformationMatrixData_->World = worldMatrix;
-            pTransformationMatrixData_->WorldInverseTranspose = Transpose(worldInverseMatrix);
-            pTransformationMatrixData_->LightWVP = worldMatrix * ShadowMap::GetInstance()->GetLightViewProjection();
+            pData->WVP = worldViewProjectionMatrix;
+            pData->World = worldMatrix;
+            pData->WorldInverseTranspose = Transpose(worldInverseMatrix);
+            pData->LightWVP = worldMatrix * ShadowMap::GetInstance()->GetLightViewProjection();
         }
         else
         {
             Matrix4x4 localMat = pModel_->GetAnimator()->GetLocalMatrix();
-            pTransformationMatrixData_->WVP = localMat * worldViewProjectionMatrix;
-            pTransformationMatrixData_->World = localMat * worldMatrix;
-            pTransformationMatrixData_->WorldInverseTranspose = MakeIdentity4x4();
-            pTransformationMatrixData_->LightWVP = localMat * worldMatrix * ShadowMap::GetInstance()->GetLightViewProjection();
+            pData->WVP = localMat * worldViewProjectionMatrix;
+            pData->World = localMat * worldMatrix;
+            pData->WorldInverseTranspose = MakeIdentity4x4();
+            pData->LightWVP = localMat * worldMatrix * ShadowMap::GetInstance()->GetLightViewProjection();
         }
     }
 
@@ -214,7 +254,11 @@ void Object3d::Draw(const WorldTransform &worldTransform, const ViewProjection &
 {
     if (ShadowMap::GetInstance()->IsShadowPassActive())
     {
-        DrawShadow(worldTransform);
+        // 非表示のモデルは影も落とさない（消したはずの物の影だけが地面に残ってしまうため）
+        if (modelDraw)
+        {
+            DrawShadow(worldTransform);
+        }
         return;
     }
 
@@ -222,7 +266,8 @@ void Object3d::Draw(const WorldTransform &worldTransform, const ViewProjection &
     // G-Buffer に載せられるのは「不透明かつライティングあり」のものだけ。
     // 半透明（加算合成など）やライティング無効のものは従来どおり前方描画に残す。
     DeferredRenderer *deferred = DeferredRenderer::GetInstance();
-    const bool deferredEligible = deferred->IsEnabled() && lighting && useDeferred_ &&
+    // カメラビュー窓は前方描画だけで描く（G-Buffer はメインの1組しか無い）
+    const bool deferredEligible = deferred->IsEnabled() && !RenderView::IsExtra() && lighting && useDeferred_ &&
                                   (blendMode_ == BlendMode::None || blendMode_ == BlendMode::Normal);
     if (deferred->IsGBufferPassActive())
     {
@@ -265,7 +310,7 @@ void Object3d::Draw(const WorldTransform &worldTransform, const ViewProjection &
         assert(rootSignature && "オブジェクト描画のルートシグネチャが未生成です");
         pDxCommon_->GetCommandList()->SetGraphicsRootConstantBufferView(
             rootSignature->GetCbvIndex(0, D3D12_SHADER_VISIBILITY_VERTEX),
-            transformationMatrixResource_->GetGPUVirtualAddress());
+            CurrentTransformAddress());
     }
 
     // ライティング設定
@@ -307,7 +352,38 @@ void Object3d::AnimationUpdate()
             }
         }
 
-        currentModelAnimation_->Update(loop);
+        // ブレンドスペースの効きをフェードさせ、効いている間は再生位置を進める
+        BlendSpacePose blendPose;
+        if (blendSpace_)
+        {
+            const float dt = Frame::DeltaTime();
+            if (blendSpaceFade_ <= 0.0f)
+            {
+                blendSpaceWeight_ = blendSpaceTargetWeight_;
+            }
+            else
+            {
+                const float step = dt / blendSpaceFade_;
+                blendSpaceWeight_ = (blendSpaceWeight_ < blendSpaceTargetWeight_)
+                                        ? (std::min)(blendSpaceWeight_ + step, blendSpaceTargetWeight_)
+                                        : (std::max)(blendSpaceWeight_ - step, blendSpaceTargetWeight_);
+            }
+            if (blendSpaceWeight_ <= 0.0f && blendSpaceTargetWeight_ <= 0.0f)
+            {
+                blendSpace_.reset(); // 完全に抜けたら手放す
+            }
+            else
+            {
+                if (!blendSpacePaused_)
+                {
+                    blendSpace_->Advance(dt);
+                }
+                blendPose.space = blendSpace_.get();
+                blendPose.weight = blendSpaceWeight_;
+            }
+        }
+
+        currentModelAnimation_->Update(loop, blendPose.space ? &blendPose : nullptr);
 
         // 補間完了後の切り替え処理
         if (isAnimationSwitchPending_)
@@ -390,9 +466,17 @@ void Object3d::SetAnimation(const std::string &animationFileName)
     // 現在のファイル名と比較
     std::string currentFile = pAnimator->GetCurrentFilename();
 
+    // ブレンドスペースが全身を覆っている間は、下の通常アニメーションは見えていない
+    const bool hiddenByBlendSpace = blendSpace_ && blendSpaceWeight_ >= 1.0f;
+
     // 同じアニメーションの場合は何もしない
     if (currentFile == animationFileName && !isAnimationSwitchPending_)
     {
+        if (hiddenByBlendSpace)
+        {
+            // 隠れていた間に終わっていた一回きりのモーション（ジャンプなど）は、頭から再生し直す
+            currentModelAnimation_->PlayAnimation();
+        }
         return;
     }
 
@@ -405,8 +489,14 @@ void Object3d::SetAnimation(const std::string &animationFileName)
     // 新しいアニメーションのループ設定を予約しておく
     targetLoop_ = GetAnimationLoop(animationFileName);
 
+    // ブレンドスペースが全身を覆っている間は、下の通常アニメーションは見えていない。
+    // ここで補間すると見えていなかった古い姿勢が混ざるので、下は即座に差し替え、
+    // 見た目の切り替えはブレンドスペースのフェードアウトに任せる
+    constexpr float kHiddenSwitchDuration = 1.0e-4f;
+    const float duration = hiddenByBlendSpace ? kHiddenSwitchDuration : blendDuration_;
+
     // 新しいアニメーションへの補間開始
-    pAnimator->BlendToAnimation(AssetPath::ModelsRoot(animationFileName), animationFileName, blendDuration_);
+    pAnimator->BlendToAnimation(AssetPath::ModelsRoot(animationFileName), animationFileName, duration);
 
     // 切り替え待機状態にする
     isAnimationSwitchPending_ = true;
@@ -431,6 +521,38 @@ void Object3d::StopLayerAnimation(float fadeDuration)
         return;
     }
     currentModelAnimation_->StopLayerAnimation(fadeDuration);
+}
+
+void Object3d::PlayBlendSpace(const std::shared_ptr<AnimationBlendSpace> &space, float fadeDuration)
+{
+    if (!space)
+    {
+        return;
+    }
+    blendSpaceFade_ = (fadeDuration > 0.0f) ? fadeDuration : 0.0f;
+    blendSpaceTargetWeight_ = 1.0f;
+    if (blendSpace_ == space)
+    {
+        return; // 同じものを再生中（またはフェードアウト中から戻す）
+    }
+    if (!blendSpace_ || blendSpaceWeight_ <= 0.0f)
+    {
+        // 入り直しは周期の頭から・パラメータも目標へ合わせてから始める
+        space->ResetPhase();
+        space->SnapParameter();
+    }
+    // 別のブレンドスペースへは、効きを引き継いだまま差し替える
+    blendSpace_ = space;
+}
+
+void Object3d::StopBlendSpace(float fadeDuration)
+{
+    if (!blendSpace_)
+    {
+        return;
+    }
+    blendSpaceFade_ = (fadeDuration > 0.0f) ? fadeDuration : 0.0f;
+    blendSpaceTargetWeight_ = 0.0f;
 }
 
 bool Object3d::IsLayerAnimationPlaying() const
@@ -777,9 +899,12 @@ void Object3d::DrawArmatureShape(const Vector3 &startPos, const Vector3 &endPos,
 
 void Object3d::SetModel(const std::string &filePath)
 {
-    // モデルを検索してセットする
-    ModelManager::GetInstance()->LoadModel(filePath);
-    pModel_ = ModelManager::GetInstance()->FindModel(filePath);
+    // 読み込みが返したキーでそのまま引く（CreateModel と同じ理由）。
+    // 前のモデルは差し替えた時点で誰も使わないので返しておく
+    ReleaseOwnedModel();
+    modelKey_ = ModelManager::GetInstance()->LoadModel(filePath);
+    ownsModel_ = (modelKey_ != filePath);
+    pModel_ = ModelManager::GetInstance()->FindModelByKey(modelKey_);
 
     if (pModel_->IsGltf())
     {
@@ -792,9 +917,24 @@ void Object3d::SetModel(const std::string &filePath)
     }
 }
 
+void Object3d::SetCameraFade(float fade)
+{
+    // マテリアルは作り直されることがあるので、同じ値でも毎回全部へ渡す
+    cameraFade_ = fade;
+    for (const std::unique_ptr<Material> &material : materials_)
+    {
+        material->SetCameraFade(fade);
+    }
+}
+
 bool Object3d::CanBatchInstanced() const
 {
     if (!pModel_)
+    {
+        return false;
+    }
+    // カメラに近くて透けている物はマテリアルの値が他と違うので、1体ずつ描く
+    if (cameraFade_ < 1.0f)
     {
         return false;
     }
@@ -820,7 +960,7 @@ bool Object3d::ShouldDrawInCurrentPass(bool lighting) const
     }
     // Draw() の振り分けと同じ: G-Buffer に載せられるのは不透明かつライティングありのものだけ。
     DeferredRenderer *deferred = DeferredRenderer::GetInstance();
-    const bool deferredEligible = deferred->IsEnabled() && lighting && useDeferred_ &&
+    const bool deferredEligible = deferred->IsEnabled() && !RenderView::IsExtra() && lighting && useDeferred_ &&
                                   (blendMode_ == BlendMode::None || blendMode_ == BlendMode::Normal);
     if (deferred->IsGBufferPassActive())
     {
@@ -1006,6 +1146,32 @@ void Object3d::DrawShadow(const WorldTransform &worldTransform)
     {
         pModel_->DrawShadow();
     }
+}
+
+Object3d::TransformationMatrix *Object3d::CurrentTransformData()
+{
+    const int view = RenderView::Current();
+    if (view == 0)
+    {
+        return pTransformationMatrixData_;
+    }
+    if (!viewTransformResources_[view])
+    {
+        viewTransformResources_[view] = pDxCommon_->CreateBufferResource(sizeof(TransformationMatrix));
+        viewTransformResources_[view]->Map(0, nullptr, reinterpret_cast<void **>(&pViewTransformData_[view]));
+        *pViewTransformData_[view] = *pTransformationMatrixData_;
+    }
+    return pViewTransformData_[view];
+}
+
+D3D12_GPU_VIRTUAL_ADDRESS Object3d::CurrentTransformAddress()
+{
+    const int view = RenderView::Current();
+    if (view == 0 || !viewTransformResources_[view])
+    {
+        return transformationMatrixResource_->GetGPUVirtualAddress();
+    }
+    return viewTransformResources_[view]->GetGPUVirtualAddress();
 }
 
 void Object3d::CreateTransformationMatrix()

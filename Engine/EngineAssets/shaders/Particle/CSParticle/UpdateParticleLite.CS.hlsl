@@ -224,7 +224,12 @@ void main(uint3 DTid : SV_DispatchThreadID, uint groupIndex : SV_GroupIndex)
 
             odc.translate = p.translate;
             odc.scaleXY = PackScaleXY(p.scale);
-            odc.scaleZ = PackScaleZ(p.scale);
+            // フリップブックのコマ番号を空いている上位16bitへ同梱する（無効なら0のまま）
+            odc.scaleZ = PackScaleZFrame(
+                p.scale, ComputeParticleWord(gSettings.enableFlipbook, gSettings.flipbookCols,
+                                             gSettings.flipbookRows, gSettings.flipbookMode,
+                                             gSettings.flipbookFps, gSettings.flipbookRandomStart,
+                                             lifeRatio, gPerFrame.time, particleIndex));
             odc.velocity = p.velocity;
             odc.color = PackColorRGBA8(p.color);
             gDrawCore[particleIndex] = odc;

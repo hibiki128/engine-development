@@ -1,5 +1,8 @@
 #pragma once
 #include "Easing.h"
+#include "animation/ik/FootIkSolver.h"
+#include "animation/ik/LookAtSolver.h"
+#include "animation/state/AnimationStateMachineRunner.h"
 #include "camera/projection/ViewProjection.h"
 #include "collider/ColliderBase.h"
 #include "collider/type/AABBCollider.h"
@@ -41,6 +44,7 @@ class BaseObject {
     Quaternion q_{};
     // ライティング
     bool isLighting_ = true;
+    bool cameraFadeEnabled_ = true; // カメラに近いと透ける（CameraFade）
     // isLoop_ は後方互換のために残しているが、ループ制御は
     // AddAnimation(path, loop) で登録したアニメーションごとのフラグが優先される
     bool skeletonDraw_ = false;
@@ -124,6 +128,15 @@ class BaseObject {
 
     // 中心座標取得
     WorldTransform *GetWorldTransform() { return transform_.get(); }
+
+    /// <summary>
+    /// 実際に描かれる位置のワールド行列を取得する（描画専用オフセット込み）。
+    /// レイトレーシングの加速構造のように「絵と同じ位置」が要る所で使う。
+    /// transform_ は呼び出しの前後で変わらない
+    /// </summary>
+    /// <returns>Matrix4x4: 描画に使われるワールド行列</returns>
+    Matrix4x4 GetRenderWorldMatrix();
+
     ModelAnimation *GetModelAnimation() { return obj3d_->GetCurrentModelAnimation(); }
 
     /// <summary>
@@ -172,6 +185,22 @@ class BaseObject {
     /// jsons/Collider/ から、このオブジェクトのコライダーを読み込んで作り直す
     /// </summary>
     void LoadColliders();
+
+#ifdef USE_IMGUI
+    /// <summary>
+    /// Undo と Play モードのスナップショット用に、持っているコライダーを JSON 配列へ写す。
+    /// SaveColliders と違いディスクへは書かない（毎フレーム呼ばれるため）
+    /// </summary>
+    /// <returns>nlohmann::json: コライダー1個を1要素とする配列</returns>
+    nlohmann::json CaptureColliderState() const;
+
+    /// <summary>
+    /// CaptureColliderState で得た配列どおりにコライダーを揃え直す。
+    /// 配列に無い物は消し、足りない物は作り、残った物は設定だけ戻す
+    /// </summary>
+    /// <param name="state">戻す状態</param>
+    void RestoreColliderState(const nlohmann::json &state);
+#endif // USE_IMGUI
 
     /// <summary>
     /// コライダーの既定名を作る（&lt;オブジェクト名&gt;_&lt;種別&gt;Collider_&lt;連番&gt;）。
@@ -229,6 +258,10 @@ class BaseObject {
         return texturePaths_[index];
     }
     std::string GetParentName() const;
+
+    /// <summary>どのプレハブから置いた物か（プレハブの根だけが持つ。空ならプレハブとは無関係）</summary>
+    const std::string &GetPrefabSource() const { return prefabSource_; }
+    void SetPrefabSource(const std::string &prefabName) { prefabSource_ = prefabName; }
     std::vector<std::string> GetChildrenNames() const;
     Object3d *GetObject3d() { return obj3d_.get(); }
     PrimitiveType GetPrimitiveType() { return type_; }
@@ -249,6 +282,9 @@ class BaseObject {
 
     bool AnimaIsFinish() { return obj3d_->IsFinish(); }
     bool &GetLighting() { return isLighting_; }
+    /// <summary>カメラに近いと透けるか（地形など、透けさせたくない物は外す）</summary>
+    bool GetCameraFadeEnabled() const { return cameraFadeEnabled_; }
+    void SetCameraFadeEnabled(bool enabled) { cameraFadeEnabled_ = enabled; }
     bool GetShouldSave() const { return shouldSave_; }
     bool IsPrimitive() const { return isPrimitive_; }
     const Vector4 GetColor(int index = 0) { return obj3d_->GetColor(index); }
@@ -295,6 +331,12 @@ class BaseObject {
     void SetGizmoSelectable(bool selectable) { isGizmoSelectable_ = selectable; }
     void SetIsAlive(bool flag) { isAlive_ = flag; }
     void SetIsModelDraw(bool isModelDraw) { isModelDraw_ = isModelDraw; }
+
+    /// <summary>
+    /// レイトレーシングの加速構造へ積むか。既定はモデルを描いているときだけ。
+    /// 自分は描かずに別の形で見せるもの（メタボール等）は必要に応じて上書きする
+    /// </summary>
+    virtual bool IsRaytracingVisible() const { return isModelDraw_; }
     void SetOffset(const Vector3 &offset) { offSet_ = offset; }
 
     /// <summary>
@@ -368,7 +410,91 @@ class BaseObject {
     void SetResolveCollision(bool enable);
     bool IsResolveCollision() const { return resolveCollision_; }
 
+    /// ===================================================
+    /// 足IK（接地）
+    /// ===================================================
+
+    /// <summary>
+    /// 足IKを解く。ワールド行列が確定してから、描画（＝スキニング）より前に呼ぶこと。
+    /// 足IKを持っていない・無効なオブジェクトでは何もしない
+    /// </summary>
+    void SolveFootIk();
+
+    /// <summary>
+    /// 足IKの設定を取得する。まだ持っていなければ作って返す
+    /// （スキンモデルでなければ nullptr）
+    /// </summary>
+    /// <returns>FootIkSolver*: 足IKソルバ</returns>
+    FootIkSolver *AcquireFootIk();
+
+    /// <summary>足IKを持っているか（持っていないオブジェクトでは nullptr が返る）</summary>
+    /// <returns>FootIkSolver*: 足IKソルバ。未設定なら nullptr</returns>
+    FootIkSolver *GetFootIk() const { return footIk_.get(); }
+
+    /// ===================================================
+    /// 注視IK（頭を見る先へ向ける）
+    /// ===================================================
+
+    /// <summary>
+    /// 注視IKを解く。足IKと同じく、ワールド行列が確定してからスキニングより前に呼ぶ。
+    /// 体の正面は「回転 × (+Z)」として扱う
+    /// </summary>
+    void SolveLookAt();
+
+    /// <summary>
+    /// 注視IKを取得する。まだ持っていなければ作って返す（スキンモデルでなければ nullptr）
+    /// </summary>
+    /// <returns>LookAtSolver*: 注視IK</returns>
+    LookAtSolver *AcquireLookAt();
+
+    /// <summary>注視IKを持っているか（持っていなければ nullptr）</summary>
+    LookAtSolver *GetLookAt() const { return lookAt_.get(); }
+
+    /// <summary>
+    /// 注視IKを「既定で使う」状態にする（ゲーム側のキャラ用）。
+    /// 保存済みの設定があればそれを尊重し、無ければジョイントを拾って有効にする
+    /// </summary>
+    /// <returns>LookAtSolver*: 注視IK（スキンモデルでなければ nullptr）</returns>
+    LookAtSolver *EnableLookAtByDefault();
+
+    /// <summary>見る先を設定する（注視IKを持っていなければ何もしない）</summary>
+    /// <param name="targetWorld">見る先（ワールド）</param>
+    void SetLookAtTarget(const Vector3 &targetWorld);
+
+    /// <summary>見る先を外す（なめらかに正面へ戻る）</summary>
+    void ClearLookAtTarget();
+
+    /// ===================================================
+    /// アニメーションのステートマシン
+    /// ===================================================
+
+    /// <summary>
+    /// ステートマシンを付ける（空文字で外す）。ファイルは jsons/AnimationStateMachine/名前.json
+    /// </summary>
+    /// <param name="assetName">ステートマシンのファイル名（拡張子なし）</param>
+    /// <returns>bool: 付けられたら true（ファイルが無い・スキンモデルでなければ false）</returns>
+    bool SetAnimationStateMachine(const std::string &assetName);
+
+    /// <summary>付いているステートマシン（無ければ nullptr）。パラメータはここへ渡す</summary>
+    AnimationStateMachineRunner *GetAnimationStateMachine() const { return animStateMachine_.get(); }
+
   private:
+    /// <summary>
+    /// 描画専用の位置・回転オフセットを transform_ へ当てる。
+    /// 元の値を受け取って返すので、使い終わったら RestoreRenderTransform へ渡すこと
+    /// </summary>
+    /// <param name="outOriginalPosition">当てる前の位置</param>
+    /// <param name="outOriginalRotation">当てる前の回転</param>
+    /// <returns>bool: 実際に当てたなら true（false なら戻す必要も無い）</returns>
+    bool ApplyRenderTransform(Vector3 &outOriginalPosition, Quaternion &outOriginalRotation);
+
+    /// <summary>
+    /// ApplyRenderTransform で当てたオフセットを取り消す
+    /// </summary>
+    /// <param name="originalPosition">当てる前の位置</param>
+    /// <param name="originalRotation">当てる前の回転</param>
+    void RestoreRenderTransform(const Vector3 &originalPosition, const Quaternion &originalRotation);
+
     void DebugObject();
     void ShowFileSelector();
     // ブレンドモードの選択UI
@@ -386,10 +512,23 @@ class BaseObject {
     /// <summary>物理パラメータを objectData_ から読み込み</summary>
     void LoadPhysics();
 
+    // --- 足IK ---
+    /// <summary>足IKの設定を objectData_ へ保存</summary>
+    void SaveFootIk();
+    /// <summary>足IKの設定を objectData_ から読み込み</summary>
+    void LoadFootIk();
+    /// <summary>注視IKの設定を objectData_ へ保存 / から読み込み</summary>
+    void SaveLookAt();
+    void LoadLookAt();
+    /// <summary>ステートマシンの名前を objectData_ へ保存 / から読み込み</summary>
+    void SaveAnimStateMachine();
+    void LoadAnimStateMachine();
+
     bool shouldSave_ = true;
     bool isGizmoSelectable_ = true;
     BlendMode blendMode_ = BlendMode::Normal;
     std::string parentName_{};
+    std::string prefabSource_{}; // 置いたときのプレハブ名（「プレハブへ反映」「置き直す」に使う）
 
     std::vector<std::unique_ptr<ColliderBase>> colliders_;
 
@@ -397,6 +536,16 @@ class BaseObject {
     RigidBodyParams rigidBody_;                     // 物理パラメータ
     Vector3 accumulatedForce_ = {0.0f, 0.0f, 0.0f}; // 1フレーム分の外力
     bool resolveCollision_ = false;                 // 衝突時に押し出すか
+
+    // --- 足IK ---
+    // 使うオブジェクトだけが持つ（スキンモデル以外では生成しない）
+    std::unique_ptr<FootIkSolver> footIk_;
+
+    // --- 注視IK ---（使うオブジェクトだけが持つ）
+    std::unique_ptr<LookAtSolver> lookAt_;
+
+    // --- アニメーションのステートマシン ---（付けたオブジェクトだけが持つ）
+    std::unique_ptr<AnimationStateMachineRunner> animStateMachine_;
 
     // スケールにイージングを適用してモーションを確認するためのデバッグ用状態
     struct ScaleEaseState {
@@ -430,5 +579,14 @@ class BaseObject {
 
     // スケールイージングテストのImGuiウィジェットを描画し再生状態を更新する
     void DrawScaleEaseImGui();
+
+    // 足IK（接地）の設定UIを描画する。インスペクタの「物理」タブから呼ばれる
+    void DrawFootIkImGui();
+
+    // 注視IKの設定UIを描画する。インスペクタの「物理」タブから呼ばれる
+    void DrawLookAtImGui();
+
+    // ステートマシンの選択と実行中の様子。インスペクタの「見た目」タブのアニメーションから呼ばれる
+    void DrawAnimStateMachineImGui();
 };
 } // namespace Hagine

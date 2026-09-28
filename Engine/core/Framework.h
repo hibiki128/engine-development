@@ -3,6 +3,10 @@
 #ifdef USE_IMGUI
 #endif // USE_IMGUI
 #include "Audio.h"
+#include "music/MusicEngine.h"
+#include "debug/capture/CaptureManager.h"
+#include "debug/console/DebugConsole.h"
+#include "edit/timeline/TimelineManager.h"
 #include "collider/CollisionManager.h"
 #include "debug/imgui/ImGuiManager.h"
 #include "debug/imgui/ImGuizmoManager.h"
@@ -131,6 +135,10 @@ class Framework
     PrimitiveModel *pPrimitiveModel_ = nullptr;
 
     CollisionManager *pCollisionManager_ = nullptr;
+
+    // 3Dオーディオのドップラー用。カメラ速度を前フレームとの差から求めるために持つ
+    Vector3 audioListenerPreviousPosition_{};
+    bool audioListenerInitialized_ = false;
 
     bool endRequest_;
 };

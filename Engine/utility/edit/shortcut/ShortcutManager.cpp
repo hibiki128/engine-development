@@ -53,7 +53,7 @@ void ShortcutManager::Initialize(Input *input)
 
 void ShortcutManager::Update()
 {
-    const float deltaTime = Frame::DeltaTime();
+    const float deltaTime = Frame::UnscaledDeltaTime();
 
     for (auto &[name, shortcut] : shortcuts_)
     {

@@ -89,6 +89,28 @@ ParticleCSEmitter::~ParticleCSEmitter()
     }
     particleGroups_.clear();
     particleGroupNames_.clear();
+
+    // 発生源メッシュ用に確保したSRVインデックスを返す。
+    // **渡すのは予約番号なので -1 する**（+1規約）。解放は数フレーム後
+    // （GPU がまだ前のフレームでこのスロットを読んでいる最中に潰すと絵が壊れる）
+    FreeMeshSrvIndices();
+}
+
+void ParticleCSEmitter::FreeMeshSrvIndices()
+{
+    if (!pSrvManager_)
+    {
+        return; // Initialize されていない
+    }
+
+    for (uint32_t *pSrvIndex : {&triangleInfoSrvIndex_, &triangleCDFSrvIndex_, &edgeInfoSrvIndex_})
+    {
+        if (*pSrvIndex != 0)
+        {
+            pSrvManager_->FreeDeferred(*pSrvIndex - 1);
+            *pSrvIndex = 0;
+        }
+    }
 }
 
 void ParticleCSEmitter::Initialize(const std::string &name)
@@ -345,6 +367,13 @@ void ParticleCSEmitter::DrawCompute(const ViewProjection &vp)
     if (ShadowMap::GetInstance()->IsShadowPassActive())
         return;
 
+    // 初期化を積んだフレームの記録が終わったので、次のフレームからは発生してよい
+    // （このフレームのコマンドは初期化ごと GPU に投げられる）
+    for (ParticleCSGroup *group : particleGroups_)
+    {
+        group->ClearInitPending();
+    }
+
     // 発生源メッシュの位置・向き（親追従＝ビルボード）を Emit/Update のディスパッチより前に確定させる。
     // グループが空でもワイヤーフレーム表示のために解決しておく。
     ResolveEmitterTransform(vp);
@@ -368,6 +397,16 @@ void ParticleCSEmitter::DrawCompute(const ViewProjection &vp)
     groupActive_.assign(particleGroups_.size(), 1);
     const bool fieldSpawnPossible = emitOnlyOnFieldContact_ && receiveFields_;
     const bool emitterEmitting = (pEmitterMeshData_->emit != 0);
+    // 発生した直後の数フレームは、生存数の読み戻しが追いつくまでアイドル扱いにしない
+    if (emitterEmitting)
+    {
+        recentEmitFrames_ = kRecentEmitHoldFrames;
+    }
+    else if (recentEmitFrames_ > 0)
+    {
+        --recentEmitFrames_;
+    }
+    const bool recentlyEmitted = recentEmitFrames_ > 0;
     bool anyActive = false;
     for (size_t i = 0; i < particleGroups_.size(); ++i)
     {
@@ -376,7 +415,7 @@ void ParticleCSEmitter::DrawCompute(const ViewProjection &vp)
         // ここで再度 FetchAliveDrawCount(Map/Unmap) すると全グループ分の余計なCPUコストになるので既存値を使う。
         const bool willEmit = fieldSpawnPossible ||
                               (emitterEmitting && group->GetSettingsData()->emitCount > 0);
-        const bool active = willEmit || (group->GetAliveDrawCount() > 0);
+        const bool active = willEmit || recentlyEmitted || (group->GetAliveDrawCount() > 0);
         groupActive_[i] = active ? 1u : 0u;
         anyActive = anyActive || active;
     }
@@ -390,9 +429,9 @@ void ParticleCSEmitter::DrawCompute(const ViewProjection &vp)
     auto *fieldMgr = ParticleCSFieldManager::GetInstance();
     auto fieldCountRes = receiveFields_ ? fieldMgr->GetFieldCountResource()
                                         : fieldMgr->GetZeroFieldCountResource();
-    // このグループ群がフィールドの影響を受けるか（軽量 Update 適格判定に使う）。
-    // receiveFields_=false なら shader へ渡る fieldCount は 0 なので影響なし扱い。
-    const bool fieldsActive = receiveFields_ && (fieldMgr->GetActiveFieldCount() > 0);
+    // このグループ群が粒子に効くフィールドを受けるか（軽量 Update 適格判定に使う）。
+    // 「この範囲から発生」だけのフィールドは Update では読まないので数えない。
+    const bool fieldsActive = receiveFields_ && (fieldMgr->GetUpdateMask(fieldLayers_) != 0);
 
     // 生存リスト間接ディスパッチ:
     //   Emit と Update がどちらも out リストへ append するため、フレーム順序は
@@ -413,7 +452,8 @@ void ParticleCSEmitter::DrawCompute(const ViewProjection &vp)
         group->EnsureUpdateOptionalBuffers(fieldsActive);
         // エディタの編集用エミッターはプレビュー窓（＝別カメラ）にしか描かないので、
         // シーンカメラの視錐台でカリングすると編集中の粒子が消える。ここで抑止する。
-        group->SetFrustumCullSuppressed(previewOnly_);
+        // カメラビュー窓を開いている間も同じ（別のカメラから見える粒まで間引かれてしまう）
+        group->SetFrustumCullSuppressed(previewOnly_ || RenderView::IsExtraViewsActive());
         group->Update(vp);
         group->AdvanceAliveFrame();
         group->ResetAliveCounterDispatch(computeCmdList);
@@ -464,9 +504,14 @@ void ParticleCSEmitter::DrawGraphics(const ViewProjection &vp)
     if (particleGroups_.empty())
         return;
 
-    DrawEmitter();
+    // カメラビュー窓の描画中は、そのビュー用の per-view で描く（エミッターの枠線は積まない）
+    const int view = RenderView::Current();
+    if (view == 0)
+    {
+        DrawEmitter();
+    }
 
-    int drawSpan = GpuProfiler::GetInstance()->OpenGraphics(pCommandList_, "Draw");
+    int drawSpan = GpuProfiler::GetInstance()->OpenGraphics(pCommandList_, view == 0 ? "Draw" : "Draw(カメラビュー)");
     for (auto &group : particleGroups_)
     {
         // 旧 CountParticle 全Nディスパッチは廃止（生存数は aliveCounter に統合）
@@ -493,10 +538,14 @@ void ParticleCSEmitter::DrawGraphics(const ViewProjection &vp)
             D3D12_VERTEX_BUFFER_VIEW vertexBufferView = group->GetVertexBufferView();
             pCommandList_->IASetIndexBuffer(&indexBufferView);
             pCommandList_->IASetVertexBuffers(0, 1, &vertexBufferView);
-            pCommandList_->SetGraphicsRootConstantBufferView(gpuParticleRS->GetCbvIndex(0, D3D12_SHADER_VISIBILITY_VERTEX), group->GetPerViewResource()->GetGPUVirtualAddress());
+            const D3D12_GPU_VIRTUAL_ADDRESS perViewAddress =
+                (view == 0) ? group->GetPerViewResource()->GetGPUVirtualAddress() : group->PreparePerViewForView(vp, view);
+            pCommandList_->SetGraphicsRootConstantBufferView(gpuParticleRS->GetCbvIndex(0, D3D12_SHADER_VISIBILITY_VERTEX), perViewAddress);
             // 描画コンパクション: t0=詰めた描画バッファ(順次読み), t4=Rotation(回転グループのみscatter)
             pSrvManager_->SetGraphicsRootDescriptorTable(gpuParticleRS->GetSrvIndex(0, D3D12_SHADER_VISIBILITY_VERTEX), group->GetRenderCompactSrvForVSIndex());
-            pSrvManager_->SetGraphicsRootDescriptorTable(gpuParticleRS->GetSrvIndex(0, D3D12_SHADER_VISIBILITY_PIXEL), TextureManager::GetInstance()->GetTextureIndexByFilePath(group->GetParticleGroupData().materials[meshIndex].textureFilePath));
+            const uint32_t albedoSrvIndex = TextureManager::GetInstance()->GetTextureIndexByFilePath(group->GetParticleGroupData().materials[meshIndex].textureFilePath);
+            pSrvManager_->SetGraphicsRootDescriptorTable(gpuParticleRS->GetSrvIndex(0, D3D12_SHADER_VISIBILITY_PIXEL), albedoSrvIndex);
+            BindSceneDepthForPixel(gpuParticleRS, albedoSrvIndex);
             pCommandList_->SetGraphicsRootConstantBufferView(gpuParticleRS->GetCbvIndex(1, D3D12_SHADER_VISIBILITY_PIXEL), group->GetMaterialResource()->GetGPUVirtualAddress());
             // 描画リスト SRV (t2: renderSlot=描画順->slot, t3: visibleCount=描画リスト長)
             pSrvManager_->SetGraphicsRootDescriptorTable(gpuParticleRS->GetSrvIndex(2, D3D12_SHADER_VISIBILITY_VERTEX), group->GetRenderSlotSrvForVSIndex());
@@ -506,6 +555,25 @@ void ParticleCSEmitter::DrawGraphics(const ViewProjection &vp)
         }
     }
     GpuProfiler::GetInstance()->Close(pCommandList_, drawSpan);
+}
+
+void ParticleCSEmitter::BindSceneDepthForPixel(const ShaderRootSignature *rootSignature, uint32_t fallbackSrvIndex)
+{
+    const UINT rootIndex = rootSignature->GetSrvIndex(1, D3D12_SHADER_VISIBILITY_PIXEL);
+    if (rootIndex == UINT_MAX)
+    {
+        // PS が深度を使っていない版でコンパイルされている（DXC が未使用リソースを消す）
+        return;
+    }
+    // カメラビュー窓ではメインの画面の深度は使えない（別のカメラの深度なので粒が変に削られる）。
+    // 全面が一番奥の深度を渡して、背景になじませる処理を実質止める
+    if (RenderView::IsExtra() && RenderView::GetFarDepthSrvIndex() != 0)
+    {
+        pSrvManager_->SetGraphicsRootDescriptorTable(rootIndex, RenderView::GetFarDepthSrvIndex());
+        return;
+    }
+    const uint32_t depthSrvIndex = pDxCommon_->GetDepthCopySrvIndex();
+    pSrvManager_->SetGraphicsRootDescriptorTable(rootIndex, (depthSrvIndex != 0) ? depthSrvIndex : fallbackSrvIndex);
 }
 
 void ParticleCSEmitter::ExecuteIndirectDraw(ParticleCSGroup *group, size_t meshIndex)
@@ -586,7 +654,9 @@ void ParticleCSEmitter::DrawGraphicsForPreview(D3D12_GPU_VIRTUAL_ADDRESS perView
             pCommandList_->SetGraphicsRootConstantBufferView(gpuParticleRS->GetCbvIndex(0, D3D12_SHADER_VISIBILITY_VERTEX), perViewGpuAddress);
             // 描画コンパクション: t0=詰めた描画バッファ, t4=Rotation(回転グループのみ)
             pSrvManager_->SetGraphicsRootDescriptorTable(gpuParticleRS->GetSrvIndex(0, D3D12_SHADER_VISIBILITY_VERTEX), group->GetRenderCompactSrvForVSIndex());
-            pSrvManager_->SetGraphicsRootDescriptorTable(gpuParticleRS->GetSrvIndex(0, D3D12_SHADER_VISIBILITY_PIXEL), TextureManager::GetInstance()->GetTextureIndexByFilePath(group->GetParticleGroupData().materials[meshIndex].textureFilePath));
+            const uint32_t albedoSrvIndex = TextureManager::GetInstance()->GetTextureIndexByFilePath(group->GetParticleGroupData().materials[meshIndex].textureFilePath);
+            pSrvManager_->SetGraphicsRootDescriptorTable(gpuParticleRS->GetSrvIndex(0, D3D12_SHADER_VISIBILITY_PIXEL), albedoSrvIndex);
+            BindSceneDepthForPixel(gpuParticleRS, albedoSrvIndex);
             pCommandList_->SetGraphicsRootConstantBufferView(gpuParticleRS->GetCbvIndex(1, D3D12_SHADER_VISIBILITY_PIXEL), group->GetMaterialResource()->GetGPUVirtualAddress());
             pSrvManager_->SetGraphicsRootDescriptorTable(gpuParticleRS->GetSrvIndex(2, D3D12_SHADER_VISIBILITY_VERTEX), group->GetRenderSlotSrvForVSIndex());
             pSrvManager_->SetGraphicsRootDescriptorTable(gpuParticleRS->GetSrvIndex(3, D3D12_SHADER_VISIBILITY_VERTEX), group->GetVisibleCounterSrvForVSIndex());
@@ -599,8 +669,8 @@ void ParticleCSEmitter::DrawGraphicsForPreview(D3D12_GPU_VIRTUAL_ADDRESS perView
 
 void ParticleCSEmitter::LoadModel(const std::string &modelPath)
 {
-    ModelManager::GetInstance()->LoadModel(modelPath);
-    pModel_ = ModelManager::GetInstance()->FindModel(modelPath);
+    // 読み込みが返したキーでそのまま引く（パスで引き直すと別の実体が返りうる）
+    pModel_ = ModelManager::GetInstance()->FindModelByKey(ModelManager::GetInstance()->LoadModel(modelPath));
     if (pModel_)
     {
         modelData_ = pModel_->GetModelData();
@@ -613,7 +683,7 @@ void ParticleCSEmitter::LoadPrimitiveModel(PrimitiveType type)
     std::string modelKey = IsParametricPrimitive(type)
                                ? ModelManager::GetInstance()->CreatePrimitiveModel(type, "", primitiveParams_)
                                : ModelManager::GetInstance()->CreatePrimitiveModel(type, "");
-    pModel_ = ModelManager::GetInstance()->FindModel(modelKey);
+    pModel_ = ModelManager::GetInstance()->FindModelByKey(modelKey);
     if (pModel_)
     {
         modelData_ = pModel_->GetModelData();
@@ -632,6 +702,29 @@ void ParticleCSEmitter::RebuildPrimitiveModel()
 
 void ParticleCSEmitter::Update()
 {
+    // 生成直後・プールから借り直した直後のグループは、初期化がまだ GPU で走っていない。
+    // このフレームに発生させると、後から走る初期化が出した粒子を消してしまうので、
+    // 発生の要求（EmitOnce）は持ち越して次のフレームに出す
+    for (ParticleCSGroup *group : particleGroups_)
+    {
+        if (group->IsInitPending())
+        {
+            pEmitterMeshData_->emit = 0;
+            return;
+        }
+    }
+
+    // 発生の立ち上がり。出している間だけ時間を進めて 0→1 へ上げる。
+    // なめらかに立ち上げたいので線形ではなく smoothstep を掛ける
+    if (emitRampTime_ > 0.0f && (isAuto_ || emitOnce_) && emitRateScale_ < 1.0f)
+    {
+        emitRampTimer_ += Frame::UnscaledDeltaTime();
+        const float t = std::clamp(emitRampTimer_ / emitRampTime_, 0.0f, 1.0f);
+        emitRateScale_ = t * t * (3.0f - 2.0f * t);
+    }
+    // 係数はグループ設定ではなくエミッター側の CB で渡す（→ ParticleStruct.h の emitRateScale）
+    pEmitterMeshData_->emitRateScale = emitRateScale_;
+
     if (isAuto_)
     {
         EmitterUpdate();
@@ -645,6 +738,12 @@ void ParticleCSEmitter::Update()
     {
         pEmitterMeshData_->emit = 0;
     }
+}
+
+void ParticleCSEmitter::RestartEmitRamp()
+{
+    emitRampTimer_ = 0.0f;
+    emitRateScale_ = (emitRampTime_ > 0.0f) ? 0.0f : 1.0f;
 }
 
 void ParticleCSEmitter::EmitOnce()
@@ -794,6 +893,20 @@ void ParticleCSEmitter::AddParticleGroup(ParticleCSGroup *group)
     ImGuiNotification::Post("パーティクルグループを追加しました: " + name, {0.4f, 0.8f, 1.0f, 1.0f});
 }
 
+int ParticleCSEmitter::DetachGroupFromAll(const std::string &groupName)
+{
+    int detached = 0;
+    for (ParticleCSEmitter *pEmitter : liveEmitters_)
+    {
+        if (pEmitter && pEmitter->particleGroupNames_.contains(groupName))
+        {
+            pEmitter->RemoveParticleGroup(groupName);
+            ++detached;
+        }
+    }
+    return detached;
+}
+
 void ParticleCSEmitter::RemoveParticleGroup(const std::string &groupName)
 {
     auto it = std::remove_if(particleGroups_.begin(), particleGroups_.end(),
@@ -819,7 +932,7 @@ void ParticleCSEmitter::EmitterUpdate()
         return;
     }
 
-    pEmitterMeshData_->frequencyTime += Frame::DeltaTime();
+    pEmitterMeshData_->frequencyTime += Frame::UnscaledDeltaTime();
     if (pEmitterMeshData_->frequency <= pEmitterMeshData_->frequencyTime)
     {
         pEmitterMeshData_->frequencyTime -= pEmitterMeshData_->frequency;
@@ -845,6 +958,8 @@ void ParticleCSEmitter::CreateEmitterMeshResource()
     pEmitterMeshData_->edgeCount = 0;
     pEmitterMeshData_->anchorPoint = Vector3(0.5f, 0.5f, 0.5f);
     pEmitterMeshData_->emitCountOverride = 0;
+    // 立ち上がりを使わないエミッターは常に等倍。Update が毎フレーム上書きする
+    pEmitterMeshData_->emitRateScale = 1.0f;
 }
 
 void ParticleCSEmitter::EmitterDisPatch(ID3D12GraphicsCommandList *pCommandList)
@@ -858,28 +973,16 @@ void ParticleCSEmitter::EmitterDisPatch(ID3D12GraphicsCommandList *pCommandList)
         ComputePipelineType::Emitter,
         BlendMode::Normal, ShaderMode::None, pCommandList);
 
-    // フィールド接触Emitモードの発生数は「対象フィールドの今フレームのバースト数合計」。
-    // 各フィールドの data.emitSpawnCount には ParticleCSFieldManager::Update() が
-    // 間隔タイマーから算出した今フレームの値が入っている（バースト無しフレームは0）。
+    // フィールド接触Emitモードの発生数は「受けるレイヤーのフィールドが今フレーム出す数の合計」。
     // シェーダはこの合計スレッドを累積和でフィールドごとに配分する（FindEmitTargetField）。
     // 通常モードは 0 にしてグループ設定 gSettings.emitCount を使わせる。
-    uint32_t fieldBurstTotal = 0;
-    if (emitOnlyOnFieldContact_ && receiveFields_)
-    {
-        for (const auto &field : ParticleCSFieldManager::GetInstance()->GetFields())
-        {
-            if (!field.enabled || !field.data.enableEmitSpawn)
-                continue;
-            bool groupMatch = (field.data.groupId == -1) ||
-                              (fieldGroupId_ == -1) ||
-                              (field.data.groupId == fieldGroupId_);
-            if (groupMatch)
-            {
-                fieldBurstTotal += field.data.emitSpawnCount;
-            }
-        }
-    }
+    const ParticleCSFieldManager *fieldMgr = ParticleCSFieldManager::GetInstance();
+    const bool contactEmit = emitOnlyOnFieldContact_ && receiveFields_;
+    const uint32_t fieldBurstTotal = contactEmit ? fieldMgr->GetEmitBurstTotal(fieldLayers_) : 0u;
     pEmitterMeshData_->emitCountOverride = fieldBurstTotal;
+    // 受けるフィールドの番号（レイヤーの一致は CPU で済ませ、シェーダーは立っているビットだけ読む）
+    const uint32_t fieldUpdateMask = receiveFields_ ? fieldMgr->GetUpdateMask(fieldLayers_) : 0u;
+    const uint32_t fieldEmitMask = contactEmit ? fieldMgr->GetEmitMask(fieldLayers_) : 0u;
 
     for (uint32_t groupIndex = 0; groupIndex < particleGroups_.size(); ++groupIndex)
     {
@@ -888,7 +991,8 @@ void ParticleCSEmitter::EmitterDisPatch(ID3D12GraphicsCommandList *pCommandList)
         if (groupIndex < groupActive_.size() && !groupActive_[groupIndex])
             continue;
         group->GetPerFrameData()->groupId = groupIndex;
-        group->GetPerFrameData()->emitterFieldGroupId = fieldGroupId_;
+        group->GetPerFrameData()->fieldUpdateMask = fieldUpdateMask;
+        group->GetPerFrameData()->fieldEmitMask = fieldEmitMask;
 
         ParticleCSSettings *settings = group->GetSettingsData();
 
@@ -1065,6 +1169,12 @@ void ParticleCSEmitter::CreateModelTriangles()
     triangleInfoResource_->Map(0, nullptr, reinterpret_cast<void **>(&pTriangleInfoData_));
     std::memcpy(pTriangleInfoData_, triangleInfoList_.data(), triangleInfoBufferSize);
 
+    // モデルを差し替えて作り直した場合は前の枠を捨ててから取り直す
+    // （上書きすると番号が迷子になる。GPU が読んでいる可能性があるので解放は数フレーム後）
+    if (triangleInfoSrvIndex_ != 0)
+    {
+        pSrvManager_->FreeDeferred(triangleInfoSrvIndex_ - 1);
+    }
     triangleInfoSrvIndex_ = pSrvManager_->Allocate() + 1;
     triangleInfoSrvHandle_.first = pSrvManager_->GetCPUDescriptorHandle(triangleInfoSrvIndex_);
     triangleInfoSrvHandle_.second = pSrvManager_->GetGPUDescriptorHandle(triangleInfoSrvIndex_);
@@ -1076,6 +1186,10 @@ void ParticleCSEmitter::CreateModelTriangles()
     triangleCDFResource_->Map(0, nullptr, reinterpret_cast<void **>(&pTriangleCDFData_));
     std::memcpy(pTriangleCDFData_, triangleCDF_.data(), cdfBufferSize);
 
+    if (triangleCDFSrvIndex_ != 0)
+    {
+        pSrvManager_->FreeDeferred(triangleCDFSrvIndex_ - 1);
+    }
     triangleCDFSrvIndex_ = pSrvManager_->Allocate() + 1;
     triangleCDFSrvHandle_.first = pSrvManager_->GetCPUDescriptorHandle(triangleCDFSrvIndex_);
     triangleCDFSrvHandle_.second = pSrvManager_->GetGPUDescriptorHandle(triangleCDFSrvIndex_);
@@ -1190,6 +1304,11 @@ void ParticleCSEmitter::CreateModelEdges()
     edgeInfoResource_->Map(0, nullptr, reinterpret_cast<void **>(&pEdgeInfoData_));
     std::memcpy(pEdgeInfoData_, edgeInfoList_.data(), edgeInfoBufferSize);
 
+    // モデルを差し替えて作り直した場合は前の枠を捨ててから取り直す
+    if (edgeInfoSrvIndex_ != 0)
+    {
+        pSrvManager_->FreeDeferred(edgeInfoSrvIndex_ - 1);
+    }
     edgeInfoSrvIndex_ = pSrvManager_->Allocate() + 1;
     edgeInfoSrvHandle_.first = pSrvManager_->GetCPUDescriptorHandle(edgeInfoSrvIndex_);
     edgeInfoSrvHandle_.second = pSrvManager_->GetGPUDescriptorHandle(edgeInfoSrvIndex_);

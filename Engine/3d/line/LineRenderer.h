@@ -1,5 +1,7 @@
 #pragma once
 #include "camera/projection/ViewProjection.h"
+#include <Frustum.h>
+#include "line/LineBatchId.h"
 #include <cstdint>
 #include <d3d12.h>
 #include <memory>
@@ -40,11 +42,6 @@ inline uint32_t PackLineColor(const Vector4 &color)
     return to8(color.x) | (to8(color.y) << 8) | (to8(color.z) << 16) | (to8(color.w) << 24);
 }
 
-/// <summary>
-/// 静的バッチの識別子（0は無効値）
-/// </summary>
-using LineBatchId = uint32_t;
-inline constexpr LineBatchId kInvalidLineBatch = 0;
 
 /// <summary>
 /// 3D線描画クラス
@@ -386,12 +383,6 @@ class LineRenderer
     void RecordDrawCommands(ID3D12GraphicsCommandList *pCommandList, D3D12_GPU_VIRTUAL_ADDRESS viewProjCB);
 
     /// <summary>
-    /// ビュープロジェクション行列から視錐台6平面を抽出する
-    /// </summary>
-    /// <param name="viewProjection">ビュープロジェクション行列</param>
-    void ExtractFrustum(const Matrix4x4 &viewProjection);
-
-    /// <summary>
     /// 破棄待ちリソースのカウントダウンを進め、期限切れを解放する
     /// </summary>
     void TickPendingReleases();
@@ -423,7 +414,6 @@ class LineRenderer
     Microsoft::WRL::ComPtr<ID3D12Resource> cameraBuffer_; // ビュープロジェクション定数バッファ
     Matrix4x4 *pCameraData_ = nullptr;                    // 定数バッファのマップ先
 
-    Vector4 frustumPlanes_[6]{}; // 視錐台平面（xyz=法線, w=距離）
-    bool frustumValid_ = false;  // 視錐台が有効か
+    Frustum frustum_; // 視錐台（毎フレーム、描画するビュー射影から作り直す）
 };
 } // namespace Hagine

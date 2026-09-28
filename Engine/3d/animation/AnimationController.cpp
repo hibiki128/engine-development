@@ -1,6 +1,7 @@
 #define NOMINMAX
 #include "AnimationController.h"
 #include "Animator.h"
+#include "BlendSpace.h"
 #include "ModelAnimation.h"
 #include "object/Object3d.h"
 #include <data/DataHandler.h>
@@ -81,10 +82,16 @@ void AnimationController::Play(const std::string &name)
     auto it = index_.find(name);
     if (it == index_.end())
     {
+        // クリップに無ければブレンドスペースの名前として扱う（パラメータは前回のまま）
+        if (AnimationBlendSpace *pSpace = FindBlendSpace(name))
+        {
+            PlayBlendSpace(name, pSpace->GetTargetParameter());
+        }
         return;
     }
 
     const AnimationClip &clip = clips_[it->second];
+    StopBlendSpaceForClip(clip.blendDuration);
     ApplyClipParams(clip);
     pObject_->SetAnimation(clip.filePath); // 同一クリップ・補間中でなければ内部で無視される
     currentClipName_ = name;
@@ -137,6 +144,7 @@ void AnimationController::PlayImmediate(const std::string &name)
     }
 
     const AnimationClip &clip = clips_[it->second];
+    StopBlendSpaceForClip(0.0f);
     ApplyClipParams(clip);
     pObject_->SetAnimationImmediate(clip.filePath);
     // 即時切り替えで currentModelAnimation_ が差し替わるため速度を再適用
@@ -159,7 +167,14 @@ void AnimationController::PlayFile(const std::string &filePath, bool loop, float
     if (clipIndex >= 0)
     {
         const AnimationClip &clip = clips_[clipIndex];
+        StopBlendSpaceForClip(clip.blendDuration);
         ApplyClipParams(clip);
+        // 登録済みクリップでは、渡された速度をクリップ固有の速度に掛ける倍率として使う
+        if (speed != 1.0f)
+        {
+            currentClipSpeed_ = clip.speed * speed;
+            pObject_->SetAnimationSpeed(currentClipSpeed_ * globalSpeed_);
+        }
         pObject_->SetAnimation(clip.filePath);
         currentClipName_ = clip.name;
         paused_ = false;
@@ -167,6 +182,7 @@ void AnimationController::PlayFile(const std::string &filePath, bool loop, float
     }
 
     // 未登録ファイル：呼び出し側が渡したパラメータで再生する
+    StopBlendSpaceForClip(blend);
     pObject_->AddAnimation(filePath, loop);
 
     currentClipSpeed_ = speed;
@@ -240,6 +256,10 @@ void AnimationController::SetPaused(bool paused)
     {
         pAnimator->SetIsAnimation(!paused);
     }
+    if (pObject_)
+    {
+        pObject_->SetBlendSpacePaused(paused);
+    }
 }
 
 void AnimationController::SetTime(float time)
@@ -281,6 +301,7 @@ void AnimationController::SaveClips(const std::string &folder, const std::string
         data.Save(prefix + "speed", clip.speed);
         data.Save(prefix + "blend", clip.blendDuration);
     }
+    SaveBlendSpaces(data);
     // DataHandler のデストラクタで自動的にファイルへ書き出される
 }
 
@@ -318,6 +339,8 @@ void AnimationController::LoadClips(const std::string &folder, const std::string
         }
     }
 
+    LoadBlendSpaces(data);
+
     globalSpeed_ = data.Load<float>("globalSpeed", globalSpeed_);
     if (pObject_)
     {
@@ -338,6 +361,8 @@ void AnimationController::DrawImGui()
     ImGui::Spacing();
     DrawClipListImGui();
     ImGui::Spacing();
+    DrawBlendSpaceImGui();
+    ImGui::Spacing();
     DrawKeyframeImGui();
 
     ImGui::Spacing();
@@ -348,23 +373,17 @@ void AnimationController::DrawImGui()
     ImGui::TextDisabled("保存先: %s / %s", clipsFolder_.c_str(), clipsFile_.c_str());
 
     float bw = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
-    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.20f, 0.42f, 0.58f, 0.85f));
-    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.26f, 0.52f, 0.70f, 0.95f));
-    if (ImGui::Button("保存", ImVec2(bw, 0)))
+    if (PrimaryButton("保存", ImVec2(bw, 0)))
     {
         SaveClips(clipsFolder_, clipsFile_);
         ImGuiNotification::Post("クリップ設定を保存しました: " + clipsFile_, {0.45f, 0.68f, 0.52f, 1.0f});
     }
-    ImGui::PopStyleColor(2);
     ImGui::SameLine();
-    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.20f, 0.48f, 0.40f, 0.85f));
-    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.26f, 0.60f, 0.50f, 0.95f));
-    if (ImGui::Button("読込", ImVec2(bw, 0)))
+    if (ConfirmButton("読込", ImVec2(bw, 0)))
     {
         LoadClips(clipsFolder_, clipsFile_);
         ImGuiNotification::Post("クリップ設定を読み込みました: " + clipsFile_, {0.42f, 0.66f, 0.68f, 1.0f});
     }
-    ImGui::PopStyleColor(2);
 #endif // USE_IMGUI
 }
 
@@ -384,6 +403,16 @@ void AnimationController::DrawTransportImGui()
     {
         ImGui::SameLine();
         StatusBadge("補間中", DebugTheme::kAccentYellow);
+    }
+
+    // ブレンドスペース再生中は、下に隠れている通常クリップではなく混ぜた周期を見せる
+    if (AnimationBlendSpace *pSpace = currentBlendSpaceName_.empty() ? nullptr : FindBlendSpace(currentBlendSpaceName_))
+    {
+        ImGui::PushStyleColor(ImGuiCol_PlotHistogram, DebugTheme::kAccentBlue);
+        ImGui::ProgressBar(pSpace->GetPhase(), ImVec2(-1.0f, 0.0f), "ブレンドスペースの周期");
+        ImGui::PopStyleColor();
+        DimText("混ざり具合と速度は下の「ブレンドスペース」で調整します");
+        return;
     }
 
     float duration = GetDuration();
@@ -582,10 +611,7 @@ void AnimationController::DrawKeyframeImGui()
             }
             ImGui::PopID();
         }
-        ImGui::PushStyleColor(ImGuiCol_Button, DebugTheme::kBgGreen);
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.45f, 0.68f, 0.52f, 0.40f));
-        bool addKey = ImGui::Button("キーフレーム追加");
-        ImGui::PopStyleColor(2);
+        bool addKey = ConfirmButton("キーフレーム追加");
         if (addKey)
         {
             KeyframeQuaternion kf = keys.empty() ? KeyframeQuaternion{{0.0f, 0.0f, 0.0f, 1.0f}, 0.0f} : keys.back();
@@ -618,10 +644,7 @@ void AnimationController::DrawKeyframeImGui()
             }
             ImGui::PopID();
         }
-        ImGui::PushStyleColor(ImGuiCol_Button, DebugTheme::kBgGreen);
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.45f, 0.68f, 0.52f, 0.40f));
-        bool addKey = ImGui::Button("キーフレーム追加");
-        ImGui::PopStyleColor(2);
+        bool addKey = ConfirmButton("キーフレーム追加");
         if (addKey)
         {
             Vector3 defaultValue = (selectedChannel_ == 2) ? Vector3{1.0f, 1.0f, 1.0f} : Vector3{0.0f, 0.0f, 0.0f};

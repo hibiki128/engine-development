@@ -38,6 +38,17 @@ class ParticleEmitter
     ~ParticleEmitter();
 
     /// <summary>
+    /// 前のフレームにメインの画面で描かれたエミッターを、カメラビュー窓（今の RenderView）にも描く。
+    /// 粒は動かさない（動かすのはメインの描画のときだけ）
+    /// </summary>
+    static void DrawAllForView(const ViewProjection &viewProjection);
+
+    /// <summary>
+    /// 「メインで描かれた」印を消す（カメラビュー窓を描き終えた後に呼ぶ）
+    /// </summary>
+    static void ClearDrawnMarks();
+
+    /// <summary>
     /// 初期化
     /// </summary>
     /// <param name="name">エミッター名</param>
@@ -91,6 +102,7 @@ class ParticleEmitter
     }
 
     int selectedGroupIndex_ = 0; // ImGuiで選択中のグループインデックス
+    int sectionOpenRequest_ = 0; // 設定の見出しを「すべて開く(1)／閉じる(-1)」要求。描いたら 0 に戻す
 
     /// <summary>
     /// 自身を複製する
@@ -102,6 +114,9 @@ class ParticleEmitter
     Matrix4x4 GetWorldMatrix() { return transform_.matWorld_; }                       // ワールド行列を取得
     Vector3 GetPosition() { return transform_.translation_; }                         // 位置を取得
     void SetPosition(const Vector3 &position) { transform_.translation_ = position; } // 位置を設定
+
+    bool GetVisible() const { return isVisible_; }       // 発生範囲の枠を描くか
+    void SetVisible(bool visible) { isVisible_ = visible; }
 
     bool IsGizmoSelectable() const { return isGizmoSelectable_; }                 // ギズモ選択可能か取得
     void SetGizmoSelectable(bool selectable) { isGizmoSelectable_ = selectable; } // ギズモ選択可否を設定
@@ -255,6 +270,12 @@ class ParticleEmitter
     void RestoreUndoState(const nlohmann::json &state);
 #endif // USE_IMGUI
 
+    /// <summary>
+    /// 今の設定を別の名前の保存ファイルへ書き出す（エディタの「複製」用。自分の名前・保存先は変わらない）
+    /// </summary>
+    /// <param name="name">書き出す先の名前</param>
+    void SaveToJsonAs(const std::string &name);
+
     // パーティクルマネージャーへのアクセス（デバッグ用）
     ParticleManager *GetParticleManager() const
     {
@@ -333,6 +354,7 @@ class ParticleEmitter
     bool isAuto_ = false;           // 自動発生フラグ
     bool isGizmoSelectable_ = true; // ギズモ選択可能フラグ
     bool gizmoRegistered_ = false;  // ImGuizmo へ登録済みか（デストラクタでの解除判定に使う）
+    bool drawnInMain_ = false;      // メインの画面で描かれたか（カメラビュー窓で描く対象の印）
     bool attachRegistered_ = false; // 親子付け（AttachmentManager）へ登録済みか
 
   public:
@@ -354,6 +376,8 @@ class ParticleEmitter
     std::unique_ptr<ParticleManager> particleManager_;    // パーティクル管理
     std::unique_ptr<DataHandler> datas_;          // データ管理
     std::vector<std::string> particleGroupNames_; // パーティクルグループ名一覧
+    // ParticleGroupManager から借りた独立グループ。破棄時に返す（返さないと積み上がる）
+    std::vector<ParticleGroup *> ownedIndependentGroups_;
 
     // dirty判定用：前フレームの transform を保持する
     Vector3 lastTranslation_ = {};

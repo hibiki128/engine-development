@@ -96,6 +96,16 @@ class CylinderCollider : public ColliderBase
     /// <param name="json">読み込み元</param>
     void LoadShapeFromJson(DataHandler &json) override;
 
+#ifdef USE_IMGUI
+    /// <summary>半径・高さ・内外の向きをスナップショットへ足す</summary>
+    /// <param name="shape">書き込み先</param>
+    void CaptureShape(nlohmann::json &shape) const override;
+
+    /// <summary>半径・高さ・内外の向きをスナップショットから戻す</summary>
+    /// <param name="shape">読み込み元</param>
+    void ApplyShape(const nlohmann::json &shape) override;
+#endif // USE_IMGUI
+
   private:
     float radius_ = 30.0f;
     float height_ = 100.0f; // Y方向は現状チェックなし（必要なら追加可）

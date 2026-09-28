@@ -25,6 +25,21 @@ enum class ComputeInput
     EffectInput,
     /// シーンの深度バッファ
     SceneDepth,
+    /// 平行光源から見た深度（シャドウマップ）。
+    /// 光の筋のように「その点に光が届いているか」を後段で知りたいときに使う。
+    /// シャドウが無効なときは中身が古いままなので、使う側でフラグを見ること
+    ShadowMap,
+    /// G-Buffer の法線＋光沢度（xyz=ワールド法線, w=光沢度）。
+    /// ディファードが無効なときは中身が無いので、使う側でフラグを見ること
+    GBufferNormal,
+    /// レイトレーシングの加速構造（TLAS）。
+    /// これを要求したエフェクトは、シェーダーを cs_6_5 以上でコンパイルする必要がある
+    /// （GetComputeShaderProfile を上書きすること）。
+    /// 非対応環境や加速構造が無いときは差せないので、使う側でフラグを見ること
+    Tlas,
+    /// 環境マップ（スカイボックスのキューブマップ）。
+    /// レイが何にも当たらなかった方向の色として使う
+    EnvironmentCube,
 };
 
 class IPostEffectParams
@@ -67,6 +82,10 @@ class IPostEffectParams
 
     /// @brief CSに必要な入力テクスチャ。並べた順に t0, t1, ... へバインドされる。
     virtual std::vector<ComputeInput> GetComputeInputs() const { return {ComputeInput::SourceColor}; }
+
+    /// @brief CSをコンパイルするシェーダープロファイル。
+    ///        RayQuery（インラインRT）を使うエフェクトは cs_6_5 以上でないと通らない。
+    virtual const wchar_t *GetComputeShaderProfile() const { return L"cs_6_0"; }
 
     /// @brief 何回ディスパッチするか。分離フィルタ（横方向→縦方向）などで2以上を返す。
     ///        2以上の場合、各パスの出力が次のパスの入力になる。

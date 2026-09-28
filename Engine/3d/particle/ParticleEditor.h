@@ -4,6 +4,7 @@
 #include "ParticleEmitter.h"
 #include "ParticleGroup.h"
 #include "ParticleGroupManager.h"
+#include "ParticleEditorUI.h"
 #include <filesystem>
 #include <map>
 #include <memory>
@@ -12,7 +13,6 @@
 
 #include "ParticleStruct.h"
 #ifdef USE_IMGUI
-#include <edit/undo/ImGuiUndoTracker.h>
 #endif // USE_IMGUI
 
 namespace Hagine {
@@ -39,6 +39,7 @@ class ParticleEditor
     std::unordered_map<std::string, std::unique_ptr<ParticleEmitter>> emitters_;
     int selectedEmitterIndex_ = 0;    // 選択されたエミッターのインデックス
     std::string selectedEmitterName_; // 選択されたエミッターの名前
+    std::string emitterSearch_;       // エミッター一覧の検索語
 
     // パーティクルグループマネージャーポインタ
     ParticleGroupManager *pParticleGroupManager_ = nullptr;
@@ -78,11 +79,19 @@ class ParticleEditor
     bool ColoredCollapsingHeader(const char *label, int colorIndex);
 
     /// <summary>ファイルセレクタを表示</summary>
-    void ShowFileSelector();
+    // ===== 作成・削除タブ（ParticleEditorCreate.cpp）=====
+    std::string quickName_;       // 作るエミッターの名前
+    std::string loadSearch_;      // 保存済み一覧の検索語
+    std::string duplicateSource_; // 複製の元にするエミッター
+    ParticleEditorUI::DeleteState deleteState_; // 削除タブの状態
+
+    // 空のエミッター・複製・保存済みの読み込みを並べた「作成」タブの上半分
+    void DrawQuickCreate();
+    // 「削除」タブの中身
+    void DrawDeleteTab();
 
     /// <summary>JSONファイル一覧を取得</summary>
     /// <returns>std::vector&lt;std::string&gt;: JSONファイル名一覧</returns>
-    std::vector<std::string> GetJsonFiles();
 
   public:
     /// ===================================================
@@ -166,10 +175,17 @@ class ParticleEditor
     void DrawSelectedForPreview(const ViewProjection &vp);
 
     /// <summary>すべてのエミッターのデバッグ情報を表示</summary>
-    void DebugAll();
+    void DebugAll(bool ownTabBar = true);
+
+    /// <summary>エディタで選択中のエミッター（無ければ nullptr）。プレビュー窓の操作バーが使う</summary>
+    ParticleEmitter *GetSelectedEmitter()
+    {
+        auto it = emitters_.find(selectedEmitterName_);
+        return (it != emitters_.end()) ? it->second.get() : nullptr;
+    }
 
     /// <summary>ImGuiエディターの表示処理</summary>
-    void ShowImGuiEditor();
+    void ShowImGuiEditor(bool ownTabBar = true);
 
     /// <summary>データの読み込み</summary>
     void Load();
@@ -198,7 +214,6 @@ class ParticleEditor
     void RestoreUndoState(const nlohmann::json &state);
 
   private:
-    ImGuiUndoTracker undoTracker_; // パーティクルエディタUIのUndoトラッカー
 
   public:
 #endif // USE_IMGUI

@@ -12,11 +12,15 @@
 #include "ShaderEditorWindow.h"
 #include "collider/CollisionManager.h"
 #include "edit/motion/MotionEditor.h"
+#include "edit/behavior/BehaviorTreeEditor.h"
+#include "edit/animation/AnimationStateMachineEditor.h"
+#include <render/SceneViewRenderer.h>
 #include "graphics/texture/TextureManager.h"
 #include "imgui.h"
 #include "imgui_impl_win32.h"
 #include "camera/CameraManager.h"
 #include "object/Object3dInstancing.h"
+#include "render/RenderCulling.h"
 #include "object/base/BaseObject.h"
 #include "offscreen/OffScreen.h"
 #include "scene/SceneManager.h"
@@ -32,11 +36,16 @@
 #include <format>
 #include <frame/Frame.h>
 #include <icon/IconsFontAwesome5.h>
+#include <imgui_internal.h>
 #include <imgui_impl_dx12.h>
 #include <implot.h>
 #include <implot3d.h>
 #include <line/LineRenderer.h>
 #include <map>
+#include <debug/capture/CaptureManager.h>
+#include <debug/console/DebugConsole.h>
+#include <edit/timeline/TimelineEditor.h>
+#include <music/MusicEditor.h>
 #include <particle/gpu/ParticleCSFieldManager.h>
 #include <particle/gpu/ParticleCSSpawner.h>
 #include <render/DrawSystem.h>
@@ -58,32 +67,38 @@ static constexpr uint32_t kImGuiSrvOffset = 1;
 void ImGuiSrvAlloc(ImGui_ImplDX12_InitInfo * /*info*/,
                    D3D12_CPU_DESCRIPTOR_HANDLE *outCpu, D3D12_GPU_DESCRIPTOR_HANDLE *outGpu) {
     SrvManager *srv = SrvManager::GetInstance();
-    const uint32_t reserved = srv->Allocate();
-    const uint32_t index = reserved + kImGuiSrvOffset;
 
     // 実際に書き込む枠（reserved + 1）も自分で押さえておく。
     // 押さえずにいると、後から Allocate した誰かがそこを「自分の予約枠」として受け取り、
     // +1 規約を守らない実装だとそこへ直接書き込んでフォントアトラスのSRVを潰す。
     // （実際に MetaBallGpuField がこれをやっていて、シーンを作り直すと
     //   GUI が丸ごと見えなくなる不具合になっていた）
-    const uint32_t claimed = srv->Allocate();
-    if (claimed != index)
+    //
+    // 空きリストから配られると番号が連続しない。連続した2枠が取れるまで前へずらす
+    // （ずらして捨てた番号はそのまま使われないだけで、次の解放とは無関係なので安全）
+    uint32_t reserved = srv->Allocate();
+    uint32_t claimed = srv->Allocate();
+    for (int retry = 0; claimed != reserved + 1 && retry < 64; ++retry)
     {
-        // SrvManager::Free を通す経路が無い今は必ず連続で取れる。
-        // 将来 Free を使い始めて連続で取れなくなったら、ここが最初に気づける場所になる
-        Logger::Error("ImGui: SRVの書き込み枠を確保できませんでした（期待 " +
-                      std::to_string(index) + " / 実際 " + std::to_string(claimed) + "）");
+        reserved = claimed;
+        claimed = srv->Allocate();
+    }
+    if (claimed != reserved + 1)
+    {
+        Logger::Error("ImGui: SRVの書き込み枠を連続で確保できませんでした（予約 " +
+                      std::to_string(reserved) + " / 実際 " + std::to_string(claimed) + "）");
     }
 
+    const uint32_t index = reserved + kImGuiSrvOffset;
     *outCpu = srv->GetCPUDescriptorHandle(index);
     *outGpu = srv->GetGPUDescriptorHandle(index);
 }
 void ImGuiSrvFree(ImGui_ImplDX12_InitInfo * /*info*/,
                   D3D12_CPU_DESCRIPTOR_HANDLE /*cpu*/, D3D12_GPU_DESCRIPTOR_HANDLE /*gpu*/) {
     // 解放はあえて no-op（インデックスをプールへ戻さない）。
-    // SrvManager::Free は ClearDescriptor で「予約インデックス側」をクリアするが、+1 規約では
-    // そこは隣のリソースの実使用スロットに当たり、巻き込んでnull化してしまう。フォントアトラスの
-    // 再構築でしか呼ばれず（=ごく少数）、リークは数枠程度で無害なため戻さない方が安全。
+    // ImGui の1枠につき予約を2つ（reserved と claimed）押さえているので、片方だけ戻すと
+    // 対の関係が崩れる。フォントアトラスの再構築でしか呼ばれず（=ごく少数）、
+    // リークは数枠程度で無害なため戻さない方が安全。
 }
 } // namespace
 
@@ -94,6 +109,9 @@ void ImGuiManager::Initialize(WinApp *winApp, ImGuizmoManager *imguizmoManager) 
     pBaseObjectManager_ = BaseObjectManager::GetInstance();
     pSpriteManager_ = SpriteManager::GetInstance();
     pAudio_ = Audio::GetInstance();
+    // ウィンドウ一覧は表示フラグのアドレスを覚えるだけなので、読み込みより先に作ってよい
+    BuildWindowRegistry();
+    BuildWorkspaces();
     LoadFlag();
     // ImGuiのコンテキストを生成
     ImGui::CreateContext();
@@ -162,8 +180,14 @@ void ImGuiManager::Initialize(WinApp *winApp, ImGuizmoManager *imguizmoManager) 
     // その場合 ImFontAtlas::Build()（= GetTexDataAsRGBA32）を手動で呼ぶとアサートになるため呼ばない。
     // フォントテクスチャは必要時にバックエンドが自動でラスタライズ／アップロードする。
 
-    // カスタムテーマを設定
+    // カスタムテーマを設定し、その上に保存済みの外観（配色・大きさ）を重ねる
     SetupTheme();
+    appearance_ = std::make_unique<EditorAppearance>();
+    appearance_->Load();
+    appearance_->ApplyTo(ImGui::GetStyle());
+    commandPalette_ = std::make_unique<EditorCommandPalette>();
+    assetBrowser_ = std::make_unique<EditorAssetBrowser>();
+    assetBrowser_->Initialize();
 
     ImGui_ImplWin32_Init(winApp->GetHwnd());
 
@@ -469,6 +493,7 @@ void ImGuiManager::Finalize() {
     SaveCurrentLayout();
 // 後始末
 #ifdef USE_IMGUI
+    standaloneBtEditor_.reset(); // ノードエディタは ImGui より先に片付ける
     ImGui_ImplDX12_Shutdown();
     ImGui_ImplWin32_Shutdown();
     ImPlot3D::DestroyContext();
@@ -483,6 +508,8 @@ void ImGuiManager::Finalize() {
 }
 
 void ImGuiManager::Begin() {
+    // 外観の変更はフレームの外で反映する（フレームの途中で文字の大きさを変えると描画が崩れる）
+    ApplyAppearanceIfDirty();
     // ImGuiフレーム開始
     ImGui_ImplDX12_NewFrame();
     ImGui_ImplWin32_NewFrame();
@@ -628,157 +655,9 @@ void ImGuiManager::ShowMainMenu() {
             ImGui::EndMenu();
         }
 
-        // 表示メニュー
+        // 表示メニュー（中身は ImGuiManagerShell.cpp の DrawViewMenu）
         if (ImGui::BeginMenu(ICON_FA_EYE " 表示")) {
-            // ウィンドウ表示設定（カテゴリ別にまとめて見やすくする）
-            if (ImGui::BeginMenu(ICON_FA_WINDOW_MAXIMIZE " ウィンドウ")) {
-                // チェック付きのトグル行。クリックしてもメニューは閉じない。
-                // ホバーでその窓が何をするものかの説明を出す（初見でも分かるように）。
-                auto windowToggle = [](const char *label, bool &flag, const char *tip) {
-                    if (ImGui::Selectable(label, flag, ImGuiSelectableFlags_DontClosePopups))
-                        flag = !flag;
-                    if (tip && *tip && ImGui::IsItemHovered())
-                        ImGui::SetTooltip("%s", tip);
-                };
-
-                ImGui::SeparatorText("シーン・オブジェクト");
-                windowToggle(ICON_FA_BOOK_OPEN " シーン設定", showSceneView_, "シーン全体の設定（カメラ・背景など）を編集します");
-                windowToggle(ICON_FA_CUBE " オブジェクト設定 (インスペクタ)", showObjectView_, "選択中オブジェクトの詳細（トランスフォーム・マテリアル等）を編集します");
-                windowToggle(ICON_FA_PROJECT_DIAGRAM " オブジェクトマネージャ (階層)", showHierarchyView_, "シーン内オブジェクトの一覧・選択・親子付けを操作します");
-                windowToggle(ICON_FA_ARROWS_ALT " ギズモ (トランスフォーム)", showGizmoView_, "移動/回転/拡縮の操作と、操作対象の種類フィルタ（オブジェクト/スプライト/パーティクル）");
-
-                ImGui::SeparatorText("アセット・エディタ");
-                windowToggle(ICON_FA_IMAGES " アセットブラウザ", showAssetBrowserView_, "画像を一覧表示し、ドラッグでテクスチャに割り当てます");
-                windowToggle(ICON_FA_SQUARE " スプライトマネージャ", showSpriteManagerView_, "2Dスプライトの一覧・編集と、文字スプライトの作成（プレビュー付き）");
-                windowToggle(ICON_FA_PLAY_CIRCLE " UIエディタ", showUIEditorView_, "スプライトのグループ化と、名前付きイージング(トゥイーン)の作成・再生");
-                windowToggle(ICON_FA_SHAPES " コライダー", showColliderTagManagerView_, "当たり判定の確認・調整とタグ管理");
-                windowToggle(ICON_FA_BULLHORN " オーディオ", showAudioManagerView_, "再生中サウンドの確認・音量調整");
-                windowToggle(ICON_FA_CODE_BRANCH " モーションエディター", showMotionEditorView_, "オブジェクトのモーション（アニメーション）を編集します");
-
-                ImGui::SeparatorText("パーティクル");
-                windowToggle(ICON_FA_STAR " パーティクル設定", showParticleView_, "パーティクル/フィールドの設定と、シーンへの配置");
-                windowToggle(ICON_FA_IMAGE " パーティクルプレビュー", showParticlePreviewView_, "GPUパーティクルを単体でプレビューします");
-
-                ImGui::SeparatorText("レンダリング");
-                windowToggle(ICON_FA_VIDEO " カメラ", showCameraView_, "登録カメラの一覧・切り替え・位置/画角の設定");
-                windowToggle(ICON_FA_STAR_OF_DAVID " オフスクリーン (ポストエフェクト)", showOfScreenView_, "ポストエフェクト（ブラー・色調・白黒など）の設定");
-                windowToggle(ICON_FA_LIGHTBULB " ライト", showLightView_, "ライティング（平行光・環境光など）の設定");
-                windowToggle(ICON_FA_ADJUST " シャドウマップ", showShadowMapView_, "影の描画設定・デバッグ表示");
-                windowToggle(ICON_FA_LAYER_GROUP " 描画システム", showDrawSystemView_, "描画ステージ/順序などレンダリング全体の設定");
-                windowToggle(ICON_FA_CODE " シェーダー", showShaderEditorView_, "shaders/ 配下のHLSLを構文色付きで閲覧・編集します（反映は次回起動から）");
-
-                ImGui::SeparatorText("統計・デバッグ");
-                windowToggle(ICON_FA_DATABASE " 統計 (FPS/プロファイラ/ログ)", showFPSView_, "FPS・処理時間・ログ履歴を表示します");
-                windowToggle(ICON_FA_SLIDERS_H " ゲームパラメータ", showGameParamView_, "コードに登録したパラメータを実行中に調整・保存・仕分けします");
-
-                ImGui::EndMenu();
-            }
-
-            if (ImGui::BeginMenu(ICON_FA_BORDER_ALL " グリッド設定")) {
-                // グリッド表示のON/OFFチェックボックス
-                ImGui::MenuItem(ICON_FA_BORDER_ALL " グリッド表示", nullptr, &showGrid_);
-
-                if (showGrid_) {
-                    ImGui::Separator();
-
-                    // Y座標設定
-                    ImGui::PushItemWidth(120.0f);
-                    if (ImGui::DragFloat(ICON_FA_ARROWS_ALT_V " Y座標", &gridY_, 0.1f, -100.0f, 100.0f, "%.1f")) {
-                    }
-
-                    // 分割数設定
-                    if (ImGui::DragInt(ICON_FA_TH " 分割数", &gridDivision_, 1, 1, 100)) {
-                    }
-
-                    // サイズ設定
-                    if (ImGui::DragFloat(ICON_FA_EXPAND_ARROWS_ALT " サイズ", &gridSize_, 0.1f, 0.1f, 500.0f, "%.1f")) {
-                    }
-                    ImGui::PopItemWidth();
-
-                    // 色設定
-                    ImGui::ColorEdit4(ICON_FA_PALETTE " グリッド色", &gridColor_.x, ImGuiColorEditFlags_NoInputs);
-
-                    // プリセット（サブメニュー）
-                    if (ImGui::BeginMenu(ICON_FA_SWATCHBOOK " プリセット")) {
-                        if (ImGui::MenuItem("デフォルト (グレー)")) {
-                            gridColor_ = {0.5f, 0.5f, 0.5f, 1.0f};
-                        }
-                        if (ImGui::MenuItem("白")) {
-                            gridColor_ = {1.0f, 1.0f, 1.0f, 1.0f};
-                        }
-                        if (ImGui::MenuItem("青")) {
-                            gridColor_ = {0.3f, 0.5f, 1.0f, 1.0f};
-                        }
-                        if (ImGui::MenuItem("緑")) {
-                            gridColor_ = {0.3f, 1.0f, 0.5f, 1.0f};
-                        }
-                        ImGui::EndMenu();
-                    }
-
-                    // リセットボタン
-                    if (ImGui::Button(ICON_FA_UNDO " リセット")) {
-                        gridY_ = 0.0f;
-                        gridDivision_ = 10;
-                        gridSize_ = 1.0f;
-                        gridColor_ = {0.5f, 0.5f, 0.5f, 1.0f};
-                    }
-                }
-
-                ImGui::EndMenu();
-            }
-            // 表示モード切替
-            ImGui::Separator();
-            if (isShowMainUI_) {
-                if (ImGui::MenuItem(ICON_FA_GAMEPAD " ゲームモードに切替", "F5")) {
-                    isShowMainUI_ = false;
-                    SwitchToGameMode();
-                }
-            } else {
-                if (ImGui::MenuItem(ICON_FA_WRENCH " エディターモードに切替", "F5")) {
-                    isShowMainUI_ = true;
-                    SwitchToEditorMode();
-                }
-            }
-            ImGui::Separator();
-            if (ImGui::MenuItem(ICON_FA_EXPAND " フルスクリーン切替", "F11")) {
-                pWinApp_->ToggleFullScreen();
-            }
-
-            // 画面解像度（ウィンドウサイズ）の変更
-            // 内部レンダリングは仮想解像度固定のまま、ウィンドウと最終合成だけが変わる
-            if (ImGui::BeginMenu(ICON_FA_DESKTOP " 画面解像度")) {
-                struct Resolution {
-                    int32_t width;
-                    int32_t height;
-                };
-                static constexpr Resolution kResolutions[] = {
-                    {1280, 720},
-                    {1600, 900},
-                    {1760, 990},
-                    {1920, 1080},
-                };
-
-                const bool isFullScreen = pWinApp_->IsFullScreen();
-                if (isFullScreen) {
-                    ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kTextDim);
-                    ImGui::TextUnformatted("フルスクリーン中は変更できません");
-                    ImGui::PopStyleColor();
-                    ImGui::Separator();
-                }
-
-                for (const auto &res : kResolutions) {
-                    std::string label = std::format("{} x {}", res.width, res.height);
-                    if (res.width == WinApp::GetVirtualWidth() && res.height == WinApp::GetVirtualHeight()) {
-                        label += " (デフォルト)";
-                    }
-                    const bool isCurrent =
-                        (pWinApp_->GetClientWidth() == res.width && pWinApp_->GetClientHeight() == res.height);
-                    if (ImGui::MenuItem(label.c_str(), nullptr, isCurrent, !isFullScreen)) {
-                        pWinApp_->SetClientSize(res.width, res.height);
-                    }
-                }
-                ImGui::EndMenu();
-            }
+            DrawViewMenu();
             ImGui::EndMenu();
         }
 
@@ -812,6 +691,7 @@ void ImGuiManager::ShowMainMenu() {
                     {ICON_FA_CARET_UP " 三角形", PrimitiveType::Triangle, "triangle"},
                     {ICON_FA_MOUNTAIN " ピラミッド", PrimitiveType::Pyramid, "pyramid"},
                     {ICON_FA_CHART_AREA " 円柱", PrimitiveType::Cone, "cone"},
+                    {ICON_FA_MOUNTAIN " 岩", PrimitiveType::Rock, "rock"},
                 };
                 for (const PrimitiveMenuEntry &entry : kPrimitiveEntries) {
                     if (ImGui::MenuItem(entry.label)) {
@@ -892,7 +772,19 @@ void ImGuiManager::ShowMainMenu() {
         ImGui::SameLine(0.0f, 24.0f);
         PlayModeManager::GetInstance()->DrawToolbar();
 
+        // コマンドパレット（窓・操作・オブジェクト・シーンを名前で探す）
+        ImGui::SameLine(0.0f, 16.0f);
+        if (ImGui::SmallButton(ICON_FA_SEARCH " 検索  Ctrl+K")) {
+            commandPalette_->Open();
+        }
+        ImGui::SetItemTooltip("コマンドパレット: 窓・操作・オブジェクト・シーンを名前の一部で探して実行します");
+
         ImGui::EndMainMenuBar();
+    }
+
+    // ステータスバーはドックより先に作る（先に作った分だけドックの作業領域が狭まる）
+    if (isShowMainUI_) {
+        DrawStatusBar();
     }
 }
 
@@ -982,11 +874,19 @@ void ImGuiManager::ShowStatisticsWindow() {
         ImGui::Text("減らせた描画コール: %u", instancing->GetLastMergedDrawCount());
     }
 
+    // 画面に入らないオブジェクトを描画から省いた結果
+    ImGui::Separator();
+    if (ImGui::CollapsingHeader("錐台カリング")) {
+        RenderCulling::DrawImGui();
+    }
+
     ImGui::Separator();
     CpuProfiler::GetInstance()->DrawImGui();
+    CpuProfiler::GetInstance()->DrawFrameCaptureImGui();
 
     ImGui::Separator();
     GpuProfiler::GetInstance()->DrawImGui();
+    GpuProfiler::GetInstance()->DrawFrameStatsImGui();
 
     ImGui::Separator();
     if (ImGui::CollapsingHeader("ログ履歴", ImGuiTreeNodeFlags_DefaultOpen)) {
@@ -1095,6 +995,210 @@ void ImGuiManager::ShowMotionEditorWindow() {
     ImGui::End();
 }
 
+void ImGuiManager::DrawGridMenu() {
+    if (ImGui::BeginMenu(ICON_FA_BORDER_ALL " グリッド設定")) {
+        // グリッド表示のON/OFFチェックボックス
+        ImGui::MenuItem(ICON_FA_BORDER_ALL " グリッド表示", nullptr, &showGrid_);
+
+        if (showGrid_) {
+            ImGui::Separator();
+
+            // Y座標設定
+            ImGui::PushItemWidth(120.0f);
+            if (ImGui::DragFloat(ICON_FA_ARROWS_ALT_V " Y座標", &gridY_, 0.1f, -100.0f, 100.0f, "%.1f")) {
+            }
+
+            // 分割数設定
+            if (ImGui::DragInt(ICON_FA_TH " 分割数", &gridDivision_, 1, 1, 100)) {
+            }
+
+            // サイズ設定
+            if (ImGui::DragFloat(ICON_FA_EXPAND_ARROWS_ALT " サイズ", &gridSize_, 0.1f, 0.1f, 500.0f, "%.1f")) {
+            }
+            ImGui::PopItemWidth();
+
+            // 色設定
+            ImGui::ColorEdit4(ICON_FA_PALETTE " グリッド色", &gridColor_.x, ImGuiColorEditFlags_NoInputs);
+
+            // プリセット（サブメニュー）
+            if (ImGui::BeginMenu(ICON_FA_SWATCHBOOK " プリセット")) {
+                if (ImGui::MenuItem("デフォルト (グレー)")) {
+                    gridColor_ = {0.5f, 0.5f, 0.5f, 1.0f};
+                }
+                if (ImGui::MenuItem("白")) {
+                    gridColor_ = {1.0f, 1.0f, 1.0f, 1.0f};
+                }
+                if (ImGui::MenuItem("青")) {
+                    gridColor_ = {0.3f, 0.5f, 1.0f, 1.0f};
+                }
+                if (ImGui::MenuItem("緑")) {
+                    gridColor_ = {0.3f, 1.0f, 0.5f, 1.0f};
+                }
+                ImGui::EndMenu();
+            }
+
+            // リセットボタン
+            if (ImGui::Button(ICON_FA_UNDO " リセット")) {
+                gridY_ = 0.0f;
+                gridDivision_ = 10;
+                gridSize_ = 1.0f;
+                gridColor_ = {0.5f, 0.5f, 0.5f, 1.0f};
+            }
+        }
+
+        ImGui::EndMenu();
+    }
+}
+
+void ImGuiManager::DrawScreenMenuItems() {
+    // 表示モード切替
+    if (isShowMainUI_) {
+        if (ImGui::MenuItem(ICON_FA_GAMEPAD " ゲームモードに切替", "F5")) {
+            isShowMainUI_ = false;
+            SwitchToGameMode();
+        }
+    } else {
+        if (ImGui::MenuItem(ICON_FA_WRENCH " エディターモードに切替", "F5")) {
+            isShowMainUI_ = true;
+            SwitchToEditorMode();
+        }
+    }
+    ImGui::Separator();
+    if (ImGui::MenuItem(ICON_FA_EXPAND " フルスクリーン切替", "F11")) {
+        pWinApp_->ToggleFullScreen();
+    }
+
+    // 画面解像度（ウィンドウサイズ）の変更
+    // 内部レンダリングは仮想解像度固定のまま、ウィンドウと最終合成だけが変わる
+    if (ImGui::BeginMenu(ICON_FA_DESKTOP " 画面解像度")) {
+        struct Resolution {
+            int32_t width;
+            int32_t height;
+        };
+        static constexpr Resolution kResolutions[] = {
+            {1280, 720},
+            {1600, 900},
+            {1760, 990},
+            {1920, 1080},
+        };
+
+        const bool isFullScreen = pWinApp_->IsFullScreen();
+        if (isFullScreen) {
+            ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kTextDim);
+            ImGui::TextUnformatted("フルスクリーン中は変更できません");
+            ImGui::PopStyleColor();
+            ImGui::Separator();
+        }
+
+        for (const auto &res : kResolutions) {
+            std::string label = std::format("{} x {}", res.width, res.height);
+            if (res.width == WinApp::GetVirtualWidth() && res.height == WinApp::GetVirtualHeight()) {
+                label += " (デフォルト)";
+            }
+            const bool isCurrent =
+                (pWinApp_->GetClientWidth() == res.width && pWinApp_->GetClientHeight() == res.height);
+            if (ImGui::MenuItem(label.c_str(), nullptr, isCurrent, !isFullScreen)) {
+                pWinApp_->SetClientSize(res.width, res.height);
+            }
+        }
+        ImGui::EndMenu();
+    }
+}
+
+void ImGuiManager::ShowBehaviorTreeWindow() {
+    if (!showBehaviorTreeView_)
+        return; // 表示しない場合は早期リターン
+
+    // 初めて開くとき（ini に位置が残っていないとき）は、ノードを広く見られるようシーンの下を割って入れる。
+    // 何もしないとメイン画面の外に置かれて別の OS ウィンドウになってしまう
+    static const char *kBehaviorTreeId = "###BehaviorTreeEditor";
+    // 窓ができた後は ini へ書かれるまで設定が見つからないので、窓そのものがあるかも見る（毎フレーム割らない）
+    if (!ImGui::FindWindowByID(ImHashStr(kBehaviorTreeId)) && !ImGui::FindWindowSettingsByID(ImHashStr(kBehaviorTreeId))) {
+        bool docked = false;
+        if (dockspaceId_ != 0) {
+            if (ImGuiDockNode *central = ImGui::DockBuilderGetCentralNode(dockspaceId_)) {
+                ImGuiID bottomId = 0;
+                ImGuiID remainingId = 0;
+                ImGui::DockBuilderSplitNode(central->ID, ImGuiDir_Down, 0.45f, &bottomId, &remainingId);
+                ImGui::DockBuilderDockWindow(kBehaviorTreeId, bottomId);
+                ImGui::DockBuilderFinish(dockspaceId_);
+                docked = true;
+            }
+        }
+        if (!docked) {
+            const ImGuiViewport *viewport = ImGui::GetMainViewport();
+            ImGui::SetNextWindowViewport(viewport->ID);
+            ImGui::SetNextWindowPos(ImVec2(viewport->WorkPos.x + 40.0f, viewport->WorkPos.y + viewport->WorkSize.y * 0.45f),
+                                    ImGuiCond_FirstUseEver);
+        }
+    }
+    ImGui::SetNextWindowSize(ImVec2(1200.0f, 520.0f), ImGuiCond_FirstUseEver);
+
+    ImGuiWindowFlags flags = ImGuiWindowFlags_NoFocusOnAppearing;
+    ImGui::Begin(ICON_FA_SITEMAP " ビヘイビアツリーエディタ###BehaviorTreeEditor", &showBehaviorTreeView_, flags);
+
+    // シーンが持っているエディタ（敵AIなど）を集める。ファイル編集だけのエディタは除く
+    std::vector<BehaviorTreeEditor *> sceneEditors;
+    for (BehaviorTreeEditor *pEditor : BehaviorTreeEditor::GetInstances()) {
+        if (pEditor != standaloneBtEditor_.get()) {
+            sceneEditors.push_back(pEditor);
+        }
+    }
+
+    if (sceneEditors.empty()) {
+        // 動かす相手がいないシーンでも、ツリーのファイルは開いて直せるようにする
+        if (!standaloneBtEditor_) {
+            standaloneBtEditor_ = std::make_shared<BehaviorTreeEditor>();
+            standaloneBtEditor_->SetDisplayName("ファイルの編集");
+        }
+        DimText("このシーンにはビヘイビアツリーで動くキャラクターがいません（ファイルの編集だけできます）");
+        standaloneBtEditor_->OnImGuiRender();
+    } else if (sceneEditors.size() == 1) {
+        sceneEditors.front()->OnImGuiRender();
+    } else if (ImGui::BeginTabBar("##btEditors")) {
+        // 複数のキャラがツリーを持っていれば、名前のタブで切り替える
+        for (size_t i = 0; i < sceneEditors.size(); ++i) {
+            const std::string label = sceneEditors[i]->GetDisplayName() + "##bt" + std::to_string(i);
+            if (ImGui::BeginTabItem(label.c_str())) {
+                sceneEditors[i]->OnImGuiRender();
+                ImGui::EndTabItem();
+            }
+        }
+        ImGui::EndTabBar();
+    }
+
+    ImGui::End();
+}
+
+void ImGuiManager::ShowAnimStateMachineWindow() {
+    // インスペクタの「エディタで開く」から頼まれたら窓ごと開く
+    if (AnimationStateMachineEditor::HasOpenRequest()) {
+        showAnimStateMachineView_ = true;
+    }
+    if (!showAnimStateMachineView_)
+        return;
+
+    // 初めて開くときはビヘイビアツリーと同じく下側へ入れる（別の OS ウィンドウにしない）
+    static const char *kWindowId = "###AnimStateMachineEditor";
+    if (!ImGui::FindWindowByID(ImHashStr(kWindowId)) && !ImGui::FindWindowSettingsByID(ImHashStr(kWindowId))) {
+        const ImGuiViewport *viewport = ImGui::GetMainViewport();
+        ImGui::SetNextWindowViewport(viewport->ID);
+        ImGui::SetNextWindowPos(ImVec2(viewport->WorkPos.x + 60.0f, viewport->WorkPos.y + viewport->WorkSize.y * 0.40f),
+                                ImGuiCond_FirstUseEver);
+    }
+    ImGui::SetNextWindowSize(ImVec2(1200.0f, 560.0f), ImGuiCond_FirstUseEver);
+    if (AnimationStateMachineEditor::HasOpenRequest()) {
+        ImGui::SetNextWindowFocus();
+    }
+    ImGui::Begin(ICON_FA_STREAM " アニメーションステートマシン###AnimStateMachineEditor", &showAnimStateMachineView_,
+                 ImGuiWindowFlags_NoFocusOnAppearing);
+    if (!animStateMachineEditor_) {
+        animStateMachineEditor_ = std::make_shared<AnimationStateMachineEditor>();
+    }
+    animStateMachineEditor_->OnImGuiRender();
+    ImGui::End();
+}
+
 void ImGuiManager::ShowSpriteManagerWindow() {
     if (!showSpriteManagerView_)
         return; // 表示しない場合は早期リターン
@@ -1156,6 +1260,27 @@ void ImGuiManager::ShowAudioManagerWindow() {
     ImGui::End();
 }
 
+void ImGuiManager::ShowCaptureWindow() {
+    // ウィンドウの生成・閉じるボタンは CaptureManager 側に委譲する
+    CaptureManager::GetInstance()->DrawImGui(&showCaptureView_);
+}
+
+void ImGuiManager::ShowConsoleWindow() {
+    // ウィンドウの生成・閉じるボタンは DebugConsole 側に委譲する
+    DebugConsole::GetInstance()->DrawImGui(&showConsoleView_);
+}
+
+void ImGuiManager::ShowTimelineWindow() {
+    // ウィンドウの生成・閉じるボタンは TimelineEditor 側に委譲する
+    TimelineEditor::GetInstance()->Draw(&showTimelineView_);
+}
+
+void ImGuiManager::ShowMusicEditorWindow() {
+    // ウィンドウの生成・閉じるボタンは MusicEditor 側に委譲する
+    // （閉じている間にPCキーボードをゲームへ返す後始末も向こうで行う）
+    MusicEditor::GetInstance()->Draw(&showMusicEditorView_);
+}
+
 void ImGuiManager::ShowShadowMapWindow() {
     if (!showShadowMapView_)
         return; // 表示しない場合は早期リターン
@@ -1170,7 +1295,39 @@ void ImGuiManager::ShowCameraWindow() {
 
     ImGuiWindowFlags flags = ImGuiWindowFlags_NoFocusOnAppearing;
     ImGui::Begin("カメラ", &showCameraView_, flags);
-    CameraManager::GetInstance()->DrawImGui();
+
+    // カメラを置くときの2大操作: 「今シーンで見ている視点をこのカメラへ写す」「このカメラの視点からシーンを見る」
+    CameraManager *cameraManager = CameraManager::GetInstance();
+    Camera *selectedCamera = cameraManager->Find(cameraManager->GetSelectedName());
+    DebugCamera *debugCamera = pCurrentScene_ ? pCurrentScene_->GetDebugCamera() : nullptr;
+    ImGui::BeginDisabled(!selectedCamera);
+    const float halfWidth = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
+    if (ConfirmButton(ICON_FA_CAMERA " 今の視点を写す", ImVec2(halfWidth, 0.0f))) {
+        const ViewProjection *viewProjection = pImGuizmoManager_->GetViewProjection();
+        if (debugCamera && debugCamera->GetActive()) {
+            selectedCamera->SetPosition(debugCamera->GetViewPosition());
+            selectedCamera->SetRotation(debugCamera->GetViewRotation());
+        } else if (viewProjection) {
+            selectedCamera->SetPosition(viewProjection->translation_);
+            selectedCamera->SetRotation(viewProjection->eulerRotation_);
+        }
+        ImGuiNotification::Post("今の視点をカメラへ写しました: " + selectedCamera->GetName(), {0.45f, 0.68f, 0.52f, 1.0f});
+    }
+    ImGui::SetItemTooltip("シーンで今見ている位置と向きを、選んでいるカメラに入れます（デバッグカメラで構図を決めてから押す）");
+    ImGui::SameLine();
+    if (NeutralButton(ICON_FA_EYE " ここから見る", ImVec2(halfWidth, 0.0f))) {
+        if (debugCamera && pCurrentScene_) {
+            if (!debugCamera->GetActive()) {
+                pCurrentScene_->ToggleDebugCamera();
+            }
+            debugCamera->SetView(selectedCamera->GetPosition(), selectedCamera->GetRotation());
+        }
+    }
+    ImGui::SetItemTooltip("デバッグカメラをこのカメラの位置・向きに置きます（ゲームのカメラは動かしません）");
+    ImGui::EndDisabled();
+    ImGui::Separator();
+
+    cameraManager->DrawImGui();
     ImGui::End();
 }
 
@@ -1193,148 +1350,54 @@ void ImGuiManager::ShowShaderEditorWindow() {
 }
 
 void ImGuiManager::ShowAssetBrowserWindow() {
-    if (!showAssetBrowserView_)
-        return; // 表示しない場合は早期リターン
-
-    ImGuiWindowFlags flags = ImGuiWindowFlags_NoFocusOnAppearing;
-    ImGui::Begin("アセットブラウザ", &showAssetBrowserView_, flags);
-
-    // 画像とモデルをタブで切り替える。
-    // モデルタブの一覧はシーンウィンドウへのドラッグ&ドロップ配置に対応している。
-    if (ImGui::BeginTabBar("##AssetTabs")) {
-        if (ImGui::BeginTabItem("モデル")) {
-            ImGui::TextDisabled("モデルをシーンウィンドウへドラッグすると、その場に配置されます");
-            ImGui::Separator();
-            static std::string assetBrowserModelPath;
-            ShowModelFile(assetBrowserModelPath, "assetBrowser");
-            ImGui::EndTabItem();
-        }
-        if (ImGui::BeginTabItem("画像")) {
-            ShowImageAssetGrid();
-            ImGui::EndTabItem();
-        }
-        ImGui::EndTabBar();
+    // 中身は EditorAssetBrowser（フォルダツリー・サムネ一覧・お気に入り・最近使った）
+    if (assetBrowser_) {
+        assetBrowser_->Draw(&showAssetBrowserView_);
     }
-
-    ImGui::End();
 }
 
-void ImGuiManager::ShowImageAssetGrid() {
-    // images ルート配下の画像を列挙（初回スキャン + 再スキャン）。
-    // textureFilePath 規約に合わせ base からの相対パス('/'区切り)で保持し、
-    // 親フォルダごとにまとめる（map のキーがフォルダ＝表示順もフォルダ順になる）。
-    static std::map<std::string, std::vector<std::string>> s_byDir;
-    static int s_fileCount = 0;
-    static bool s_scanned = false;
-    auto scan = []() {
-        s_byDir.clear();
-        s_fileCount = 0;
-        std::error_code ec;
-        // images はエンジン(debug)とアプリの 2 ルートに分割されているため両方を走査する。
-        for (const std::string &base : AssetPath::ImageScanRoots()) {
-            if (!std::filesystem::exists(base, ec))
-                continue;
-            for (auto &e : std::filesystem::recursive_directory_iterator(base, ec)) {
-                if (ec)
-                    break;
-                if (!e.is_regular_file())
-                    continue;
-                std::string ext = e.path().extension().string();
-                for (auto &ch : ext)
-                    ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
-                // dds は読み込みが重い（かつキューブマップ等2D表示できないものを含む）ため
-                // アセットブラウザの一覧には載せない。
-                if (ext != ".png" && ext != ".jpg" && ext != ".jpeg")
-                    continue;
-                std::string rel = std::filesystem::relative(e.path(), base, ec).generic_string();
-                if (rel.empty())
-                    continue;
-                // 親フォルダ（'/'区切りの最後の'/'より前）をキーにする。直下は "" 。
-                std::string dir;
-                size_t slash = rel.find_last_of('/');
-                if (slash != std::string::npos)
-                    dir = rel.substr(0, slash);
-                s_byDir[dir].push_back(rel);
-                ++s_fileCount;
+void ImGuiManager::ShowInspectorWindow() {
+    pImGuizmoManager_->SetInspectorWindowOpen(showInspectorView_);
+    if (!showInspectorView_)
+        return;
+
+    // 初めて開くとき（ini に位置が残っていないとき）は、シーンの上に浮かせて操作部品を隠さないよう、
+    // 既存のオブジェクト系の窓と同じドックへ入れる。どれも無ければ画面の右端へ置く
+    static const char *kInspectorId = "###Inspector";
+    if (!ImGui::FindWindowSettingsByID(ImHashStr(kInspectorId))) {
+        static const char *kDockBuddies[] = {"オブジェクトマネージャ", "トランスフォームマネージャ", "オブジェクト設定"};
+        bool docked = false;
+        for (const char *buddyName : kDockBuddies) {
+            const ImGuiWindow *buddy = ImGui::FindWindowByName(buddyName);
+            if (buddy && buddy->DockId != 0) {
+                ImGui::SetNextWindowDockID(buddy->DockId, ImGuiCond_FirstUseEver);
+                docked = true;
+                break;
             }
         }
-        for (auto &kv : s_byDir)
-            std::sort(kv.second.begin(), kv.second.end());
-    };
-    if (!s_scanned) {
-        scan();
-        s_scanned = true;
-    }
-
-    if (ImGui::Button("再スキャン"))
-        scan();
-    ImGui::SameLine();
-    ImGui::TextDisabled("画像をドラッグ → テクスチャ設定へドロップ（%d 件）", s_fileCount);
-    ImGui::Separator();
-
-    ImGui::BeginChild("##AssetGrid", ImVec2(0, 0), false);
-
-    TextureManager *tex = TextureManager::GetInstance();
-    ImGuiStyle &style = ImGui::GetStyle();
-    const float thumb = 64.0f;
-    const float cellW = thumb + style.FramePadding.x * 2.0f;
-
-    // サムネ1枚分の描画（PushID 済みであること）。
-    // ※ キューブマップ(.dds skybox 等)は SRV が TEXTURECUBE なので、Texture2D として
-    //    描画すると GPU ベース検証 #940 で落ちる。メタデータで判定しプレースホルダにする。
-    auto drawThumb = [&](const std::string &rel) {
-        ImGui::BeginGroup();
-        ImTextureID id = 0;
-        bool isCube = false;
-        if (ImGui::IsRectVisible(ImVec2(thumb, thumb))) {
-            tex->LoadTexture(rel);
-            const DirectX::TexMetadata &meta = tex->GetMetaData(rel);
-            isCube = meta.IsCubemap();
-            if (!isCube) {
-                D3D12_GPU_DESCRIPTOR_HANDLE h = tex->GetSrvHandleGPU(AssetPath::Image(rel));
-                if (h.ptr != 0)
-                    id = static_cast<ImTextureID>(h.ptr);
+        // 相手が無ければ、シーンのある中央のドックを右へ割って細い列を作り、そこへ入れる
+        if (!docked && dockspaceId_ != 0) {
+            if (ImGuiDockNode *central = ImGui::DockBuilderGetCentralNode(dockspaceId_)) {
+                ImGuiID rightId = 0;
+                ImGuiID remainingId = 0;
+                ImGui::DockBuilderSplitNode(central->ID, ImGuiDir_Right, 0.24f, &rightId, &remainingId);
+                ImGui::DockBuilderDockWindow(kInspectorId, rightId);
+                ImGui::DockBuilderFinish(dockspaceId_);
+                docked = true;
             }
         }
-        if (id != 0)
-            ImGui::ImageButton("##thumb", id, ImVec2(thumb, thumb));
-        else
-            ImGui::Button(isCube ? "[CUBE]" : "...",
-                          ImVec2(thumb + style.FramePadding.x * 2.0f, thumb + style.FramePadding.y * 2.0f));
-        // キューブマップは 2D テクスチャ枠に使えない（ドロップ先は Texture2D 前提）ので
-        // ドラッグ元にしない。それ以外はサムネをドラッグ元にする。
-        if (!isCube)
-            AssetDragDrop::TextureSource(rel, id);
-        if (ImGui::IsItemHovered())
-            ImGui::SetTooltip("%s%s", rel.c_str(), isCube ? "\n(キューブマップ: 2Dテクスチャには使用不可)" : "");
-        ImGui::EndGroup();
-    };
-
-    int uid = 0;
-    for (auto &kv : s_byDir) {
-        const std::string &dir = kv.first;
-        const std::vector<std::string> &fileList = kv.second;
-        std::string header = (dir.empty() ? std::string("(ルート)") : dir) +
-                             "  [" + std::to_string(fileList.size()) + "]##dir_" + dir;
-        if (ImGui::CollapsingHeader(header.c_str(), ImGuiTreeNodeFlags_DefaultOpen)) {
-            const float windowVisibleX2 = ImGui::GetWindowPos().x + ImGui::GetWindowContentRegionMax().x;
-            const int n = static_cast<int>(fileList.size());
-            for (int k = 0; k < n; ++k) {
-                ImGui::PushID(uid++);
-                drawThumb(fileList[k]);
-                // 次のサムネが右端を超えなければ同じ行に並べる（自動折り返し）。
-                const float lastX2 = ImGui::GetItemRectMax().x;
-                const float nextX2 = lastX2 + style.ItemSpacing.x + cellW;
-                if (k + 1 < n && nextX2 < windowVisibleX2)
-                    ImGui::SameLine();
-                ImGui::PopID();
-            }
-        } else {
-            uid += static_cast<int>(fileList.size()); // 折りたたみ時もIDを進めて安定させる
+        if (!docked) {
+            const ImGuiViewport *viewport = ImGui::GetMainViewport();
+            ImGui::SetNextWindowViewport(viewport->ID);
+            ImGui::SetNextWindowPos(ImVec2(viewport->WorkPos.x + viewport->WorkSize.x - 400.0f, viewport->WorkPos.y + 80.0f),
+                                    ImGuiCond_FirstUseEver);
         }
     }
-
-    ImGui::EndChild();
+    ImGui::SetNextWindowSize(ImVec2(380.0f, 560.0f), ImGuiCond_FirstUseEver);
+    if (ImGui::Begin(ICON_FA_INFO_CIRCLE " インスペクタ###Inspector", &showInspectorView_, ImGuiWindowFlags_NoFocusOnAppearing)) {
+        pImGuizmoManager_->DrawInspector();
+    }
+    ImGui::End();
 }
 
 void ImGuiManager::FixAspectRatio() {
@@ -1447,12 +1510,13 @@ void ImGuiManager::ShowSceneWindow(OffScreen *offScreen, const std::string &scen
     {
         std::string droppedModelPath;
         if (AssetDragDrop::ModelTarget(droppedModelPath)) {
-            BaseObject *created = pBaseObjectManager_->CreateObjectFromModel(
-                droppedModelPath, pImGuizmoManager_->GetSpawnPositionUnderCursor());
-            if (created) {
-                // 置いた直後にそのまま動かせるよう選択状態にする
-                pImGuizmoManager_->SelectOnly(created->GetName());
-            }
+            // 置いた直後にそのまま動かせるよう選択状態にする（Undo 履歴にも積まれる）
+            pImGuizmoManager_->PlaceModel(droppedModelPath, pImGuizmoManager_->GetSpawnPositionUnderCursor());
+        }
+        // プレハブも同じくカーソルの指す位置へ
+        std::string droppedPrefab;
+        if (AssetDragDrop::PrefabTarget(droppedPrefab)) {
+            pImGuizmoManager_->PlacePrefab(droppedPrefab, pImGuizmoManager_->GetSpawnPositionUnderCursor());
         }
     }
 
@@ -1479,7 +1543,16 @@ void ImGuiManager::ShowSceneWindow(OffScreen *offScreen, const std::string &scen
     // 他の ImGui ウィンドウがシーンウィンドウの上に重なっているとき、その上でのクリックで
     // シーンのオブジェクト選択を誤発火させないよう、シーンウィンドウのホバー状態を渡す。
     bool sceneHovered = ImGui::IsWindowHovered();
+    // ライト・カメラ等のアイコンのクリックは、ギズモのクリック選択より先に処理する（押したら奥の物は選ばない）
+    UpdateSceneIcons(actualScenePos_, sceneTextureSize_, sceneHovered);
     pImGuizmoManager_->Update(actualScenePos_, sceneTextureSize_, sceneHovered);
+    DrawSceneIcons(actualScenePos_, sceneTextureSize_);
+
+    // ツールバー・軸の向き表示（子ウィンドウなので、上にマウスがある間はシーンの選択が発火しない）
+    overlaySceneName_ = sceneName;
+    HandleCameraBookmarkKeys(sceneHovered);
+    DrawSceneOverlay(actualScenePos_, sceneTextureSize_);
+    DrawSceneContextMenu(sceneHovered);
 
     ImGui::End();
 }
@@ -1502,10 +1575,24 @@ void ImGuiManager::ShowMainUI(OffScreen *pOffScreen) {
     ShowLightSettingWindow();
     // ギズモウィンドウを描画
     ShowGizmoWindow();
+    // インスペクタ窓を描画
+    ShowInspectorWindow();
+    // 操作の履歴窓を描画
+    ShowUndoHistoryWindow();
+    // 配置ツール窓を描画
+    ShowPlacementToolWindow();
+    // カラーパレット窓を描画
+    ShowColorPaletteWindow();
     // 階層エディターウィンドウを描画
     ShowHierarchyWindow();
     // モーションエディターウィンドウを描画
     ShowMotionEditorWindow();
+    // ビヘイビアツリーエディタウィンドウを描画
+    ShowBehaviorTreeWindow();
+    // アニメーションのステートマシンの窓を描画
+    ShowAnimStateMachineWindow();
+    // カメラビュー窓（好きなカメラから見たシーン）を描画
+    SceneViewRenderer::GetInstance()->DrawImGui();
     // スプライトマネージャウィンドウを描画
     ShowSpriteManagerWindow();
     // UIエディタウィンドウを描画
@@ -1514,6 +1601,14 @@ void ImGuiManager::ShowMainUI(OffScreen *pOffScreen) {
     ShowColliderTagManagerWindow();
     // オーディオマネージャウィンドウを描画
     ShowAudioManagerWindow();
+    // 音楽エディタウィンドウを描画
+    ShowMusicEditorWindow();
+    // キャプチャウィンドウを描画
+    ShowCaptureWindow();
+    // コンソールウィンドウを描画
+    ShowConsoleWindow();
+    // タイムラインウィンドウを描画
+    ShowTimelineWindow();
     // シャドウマップ設定ウィンドウを描画
     ShowShadowMapWindow();
     // 描画システム設定ウィンドウを描画
@@ -1527,8 +1622,22 @@ void ImGuiManager::ShowMainUI(OffScreen *pOffScreen) {
     ShowGameParamWindow();
 
     ShowHelpWindow();
+    // 通知の履歴・外観の設定窓
+    ShowNotificationWindow();
+    ShowAppearanceWindow();
+    // コマンドパレット（Ctrl+K）。ゲームモード中でも呼び出せる
+    ShowCommandPalette();
+    // プレハブ保存などのダイアログ（どの窓から開いても出るように毎フレーム）
+    pImGuizmoManager_->DrawEditorModals();
+    // 画像のホットリロード（アセットブラウザが閉じていても見張る）
+    if (assetBrowser_) {
+        assetBrowser_->PollFileChanges();
+    }
     pBaseObjectManager_->UpdateImGui();
     pSpriteManager_->UpdateImGui();
+    // 光源はライト設定ウィンドウを閉じていてもギズモで掴めるので、
+    // 追跡はウィンドウの表示状態と切り離してここで回す
+    LightGroup::GetInstance()->UpdateImGui();
 }
 
 bool &ImGuiManager::GetIsShowMainUI() {
@@ -1555,6 +1664,7 @@ void ImGuiManager::ShowDockSpace() {
 
     // DockSpaceの生成
     ImGuiID dockspace_id = ImGui::GetID("MyDockSpace");
+    dockspaceId_ = dockspace_id;
     ImGui::DockSpace(dockspace_id, ImVec2(0.0f, 0.0f), ImGuiDockNodeFlags_PassthruCentralNode);
 
     ImGui::End();
@@ -1577,7 +1687,7 @@ void ImGuiManager::DisplayFPS() {
 
         // 今フレームの値を記録
         float fps = Frame::GetFPS();
-        float frameTime = Frame::DeltaTime() * 1000.0f; // ms
+        float frameTime = Frame::UnscaledDeltaTime() * 1000.0f; // ms
 
         fpsHistory[offset] = fps;
         frameTimeHistory[offset] = frameTime;
@@ -2017,8 +2127,35 @@ void ImGuiManager::ShowHelpWindow() {
                     {"  選択オブジェクトへ寄る", "F"},
                     {"  重なった物を順に選択", "Tab"},
                     {"  矩形選択（Ctrlで追加選択）", "空きスペースをドラッグ"},
+                    {"  その場所に置く・選択の操作・視点", "右クリック（動かさずに離す）"},
+                    {"  カメラのブックマークへ移動", "Shift + 1〜9"},
+                    {"  カメラのブックマークに保存", "Ctrl + Shift + 1〜9"},
+                    {"  クリック対象をその種類だけに", "Alt + 1〜4"},
+                    {"  クリック対象をすべてに", "Alt + 0"},
                 };
                 for (const GizmoShortcutRow &row : kGizmoShortcuts) {
+                    ImGui::TableNextRow();
+                    ImGui::TableSetColumnIndex(0);
+                    ImGui::TextUnformatted(row.label);
+                    ImGui::TableSetColumnIndex(1);
+                    ImGui::TextUnformatted(row.key);
+                }
+
+                // エディタの窓
+                ImGui::TableNextRow();
+                ImGui::TableSetColumnIndex(0);
+                ImGui::TextColored(ImVec4(0.8f, 0.9f, 1.0f, 1.0f), ICON_FA_WINDOW_RESTORE " エディタの窓");
+                ImGui::TableSetColumnIndex(1);
+                ImGui::Text("");
+                static const GizmoShortcutRow kEditorShortcuts[] = {
+                    {"  コマンドパレット（$ でアセット）", "Ctrl + K"},
+                    {"  階層: 範囲選択 / 追加選択", "Shift / Ctrl + クリック"},
+                    {"  階層: 選択を1行ずつ動かす", "↑ ↓（Shift で範囲）"},
+                    {"  数値欄のコピー・貼り付け・既定値", "数値欄を右クリック"},
+                    {"  アセットブラウザ: サムネの大きさ", "Ctrl + ホイール"},
+                    {"  操作の履歴を開く", "ステータスバーの Undo 表示をクリック"},
+                };
+                for (const GizmoShortcutRow &row : kEditorShortcuts) {
                     ImGui::TableNextRow();
                     ImGui::TableSetColumnIndex(0);
                     ImGui::TextUnformatted(row.label);
@@ -2058,14 +2195,54 @@ void ImGuiManager::SaveFlag() {
     data->Save("showGizmoView", showGizmoView_);
     data->Save("showHierarchyView", showHierarchyView_);
     data->Save("showMotionEditorView", showMotionEditorView_);
+    data->Save("showBehaviorTreeView", showBehaviorTreeView_);
+    data->Save("showAnimStateMachineView", showAnimStateMachineView_);
     data->Save("showShortcutWindow", showShortcutWindow_);
     data->Save("showSpriteManagerView", showSpriteManagerView_);
     data->Save("showUIEditorView", showUIEditorView_);
     data->Save("showShadowMapView", showShadowMapView_);
     data->Save("showDrawSystemView", showDrawSystemView_);
     data->Save("showShaderEditorView", showShaderEditorView_);
+    data->Save("showMusicEditorView", showMusicEditorView_);
+    data->Save("showCaptureView", showCaptureView_);
+    data->Save("showConsoleView", showConsoleView_);
+    data->Save("showTimelineView", showTimelineView_);
     data->Save("showAssetBrowserView", showAssetBrowserView_);
     data->Save("showGameParamView", showGameParamView_);
+    data->Save("showColliderTagManagerView", showColliderTagManagerView_);
+    data->Save("showAudioManagerView", showAudioManagerView_);
+    data->Save("showCameraView", showCameraView_);
+    data->Save("showNotificationView", showNotificationView_);
+    data->Save("showAppearanceView", showAppearanceView_);
+    data->Save("showInspectorView", showInspectorView_);
+    data->Save("showUndoHistoryView", showUndoHistoryView_);
+    data->Save("showPlacementToolView", showPlacementToolView_);
+    data->Save("showColorPaletteView", showColorPaletteView_);
+    data->Save("sceneLabelMode", sceneLabelMode_);
+    data->Save("showSceneMeasure", showSceneMeasure_);
+    data->Save("showThirdsGuide", showThirdsGuide_);
+    data->Save("showSafeAreaGuide", showSafeAreaGuide_);
+    data->Save("showSceneOverlay", showSceneOverlay_);
+    data->Save("showViewAxis", showViewAxis_);
+    data->Save("showSceneIcons", showSceneIcons_);
+    data->Save("sceneIconScale", sceneIconScale_);
+    data->Save("sceneIconKindMask", sceneIconKindMask_);
+#ifdef USE_IMGUI
+    data->Save("currentWorkspace", currentWorkspace_);
+    {
+        // シーンのクリック対象（今のワークスペースのぶんは今の状態で上書きしてから保存）
+        ImGuizmoManager *gizmo = ImGuizmoManager::GetInstance();
+        if (currentWorkspace_ >= 0 && currentWorkspace_ < static_cast<int>(workspacePickMasks_.size()))
+        {
+            workspacePickMasks_[currentWorkspace_] = gizmo->GetCategoryMask();
+        }
+        data->Save("gizmoPickMask", static_cast<int>(gizmo->GetCategoryMask()));
+        for (size_t i = 0; i < workspacePickMasks_.size(); ++i)
+        {
+            data->Save("gizmoPickMask_" + std::to_string(i), static_cast<int>(workspacePickMasks_[i]));
+        }
+    }
+#endif // USE_IMGUI
     data->Save("isEditorMode", isEditorMode_);
     data->Save("gridColor", gridColor_);
 #ifdef USE_IMGUI
@@ -2087,14 +2264,50 @@ void ImGuiManager::LoadFlag() {
     showGizmoView_ = data->Load("showGizmoView", false);
     showHierarchyView_ = data->Load("showHierarchyView", true);
     showMotionEditorView_ = data->Load("showMotionEditorView", false);
+    showBehaviorTreeView_ = data->Load("showBehaviorTreeView", false);
+    showAnimStateMachineView_ = data->Load("showAnimStateMachineView", false);
     showShortcutWindow_ = data->Load("showShortcutWindow", false);
     showSpriteManagerView_ = data->Load("showSpriteManagerView", false);
     showUIEditorView_ = data->Load("showUIEditorView", false);
     showShadowMapView_ = data->Load("showShadowMapView", true);
     showDrawSystemView_ = data->Load("showDrawSystemView", true);
     showShaderEditorView_ = data->Load("showShaderEditorView", false);
+    showMusicEditorView_ = data->Load("showMusicEditorView", false);
+    showCaptureView_ = data->Load("showCaptureView", false);
+    showConsoleView_ = data->Load("showConsoleView", false);
+    showTimelineView_ = data->Load("showTimelineView", false);
     showAssetBrowserView_ = data->Load("showAssetBrowserView", false);
     showGameParamView_ = data->Load("showGameParamView", true);
+    showColliderTagManagerView_ = data->Load("showColliderTagManagerView", false);
+    showAudioManagerView_ = data->Load("showAudioManagerView", false);
+    showCameraView_ = data->Load("showCameraView", false);
+    showNotificationView_ = data->Load("showNotificationView", false);
+    showAppearanceView_ = data->Load("showAppearanceView", false);
+    showInspectorView_ = data->Load("showInspectorView", true);
+    showUndoHistoryView_ = data->Load("showUndoHistoryView", false);
+    showPlacementToolView_ = data->Load("showPlacementToolView", false);
+    showColorPaletteView_ = data->Load("showColorPaletteView", false);
+    sceneLabelMode_ = data->Load("sceneLabelMode", 1);
+    showSceneMeasure_ = data->Load("showSceneMeasure", true);
+    showThirdsGuide_ = data->Load("showThirdsGuide", false);
+    showSafeAreaGuide_ = data->Load("showSafeAreaGuide", false);
+    showSceneOverlay_ = data->Load("showSceneOverlay", true);
+    showViewAxis_ = data->Load("showViewAxis", true);
+    showSceneIcons_ = data->Load("showSceneIcons", true);
+    sceneIconScale_ = data->Load("sceneIconScale", 1.0f);
+    sceneIconKindMask_ = data->Load("sceneIconKindMask", 0x1F);
+#ifdef USE_IMGUI
+    currentWorkspace_ = data->Load("currentWorkspace", -1);
+    {
+        ImGuizmoManager *gizmo = ImGuizmoManager::GetInstance();
+        for (size_t i = 0; i < workspacePickMasks_.size(); ++i)
+        {
+            workspacePickMasks_[i] = static_cast<uint32_t>(
+                data->Load("gizmoPickMask_" + std::to_string(i), static_cast<int>(workspacePickMasks_[i])));
+        }
+        gizmo->SetCategoryMask(static_cast<uint32_t>(data->Load("gizmoPickMask", static_cast<int>(gizmo->GetCategoryMask()))));
+    }
+#endif // USE_IMGUI
     isEditorMode_ = data->Load("isEditorMode", true);
     gridColor_ = data->Load("gridColor", Vector4(0.5f, 0.5f, 0.5f, 1.0f));
 }

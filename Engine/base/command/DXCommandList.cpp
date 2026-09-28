@@ -20,6 +20,9 @@ void DXCommandList::Initialize(DXDevice *pDevice, D3D12_COMMAND_LIST_TYPE type)
     hr = pDevice->Get()->CreateCommandList(0, type, commandAllocators_[0].Get(), nullptr, IID_PPV_ARGS(&commandList_));
     assert(SUCCEEDED(hr));
     isOpen_ = true;
+
+    // 加速構造の構築に使う。取れなくても通常の描画には影響しないので、失敗は握りつぶす
+    commandList_->QueryInterface(IID_PPV_ARGS(&commandList4_));
 }
 
 void DXCommandList::Close()

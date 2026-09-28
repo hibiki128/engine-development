@@ -69,10 +69,7 @@ void ColliderTagManager::ImGuiTagManager()
     bool entered = ImGui::InputTextWithHint("##NewTag", "タグ名を入力", newTagBuffer,
                                             sizeof(newTagBuffer), ImGuiInputTextFlags_EnterReturnsTrue);
     ImGui::SameLine();
-    ImGui::PushStyleColor(ImGuiCol_Button, DebugTheme::kBgGreen);
-    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.45f, 0.68f, 0.52f, 0.40f));
-    bool clicked = ImGui::Button("追加", ImVec2(78.0f, 0.0f));
-    ImGui::PopStyleColor(2);
+    bool clicked = ConfirmButton("追加", ImVec2(78.0f, 0.0f));
 
     if (entered || clicked)
     {

@@ -42,6 +42,13 @@ class OffScreen
     void DrawWithoutCopy();
 
     /// <summary>
+    /// このステージでトーンマップを掛けるかどうか。
+    /// 画面に出る最後のステージだけ true にする（DrawSystem が設定する）
+    /// </summary>
+    /// <param name="apply">掛けるなら true</param>
+    void SetApplyToneMap(bool apply) { renderer_.SetApplyToneMap(apply); }
+
+    /// <summary>
     /// finalResultへのUI合成を開始
     /// </summary>
     void BeginCompositePass();
@@ -67,6 +74,20 @@ class OffScreen
     /// </summary>
     /// <param name="projectionMatrix">投影行列</param>
     void SetProjection(Matrix4x4 projectionMatrix);
+
+    /// <summary>
+    /// カメラの情報を設定する。
+    /// 深度からビュー空間へ戻すだけのエフェクトは投影行列で足りるが、
+    /// フォグのようにワールド座標まで復元するものはビュー行列とカメラ位置も要る
+    /// </summary>
+    /// <param name="viewMatrix">ビュー行列</param>
+    /// <param name="projectionMatrix">投影行列</param>
+    /// <param name="cameraPosition">カメラのワールド座標</param>
+    /// <param name="sunDirection">平行光源が進む向き（フォグの散乱に使う）</param>
+    void SetCamera(const Matrix4x4 &viewMatrix,
+                   const Matrix4x4 &projectionMatrix,
+                   const Vector3 &cameraPosition,
+                   const Vector3 &sunDirection);
 
     /// <summary>
     /// 最終結果のSRVインデックスを取得
@@ -167,6 +188,29 @@ class OffScreen
 
   private:
     /// ===================================================
+    /// private method
+    /// ===================================================
+
+    /// <summary>
+    /// 光の筋にカメラとシャドウマップの情報を流し込む
+    /// （エフェクト追加時とカメラ更新時の2か所から呼ぶので切り出してある）
+    /// </summary>
+    /// <param name="pParams">対象のパラメータ</param>
+    void ApplyCameraToLightShaft(LightShaftParams *pParams);
+
+    /// <summary>
+    /// SSRにカメラの行列とディファードの状態を流し込む
+    /// </summary>
+    /// <param name="pParams">対象のパラメータ</param>
+    void ApplyCameraToSsr(SsrParams *pParams);
+
+    /// <summary>
+    /// RT反射にカメラの行列とディファードの状態を流し込む
+    /// </summary>
+    /// <param name="pParams">対象のパラメータ</param>
+    void ApplyCameraToRtReflection(RtReflectionParams *pParams);
+
+    /// ===================================================
     /// private variables
     /// ===================================================
 
@@ -176,6 +220,10 @@ class OffScreen
 
     DirectXCommon *pDxCommon_ = nullptr; // DirectX共通処理
     Matrix4x4 projectionInverse_;       // 射影行列の逆行列（深度をビュー空間へ戻すのに使う）
+    Matrix4x4 viewProjection_;          // ビュー射影行列（ワールドを画面へ投影し直すのに使う）
+    Matrix4x4 viewProjectionInverse_;   // ビュー射影行列の逆行列（深度をワールドへ戻すのに使う）
+    Vector3 cameraPosition_{};          // カメラのワールド座標
+    Vector3 sunDirection_ = {0.0f, -1.0f, 0.0f}; // 平行光源が進む向き
 
     // セーブ/ロード結果メッセージとその表示タイマー
     std::string saveMessage_;  // 保存結果メッセージ

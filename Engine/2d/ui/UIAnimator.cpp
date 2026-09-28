@@ -6,6 +6,7 @@
 #include <imgui.h>
 #include <utility/debug/imgui/ImGuiNotification.h>
 #endif // USE_IMGUI
+#include <string>
 
 namespace Hagine {
 
@@ -591,19 +592,15 @@ void UIAnimator::DrawImGui(bool *open)
                 newNameBuffer_[0] = '\0';
             }
 
-            // グループ一覧
-            ImGui::BeginChild("##GroupList", ImVec2(180, 160), ImGuiChildFlags_Borders);
-            for (int i = 0; i < static_cast<int>(groups_.size()); ++i)
-            {
-                if (ImGui::Selectable(groups_[i].name.c_str(), selectedGroup_ == i))
-                    selectedGroup_ = i;
-            }
+            // グループ一覧（グループの下にメンバーを階層で出す。グループ外のスプライトも最後にまとめる）
+            ImGui::BeginChild("##GroupList", ImVec2(220, 260), ImGuiChildFlags_Borders | ImGuiChildFlags_ResizeX);
+            DrawGroupTree();
             ImGui::EndChild();
 
             ImGui::SameLine();
 
             // 選択グループの詳細
-            ImGui::BeginChild("##GroupDetail", ImVec2(0, 160), ImGuiChildFlags_Borders);
+            ImGui::BeginChild("##GroupDetail", ImVec2(0, 260), ImGuiChildFlags_Borders);
             if (selectedGroup_ >= 0 && selectedGroup_ < static_cast<int>(groups_.size()))
             {
                 UIGroup &g = groups_[selectedGroup_];
@@ -705,7 +702,10 @@ void UIAnimator::DrawImGui(bool *open)
                 if (clips_[i].playing_)
                     label += " ▶";
                 if (ImGui::Selectable((label + "##clip" + std::to_string(i)).c_str(), selectedClip_ == i))
+                {
                     selectedClip_ = i;
+                    selectedTween_ = -1;
+                }
             }
             ImGui::EndChild();
 
@@ -717,15 +717,11 @@ void UIAnimator::DrawImGui(bool *open)
             {
                 UIClip &c = clips_[selectedClip_];
                 ImGui::Text("クリップ: %s", c.name.c_str());
+                ImGui::SameLine();
                 ImGui::Checkbox("ループ", &c.loop);
-                ImGui::SameLine();
-                if (ImGui::Button("▶ 再生"))
-                    Play(c.name);
-                ImGui::SameLine();
-                if (ImGui::Button("■ 停止"))
-                    Stop(c.name);
-                ImGui::SameLine();
-                ImGui::TextDisabled(c.playing_ ? "再生中" : "停止中");
+
+                // タイムライン（再生・停止・途中の確認・プレビュー前に戻す）
+                const bool pickedFromTimeline = DrawClipTimeline(c);
 
                 ImGui::Separator();
 
@@ -740,7 +736,25 @@ void UIAnimator::DrawImGui(bool *open)
                                              : "?";
                     std::string header = std::to_string(ti + 1) + ": " +
                                          (t.targetName.empty() ? "(未選択)" : t.targetName) + " / " + chName;
-                    if (ImGui::CollapsingHeader((header + "##tw").c_str(), ImGuiTreeNodeFlags_DefaultOpen))
+                    // タイムラインで選んだトゥイーンは開いて見える所まで送る
+                    if (pickedFromTimeline && ti == selectedTween_)
+                    {
+                        ImGui::SetNextItemOpen(true);
+                    }
+                    if (ti == selectedTween_)
+                    {
+                        header = "▶ " + header;
+                    }
+                    const bool tweenOpen = ImGui::CollapsingHeader((header + "##tw").c_str(), ImGuiTreeNodeFlags_DefaultOpen);
+                    if (ImGui::IsItemClicked())
+                    {
+                        selectedTween_ = ti;
+                    }
+                    if (pickedFromTimeline && ti == selectedTween_)
+                    {
+                        ImGui::SetScrollHereY(0.2f);
+                    }
+                    if (tweenOpen)
                     {
                         // 対象種別
                         int kind = static_cast<int>(t.targetKind);

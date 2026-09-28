@@ -22,5 +22,7 @@ VertexShaderOutput main(VertexShaderInput input, uint instanceId : SV_InstanceID
     output.position = mul(input.position, gParticle[instanceId].WVP);
     output.texcoord = input.texcoord;
     output.color = gParticle[instanceId].color;
+    output.seed = 0.0f; // CPUパーティクルはプロシージャル形状を使わない
+    output.facing = 1.0f;
     return output;
 }

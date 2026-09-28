@@ -54,7 +54,27 @@ void Audio::Initialize(const std::string &directoryPath)
     directoryPath_ = directoryPath;
 
     hr = XAudio2Create(&xAudio2_, 0, XAUDIO2_DEFAULT_PROCESSOR);
+    if (FAILED(hr))
+    {
+        Logger::Error("XAudio2 の初期化に失敗しました。音声は再生されません。");
+        return;
+    }
     hr = xAudio2_->CreateMasteringVoice(&pMasterVoice_);
+    if (FAILED(hr) || pMasterVoice_ == nullptr)
+    {
+        Logger::Error("マスターボイスの作成に失敗しました。音声は再生されません。");
+        return;
+    }
+
+    // 出力先のチャンネル数とレートを控えておく。
+    // 定位の行列やフィルタの係数がこの2つに依存する
+    XAUDIO2_VOICE_DETAILS details = {};
+    pMasterVoice_->GetVoiceDetails(&details);
+    outputChannels_ = (details.InputChannels > 0) ? details.InputChannels : 2;
+    outputSampleRate_ = (details.InputSampleRate > 0) ? details.InputSampleRate : 48000;
+
+    // 用途ごとのサブミックスと残響を用意する
+    CreateBuses();
 
     // 設定から読み込んだマスター音量を、生成し直した直後のマスターボイスにも掛け直す
     SetMasterVolume(masterVolume_);
@@ -172,41 +192,20 @@ void Audio::Unload(uint32_t soundIndex)
 
 void Audio::PlayWave(uint32_t soundIndex, float volume, bool loop)
 {
-    HRESULT result;
-
-    const SoundData &soundData = soundDatas_[soundIndex];
-
-    auto voice = std::make_unique<Voice>();
-    voice->handle = soundIndex;
-    voice->volume = volume;
-    voice->callback = std::make_unique<VoiceCallback>();
-
-    result = xAudio2_->CreateSourceVoice(&voice->sourceVoice, &soundData.wfex, 0, XAUDIO2_DEFAULT_FREQ_RATIO, voice->callback.get());
-    assert(SUCCEEDED(result));
-
-    XAUDIO2_BUFFER buf{};
-    buf.pAudioData = soundData.buffer.data();
-    buf.AudioBytes = static_cast<uint32_t>(soundData.buffer.size());
-    buf.Flags = XAUDIO2_END_OF_STREAM;
-    buf.pContext = voice.get();
-    buf.LoopCount = loop ? XAUDIO2_LOOP_INFINITE : 0;
-
-    result = voice->sourceVoice->SubmitSourceBuffer(&buf);
-    assert(SUCCEEDED(result));
-
-    result = voice->sourceVoice->Start();
-    assert(SUCCEEDED(result));
-
-    voice->sourceVoice->SetVolume(voice->volume);
-
-    voices_.insert(std::move(voice));
+    // 従来の呼び出し口。中身は新しい Play へ委譲してあるので、
+    // 既存の呼び出しもそのまま用途別ミキサー（SE）を通る
+    SoundPlayParams params;
+    params.volume = volume;
+    params.loop = loop;
+    params.bus = SoundBus::SE;
+    Play(soundIndex, params);
 }
 
 void Audio::StopWave(uint32_t soundIndex)
 {
     for (auto it = voices_.begin(); it != voices_.end();)
     {
-        if ((*it)->handle == soundIndex)
+        if ((*it)->soundIndex == soundIndex)
         {
             if ((*it)->sourceVoice != nullptr)
             {
@@ -236,7 +235,7 @@ void Audio::SetVolume(uint32_t soundIndex, float volume)
 {
     for (auto &voice : voices_)
     {
-        if (voice->handle == soundIndex)
+        if (voice->soundIndex == soundIndex)
         {
             voice->volume = volume;
             voice->sourceVoice->SetVolume(volume);
@@ -262,18 +261,24 @@ void Audio::CleanupFinishedVoices()
 
 void Audio::Finalize()
 {
-    if (pMasterVoice_)
-    {
-        pMasterVoice_->DestroyVoice();
-        pMasterVoice_ = nullptr;
-    }
-
+    // 送り先より先にソースボイスを畳む。逆順にすると、
+    // まだ生きているボイスが破棄済みのサブミックスを指した状態になる
     for (auto &voice : voices_)
     {
         if (voice->sourceVoice)
         {
+            voice->sourceVoice->Stop(0);
             voice->sourceVoice->DestroyVoice();
+            voice->sourceVoice = nullptr;
         }
+    }
+
+    DestroyBuses();
+
+    if (pMasterVoice_)
+    {
+        pMasterVoice_->DestroyVoice();
+        pMasterVoice_ = nullptr;
     }
 
     if (xAudio2_)
@@ -332,7 +337,7 @@ float Audio::DebugGetPositionSec(uint32_t index) const
 {
     for (auto &voice : voices_)
     {
-        if (voice->handle != index)
+        if (voice->soundIndex != index)
         {
             continue;
         }
@@ -363,7 +368,7 @@ bool Audio::DebugIsPlaying(uint32_t index) const
 {
     for (auto &voice : voices_)
     {
-        if (voice->handle == index)
+        if (voice->soundIndex == index)
         {
             return true;
         }
@@ -391,7 +396,7 @@ float Audio::GetCurrentAmplitude() const
         {
             continue;
         }
-        uint32_t index = voice->handle;
+        uint32_t index = voice->soundIndex;
         if (index >= soundDatas_.size())
         {
             continue;
@@ -565,18 +570,20 @@ void Audio::Debug()
 
     ImGui::Spacing();
 
+    // ── 用途別ミキサー・残響・3D（AudioMixer.cpp） ──
+    DebugDrawMixer();
+
+    ImGui::Spacing();
+
     // ── ファイルブラウザ ──
     SectionHeader(("[ ファイルブラウザ  " + directoryPath_ + "/ ]").c_str(), DebugTheme::kAccentGreen);
-    ImGui::PushStyleColor(ImGuiCol_Button, DebugTheme::kBgGreen);
-    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.45f, 0.68f, 0.52f, 0.40f));
-    if (ImGui::Button("WAVファイルをスキャン"))
+    if (ConfirmButton("WAVファイルをスキャン"))
     {
         DebugScanWavFiles();
         debugSelectedFile_ = -1;
         ImGuiNotification::Post("WAVを " + std::to_string(debugWavFileList_.size()) + " 件検出しました",
                                 {0.45f, 0.68f, 0.52f, 1.0f});
     }
-    ImGui::PopStyleColor(2);
     ImGui::SameLine();
     ImGui::TextDisabled("(%zu ファイル)", debugWavFileList_.size());
 
@@ -637,9 +644,7 @@ void Audio::Debug()
         if (!loaded)
         {
             //-- Load ボタン
-            ImGui::PushStyleColor(ImGuiCol_Button, DebugTheme::kBgBlue);
-            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.45f, 0.60f, 0.78f, 0.40f));
-            if (ImGui::Button("ロード", ImVec2(120, 0)))
+            if (PrimaryButton("ロード", ImVec2(120, 0)))
             {
                 // selectedName は DebugScanWavFiles が directoryPath_ 基準で列挙した相対パスなので、
                 // LoadWave にそのまま渡せる
@@ -647,13 +652,12 @@ void Audio::Debug()
                 debugLoadedMap_[selectedName] = newIdx;
                 ImGuiNotification::Post("ロードしました: " + selectedName, {0.42f, 0.66f, 0.68f, 1.0f});
             }
-            ImGui::PopStyleColor(2);
         }
         else
         {
             //-- Play ボタン
             ImGui::BeginDisabled(playing);
-            if (ImGui::Button("再生"))
+            if (PrimaryButton("再生"))
             {
                 PlayWave(idx, debugVolume_, debugLoop_);
             }
@@ -663,7 +667,7 @@ void Audio::Debug()
 
             //-- Stop ボタン
             ImGui::BeginDisabled(!playing);
-            if (ImGui::Button("停止"))
+            if (NeutralButton("停止"))
             {
                 StopWave(idx);
             }
@@ -674,7 +678,7 @@ void Audio::Debug()
             //-- 再生中のみ音量を即時反映
             if (playing)
             {
-                if (ImGui::Button("音量を適用"))
+                if (NeutralButton("音量を適用"))
                 {
                     SetVolume(idx, debugVolume_);
                 }
@@ -683,9 +687,7 @@ void Audio::Debug()
 
             //-- Unload ボタン
             ImGui::BeginDisabled(playing);
-            ImGui::PushStyleColor(ImGuiCol_Button, DebugTheme::kBgRed);
-            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.80f, 0.46f, 0.46f, 0.40f));
-            if (ImGui::Button("アンロード"))
+            if (DangerButton("アンロード"))
             {
                 StopWave(idx);
                 Unload(idx);
@@ -693,7 +695,6 @@ void Audio::Debug()
                 loadedFiles_.erase(selectedName);
                 ImGuiNotification::Post("アンロードしました: " + selectedName, {0.82f, 0.58f, 0.36f, 1.0f});
             }
-            ImGui::PopStyleColor(2);
             ImGui::EndDisabled();
 
             //-- 再生時間バー
@@ -796,9 +797,7 @@ void Audio::Debug()
 
     // ── 全停止 ──
     ImGui::Spacing();
-    ImGui::PushStyleColor(ImGuiCol_Button, DebugTheme::kBgRed);
-    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.80f, 0.46f, 0.46f, 0.40f));
-    if (ImGui::Button("すべて停止", ImVec2(-1.0f, 0.0f)))
+    if (DangerButton("すべて停止", ImVec2(-1.0f, 0.0f)))
     {
         for (auto &[name, soundIdx] : debugLoadedMap_)
         {
@@ -806,7 +805,6 @@ void Audio::Debug()
         }
         ImGuiNotification::Post("すべての再生を停止しました", {0.82f, 0.58f, 0.36f, 1.0f});
     }
-    ImGui::PopStyleColor(2);
 #endif // USE_IMGUI
 }
 } // namespace Hagine

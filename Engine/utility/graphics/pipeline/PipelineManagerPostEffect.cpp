@@ -34,6 +34,27 @@ void PipelineManager::CreateRenderPipelines()
             CreateFullScreenPostEffectPipeline(shaderPath + L"shaders/OffScreen/CopyImage.PS.hlsl",
                                                rootSignature, kBackBufferFormat);
     }
+
+    // チェーン出口のトーンマップ。
+    // HDR(リニアFP16) を露出とカーブで 0〜1 へ収めて最終結果テクスチャへ書く。
+    // 入力テクスチャに加えてパラメータ用の定数バッファ(b0)を取るので、
+    // ルートシグネチャは他と共用せず、このシェーダーのリフレクションから作る。
+    {
+        ShaderRootSignature::BuildOptions options;
+        options.allowInputAssembler = true;
+        options.srvTableMode = ShaderRootSignature::TableMode::PerRegister;
+        options.samplerPresets = {ShaderRootSignature::SamplerPreset::LinearClamp};
+
+        const std::vector<ShaderStageFile> shaders = {
+            {shaderPath + L"shaders/OffScreen/FullScreen.VS.hlsl", L"vs_6_0", D3D12_SHADER_VISIBILITY_VERTEX},
+            {shaderPath + L"shaders/OffScreen/ToneMap.PS.hlsl", L"ps_6_0", D3D12_SHADER_VISIBILITY_PIXEL},
+        };
+        auto rootSignature = BuildReflectedRootSignature(PipelineType::ToneMap, ShaderMode::None, shaders, options);
+        rootSignatures_[MakeRootSignatureKey(PipelineType::ToneMap, ShaderMode::None)] = rootSignature;
+        pipelines_[MakePipelineKey(PipelineType::ToneMap, BlendMode::Normal, ShaderMode::None)] =
+            CreateFullScreenPostEffectPipeline(shaderPath + L"shaders/OffScreen/ToneMap.PS.hlsl",
+                                               rootSignature, kSceneColorFormat);
+    }
 }
 
 /// <summary>
@@ -63,8 +84,17 @@ std::wstring PipelineManager::GetPostEffectPixelShaderPath(ShaderMode shaderMode
     case ShaderMode::Retro:     return root + L"Retro.PS.hlsl";
     case ShaderMode::Shockwave: return root + L"Shockwave.PS.hlsl";
     case ShaderMode::Monochrome:return root + L"Monochrome.PS.hlsl";
+    case ShaderMode::Fxaa:      return root + L"Fxaa.PS.hlsl";
+    case ShaderMode::ColorGrading: return root + L"ColorGrading.PS.hlsl";
+    case ShaderMode::ChromaticAberration: return root + L"ChromaticAberration.PS.hlsl";
+    case ShaderMode::FilmGrain: return root + L"FilmGrain.PS.hlsl";
+    case ShaderMode::LensDistortion: return root + L"LensDistortion.PS.hlsl";
+    case ShaderMode::Impact:    return root + L"Impact.PS.hlsl";
     case ShaderMode::None:
     case ShaderMode::DepthOfField: // コンピュート専用。PS版が無いので素通しを割り当てる
+    case ShaderMode::HeightFog:    // 同上
+    case ShaderMode::LightShaft:   // 同上
+    case ShaderMode::Ssr:          // 同上
     default:                    return root + L"CopyImage.PS.hlsl";
     }
 }

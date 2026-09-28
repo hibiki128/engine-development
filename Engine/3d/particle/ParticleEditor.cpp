@@ -11,8 +11,18 @@
 #include "browser/ShowFolder.h"
 #include "ImGuizmo.h"
 #include "utility/debug/imgui/DebugUIHelper.h"
+#include <algorithm>
+#include <icon/IconsFontAwesome5.h>
 #endif // USE_IMGUI
 
+#ifdef USE_IMGUI
+#include <edit/undo/ImGuiUndoTracker.h>
+namespace {
+// UI の編集ジェスチャを Undo 履歴へ積むトラッカー。シングルトンなので1つでよい。
+// ヘッダーのメンバーにすると Undo 関連のヘッダーが 100 本以上の .cpp へ広がるので、ここに置く
+Hagine::ImGuiUndoTracker g_undoTracker;
+} // namespace
+#endif // USE_IMGUI
 namespace Hagine {
 void ParticleEditor::Finalize()
 {
@@ -32,14 +42,14 @@ void ParticleEditor::Initialize()
 void ParticleEditor::SetupColors()
 {
 #ifdef USE_IMGUI
-    // 各CollapsingHeaderに使用する色を定義（彩度を抑えたシックなトーンに統一）
-    headerColors_[0] = ImVec4(0.30f, 0.38f, 0.50f, 0.55f); // 青系
-    headerColors_[1] = ImVec4(0.50f, 0.38f, 0.24f, 0.55f); // オレンジ系
-    headerColors_[2] = ImVec4(0.30f, 0.44f, 0.34f, 0.55f); // 緑系
-    headerColors_[3] = ImVec4(0.40f, 0.33f, 0.48f, 0.55f); // 紫系
-    headerColors_[4] = ImVec4(0.50f, 0.46f, 0.28f, 0.55f); // 黄色系
-    headerColors_[5] = ImVec4(0.32f, 0.33f, 0.36f, 0.55f); // グレー系
-#endif                                                     // USE_IMGUI
+    // 各見出しのアクセント色（エディタ共通の配色からとる）
+    headerColors_[0] = DebugTheme::kAccentBlue;
+    headerColors_[1] = DebugTheme::kAccentOrange;
+    headerColors_[2] = DebugTheme::kAccentGreen;
+    headerColors_[3] = DebugTheme::kAccentPurple;
+    headerColors_[4] = DebugTheme::kAccentYellow;
+    headerColors_[5] = DebugTheme::kTextDim;
+#endif // USE_IMGUI
 }
 
 void ParticleEditor::AddParticleEmitter(const std::string &name, const std::string &fileName, const std::string &texturePath)
@@ -190,12 +200,13 @@ void ParticleEditor::DrawSelectedForPreview(const ViewProjection &vp)
     }
 }
 
-void ParticleEditor::DebugAll()
+void ParticleEditor::DebugAll(bool ownTabBar)
 {
 #ifdef USE_IMGUI
-    if (ImGui::BeginTabBar("CPUパーティクル"))
+    // ownTabBar=false のときは呼び出し元のタブの中身として描く（タブバー・タブ項目を作らない）
+    if (!ownTabBar || ImGui::BeginTabBar("CPUパーティクル"))
     {
-        if (ImGui::BeginTabItem("CPUエミッター設定"))
+        if (!ownTabBar || ImGui::BeginTabItem("CPUエミッター設定"))
         {
             if (emitters_.empty())
             {
@@ -203,52 +214,112 @@ void ParticleEditor::DebugAll()
             }
             else
             {
-                // エミッター名のリストを作成
-                std::vector<std::string> emitterNames;
-                for (const auto &[name, emitter] : emitters_)
+                // エミッター名は名前順に並べる（unordered_map のままだと並びが毎回変わって探しにくい）
+                std::vector<std::string> emitterNames = GetEmitterNames();
+                std::sort(emitterNames.begin(), emitterNames.end());
+
+                // 選択が消えていたら先頭へ
+                if (selectedEmitterName_.empty() || emitters_.find(selectedEmitterName_) == emitters_.end())
                 {
-                    emitterNames.push_back(name);
+                    selectedEmitterName_ = emitterNames.front();
                 }
 
-                // インデックスの範囲チェック
-                if (selectedEmitterIndex_ >= emitterNames.size())
+                // ---- 検索 ----
+                ImGui::SetNextItemWidth(-1);
+                ImGui::InputTextWithHint("##emitterSearch", ICON_FA_SEARCH " エミッターを名前で絞り込み", &emitterSearch_);
+                if (ImGui::IsItemFocused() && ImGui::IsKeyPressed(ImGuiKey_Escape))
                 {
-                    selectedEmitterIndex_ = std::max(0, static_cast<int>(emitterNames.size()) - 1);
+                    emitterSearch_.clear();
                 }
-
-                // エミッター選択用のCombo
-                std::vector<const char *> emitterNameCStrs;
-                for (const auto &name : emitterNames)
-                {
-                    emitterNameCStrs.push_back(name.c_str());
-                }
-
-                if (ImGui::Combo("エミッター選択", &selectedEmitterIndex_,
-                                 emitterNameCStrs.data(), static_cast<int>(emitterNameCStrs.size())))
-                {
-                    // 選択が変更された場合、選択されたエミッター名を更新
-                    selectedEmitterName_ = emitterNames[selectedEmitterIndex_];
-                }
-
-                // 初回選択時の処理
-                if (selectedEmitterName_.empty() && !emitterNames.empty())
-                {
-                    selectedEmitterName_ = emitterNames[selectedEmitterIndex_];
-                }
-
-                // 選択されたエミッターのDebugを実行
-                if (!selectedEmitterName_.empty())
-                {
-                    auto it = emitters_.find(selectedEmitterName_);
-                    if (it != emitters_.end() && it->second)
+                auto lower = [](std::string text) {
+                    for (char &c : text)
                     {
-                        it->second->Debug();
+                        if (c >= 'A' && c <= 'Z')
+                            c = static_cast<char>(c - 'A' + 'a');
                     }
+                    return text;
+                };
+                const std::string query = lower(emitterSearch_);
+
+                // ---- 一覧（● = 自動発生中 / 目の斜線 = 発生範囲の枠を出していない）。高さは下端をドラッグで変えられる ----
+                ImGui::BeginChild("##emitterList", ImVec2(0.0f, ImGui::GetTextLineHeightWithSpacing() * 6.5f),
+                                  ImGuiChildFlags_Borders | ImGuiChildFlags_ResizeY);
+                int shown = 0;
+                for (size_t i = 0; i < emitterNames.size(); ++i)
+                {
+                    const std::string &name = emitterNames[i];
+                    if (!query.empty() && lower(name).find(query) == std::string::npos)
+                    {
+                        continue;
+                    }
+                    ++shown;
+                    ParticleEmitter *emitter = emitters_[name].get();
+                    const bool isAuto = emitter && emitter->GetIsAuto();
+                    const bool visible = !emitter || emitter->GetVisible();
+                    ImGui::PushID(name.c_str());
+                    ImGui::TextColored(isAuto ? DebugTheme::kAccentGreen : DebugTheme::kTextDim, isAuto ? ICON_FA_CIRCLE : ICON_FA_CIRCLE_NOTCH);
+                    ImGui::SetItemTooltip(isAuto ? "自動発生中" : "自動発生していない");
+                    ImGui::SameLine();
+                    if (!visible)
+                    {
+                        ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+                    }
+                    if (ImGui::Selectable(name.c_str(), selectedEmitterName_ == name))
+                    {
+                        selectedEmitterName_ = name;
+                        selectedEmitterIndex_ = static_cast<int>(i);
+                    }
+                    if (!visible)
+                    {
+                        ImGui::PopStyleColor();
+                        ImGui::SameLine();
+                        ImGui::TextDisabled(ICON_FA_EYE_SLASH);
+                    }
+                    ImGui::PopID();
+                }
+                if (shown == 0)
+                {
+                    ImGui::TextDisabled("一致するエミッターがありません");
+                }
+                ImGui::EndChild();
+
+                // ---- 選択中のエミッターの操作バー ----
+                auto it = emitters_.find(selectedEmitterName_);
+                if (it != emitters_.end() && it->second)
+                {
+                    ParticleEmitter *emitter = it->second.get();
+                    bool isAuto = emitter->GetIsAuto();
+                    if (ThemedToggle("##emitterAuto", &isAuto, DebugTheme::kAccentGreen))
+                    {
+                        emitter->SetIsAuto(isAuto);
+                    }
+                    ImGui::SameLine();
+                    ImGui::AlignTextToFramePadding();
+                    ImGui::TextUnformatted(isAuto ? "自動発生 ON" : "自動発生 OFF");
+                    ImGui::SameLine();
+                    if (PrimaryButton(ICON_FA_BOLT " 1回出す"))
+                    {
+                        emitter->UpdateOnce();
+                    }
+                    ImGui::SetItemTooltip("自動発生を止めたまま、1回ぶんだけ発生させて形を確かめる");
+                    ImGui::SameLine();
+                    bool visible = emitter->GetVisible();
+                    if (NeutralButton(visible ? ICON_FA_EYE " 枠を表示中" : ICON_FA_EYE_SLASH " 枠なし"))
+                    {
+                        emitter->SetVisible(!visible);
+                    }
+                    ImGui::SetItemTooltip("発生範囲の枠（白い箱）をシーンに描くか");
+                    ImGui::Spacing();
+
+                    // 選択されたエミッターの詳細
+                    emitter->Debug();
                 }
             }
-            ImGui::EndTabItem();
+            if (ownTabBar)
+                ImGui::EndTabItem();
         }
-        ImGui::EndTabBar();
+        if (ownTabBar)
+            ImGui::EndTabBar();
     }
 #endif // USE_IMGUI
 }
@@ -335,13 +406,13 @@ void ParticleEditor::EditorWindow()
 {
 #ifdef USE_IMGUI
     // エディタでの編集ジェスチャ（ウィジェット操作・ギズモドラッグ）をUndo履歴として追跡する
-    undoTracker_.Begin([this] { return CaptureUndoState(); });
+    g_undoTracker.Begin([this] { return CaptureUndoState(); });
 
     ImGui::Begin("パーティクルエディター");
     ShowImGuiEditor();
     ImGui::End();
 
-    undoTracker_.End(
+    g_undoTracker.End(
         "パーティクル編集",
         [this] { return CaptureUndoState(); },
         [](const nlohmann::json &s) { ParticleEditor::GetInstance()->RestoreUndoState(s); },
@@ -353,377 +424,265 @@ void ParticleEditor::EditorWindow()
 bool ParticleEditor::ColoredCollapsingHeader(const char *label, int colorIndex)
 {
 #ifdef USE_IMGUI
-    // 現在のImGuiカラーを保存
-    ImVec4 originalColor = ImGui::GetStyleColorVec4(ImGuiCol_Header);
-
-    // 色を設定
-    ImGui::PushStyleColor(ImGuiCol_Header, headerColors_[colorIndex % 6]);
-    ImGui::PushStyleColor(ImGuiCol_HeaderHovered, ImVec4(
-                                                      headerColors_[colorIndex % 6].x + 0.1f,
-                                                      headerColors_[colorIndex % 6].y + 0.1f,
-                                                      headerColors_[colorIndex % 6].z + 0.1f,
-                                                      0.9f));
-    ImGui::PushStyleColor(ImGuiCol_HeaderActive, ImVec4(
-                                                     headerColors_[colorIndex % 6].x + 0.2f,
-                                                     headerColors_[colorIndex % 6].y + 0.2f,
-                                                     headerColors_[colorIndex % 6].z + 0.2f,
-                                                     1.0f));
-
-    // CollapsingHeaderを表示
-    bool opened = ImGui::CollapsingHeader(label);
-
-    // 設定した色をリセット
-    ImGui::PopStyleColor(3);
-
-    return opened;
+    return ThemedHeader(label, headerColors_[colorIndex % 6]);
+#else
+    (void)label;
+    (void)colorIndex;
+    return false;
 #endif // USE_IMGUI
 }
 
-void ParticleEditor::ShowImGuiEditor()
+void ParticleEditor::ShowImGuiEditor(bool ownTabBar)
 {
 #ifdef USE_IMGUI
-    if (ImGui::BeginTabBar("CPUパーティクル"))
+    // ownTabBar=false のときはタブ項目だけを出す（呼び出し元のタブバーに並べる）
+    if (!ownTabBar || ImGui::BeginTabBar("CPUパーティクル"))
     {
-        if (ImGui::BeginTabItem("パーティクル作成"))
+        if (ImGui::BeginTabItem(ICON_FA_PLUS " 作成"))
         {
+            DrawQuickCreate();
 
-            // エミッター追加のCollapsingHeader
-            if (ColoredCollapsingHeader("エミッター追加", 0))
+            // グループ（粒の形）を1つずつ指定して作る従来の画面
+            ImGui::Spacing();
+            if (ImGui::CollapsingHeader(ICON_FA_SLIDERS_H " 詳しく作る（グループを指定）"))
             {
-                // 名前の入力
-                char nameBuffer[256];
-                strcpy_s(nameBuffer, sizeof(nameBuffer), localEmitterName_.c_str());
-                ImGui::Text("エミッターの名前");
-                if (ImGui::InputText(" ", nameBuffer, sizeof(nameBuffer)))
+                // エミッター追加のCollapsingHeader
+                if (ColoredCollapsingHeader("エミッター追加", 0))
                 {
-                    localEmitterName_ = std::string(nameBuffer);
-                }
-
-                // エミッター作成ボタン
-                ImGui::Spacing();
-                if (!localEmitterName_.empty())
-                {
-                    if (ImGui::Button("エミッター生成"))
+                    // 名前の入力
+                    char nameBuffer[256];
+                    strcpy_s(nameBuffer, sizeof(nameBuffer), localEmitterName_.c_str());
+                    ImGui::Text("エミッターの名前");
+                    if (ImGui::InputText(" ", nameBuffer, sizeof(nameBuffer)))
                     {
-                        AddParticleEmitter(localEmitterName_);
-                        localEmitterName_.clear();
+                        localEmitterName_ = std::string(nameBuffer);
+                    }
+
+                    // エミッター作成ボタン
+                    ImGui::Spacing();
+                    if (!localEmitterName_.empty())
+                    {
+                        if (ImGui::Button("エミッター生成"))
+                        {
+                            AddParticleEmitter(localEmitterName_);
+                            localEmitterName_.clear();
+                        }
                     }
                 }
-            }
 
-            // パーティクルグループ作成のCollapsingHeader
-            if (ColoredCollapsingHeader("パーティクルグループ作成", 1))
-            {
-                // 名前の入力
-                char nameBuffer[256];
-                strcpy_s(nameBuffer, sizeof(nameBuffer), localName_.c_str());
-                ImGui::Text("パーティクルグループの名前");
-                if (ImGui::InputText("  ", nameBuffer, sizeof(nameBuffer)))
+                // パーティクルグループ作成のCollapsingHeader
+                if (ColoredCollapsingHeader("パーティクルグループ作成", 1))
                 {
-                    localName_ = std::string(nameBuffer);
-                }
-
-                // パーティクルタイプ選択（ラジオボタン）
-                ImGui::Spacing();
-                ImGui::Text("パーティクルタイプ選択");
-
-                static int selectedType = 0; // 0: モデル, 1: プリミティブ
-                ImGui::RadioButton("モデルパーティクル", &selectedType, 0);
-                ImGui::SameLine();
-                ImGui::RadioButton("プリミティブモデル", &selectedType, 1);
-                ImGui::Separator();
-
-                // モデルパーティクル選択時
-                if (selectedType == 0)
-                {
-                    // モデル選択セクション (青色)
-                    if (ColoredCollapsingHeader("モデル選択", 2))
+                    // 名前の入力
+                    char nameBuffer[256];
+                    strcpy_s(nameBuffer, sizeof(nameBuffer), localName_.c_str());
+                    ImGui::Text("パーティクルグループの名前");
+                    if (ImGui::InputText("  ", nameBuffer, sizeof(nameBuffer)))
                     {
-                        // モデルファイル選択
-                        // models はエンジン(debug)とアプリの 2 ルートに分割。ラジオで切り替える。
-                        static const std::vector<std::string> kRootsObj = AssetPath::ModelScanRoots(); // [0]=エンジン, [1]=アプリ
-                        static int rootSelObj = 1; // 既定: App
-                        static std::filesystem::path currentDirObj = kRootsObj[rootSelObj];
-                        static std::string selectedFolderObj = "";
-                        static std::string selectedFileObj = "";
+                        localName_ = std::string(nameBuffer);
+                    }
 
-                        for (int i = 0; i < 2; ++i)
+                    // パーティクルタイプ選択（ラジオボタン）
+                    ImGui::Spacing();
+                    ImGui::Text("パーティクルタイプ選択");
+
+                    static int selectedType = 0; // 0: モデル, 1: プリミティブ
+                    ImGui::RadioButton("モデルパーティクル", &selectedType, 0);
+                    ImGui::SameLine();
+                    ImGui::RadioButton("プリミティブモデル", &selectedType, 1);
+                    ImGui::Separator();
+
+                    // モデルパーティクル選択時
+                    if (selectedType == 0)
+                    {
+                        // モデル選択セクション (青色)
+                        if (ColoredCollapsingHeader("モデル選択", 2))
                         {
-                            if (i > 0)
-                                ImGui::SameLine();
-                            if (ImGui::RadioButton(i == 0 ? "Engine(debug)##objr" : "App##objr", rootSelObj == i))
-                            {
-                                rootSelObj = i;
-                                currentDirObj = kRootsObj[rootSelObj];
-                                selectedFolderObj = selectedFileObj = "";
-                            }
-                        }
-                        const std::filesystem::path baseDirObj = kRootsObj[rootSelObj];
+                            // モデルファイル選択
+                            // models はエンジン(debug)とアプリの 2 ルートに分割。ラジオで切り替える。
+                            static const std::vector<std::string> kRootsObj = AssetPath::ModelScanRoots(); // [0]=エンジン, [1]=アプリ
+                            static int rootSelObj = 1; // 既定: App
+                            static std::filesystem::path currentDirObj = kRootsObj[rootSelObj];
+                            static std::string selectedFolderObj = "";
+                            static std::string selectedFileObj = "";
 
-                        // 「戻る」ボタン（上の階層に戻る）
-                        if (currentDirObj != baseDirObj)
-                        {
-                            if (ImGui::Button("< 戻る(Model)"))
+                            for (int i = 0; i < 2; ++i)
                             {
-                                currentDirObj = currentDirObj.parent_path();
-                                selectedFolderObj = "";
-                                selectedFileObj = "";
-                            }
-                        }
-
-                        // フォルダ一覧
-                        std::vector<std::string> foldersObj;
-                        std::vector<std::string> objFiles;
-
-                        for (const auto &entry : std::filesystem::directory_iterator(currentDirObj))
-                        {
-                            if (entry.is_directory())
-                            {
-                                foldersObj.push_back(entry.path().filename().string());
-                            }
-                            else if (entry.path().extension() == ".obj")
-                            {
-                                objFiles.push_back(entry.path().filename().string());
-                            }
-                        }
-
-                        // フォルダ選択 (クリックで移動)
-                        if (!foldersObj.empty())
-                        {
-                            ImGui::Text("フォルダ");
-                            ImGui::Separator();
-                            for (const auto &folder : foldersObj)
-                            {
-                                std::string folderNameTex = folder + " (Model)"; // フォルダ名に "(Model)" を追加
-                                if (ImGui::Selectable(folderNameTex.c_str(), selectedFolderObj == folder))
+                                if (i > 0)
+                                    ImGui::SameLine();
+                                if (ImGui::RadioButton(i == 0 ? "Engine(debug)##objr" : "App##objr", rootSelObj == i))
                                 {
-                                    selectedFolderObj = folderNameTex;
-                                    currentDirObj = currentDirObj / folder; // フォルダ移動
-                                    selectedFileObj = "";                   // 新しいフォルダを開いたらファイル選択をリセット
+                                    rootSelObj = i;
+                                    currentDirObj = kRootsObj[rootSelObj];
+                                    selectedFolderObj = selectedFileObj = "";
                                 }
+                            }
+                            const std::filesystem::path baseDirObj = kRootsObj[rootSelObj];
+
+                            // 「戻る」ボタン（上の階層に戻る）
+                            if (currentDirObj != baseDirObj)
+                            {
+                                if (ImGui::Button("< 戻る(Model)"))
+                                {
+                                    currentDirObj = currentDirObj.parent_path();
+                                    selectedFolderObj = "";
+                                    selectedFileObj = "";
+                                }
+                            }
+
+                            // フォルダ一覧
+                            std::vector<std::string> foldersObj;
+                            std::vector<std::string> objFiles;
+
+                            for (const auto &entry : std::filesystem::directory_iterator(currentDirObj))
+                            {
+                                if (entry.is_directory())
+                                {
+                                    foldersObj.push_back(entry.path().filename().string());
+                                }
+                                else if (entry.path().extension() == ".obj")
+                                {
+                                    objFiles.push_back(entry.path().filename().string());
+                                }
+                            }
+
+                            // フォルダ選択 (クリックで移動)
+                            if (!foldersObj.empty())
+                            {
+                                ImGui::Text("フォルダ");
                                 ImGui::Separator();
-                            }
-                        }
-
-                        // `.obj` ファイル選択
-                        if (!objFiles.empty())
-                        {
-                            ImGui::Text("モデルファイル:");
-                            if (ImGui::BeginCombo("ファイル選択", selectedFileObj.empty() ? "なし" : selectedFileObj.c_str()))
-                            {
-                                for (const auto &file : objFiles)
+                                for (const auto &folder : foldersObj)
                                 {
-                                    bool isSelected = (file == selectedFileObj);
-                                    if (ImGui::Selectable(file.c_str(), isSelected))
+                                    std::string folderNameTex = folder + " (Model)"; // フォルダ名に "(Model)" を追加
+                                    if (ImGui::Selectable(folderNameTex.c_str(), selectedFolderObj == folder))
                                     {
-                                        selectedFileObj = file;
-
-                                        // `baseDirObj` からの相対パスを取得
-                                        std::filesystem::path relativePath = (currentDirObj / file).lexically_relative(baseDirObj);
-
-                                        // Windowsのバックスラッシュをスラッシュに変換
-                                        std::string pathStr = relativePath.string();
-                                        std::replace(pathStr.begin(), pathStr.end(), '\\', '/');
-
-                                        // `fileNameObj_` に保存
-                                        localFileObj_ = pathStr;
+                                        selectedFolderObj = folderNameTex;
+                                        currentDirObj = currentDirObj / folder; // フォルダ移動
+                                        selectedFileObj = "";                   // 新しいフォルダを開いたらファイル選択をリセット
                                     }
-                                    if (isSelected)
-                                    {
-                                        ImGui::SetItemDefaultFocus();
-                                    }
+                                    ImGui::Separator();
                                 }
-                                ImGui::EndCombo();
+                            }
+
+                            // `.obj` ファイル選択
+                            if (!objFiles.empty())
+                            {
+                                ImGui::Text("モデルファイル:");
+                                if (ImGui::BeginCombo("ファイル選択", selectedFileObj.empty() ? "なし" : selectedFileObj.c_str()))
+                                {
+                                    for (const auto &file : objFiles)
+                                    {
+                                        bool isSelected = (file == selectedFileObj);
+                                        if (ImGui::Selectable(file.c_str(), isSelected))
+                                        {
+                                            selectedFileObj = file;
+
+                                            // `baseDirObj` からの相対パスを取得
+                                            std::filesystem::path relativePath = (currentDirObj / file).lexically_relative(baseDirObj);
+
+                                            // Windowsのバックスラッシュをスラッシュに変換
+                                            std::string pathStr = relativePath.string();
+                                            std::replace(pathStr.begin(), pathStr.end(), '\\', '/');
+
+                                            // `fileNameObj_` に保存
+                                            localFileObj_ = pathStr;
+                                        }
+                                        if (isSelected)
+                                        {
+                                            ImGui::SetItemDefaultFocus();
+                                        }
+                                    }
+                                    ImGui::EndCombo();
+                                }
+                            }
+                        }
+
+                        // テクスチャ選択セクション (緑色)
+                        if (ColoredCollapsingHeader("テクスチャ選択", 3))
+                        {
+    #ifdef USE_IMGUI
+                            ShowTextureFile(localTexturePath_);
+    #endif // USE_IMGUI
+                        }
+
+                        // パーティクルグループ作成ボタン
+                        ImGui::Spacing();
+                        if (!localName_.empty() && !localFileObj_.empty())
+                        {
+                            if (ImGui::Button("モデルパーティクルグループ生成"))
+                            {
+                                AddParticleGroup(localName_, localFileObj_, localTexturePath_);
+                                localName_.clear();
+                                localFileObj_.clear();
+                                localTexturePath_.clear(); // テクスチャのパスもクリア
                             }
                         }
                     }
-
-                    // テクスチャ選択セクション (緑色)
-                    if (ColoredCollapsingHeader("テクスチャ選択", 3))
+                    // プリミティブモデル選択時
+                    else if (selectedType == 1)
                     {
-#ifdef USE_IMGUI
-                        ShowTextureFile(localTexturePath_);
-#endif // USE_IMGUI
-                    }
-
-                    // パーティクルグループ作成ボタン
-                    ImGui::Spacing();
-                    if (!localName_.empty() && !localFileObj_.empty())
-                    {
-                        if (ImGui::Button("モデルパーティクルグループ生成"))
+                        // プリミティブタイプ選択セクション (紫色)
+                        if (ColoredCollapsingHeader("プリミティブタイプ選択", 4))
                         {
-                            AddParticleGroup(localName_, localFileObj_, localTexturePath_);
-                            localName_.clear();
-                            localFileObj_.clear();
-                            localTexturePath_.clear(); // テクスチャのパスもクリア
+                            const char *primitiveType[] = {"未選択", "プレーン", "球", "キューブ", "シリンダー", "リング", "三角形", "円錐", "四角錐"};
+                            int currentPrimitiveType = static_cast<int>(localType_);
+                            // 初期値が未選択（None = -1）の場合に対応するため +1 して選択肢に表示
+                            if (ImGui::Combo("タイプ選択", &currentPrimitiveType, primitiveType, IM_ARRAYSIZE(primitiveType)))
+                            {
+                                localType_ = static_cast<PrimitiveType>(currentPrimitiveType);
+                            }
+                        }
+
+                        // テクスチャ選択セクション (オレンジ色)
+                        if (ColoredCollapsingHeader("テクスチャ選択", 5))
+                        {
+    #ifdef USE_IMGUI
+                            ShowTextureFile(localTexturePath_);
+    #endif // USE_IMGUI
+                        }
+
+                        // パーティクルグループ作成ボタン
+                        ImGui::Spacing();
+                        if (!localName_.empty())
+                        {
+                            // localType_ が None（未選択）のときはボタンを無効化
+                            bool isTypeInvalid = (localType_ == PrimitiveType::None);
+                            if (isTypeInvalid)
+                            {
+                                ImGui::BeginDisabled();
+                            }
+
+                            if (ImGui::Button("プリミティブパーティクルグループ生成"))
+                            {
+                                AddPrimitiveParticleGroup(localName_, localTexturePath_, localType_);
+                                localName_.clear();
+                                localTexturePath_.clear();        // テクスチャのパスもクリア
+                                localType_ = PrimitiveType::None; // 初期化
+                            }
+
+                            if (isTypeInvalid)
+                            {
+                                ImGui::EndDisabled();
+                            }
                         }
                     }
                 }
-                // プリミティブモデル選択時
-                else if (selectedType == 1)
-                {
-                    // プリミティブタイプ選択セクション (紫色)
-                    if (ColoredCollapsingHeader("プリミティブタイプ選択", 4))
-                    {
-                        const char *primitiveType[] = {"未選択", "プレーン", "球", "キューブ", "シリンダー", "リング", "三角形", "円錐", "四角錐"};
-                        int currentPrimitiveType = static_cast<int>(localType_);
-                        // 初期値が未選択（None = -1）の場合に対応するため +1 して選択肢に表示
-                        if (ImGui::Combo("タイプ選択", &currentPrimitiveType, primitiveType, IM_ARRAYSIZE(primitiveType)))
-                        {
-                            localType_ = static_cast<PrimitiveType>(currentPrimitiveType);
-                        }
-                    }
 
-                    // テクスチャ選択セクション (オレンジ色)
-                    if (ColoredCollapsingHeader("テクスチャ選択", 5))
-                    {
-#ifdef USE_IMGUI
-                        ShowTextureFile(localTexturePath_);
-#endif // USE_IMGUI
-                    }
-
-                    // パーティクルグループ作成ボタン
-                    ImGui::Spacing();
-                    if (!localName_.empty())
-                    {
-                        // localType_ が None（未選択）のときはボタンを無効化
-                        bool isTypeInvalid = (localType_ == PrimitiveType::None);
-                        if (isTypeInvalid)
-                        {
-                            ImGui::BeginDisabled();
-                        }
-
-                        if (ImGui::Button("プリミティブパーティクルグループ生成"))
-                        {
-                            AddPrimitiveParticleGroup(localName_, localTexturePath_, localType_);
-                            localName_.clear();
-                            localTexturePath_.clear();        // テクスチャのパスもクリア
-                            localType_ = PrimitiveType::None; // 初期化
-                        }
-
-                        if (isTypeInvalid)
-                        {
-                            ImGui::EndDisabled();
-                        }
-                    }
-                }
-            }
-
-            // パーティクルデータのロードセクション (黄色系)
-            if (ColoredCollapsingHeader("パーティクルデータのロード", 2))
-            {
-                ShowFileSelector();
-            }
-
-            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.8f, 0.2f, 0.2f, 1.0f));        // 赤系
-            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.9f, 0.3f, 0.3f, 1.0f)); // ホバー時
-            ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.7f, 0.1f, 0.1f, 1.0f));  // 押下時
-            ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 8.0f);                        // 角丸
-            ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(20.0f, 10.0f));         // パディング
-
-            if (ImGui::Button("全パーティクルを止める", ImVec2(200, 40)))
-            {
-                for (auto &emitter : emitters_)
-                {
-                    emitter.second->SetIsAuto(false);
-                }
-            }
-
-            ImGui::PopStyleVar(2);
-            ImGui::PopStyleColor(3);
+            } // 詳しく作る
 
             ImGui::EndTabItem();
         }
-        ImGui::EndTabBar();
+        if (ImGui::BeginTabItem(ICON_FA_TRASH " 削除"))
+        {
+            DrawDeleteTab();
+            ImGui::EndTabItem();
+        }
+        if (ownTabBar)
+            ImGui::EndTabBar();
     }
 #endif // USE_IMGUI
 }
 
-void ParticleEditor::ShowFileSelector()
-{
-#ifdef USE_IMGUI
-    static int selectedIndex = -1;
-    std::vector<std::string> jsonFiles = GetJsonFiles();
-
-    // JSONファイルがない場合のチェック
-    if (jsonFiles.empty())
-    {
-        ImGui::Text("Jsonファイルが見つかりませんでした");
-        return;
-    }
-
-    // ファイルリストをCスタイル文字列の配列に変換
-    std::vector<const char *> fileNames;
-    for (const auto &filePath : jsonFiles)
-    {
-        fileNames.push_back(filePath.c_str());
-    }
-
-    ImGui::Text("Jsonファイルの選択:");
-    ImGui::Separator();
-
-    // Comboボックスでファイル選択
-    if (ImGui::Combo("JSON Files", &selectedIndex, fileNames.data(), static_cast<int>(fileNames.size())))
-    {
-        // ファイル選択時の動作（選択されたファイル名を表示）
-        if (selectedIndex >= 0)
-        {
-            ImGui::Text("ファイル選択:");
-            ImGui::TextWrapped("%s", jsonFiles[selectedIndex].c_str());
-        }
-    }
-
-    // ボタンでパーティクルデータをセット
-    if (selectedIndex >= 0 && ImGui::Button("パーティクルデータのセット"))
-    {
-        isLoad_ = true;
-        // name_ に ".json" を除いた名前を設定
-        std::string selectedFileName = jsonFiles[selectedIndex];
-        name_ = selectedFileName.substr(0, selectedFileName.find_last_of('.')); // ".json" を除去
-        AddParticleEmitter(name_, fileName_, texturePath_);
-        isLoad_ = false;
-    }
-#endif // USE_IMGUI
-}
-
-std::vector<std::string> ParticleEditor::GetJsonFiles()
-{
-    static std::vector<std::string> jsonFiles; // キャッシュされたJSONファイルリスト
-    static size_t lastFileCount = 0;           // 最後に取得したJSONファイル数
-    std::filesystem::path baseDir = AssetPath::Json("Particle");
-
-    // ディレクトリが存在しない場合はキャッシュをクリア
-    if (!std::filesystem::exists(baseDir) || !std::filesystem::is_directory(baseDir))
-    {
-        jsonFiles.clear();
-        lastFileCount = 0;
-        return jsonFiles;
-    }
-
-    // 現在のファイル数をカウント
-    size_t currentFileCount = std::count_if(
-        std::filesystem::directory_iterator(baseDir),
-        std::filesystem::directory_iterator{},
-        [](const std::filesystem::directory_entry &entry) {
-            return entry.path().extension() == ".json";
-        });
-
-    // ファイル数が変わった場合のみ更新
-    if (currentFileCount != lastFileCount)
-    {
-        jsonFiles.clear(); // リストをクリア
-        for (const auto &entry : std::filesystem::directory_iterator(baseDir))
-        {
-            if (entry.path().extension() == ".json")
-            {
-                jsonFiles.push_back(entry.path().filename().string());
-            }
-        }
-        lastFileCount = currentFileCount; // 更新したファイル数を記録
-    }
-
-    return jsonFiles;
-}
 
 #ifdef USE_IMGUI
 // -------------------------------------------------------
