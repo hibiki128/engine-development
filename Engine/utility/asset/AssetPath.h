@@ -83,11 +83,20 @@ inline std::string SoundRoot() { return AppRoot() + "sounds"; }
 
 // --- config (アプリ専用: imgui のレイアウト ini 等) -----------------------
 
-/// <summary>設定ファイルルート (末尾スラッシュ無し)。プロジェクトルート直下の Application/Config。</summary>
-inline std::string ConfigRoot() { return "Application/Config"; }
+/// <summary>設定ファイルルート (末尾スラッシュ無し)。アプリアセットのルートと同じ階層の Config。
+/// AppRoot() の末尾 "Assets/" を "Config" に置き換える
+/// (例: "Assets/" → "Config"、"Application/Assets/" → "Application/Config")。</summary>
+inline std::string ConfigRoot()
+{
+    const std::string &appRoot = AppRoot();
+    const std::string kAssetsDir = "Assets/";
+    const size_t pos = appRoot.rfind(kAssetsDir);
+    const std::string parent = (pos != std::string::npos && pos + kAssetsDir.size() == appRoot.size()) ? appRoot.substr(0, pos) : appRoot;
+    return parent + "Config";
+}
 
 /// <summary>設定ファイルの実パス。rel は Config ルートからの相対パス (imgui_editor.ini 等)。</summary>
-inline std::string Config(const std::string &rel) { return "Application/Config/" + rel; }
+inline std::string Config(const std::string &rel) { return ConfigRoot() + "/" + rel; }
 
 // --- ブラウザ用: 全走査ルート一覧 (エンジン→アプリの順) ------------------
 
