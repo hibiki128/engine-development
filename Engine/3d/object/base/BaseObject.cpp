@@ -330,10 +330,9 @@ void BaseObject::CreateModel(const std::string modelname) {
         texturePaths_[i] = allTexturePaths[i];
     }
 
-    // JSONファイルが存在する場合は読み込み（modelPath_は上書きされない）
-    if (isScene_) {
-        LoadFromJson();
-    } else {
+    // オブジェクト単体の保存があれば読み込む（modelPath_は上書きされない）。
+    // シーンファイルから作る物はシーン側が後から中身を流し込むので読まない
+    if (loadObjectDataFile_) {
         LoadFromJson("ObjectDatas", objectName_);
     }
 
@@ -364,17 +363,17 @@ void BaseObject::CreatePrimitiveModel(const PrimitiveType &type) {
     texturePaths_.resize(1);
     texturePaths_[0] = "debug/uvChecker.png"; // デフォルト値
 
-    // JSONファイルが存在する場合は読み込み
-    if (isScene_) {
-        LoadFromJson();
-    } else {
+    // オブジェクト単体の保存があれば読み込む（シーンファイルから作る物は読まない）
+    if (loadObjectDataFile_) {
         LoadFromJson("ObjectDatas", objectName_);
     }
 
     // プリミティブモデルを作成
     obj3d_->CreatePrimitiveModel(type_, texturePaths_[0]);
 
-    SetColor(objectData_->Load<Vector4>("color_" + std::to_string(0), {1.0f, 1.0f, 1.0f, 1.0f}), 0);
+    if (objectData_) {
+        SetColor(objectData_->Load<Vector4>("color_" + std::to_string(0), {1.0f, 1.0f, 1.0f, 1.0f}), 0);
+    }
 
     // マテリアル（ノーマルマップ関連）情報を適用（マテリアル生成後に行う）
     LoadMaterials();

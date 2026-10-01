@@ -129,6 +129,12 @@ class SceneManager
     SceneTransition *GetSceneTransition() const { return pTransition_; }
 
   private:
+    /// <summary>
+    /// 保存済みのシーンファイルを読み込んでから scene_ の Initialize を呼ぶ。
+    /// シーン切り替えと作り直しの両方がここを通る
+    /// </summary>
+    void InitializeSceneWithSavedLayout();
+
 #ifdef USE_IMGUI
     /// <summary>
     /// 予約された作り直しを実行する（今のシーンと同名のシーンを生成し直す）

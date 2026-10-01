@@ -2,6 +2,7 @@
 #include <metaball/MetaBallGroupManager.h>
 #include "utility/debug/imgui/ImGuiNotification.h"
 #include "utility/scene/SceneRegistry.h"
+#include "utility/scene/SceneSerializer.h"
 #include <2d/ui/UIAnimator.h>
 #include <debug/profiler/CpuProfiler.h>
 #include <debug/profiler/GpuProfiler.h>
@@ -428,13 +429,17 @@ void Framework::RegisterShortcutKey()
     shortcutManager_->RegisterShortcut("End", {DIK_LALT, DIK_F4}, [this]() {
         winApp_->ClosedWindow();
     });
-    // シーンセーブ
-    shortcutManager_->RegisterShortcut("SceneSave", {DIK_LCONTROL, DIK_LSHIFT, DIK_S}, [this]() {
-        pBaseObjectManager_->OpenSceneSaveModal();
+    // シーンを上書き保存（今のシーン名のファイルへ。確認ダイアログは出さない）
+    shortcutManager_->RegisterShortcut("SceneSave", {DIK_LCONTROL, DIK_S}, []() {
+        SceneSerializer::GetInstance()->SaveCurrentScene();
+    });
+    // 名前を付けて保存（保存する物の確認もここで行う）
+    shortcutManager_->RegisterShortcut("SceneSaveAs", {DIK_LCONTROL, DIK_LSHIFT, DIK_S}, []() {
+        SceneSerializer::GetInstance()->OpenSaveDialog();
     });
     // シーン読み込み
-    shortcutManager_->RegisterShortcut("SceneLoad", {DIK_LCONTROL, DIK_LSHIFT, DIK_L}, [this]() {
-        pBaseObjectManager_->OpenSceneLoadModal();
+    shortcutManager_->RegisterShortcut("SceneLoad", {DIK_LCONTROL, DIK_LSHIFT, DIK_L}, []() {
+        SceneSerializer::GetInstance()->OpenLoadDialog();
     });
     // モデル作成
     shortcutManager_->RegisterShortcut("CreateModel", {DIK_LCONTROL, DIK_LSHIFT, DIK_N}, [this]() {

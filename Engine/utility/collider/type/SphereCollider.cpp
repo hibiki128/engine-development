@@ -32,7 +32,6 @@ void SphereCollider::LoadShapeFromJson(DataHandler &json)
     offset_ = json.Load<Vector3>("offset", offset_);
 }
 
-#ifdef USE_IMGUI
 void SphereCollider::CaptureShape(nlohmann::json &shape) const
 {
     shape["radius"] = radius_;
@@ -50,5 +49,4 @@ void SphereCollider::ApplyShape(const nlohmann::json &shape)
         offset_ = shape["offset"].get<Vector3>();
     }
 }
-#endif // USE_IMGUI
 } // namespace Hagine

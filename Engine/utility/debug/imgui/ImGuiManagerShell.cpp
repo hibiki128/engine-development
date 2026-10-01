@@ -19,6 +19,7 @@
 #include <imgui_internal.h>
 #include <scene/SceneManager.h>
 #include <scene/SceneRegistry.h>
+#include <scene/SceneSerializer.h>
 
 namespace Hagine {
 
@@ -698,8 +699,9 @@ void ImGuiManager::BuildPaletteCommands(std::vector<EditorCommand> &out)
             pImGuizmoManager_->GetCategoryMask() == (1u << kGizmoCategoryCount) - 1u);
     }
 
-    add(Kind::Action, ICON_FA_DOWNLOAD, "シーンを保存", "save", "Ctrl+Shift+S", [this] { pBaseObjectManager_->OpenSceneSaveModal(); });
-    add(Kind::Action, ICON_FA_UPLOAD, "シーンを読み込む", "load open", "Ctrl+Shift+L", [this] { pBaseObjectManager_->OpenSceneLoadModal(); });
+    add(Kind::Action, ICON_FA_SAVE, "シーンを保存", "save 上書き", "Ctrl+S", [] { SceneSerializer::GetInstance()->SaveCurrentScene(); });
+    add(Kind::Action, ICON_FA_DOWNLOAD, "名前を付けてシーンを保存", "save as 別名", "Ctrl+Shift+S", [] { SceneSerializer::GetInstance()->OpenSaveDialog(); });
+    add(Kind::Action, ICON_FA_UPLOAD, "シーンを読み込む", "load open", "Ctrl+Shift+L", [] { SceneSerializer::GetInstance()->OpenLoadDialog(); });
     add(Kind::Action, ICON_FA_PLUS, "新規オブジェクト", "create new model", "Ctrl+Shift+N", [this] { pBaseObjectManager_->OpenObjectCreationModal(); });
     add(Kind::Action, ICON_FA_SQUARE, "スプライトを作る", "sprite 2D", "", [this] { pSpriteManager_->ShowSpriteCreationModal(); });
 

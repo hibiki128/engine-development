@@ -453,4 +453,61 @@ void SpotLightGroup::Load(DataHandler *handler)
         entries_.push_back(entry);
     }
 }
+
+// キー名は LightGroup::CaptureUndoState と揃えてある
+nlohmann::json SpotLightGroup::ToJson() const
+{
+    nlohmann::json list = nlohmann::json::array();
+    for (const Entry &entry : entries_)
+    {
+        nlohmann::json light;
+        light["name"] = entry.name;
+        light["active"] = entry.gpu.active != 0;
+        light["color"] = entry.gpu.color;
+        light["position"] = entry.gpu.position;
+        light["direction"] = entry.gpu.direction;
+        light["intensity"] = entry.gpu.intensity;
+        light["distance"] = entry.gpu.distance;
+        light["cosAngle"] = entry.gpu.cosAngle;
+        light["decay"] = entry.gpu.decay;
+        light["halfLambert"] = entry.gpu.HalfLambert;
+        light["blinnPhong"] = entry.gpu.BlinnPhong;
+        // aimPoint は position・direction・distance から作り直せるので書かない
+        list.push_back(std::move(light));
+    }
+    return list;
+}
+
+void SpotLightGroup::FromJson(const nlohmann::json &lights)
+{
+    entries_.clear();
+    if (!lights.is_array())
+    {
+        return;
+    }
+    for (const nlohmann::json &light : lights)
+    {
+        if (entries_.size() >= static_cast<size_t>(MAX_SPOT_LIGHTS))
+        {
+            break;
+        }
+        // 書いていない項目は Load と同じ既定値にする
+        Entry entry;
+        entry.name = light.value("name", std::format("スポット{}", entries_.size() + 1));
+        entry.gpu.active = light.value("active", true) ? 1 : 0;
+        entry.gpu.color = light.value("color", Vector4{1.0f, 1.0f, 1.0f, 1.0f});
+        entry.gpu.position = light.value("position", Vector3{0.0f, 2.0f, 0.0f});
+        entry.gpu.direction = light.value("direction", Vector3{0.0f, -1.0f, 0.0f});
+        entry.gpu.intensity = light.value("intensity", 1.0f);
+        entry.gpu.distance = light.value("distance", 10.0f);
+        entry.gpu.cosAngle = light.value("cosAngle", 0.7f);
+        entry.gpu.decay = light.value("decay", 1.0f);
+        entry.gpu.HalfLambert = light.value("halfLambert", 0);
+        entry.gpu.BlinnPhong = light.value("blinnPhong", 1);
+        // 向きハンドルを向きどおりに張る（ずれていると「掴まれた」と誤判定されて向きが上書きされる）
+        entry.aimPoint = entry.gpu.position + entry.gpu.direction * entry.gpu.distance;
+        entry.prevAim = entry.aimPoint;
+        entries_.push_back(entry);
+    }
+}
 } // namespace Hagine

@@ -77,8 +77,8 @@ void PlayModeManager::RestoreBaseline()
     // 今ある物とスナップショットを突き合わせ、余分な物には削除指示を付けてから適用する
     objectManager->RestoreUndoState(MergeRemovals(objectBaseline_, objectManager->CaptureUndoState()));
     spriteManager->RestoreUndoState(MergeRemovals(spriteBaseline_, spriteManager->CaptureUndoState()));
-    // 光源はシーンの作り直しでは戻らない（LightGroup はシングルトンで、
-    // シーンの生死と無関係に値を持ち続けるため）。ここで明示的に戻す
+    // 光源は作り直しでシーンファイルの保存値に戻るが、保存していない編集までは戻らない
+    // （シーンファイルが無ければ LightGroup はシングルトンなので値を持ち続ける）。ここで明示的に戻す
     lightGroup->RestoreUndoState(MergeRemovals(lightBaseline_, lightGroup->CaptureUndoState()));
 }
 

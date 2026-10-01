@@ -496,40 +496,46 @@ void AttachmentManager::DrawImGui()
 //  セーブ / ロード
 // ===================================================
 
-void AttachmentManager::Save(const std::string &folderPath, const std::string &fileName) const
+nlohmann::json AttachmentManager::ToJson() const
 {
-    auto dataHandler = std::make_unique<DataHandler>(folderPath, fileName);
-
-    // 前回より数が減ったときに古いキーが残らないよう、まとめて消してから書き直す
-    dataHandler->RemoveByPrefix("link_");
-
-    int index = 0;
+    // links_ は unordered_map なので、そのまま回すと保存のたびに並びが変わって差分が読めない
+    std::vector<std::string> childNames;
+    childNames.reserve(links_.size());
     for (const auto &[childName, link] : links_)
     {
-        const std::string prefix = std::format("link_{:03d}_", index++);
-        dataHandler->Save<std::string>(prefix + "child", childName);
-        dataHandler->Save<std::string>(prefix + "parent", link.parentName);
-        dataHandler->Save<Vector3>(prefix + "localPosition", link.localPosition);
-        dataHandler->Save<Quaternion>(prefix + "localRotation", link.localRotation);
-        dataHandler->Save<Vector3>(prefix + "localDirection", link.localDirection);
-        dataHandler->Save<bool>(prefix + "inheritTranslation", link.inheritTranslation);
-        dataHandler->Save<bool>(prefix + "inheritRotation", link.inheritRotation);
+        childNames.push_back(childName);
     }
-    dataHandler->Save<int32_t>("link_count", index);
-    dataHandler->Flush();
+    std::sort(childNames.begin(), childNames.end());
+
+    nlohmann::json list = nlohmann::json::array();
+    for (const std::string &childName : childNames)
+    {
+        const Link &link = links_.at(childName);
+        nlohmann::json entry;
+        entry["child"] = childName;
+        entry["parent"] = link.parentName;
+        entry["localPosition"] = link.localPosition;
+        entry["localRotation"] = link.localRotation;
+        entry["localDirection"] = link.localDirection;
+        entry["inheritTranslation"] = link.inheritTranslation;
+        entry["inheritRotation"] = link.inheritRotation;
+        list.push_back(std::move(entry));
+    }
+    return list;
 }
 
-void AttachmentManager::Load(const std::string &folderPath, const std::string &fileName)
+void AttachmentManager::FromJson(const nlohmann::json &links)
 {
-    auto dataHandler = std::make_unique<DataHandler>(folderPath, fileName);
-
     links_.clear();
-    const int32_t count = dataHandler->Load<int32_t>("link_count", 0);
-    for (int32_t i = 0; i < count; ++i)
+    if (!links.is_array())
     {
-        const std::string prefix = std::format("link_{:03d}_", i);
-        const std::string childName = dataHandler->Load<std::string>(prefix + "child", "");
-        const std::string parentName = dataHandler->Load<std::string>(prefix + "parent", "");
+        return;
+    }
+
+    for (const nlohmann::json &entry : links)
+    {
+        const std::string childName = entry.value("child", std::string());
+        const std::string parentName = entry.value("parent", std::string());
         if (childName.empty() || parentName.empty())
         {
             continue;
@@ -537,11 +543,11 @@ void AttachmentManager::Load(const std::string &folderPath, const std::string &f
 
         Link link;
         link.parentName = parentName;
-        link.localPosition = dataHandler->Load<Vector3>(prefix + "localPosition", {});
-        link.localRotation = dataHandler->Load<Quaternion>(prefix + "localRotation", Quaternion::IdentityQuaternion());
-        link.localDirection = dataHandler->Load<Vector3>(prefix + "localDirection", {0.0f, -1.0f, 0.0f});
-        link.inheritTranslation = dataHandler->Load<bool>(prefix + "inheritTranslation", true);
-        link.inheritRotation = dataHandler->Load<bool>(prefix + "inheritRotation", true);
+        link.localPosition = entry.value("localPosition", Vector3{});
+        link.localRotation = entry.value("localRotation", Quaternion::IdentityQuaternion());
+        link.localDirection = entry.value("localDirection", Vector3{0.0f, -1.0f, 0.0f});
+        link.inheritTranslation = entry.value("inheritTranslation", true);
+        link.inheritRotation = entry.value("inheritRotation", true);
         // 保存された相対値をそのまま使う（初回の解決で取り直させない）
         link.hasLocal = true;
         links_[childName] = link;

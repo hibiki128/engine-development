@@ -110,7 +110,6 @@ void OBBCollider::LoadShapeFromJson(DataHandler &json)
     anchorPoint_ = json.Load<Vector3>("anchorPoint", anchorPoint_);
 }
 
-#ifdef USE_IMGUI
 void OBBCollider::CaptureShape(nlohmann::json &shape) const
 {
     shape["size"] = size_;
@@ -139,5 +138,4 @@ void OBBCollider::ApplyShape(const nlohmann::json &shape)
         anchorPoint_ = shape["anchorPoint"].get<Vector3>();
     }
 }
-#endif // USE_IMGUI
 } // namespace Hagine

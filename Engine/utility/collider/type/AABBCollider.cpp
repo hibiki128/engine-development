@@ -43,7 +43,6 @@ void AABBCollider::LoadShapeFromJson(DataHandler &json)
     offset_ = json.Load<Vector3>("offset", offset_);
 }
 
-#ifdef USE_IMGUI
 void AABBCollider::CaptureShape(nlohmann::json &shape) const
 {
     shape["size"] = size_;
@@ -61,5 +60,4 @@ void AABBCollider::ApplyShape(const nlohmann::json &shape)
         offset_ = shape["offset"].get<Vector3>();
     }
 }
-#endif // USE_IMGUI
 } // namespace Hagine

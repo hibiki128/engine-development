@@ -130,11 +130,11 @@ class MetaBallObject : public BaseObject
     /// <summary>オブジェクト単体の保存に要素リストを追加する</summary>
     void SaveToJson() override;
 
-    /// <summary>シーン保存に要素リストを追加する</summary>
-    void SceneSaveToJson() override;
+    /// <summary>シーンファイル用の状態に要素リストとグループ設定（"metaBall"）を足す</summary>
+    nlohmann::json Serialize() const override;
 
-    /// <summary>読み込み後に要素リストを復元する</summary>
-    void LoadFromJson() override;
+    /// <summary>シーンファイル用の状態から要素リストとグループ設定を戻す</summary>
+    void Deserialize(const nlohmann::json &state) override;
 
     /// <summary>要素リストだけを保存する</summary>
     void SaveMetaBallToJson();

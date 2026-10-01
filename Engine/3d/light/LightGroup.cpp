@@ -757,6 +757,10 @@ void LightGroup::DrawSaveLoadSection()
 {
 #ifdef USE_IMGUI
     SectionHeader("[ セーブ / ロード ]", DebugTheme::kAccentPurple);
+    ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kTextDim);
+    ImGui::TextWrapped("光源はシーンの保存（Ctrl+S）に含まれます。ここは別ファイル（jsons/LightGroup/）へ控えて、"
+                       "他のシーンへ持っていくときに使います");
+    ImGui::PopStyleColor();
 
     static char saveFileName[256] = "DefaultLightSetting";
     ImGui::SetNextItemWidth(-1);
@@ -800,18 +804,53 @@ void LightGroup::LoadLightData(const std::string &fileName)
     directionalLight_.Load(dataHandler.get());
     pointLights_.Load(dataHandler.get());
     spotLights_.Load(dataHandler.get());
+    OnLightsReplaced();
 
+    ImGuiNotification::Post("ライトデータを読み込みました: " + fileName, {0.2f, 0.8f, 0.8f, 1.0f});
+}
+
+nlohmann::json LightGroup::ToJson() const
+{
+    nlohmann::json lights = nlohmann::json::object();
+    lights["directional"] = directionalLight_.CaptureState();
+    lights["points"] = pointLights_.ToJson();
+    lights["spots"] = spotLights_.ToJson();
+    return lights;
+}
+
+void LightGroup::FromJson(const nlohmann::json &lights)
+{
+    if (!lights.is_object())
+    {
+        return;
+    }
+    if (const auto directional = lights.find("directional"); directional != lights.end())
+    {
+        directionalLight_.RestoreState(*directional);
+    }
+    // 書いていない種類は今のまま残す（片方だけ書いたファイルでも、もう片方が消えないように）
+    if (const auto points = lights.find("points"); points != lights.end())
+    {
+        pointLights_.FromJson(*points);
+    }
+    if (const auto spots = lights.find("spots"); spots != lights.end())
+    {
+        spotLights_.FromJson(*spots);
+    }
+    OnLightsReplaced();
+}
+
+void LightGroup::OnLightsReplaced()
+{
     // 名前は点光源とスポットで共有の名前空間なので、読み込み後にまとめて一意化する
     EnsureUniqueNames();
 
-    // 一覧の選択とギズモ登録を作り直す
+    // 一覧の選択とギズモ・親子付けの登録を作り直す（std::vector を作り直したのでポインタが変わっている）
     selectedKind_ = SelectionKind::Directional;
     selectedIndex_ = -1;
     nameEditOwner_.clear();
     SyncGizmoTargets();
     SyncSelectionToGizmo();
-
-    ImGuiNotification::Post("ライトデータを読み込みました: " + fileName, {0.2f, 0.8f, 0.8f, 1.0f});
 }
 
 #ifdef USE_IMGUI

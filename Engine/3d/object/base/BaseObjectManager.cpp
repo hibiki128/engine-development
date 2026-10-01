@@ -1,7 +1,6 @@
 #include "BaseObjectManager.h"
 #include <attachment/AttachmentManager.h>
-#include "SpriteManager.h"
-#include <2d/ui/UIAnimator.h>
+#include <functional>
 #include <metaball/MetaBallGroupManager.h>
 #include <metaball/MetaBallObject.h>
 #include <asset/AssetPath.h>
@@ -87,6 +86,13 @@ void BaseObjectManager::RemoveObjectByName(const std::string &name)
 void BaseObjectManager::RegisterExternal(BaseObject *obj)
 {
     const std::string &name = obj->GetName();
+    if (const auto it = objects_.find(name); it != objects_.end() && it->second != obj)
+    {
+        // 名前が同じだと後から来た方は登録されず、更新も描画もされない。
+        // シーンファイルに同名の物を保存していると起きるので、気づけるように知らせる
+        Logger::Warn("[BaseObjectManager] \"" + name + "\" は既に登録されているので登録できません。名前を変えてください");
+        return;
+    }
 #ifdef USE_IMGUI
     ImGuizmoManager::GetInstance()->AddTarget(name, obj);
 #endif
@@ -110,8 +116,19 @@ void BaseObjectManager::UnregisterExternal(BaseObject *obj)
     {
         return;
     }
+    const auto it = objects_.find(obj->GetName());
+    if (it != objects_.end() && it->second != obj)
+    {
+        // 同名の別オブジェクトが登録されている（こちらは RegisterExternal で断られた物）。
+        // 名前で消すと相手の登録まで消えてしまうので、自分のポインタで持たれている物だけ外す
+        MotionEditor::GetInstance()->Unregister(obj);
+        return;
+    }
     DetachRegistrations(obj, obj->GetName());
-    objects_.erase(obj->GetName());
+    if (it != objects_.end())
+    {
+        objects_.erase(it);
+    }
 }
 
 // 破棄・登録解除の直前に、他マネージャが持つこのオブジェクトへの参照を全て落とす。
@@ -265,8 +282,6 @@ void BaseObjectManager::UpdateImGui()
     // オブジェクトへの編集ジェスチャ（ImGuiウィジェット・ギズモドラッグ）をUndo履歴として追跡する
     g_undoTracker.Begin([this] { return CaptureUndoState(); });
 
-    DrawSceneSaveModel();
-    DrawSceneLoadModel();
     DrawObjectCreationModel();
     DrawObjectLoadModel();
 
@@ -278,95 +293,185 @@ void BaseObjectManager::UpdateImGui()
 #endif // USE_IMGUI
 }
 
-void BaseObjectManager::SaveAll()
+// -------------------------------------------------------
+// シーンファイル用の書き出し・作り直し（ファイルの読み書きは SceneSerializer）
+// -------------------------------------------------------
+
+bool BaseObjectManager::IsOwned(const BaseObject *obj) const
 {
-    for (auto &[name, obj] : objects_)
+    if (!obj)
     {
-        if (obj->GetShouldSave())
-        { // セーブ対象フラグをチェック
-            obj->SetFolderPath("SceneData/" + sceneName_ + "/ObjectDatas");
-            obj->SceneSaveToJson();
-            obj->SaveParentChildRelationship();
-        }
+        return false;
     }
-    // 種類をまたいだ親子付け（光源・パーティクル）はオブジェクト単位では持てないので、
-    // シーンごとに1ファイルへまとめて保存する
-    AttachmentManager::GetInstance()->Save("SceneData/" + sceneName_, "Attachments");
-    ImGuiNotification::Post("全オブジェクトを保存しました", {0.2f, 0.8f, 0.2f, 1.0f});
+    // 名前で引いたうえでポインタも突き合わせる（同名のゲーム側オブジェクトと取り違えない）
+    const auto it = ownedObjects_.find(obj->GetName());
+    return it != ownedObjects_.end() && it->second.get() == obj;
 }
 
-void BaseObjectManager::LoadAll(std::string sceneName)
+bool BaseObjectManager::IsSceneSaveTarget(BaseObject *obj) const
 {
-    // シーンデータのフォルダパスを構築（jsons ルートからの相対パスと、走査用の実パス）
-    const std::string objectDataFolder = "SceneData/" + sceneName + "/ObjectDatas";
-    const std::string sceneDataPath = AssetPath::Json(objectDataFolder);
-
-    // フォルダが存在するかチェック
-    if (!std::filesystem::exists(sceneDataPath))
+    if (!IsOwned(obj))
     {
-        // フォルダが存在しない場合は何もしない
-        return;
+        return false; // ゲーム側がコードで作る物は、毎回コードが作り直すので保存しない
     }
-
-    // JSONファイルを検索
-    std::vector<std::string> jsonFiles;
-    for (const auto &entry : std::filesystem::directory_iterator(sceneDataPath))
+    for (BaseObject *p = obj; p; p = p->GetParent())
     {
-        if (entry.is_regular_file() && entry.path().extension() == ".json")
+        if (!IsOwned(p))
         {
-            jsonFiles.push_back(entry.path().filename().string());
+            // ゲーム側オブジェクトの子に付けた物。親の名前を残して保存し、読み込み後に付け直す
+            return true;
+        }
+        if (!p->GetShouldSave())
+        {
+            return false; // 自分か、所有している祖先が「保存しない」
         }
     }
+    return true;
+}
 
-    // 既存のオブジェクトをクリア
+nlohmann::json BaseObjectManager::SerializeSceneObjects()
+{
+    nlohmann::json list = nlohmann::json::array();
+
+    // 親を子より先に並べる（読み込み側は上から順に作るだけで親子付けできる）。
+    // 兄弟は名前順にして、保存のたびに並びが変わらないようにする
+    std::function<void(BaseObject *)> append = [&](BaseObject *obj) {
+        list.push_back(obj->Serialize());
+
+        std::vector<BaseObject *> children;
+        for (BaseObject *child : *obj->GetChildren())
+        {
+            if (child && IsSceneSaveTarget(child))
+            {
+                children.push_back(child);
+            }
+        }
+        std::sort(children.begin(), children.end(),
+                  [](BaseObject *a, BaseObject *b) { return a->GetName() < b->GetName(); });
+        for (BaseObject *child : children)
+        {
+            append(child);
+        }
+    };
+
+    for (const std::string &name : GetSortedObjectNames())
+    {
+        BaseObject *obj = GetObjectByName(name);
+        if (!IsSceneSaveTarget(obj))
+        {
+            continue;
+        }
+        // 親も保存対象なら、親から辿ったときに書かれる
+        BaseObject *parent = obj->GetParent();
+        if (parent && IsSceneSaveTarget(parent))
+        {
+            continue;
+        }
+        append(obj);
+    }
+    return list;
+}
+
+int BaseObjectManager::DeserializeSceneObjects(const nlohmann::json &objects)
+{
+    // 置き換える前に今の配置を片付ける。消すのは所有オブジェクトだけで、ゲーム側の物はそのまま
     RemoveAllObjects();
+    pendingParents_.clear();
 
-    // 各JSONファイルを読み込んでオブジェクトを生成
-    for (const std::string &jsonFile : jsonFiles)
+    if (!objects.is_array())
     {
-        // JSONファイル名から拡張子を除去してオブジェクト名とする
-        std::string objectName = jsonFile.substr(0, jsonFile.find_last_of('.'));
+        return 0;
+    }
 
-        // モデル名を先に見て、どのクラスとして作り直すかを決める
-        std::unique_ptr<DataHandler> ObjectDatas = std::make_unique<DataHandler>(objectDataFolder, objectName);
-        const std::string modelPath = ObjectDatas->Load<std::string>("modelName", "");
-        const bool isMetaBall = (modelPath == kMetaBallModelTag);
+    // ファイル上の名前 → 実際に付いた名前。ゲーム側に同名の物がいると名前を変えて作るので、
+    // 子が親を引くときはこちらを通す
+    std::unordered_map<std::string, std::string> renamed;
+    int created = 0;
 
-        // 新しいオブジェクトを作成
-        std::unique_ptr<BaseObject> newObject =
-            isMetaBall ? std::unique_ptr<BaseObject>(std::make_unique<MetaBallObject>())
-                       : std::make_unique<BaseObject>();
-        // フォルダパスを設定
-        newObject->SetFolderPath(objectDataFolder);
-        // オブジェクト名でInit
-        newObject->Init(objectName);
-        newObject->SetIsScene(true);
-
-        // モデルとテクスチャを設定
-        if (isMetaBall)
+    for (const nlohmann::json &state : objects)
+    {
+        if (!state.is_object())
         {
-            // MetaBallObject::Init が動的モデルを作り済み。要素リストだけ戻す
-            static_cast<MetaBallObject *>(newObject.get())->LoadMetaBallFromJson();
+            continue;
         }
-        else if (!modelPath.empty())
+        const std::string savedName = state.value("name", std::string());
+        if (savedName.empty())
         {
-            newObject->CreateModel(modelPath);
+            Logger::Warn("[Scene] 名前の無いオブジェクトを飛ばしました");
+            continue;
+        }
+
+        const std::string name = MakeUniqueObjectName(savedName);
+        if (name != savedName)
+        {
+            Logger::Warn("[Scene] \"" + savedName + "\" は既に居るので \"" + name + "\" として読み込みました");
+        }
+
+        BaseObject *obj = CreateObjectFromState(name, state);
+        if (!obj)
+        {
+            Logger::Warn("[Scene] \"" + savedName + "\" はモデルもプリミティブも無いので作れませんでした");
+            continue;
+        }
+        renamed[savedName] = name;
+        ++created;
+
+        // 1体の中身が壊れていても、他のオブジェクトの読み込みは続ける
+        try
+        {
+            obj->Deserialize(state);
+        }
+        catch (const nlohmann::json::exception &e)
+        {
+            Logger::Warn("[Scene] \"" + savedName + "\" の設定の一部を読めませんでした: " + e.what());
+        }
+
+        const std::string parentName = state.value("parent", std::string());
+        if (parentName.empty())
+        {
+            continue;
+        }
+        const auto renamedParent = renamed.find(parentName);
+        BaseObject *parent = GetObjectByName(renamedParent != renamed.end() ? renamedParent->second : parentName);
+        if (parent && parent != obj)
+        {
+            obj->SetParent(parent);
         }
         else
         {
-            newObject->CreatePrimitiveModel(newObject->GetPrimitiveType());
+            // ゲーム側の親はシーンの Initialize で登録されるので、それまで待つ
+            pendingParents_[name] = parentName;
         }
+    }
+    return created;
+}
 
-        // オブジェクトマネージャーに追加
-        this->AddObject(std::move(newObject));
+void BaseObjectManager::ResolvePendingParents()
+{
+    for (auto it = pendingParents_.begin(); it != pendingParents_.end();)
+    {
+        BaseObject *child = GetObjectByName(it->first);
+        BaseObject *parent = GetObjectByName(it->second);
+        if (!child)
+        {
+            it = pendingParents_.erase(it); // 子が消えていれば待つ意味が無い
+            continue;
+        }
+        if (parent && parent != child)
+        {
+            child->SetParent(parent);
+            it = pendingParents_.erase(it);
+            continue;
+        }
+        ++it;
     }
 
-    // 全オブジェクト読み込み後に親子関係を復元
-    LoadAllParentChildRelationships();
-    // 種類をまたいだ親子付けも読み直す。リンクは名前で解決されるので、
-    // 相手（光源・パーティクル）の読み込みがこの後になっても構わない
-    AttachmentManager::GetInstance()->Load("SceneData/" + sceneName, "Attachments");
-    ImGuiNotification::Post("シーンを読み込みました: " + sceneName, {0.2f, 0.8f, 0.8f, 1.0f});
+    // 残った物は親が居ないまま。黙っていると「なぜか付いていない」になるので知らせる
+    for (const auto &[childName, parentName] : pendingParents_)
+    {
+        Logger::Warn("[Scene] \"" + childName + "\" の親 \"" + parentName + "\" が見つからないので、親なしで置いています");
+    }
+    pendingParents_.clear();
 }
 
 std::string BaseObjectManager::MakeUniqueObjectName(const std::string &baseName) const
@@ -392,6 +497,8 @@ void BaseObjectManager::CreateObject(std::string objectName, std::string modelPa
     objectName = MakeUniqueObjectName(objectName);
 
     std::unique_ptr<BaseObject> newObject = std::make_unique<BaseObject>();
+    // エディタで置く物の中身はシーンファイルが持つ。同名の「オブジェクト単体の保存」は拾わない
+    newObject->SetLoadObjectDataFile(false);
     newObject->Init(objectName);
     newObject->CreateModel(modelPath);
     for (int i = 0; i < newObject->GetObject3d()->GetMaterialCount(); i++)
@@ -417,6 +524,8 @@ BaseObject *BaseObjectManager::CreateObjectFromModel(const std::string &modelPat
     const std::string name = MakeUniqueObjectName(std::filesystem::path(modelPath).stem().string());
 
     std::unique_ptr<BaseObject> newObject = std::make_unique<BaseObject>();
+    // エディタで置く物の中身はシーンファイルが持つ。同名の「オブジェクト単体の保存」は拾わない
+    newObject->SetLoadObjectDataFile(false);
     newObject->Init(name);
     newObject->CreateModel(modelPath);
     newObject->GetLocalPosition() = position;
@@ -432,6 +541,7 @@ BaseObject *BaseObjectManager::CreatePrimitiveObject(PrimitiveType type, const s
 
     std::unique_ptr<BaseObject> newObject = std::make_unique<BaseObject>();
     newObject->SetPrimitive(true);
+    newObject->SetLoadObjectDataFile(false);
     newObject->Init(name);
     newObject->CreatePrimitiveModel(type);
 #ifdef USE_IMGUI
@@ -487,6 +597,7 @@ BaseObject *BaseObjectManager::CloneObject(BaseObject *pSource, const Vector3 &o
         isMetaBall ? std::unique_ptr<BaseObject>(std::make_unique<MetaBallObject>())
                    : std::make_unique<BaseObject>();
     newObject->SetPrimitive(isPrimitive);
+    newObject->SetLoadObjectDataFile(false);
     newObject->Init(name);
 
     if (!isMetaBall)
@@ -538,16 +649,6 @@ BaseObject *BaseObjectManager::GetObjectByName(const std::string &name)
 }
 
 // メニューからモーダルを開くメソッド
-void BaseObjectManager::OpenSceneSaveModal()
-{
-    showSceneSaveModal_ = true;
-}
-
-void BaseObjectManager::OpenSceneLoadModal()
-{
-    showSceneLoadModal_ = true;
-}
-
 void BaseObjectManager::OpenObjectCreationModal()
 {
     showObjectCreationModal_ = true;
@@ -1061,6 +1162,8 @@ void BaseObjectManager::ShowObjectHierarchy(BaseObject *obj, int depth)
     const std::string &name = obj->GetName();
     const bool isSelected = gizmo->IsSelected(name);
     const bool isVisible = obj->GetIsModelDraw();
+    const bool isOwned = IsOwned(obj);
+    const bool isSaveTarget = IsSceneSaveTarget(obj);
 
     // ダブルクリックは「開く」ではなく「カメラを寄せる」に使うので OpenOnDoubleClick は付けない。
     // 右端の目のアイコンを重ねて置くので AllowOverlap を付ける
@@ -1184,6 +1287,20 @@ void BaseObjectManager::ShowObjectHierarchy(BaseObject *obj, int depth)
         {
             obj->SetIsModelDraw(!isVisible);
         }
+        if (isOwned)
+        {
+            bool shouldSave = obj->GetShouldSave();
+            if (ImGui::MenuItem(ICON_FA_SAVE " シーンに保存する", nullptr, &shouldSave))
+            {
+                obj->SetShouldSave(shouldSave);
+            }
+            ImGui::SetItemTooltip("外すと、この物と子はシーンファイルに書かれません（今の画面からは消えません）");
+        }
+        else
+        {
+            ImGui::MenuItem(ICON_FA_GAMEPAD " ゲーム側のオブジェクト", nullptr, false, false);
+            ImGui::SetItemTooltip("コードで作られる物なので、シーンファイルには保存されません");
+        }
         if (ImGui::MenuItem(ICON_FA_CLONE " 複製", "Ctrl+D"))
         {
             g_hierarchyAction = HierarchyAction::Duplicate;
@@ -1263,6 +1380,45 @@ void BaseObjectManager::ShowObjectHierarchy(BaseObject *obj, int depth)
         }
 
         ImGui::EndPopup();
+    }
+
+    // 右端の保存アイコン（シーンに保存する・しないの切り替え）。目のアイコンの左に重ねて置く
+    {
+        const float buttonWidth = ImGui::GetFrameHeight();
+        ImGui::SameLine(ImGui::GetContentRegionMax().x - buttonWidth * 2.0f - ImGui::GetStyle().ItemSpacing.x);
+        ImGui::PushID((name + "##save").c_str());
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
+        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(2.0f, 2.0f));
+        if (!isOwned)
+        {
+            // ゲーム側の物は切り替えられない。種類が分かるよう印だけ出す
+            ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+            ImGui::BeginDisabled();
+            ImGui::Button(ICON_FA_GAMEPAD, ImVec2(buttonWidth, 0.0f));
+            ImGui::EndDisabled();
+            ImGui::PopStyleColor();
+            ImGui::SetItemTooltip("ゲーム側がコードで作る物です（シーンファイルには保存されません）");
+        }
+        else
+        {
+            // 自分は保存する設定でも、親が保存しない設定なら書かれない。その場合は薄く出す
+            const bool blockedByParent = obj->GetShouldSave() && !isSaveTarget;
+            const ImVec4 iconColor = isSaveTarget      ? ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled)
+                                     : blockedByParent ? ImVec4(0.60f, 0.52f, 0.40f, 1.0f)
+                                                       : ImVec4(0.95f, 0.66f, 0.38f, 1.0f);
+            ImGui::PushStyleColor(ImGuiCol_Text, iconColor);
+            if (ImGui::Button(obj->GetShouldSave() ? ICON_FA_SAVE : ICON_FA_BAN, ImVec2(buttonWidth, 0.0f)))
+            {
+                obj->SetShouldSave(!obj->GetShouldSave());
+            }
+            ImGui::PopStyleColor();
+            ImGui::SetItemTooltip(isSaveTarget      ? "シーンに保存します（クリックで保存しない）"
+                                  : blockedByParent ? "親が「保存しない」なので保存されません"
+                                                    : "シーンに保存しません（クリックで保存する）");
+        }
+        ImGui::PopStyleVar();
+        ImGui::PopStyleColor();
+        ImGui::PopID();
     }
 
     // 右端の目のアイコン（表示・非表示の切り替え）。行に重ねて置く
@@ -1347,60 +1503,6 @@ std::vector<std::string> BaseObjectManager::GetSortedObjectNames() const
     return names;
 }
 
-void BaseObjectManager::SaveAllParentChildRelationships()
-{
-    for (auto &[name, obj] : objects_)
-    {
-        obj->SaveParentChildRelationship();
-    }
-}
-
-void BaseObjectManager::LoadAllParentChildRelationships()
-{
-    // まず全オブジェクトから親子関係情報を読み込む
-    std::unordered_map<std::string, std::string> parentRelations;
-    std::unordered_map<std::string, std::vector<std::string>> childRelations;
-
-    for (auto &[name, obj] : objects_)
-    {
-        if (!obj->objectData_)
-            continue;
-
-        std::string parentName = obj->objectData_->Load<std::string>("parentName", "");
-        if (!parentName.empty())
-        {
-            parentRelations[name] = parentName;
-        }
-
-        std::vector<std::string> childrenNames = obj->objectData_->Load<std::vector<std::string>>("childrenNames", std::vector<std::string>());
-        if (!childrenNames.empty())
-        {
-            childRelations[name] = childrenNames;
-        }
-    }
-
-    // 親子関係を復元
-    for (const auto &[childName, parentName] : parentRelations)
-    {
-        BaseObject *pChild = GetObjectByName(childName);
-        BaseObject *parent = GetObjectByName(parentName);
-
-        if (pChild && parent)
-        {
-            pChild->SetParent(parent);
-
-            // SRT成分ごとの継承設定を復元する（未保存の古いデータは全継承=trueにフォールバック）
-            if (pChild->objectData_ && pChild->GetWorldTransform())
-            {
-                WorldTransform *ct = pChild->GetWorldTransform();
-                ct->inheritTranslation_ = pChild->objectData_->Load<bool>("inheritTranslation", true);
-                ct->inheritRotation_ = pChild->objectData_->Load<bool>("inheritRotation", true);
-                ct->inheritScale_ = pChild->objectData_->Load<bool>("inheritScale", true);
-            }
-        }
-    }
-}
-
 void BaseObjectManager::RemoveObject(const std::string &name)
 {
     auto it = objects_.find(name);
@@ -1428,333 +1530,6 @@ void BaseObjectManager::RemoveObject(const std::string &name)
         objects_.erase(it);
         ownedObjects_.erase(name);
     }
-}
-
-void BaseObjectManager::ShowSaveTargetManager()
-{
-#ifdef USE_IMGUI
-    if (ImGui::CollapsingHeader("セーブ対象管理##SaveTargetManagement", ImGuiTreeNodeFlags_DefaultOpen))
-    {
-        ImGui::Spacing();
-
-        std::vector<std::string> saveTargets;
-        std::vector<std::string> nonSaveTargets;
-
-        // オブジェクトを分類（unordered_map をそのまま回すと並びが毎回変わるので名前順で見る）
-        for (const std::string &name : GetSortedObjectNames())
-        {
-            BaseObject *obj = GetObjectByName(name);
-            if (!obj)
-            {
-                continue;
-            }
-            if (obj->GetShouldSave())
-            {
-                saveTargets.push_back(name);
-            }
-            else
-            {
-                nonSaveTargets.push_back(name);
-            }
-        }
-
-        static std::vector<int> leftSelected;
-        static std::vector<int> rightSelected;
-
-        // 選択インデックスの範囲チェック
-        leftSelected.erase(std::remove_if(leftSelected.begin(), leftSelected.end(),
-                                          [&](int i) { return i >= static_cast<int>(nonSaveTargets.size()); }),
-                           leftSelected.end());
-        rightSelected.erase(std::remove_if(rightSelected.begin(), rightSelected.end(),
-                                           [&](int i) { return i >= static_cast<int>(saveTargets.size()); }),
-                            rightSelected.end());
-
-        float availableWidth = ImGui::GetContentRegionAvail().x;
-        float buttonWidth = 90.0f; // ボタン幅を固定
-        float spacing = ImGui::GetStyle().ItemSpacing.x;
-        float listWidth = (availableWidth - buttonWidth - spacing * 2) * 0.5f;
-
-        // ヘッダーテキスト
-        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.8f, 0.9f, 1.0f, 1.0f));
-        ImGui::Text("セーブしない");
-        ImGui::SameLine(listWidth + spacing + buttonWidth + spacing);
-        ImGui::Text("セーブする");
-        ImGui::PopStyleColor();
-
-        // 左リスト（セーブしない）
-        ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.12f, 0.12f, 0.14f, 0.85f));
-        ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.30f, 0.32f, 0.36f, 0.60f));
-
-        ImGui::BeginChild("non_save_targets##NonSaveTargets", ImVec2(listWidth, 200), true);
-
-        ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0.40f, 0.28f, 0.28f, 0.55f));
-        ImGui::PushStyleColor(ImGuiCol_HeaderHovered, ImVec4(0.48f, 0.34f, 0.34f, 0.70f));
-        ImGui::PushStyleColor(ImGuiCol_HeaderActive, ImVec4(0.54f, 0.40f, 0.40f, 0.85f));
-
-        if (nonSaveTargets.empty())
-        {
-            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.6f, 0.6f, 0.6f, 1.0f));
-            ImGui::TextWrapped("セーブ対象外のオブジェクトがありません");
-            ImGui::PopStyleColor();
-        }
-        else
-        {
-            for (int i = 0; i < nonSaveTargets.size(); ++i)
-            {
-                bool selected = std::find(leftSelected.begin(), leftSelected.end(), i) != leftSelected.end();
-                std::string selectableId = nonSaveTargets[i] + "##NonSave" + std::to_string(i);
-                if (ImGui::Selectable(selectableId.c_str(), selected, ImGuiSelectableFlags_AllowDoubleClick))
-                {
-                    if (!ImGui::GetIO().KeyCtrl)
-                        leftSelected.clear();
-
-                    auto it = std::find(leftSelected.begin(), leftSelected.end(), i);
-                    if (it != leftSelected.end())
-                        leftSelected.erase(it);
-                    else
-                        leftSelected.push_back(i);
-
-                    if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0))
-                    {
-                        AddToSaveTargets(nonSaveTargets[i]);
-                        leftSelected.clear();
-                    }
-                }
-            }
-        }
-
-        ImGui::PopStyleColor(3);
-        ImGui::EndChild();
-
-        ImGui::SameLine();
-
-        // 中央のボタン群
-        ImGui::BeginGroup();
-
-        // 垂直中央揃えのためのスペース調整
-        ImGui::Dummy(ImVec2(0, 60));
-
-        // 選択が無いときは地味な色にして「押しても動かない」ことを見た目で伝える
-        const bool canMoveRight = !leftSelected.empty();
-        const ImVec2 moveButtonSize(buttonWidth, 30.0f);
-        const bool addPressed = canMoveRight ? ConfirmButton("追加 >>##SaveAddButton", moveButtonSize)
-                                             : NeutralButton("追加 >>##SaveAddButton", moveButtonSize);
-        if (addPressed && canMoveRight)
-        {
-            for (int idx : leftSelected)
-            {
-                AddToSaveTargets(nonSaveTargets[idx]);
-            }
-            leftSelected.clear();
-        }
-
-        const bool canMoveLeft = !rightSelected.empty();
-        const bool removePressed = canMoveLeft ? DangerButton("<< 削除##SaveRemoveButton", moveButtonSize)
-                                               : NeutralButton("<< 削除##SaveRemoveButton", moveButtonSize);
-        if (removePressed && canMoveLeft)
-        {
-            for (int idx : rightSelected)
-            {
-                RemoveFromSaveTargets(saveTargets[idx]);
-            }
-            rightSelected.clear();
-        }
-
-        ImGui::EndGroup();
-
-        ImGui::SameLine();
-
-        // 右リスト（セーブする）
-        ImGui::BeginChild("save_targets##SaveTargets", ImVec2(listWidth, 200), true);
-
-        ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0.28f, 0.40f, 0.30f, 0.55f));
-        ImGui::PushStyleColor(ImGuiCol_HeaderHovered, ImVec4(0.34f, 0.48f, 0.36f, 0.70f));
-        ImGui::PushStyleColor(ImGuiCol_HeaderActive, ImVec4(0.40f, 0.54f, 0.42f, 0.85f));
-
-        if (saveTargets.empty())
-        {
-            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.6f, 0.6f, 0.6f, 1.0f));
-            ImGui::TextWrapped("セーブ対象のオブジェクトがありません");
-            ImGui::PopStyleColor();
-        }
-        else
-        {
-            for (int i = 0; i < saveTargets.size(); ++i)
-            {
-                bool selected = std::find(rightSelected.begin(), rightSelected.end(), i) != rightSelected.end();
-                std::string selectableId = saveTargets[i] + "##Save" + std::to_string(i);
-                if (ImGui::Selectable(selectableId.c_str(), selected, ImGuiSelectableFlags_AllowDoubleClick))
-                {
-                    if (!ImGui::GetIO().KeyCtrl)
-                        rightSelected.clear();
-
-                    auto it = std::find(rightSelected.begin(), rightSelected.end(), i);
-                    if (it != rightSelected.end())
-                        rightSelected.erase(it);
-                    else
-                        rightSelected.push_back(i);
-
-                    if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0))
-                    {
-                        RemoveFromSaveTargets(saveTargets[i]);
-                        rightSelected.clear();
-                    }
-                }
-            }
-        }
-
-        ImGui::PopStyleColor(3);
-        ImGui::EndChild();
-
-        ImGui::PopStyleColor(2);
-
-        ImGui::Spacing();
-
-        // 操作説明
-        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.7f, 0.7f, 0.7f, 1.0f));
-        ImGui::TextWrapped("操作: Ctrlキー + クリックで複数選択, ダブルクリックで追加/削除");
-        ImGui::PopStyleColor();
-    }
-#endif // USE_IMGUI
-}
-void BaseObjectManager::AddToSaveTargets(const std::string &objectName)
-{
-    BaseObject *obj = GetObjectByName(objectName);
-    if (obj)
-    {
-        obj->SetShouldSave(true);
-    }
-}
-
-void BaseObjectManager::RemoveFromSaveTargets(const std::string &objectName)
-{
-    BaseObject *obj = GetObjectByName(objectName);
-    if (obj)
-    {
-        obj->SetShouldSave(false);
-    }
-}
-
-// シーン保存モーダルの描画
-void BaseObjectManager::DrawSceneSaveModel()
-{
-#ifdef USE_IMGUI
-    static std::string sceneNameBuffer;
-
-    // メニューから呼び出された場合のモーダル表示
-    if (showSceneSaveModal_)
-    {
-        ImGui::OpenPopup("シーン保存");
-        showSceneSaveModal_ = false;
-        // 上書き保存が大半なので、編集中のシーン名を初期値として入れておく
-        sceneNameBuffer = sceneName_;
-    }
-
-    // モーダルウィンドウ（中央に表示、背景は自動で薄暗くなる）
-    if (ImGui::BeginPopupModal("シーン保存", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
-    {
-        ImGui::Text("シーンの名前を入力してください");
-
-        // テキスト入力欄（sceneName_ を編集）
-        ImGui::InputText("シーン名", &sceneNameBuffer);
-
-        // 保存する内容の選択（オブジェクト以外も一緒に保存できるようにする）
-        ImGui::Separator();
-        ImGui::TextDisabled("保存する内容:");
-        bool objAlways = true;
-        ImGui::BeginDisabled();
-        ImGui::Checkbox("オブジェクト (セーブ対象のみ)", &objAlways);
-        ImGui::EndDisabled();
-        if (ImGui::IsItemHovered())
-            ImGui::SetTooltip("どのオブジェクトを保存するかは下の「セーブ対象管理」で仕分けできます");
-        static bool saveSprites = true;
-        static bool saveUI = true;
-        ImGui::Checkbox("スプライト (全シーン共通)", &saveSprites);
-        ImGui::Checkbox("UIアニメーション (全シーン共通)", &saveUI);
-        ImGui::Separator();
-
-        // 横並びに「保存」ボタンと「キャンセル」ボタン
-        if (ImGui::Button("保存", ImVec2(120, 0)))
-        {
-            sceneName_ = sceneNameBuffer; // 入力内容を保存
-            std::unique_ptr<DataHandler> datas_ = std::make_unique<DataHandler>("SceneData/" + sceneName_ + "/ObjectDatas", "");
-            datas_->DeleteAllJsonsInFolder();
-            SaveAll();                         // オブジェクトの保存
-            SaveAllParentChildRelationships(); // 親子関係も保存
-            if (saveSprites)
-                SpriteManager::GetInstance()->SaveAllSprites(); // スプライトも保存
-            if (saveUI)
-                UIAnimator::GetInstance()->Save(); // UIアニメーションも保存
-            ImGui::CloseCurrentPopup();           // モーダルを閉じる
-            // sceneName_ は「今どのシーンを編集しているか」を保持する変数なので、
-            // 保存後にクリアしてはいけない（次の SaveAll が SceneData//ObjectDatas に書いてしまう）
-        }
-
-        ImGui::SameLine();
-
-        if (ImGui::Button("キャンセル", ImVec2(120, 0)))
-        {
-            ImGui::CloseCurrentPopup(); // キャンセル時も閉じる
-        }
-
-        ImGui::EndPopup();
-    }
-#endif // USE_IMGUI
-}
-
-// シーン読み込みモーダルの描画
-void BaseObjectManager::DrawSceneLoadModel()
-{
-#ifdef USE_IMGUI
-    static std::string sceneNameBuffer;
-
-    // メニューから呼び出された場合のモーダル表示
-    if (showSceneLoadModal_)
-    {
-        ImGui::OpenPopup("シーン読み込み");
-        showSceneLoadModal_ = false;
-        sceneNameBuffer = sceneName_;
-    }
-
-    if (ImGui::BeginPopupModal("シーン読み込み", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
-    {
-        ImGui::Text("シーンの名前を入力してください");
-
-        // テキスト入力欄（sceneName_ を編集）
-        ImGui::InputText("シーン名", &sceneNameBuffer);
-
-        // 読み込む内容の選択
-        ImGui::Separator();
-        ImGui::TextDisabled("読み込む内容:");
-        static bool loadSprites = true;
-        static bool loadUI = true;
-        ImGui::Checkbox("スプライトも読み込み", &loadSprites);
-        ImGui::Checkbox("UIアニメーションも読み込み", &loadUI);
-        ImGui::Separator();
-
-        // 横並びに「読み込み」ボタンと「キャンセル」ボタン
-        if (ImGui::Button("読み込み", ImVec2(120, 0)))
-        {
-            sceneName_ = sceneNameBuffer; // 入力内容を保存
-            LoadAll(sceneName_);          // オブジェクトの読み込み（親子関係の復元も内部で行う）
-            if (loadSprites)
-                SpriteManager::GetInstance()->LoadAllSprites(); // スプライトも読み込み
-            if (loadUI)
-                UIAnimator::GetInstance()->Load(); // UIアニメーションも読み込み
-            ImGui::CloseCurrentPopup();           // モーダルを閉じる
-            // 読み込んだシーン名はそのまま保持する（次の保存先がこのシーンになる）
-        }
-
-        ImGui::SameLine();
-
-        if (ImGui::Button("キャンセル", ImVec2(120, 0)))
-        {
-            ImGui::CloseCurrentPopup(); // キャンセル時も閉じる
-        }
-
-        ImGui::EndPopup();
-    }
-#endif // USE_IMGUI
 }
 
 // オブジェクト生成モーダルの描画
@@ -1992,9 +1767,45 @@ void BaseObjectManager::DrawHierarchyEditor()
 #ifdef USE_IMGUI
     // ウィンドウの Begin/End は呼び出し元（ImGuiManager::ShowHierarchyWindow）が行う。
     // ここで再度 Begin すると同名ウィンドウが入れ子になる。
+    // 保存する／しないの切り替えは各行の右端のアイコンと右クリックメニューで行う
     ShowParentChildHierarchy();
-    ShowSaveTargetManager();
 #endif // USE_IMGUI
+}
+
+BaseObject *BaseObjectManager::CreateObjectFromState(const std::string &name, const nlohmann::json &s)
+{
+    const std::string modelPath = s.value("modelPath", std::string());
+    const bool isPrimitive = s.value("isPrimitive", false);
+    // メタボールは modelName が目印になっているだけでモデルファイルは無い。
+    // 素の BaseObject として作ると "MetaBall" というモデルを読みに行ってしまう
+    const bool isMetaBall = (modelPath == kMetaBallModelTag);
+    if (!isMetaBall && modelPath.empty() && !isPrimitive)
+    {
+        return nullptr; // モデルもプリミティブも無い場合は再生成できない
+    }
+
+    std::unique_ptr<BaseObject> newObject =
+        isMetaBall ? std::unique_ptr<BaseObject>(std::make_unique<MetaBallObject>())
+                   : std::make_unique<BaseObject>();
+    // 中身は呼び出し側が状態JSONから流し込む。同名の「オブジェクト単体の保存」を拾って混ぜない
+    newObject->SetLoadObjectDataFile(false);
+    newObject->Init(name);
+    if (isMetaBall)
+    {
+        // MetaBallObject::Init が動的モデルの生成とグループ登録まで済ませている
+    }
+    else if (!modelPath.empty())
+    {
+        newObject->CreateModel(modelPath);
+    }
+    else
+    {
+        newObject->SetPrimitive(true);
+        newObject->CreatePrimitiveModel(
+            static_cast<PrimitiveType>(s.value("primitiveType", static_cast<int>(PrimitiveType::Count))));
+    }
+    AddObject(std::move(newObject));
+    return GetObjectByName(name);
 }
 
 #ifdef USE_IMGUI
@@ -2086,39 +1897,6 @@ nlohmann::json BaseObjectManager::CaptureObjectState(BaseObject *obj) const
         s["metaBallElements"] = elements;
     }
     return s;
-}
-
-BaseObject *BaseObjectManager::CreateObjectFromState(const std::string &name, const nlohmann::json &s)
-{
-    const std::string modelPath = s.value("modelPath", std::string());
-    const bool isPrimitive = s.value("isPrimitive", false);
-    // メタボールは modelName が目印になっているだけでモデルファイルは無い。
-    // 素の BaseObject として作ると "MetaBall" というモデルを読みに行ってしまう
-    const bool isMetaBall = (modelPath == kMetaBallModelTag);
-    std::unique_ptr<BaseObject> newObject =
-        isMetaBall ? std::unique_ptr<BaseObject>(std::make_unique<MetaBallObject>())
-                   : std::make_unique<BaseObject>();
-    newObject->Init(name);
-    if (isMetaBall)
-    {
-        // MetaBallObject::Init が動的モデルの生成とグループ登録まで済ませている
-    }
-    else if (!modelPath.empty())
-    {
-        newObject->CreateModel(modelPath);
-    }
-    else if (isPrimitive)
-    {
-        newObject->SetPrimitive(true);
-        newObject->CreatePrimitiveModel(
-            static_cast<PrimitiveType>(s.value("primitiveType", static_cast<int>(PrimitiveType::Count))));
-    }
-    else
-    {
-        return nullptr; // モデルもプリミティブも無い場合は再生成できない
-    }
-    AddObject(std::move(newObject));
-    return GetObjectByName(name);
 }
 
 void BaseObjectManager::ApplyObjectState(BaseObject *obj, const nlohmann::json &s)

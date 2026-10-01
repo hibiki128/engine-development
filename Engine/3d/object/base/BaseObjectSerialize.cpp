@@ -72,130 +72,193 @@ void BaseObject::SaveToJson() {
     objectData_->Flush();
 }
 
-void BaseObject::SceneSaveToJson() {
-    // JSONデータを扱うハンドラを作成
-    objectData_ = std::make_unique<DataHandler>(folderPath_, objectName_);
-    modelPath_ = obj3d_->GetModelFilePath();
-    objectData_->Save<std::string>("modelName", modelPath_);
-    objectData_->Save<std::string>("objectName", objectName_);
-    objectData_->Save<Vector3>("translation", transform_->translation_);
-    objectData_->Save<Quaternion>("rotation", transform_->quaternionRotation_);
-    objectData_->Save<Vector3>("scale", transform_->scale_);
-    objectData_->Save<bool>("Lighting", isLighting_);
-    objectData_->Save<PrimitiveType>("PrimitiveType", type_);
-    objectData_->Save<bool>("skeletonDraw", skeletonDraw_);
-    objectData_->Save<bool>("isModelDraw", isModelDraw_);
-    objectData_->Save<bool>("isWireframe", isWireframe_);
-    objectData_->Save<bool>("isRainbow", isRainbow_);
-    objectData_->Save<bool>("isGizmoSelectable", isGizmoSelectable_);
-    objectData_->Save<std::string>("prefabSource", prefabSource_);
-    if (pParent_) {
-        objectData_->Save<std::string>("parentName", pParent_->GetName());
+// ===================================================
+//  シーンファイル用の状態（Serialize / Deserialize）
+// ===================================================
+//
+// キーはグループごとに入れ子にして、何の値かが JSON を見ただけで分かるようにしてある。
+// 読むときは「書いていないキーは今の値のまま」にするので、項目を足しても古いファイルが読める。
+
+nlohmann::json BaseObject::Serialize() const {
+    json state = json::object();
+    state["name"] = objectName_;
+    state["parent"] = pParent_ ? pParent_->objectName_ : std::string();
+
+    // 作り直しに要る情報（キーは BaseObjectManager::CreateObjectFromState と同じ）
+    state["modelPath"] = isPrimitive_ ? std::string() : modelPath_;
+    state["isPrimitive"] = isPrimitive_;
+    state["primitiveType"] = static_cast<int>(type_);
+    state["prefabSource"] = prefabSource_;
+    state["gizmoSelectable"] = isGizmoSelectable_;
+
+    json &transform = state["transform"];
+    transform["translation"] = transform_->translation_;
+    transform["rotation"] = transform_->quaternionRotation_;
+    transform["scale"] = transform_->scale_;
+    transform["inheritTranslation"] = transform_->inheritTranslation_;
+    transform["inheritRotation"] = transform_->inheritRotation_;
+    transform["inheritScale"] = transform_->inheritScale_;
+
+    json &render = state["render"];
+    render["visible"] = isModelDraw_;
+    render["lighting"] = isLighting_;
+    render["wireframe"] = isWireframe_;
+    render["rainbow"] = isRainbow_;
+    render["skeleton"] = skeletonDraw_;
+    render["cameraFade"] = cameraFadeEnabled_;
+    render["blendMode"] = static_cast<int>(blendMode_);
+
+    // マテリアルごとのテクスチャ・色・法線マップ・UV。
+    // メタボールのように素のマテリアルを使わない物は書かない
+    if (obj3d_ && HasInspectorMaterial()) {
+        json materials = json::array();
+        for (uint32_t i = 0; i < static_cast<uint32_t>(obj3d_->GetMaterialCount()); ++i) {
+            json material;
+            material["texture"] = obj3d_->GetTextureFilePath(i);
+            material["color"] = obj3d_->GetColor(static_cast<int>(i));
+            if (Material *mat = obj3d_->GetMaterial(i)) {
+                const MaterialData &md = mat->GetMaterialData();
+                material["normalMap"] = md.hasNormalMapTexture ? md.normalMapFilePath : std::string();
+                material["enableNormalMap"] = md.enableNormalMap;
+                material["enableProceduralNormal"] = md.enableProceduralNormal;
+                material["proceduralScale"] = md.proceduralScale;
+                material["normalStrength"] = md.normalStrength;
+                material["enableToon"] = md.enableToon;
+                material["emissiveStrength"] = md.emissiveStrength;
+                material["uvSize"] = md.uvSize;
+                material["uvPosition"] = md.uvPosition;
+                material["uvRotate"] = md.uvRotate;
+            }
+            materials.push_back(std::move(material));
+        }
+        state["materials"] = std::move(materials);
     }
 
-    for (int i = 0; i < int(obj3d_->GetMaterialCount()); i++) {
-        // 保存のたびに push_back すると texturePaths_ が肥大化するので、サイズを合わせて代入する
-        if (static_cast<int>(texturePaths_.size()) <= i)
-            texturePaths_.resize(i + 1);
-        texturePaths_[i] = obj3d_->GetTextureFilePath(i);
-        objectData_->Save<std::string>("textureName_" + std::to_string(i), texturePaths_[i]);
-        objectData_->Save("color_" + std::to_string(i), GetColor(i));
+    // 速度はランタイム状態なので保存しない
+    json &physics = state["physics"];
+    physics["rigidBody"] = rigidBody_.enabled;
+    physics["useGravity"] = rigidBody_.useGravity;
+    physics["mass"] = rigidBody_.mass;
+    physics["gravity"] = rigidBody_.gravity;
+    physics["linearDamping"] = rigidBody_.linearDamping;
+    physics["restitution"] = rigidBody_.restitution;
+    physics["friction"] = rigidBody_.friction;
+    physics["resolveCollision"] = resolveCollision_;
+
+    // コライダーもシーンファイルに入れる（jsons/Collider/ はオブジェクト名で共有されるので、
+    // 別のシーンに同じ名前の物があると設定が混ざってしまう）
+    state["colliders"] = CaptureColliderState();
+
+    // 使っている物だけ書く（使っていない物のキーでファイルを太らせない）
+    if (footIk_) {
+        state["footIk"] = footIk_->ToJson();
     }
-
-    objectData_->Save<bool>("isLighting", isLighting_);
-    objectData_->Save<bool>("cameraFade", cameraFadeEnabled_);
-    objectData_->Save<int>("blendMode", static_cast<int>(blendMode_));
-
-    SaveParentChildRelationship();
-
-    // 物理（リジッドボディ）情報を保存
-    SavePhysics();
-
-    // 足IK（接地）の設定を保存
-    SaveFootIk();
-    SaveLookAt();
-    SaveAnimStateMachine();
-
-    // マテリアル（ノーマルマップ関連）情報を保存
-    SaveMaterials();
-
-    // コライダー情報を保存
-    SaveColliders();
-    objectData_->Flush();
+    if (lookAt_) {
+        state["lookAt"] = lookAt_->ToJson();
+    }
+    if (animStateMachine_) {
+        state["animStateMachine"] = animStateMachine_->GetAssetName();
+    }
+    return state;
 }
 
-void BaseObject::LoadFromJson() {
-    // JSONデータを扱うハンドラを作成
-    objectData_ = std::make_unique<DataHandler>(folderPath_, objectName_);
-
-    // 基本トランスフォームを読み込み
-    transform_->translation_ = objectData_->Load<Vector3>("translation", {0.0f, 0.0f, 0.0f});
-    transform_->quaternionRotation_ = objectData_->Load<Quaternion>("rotation", Quaternion::IdentityQuaternion());
-    transform_->scale_ = objectData_->Load<Vector3>("scale", {1.0f, 1.0f, 1.0f});
-
-    // 読み込んだTRSをワールド行列へ即反映する。
-    // 初回の全体更新前にコライダー構築（行列キャッシュ）や位置問い合わせが
-    // 行われても、単位行列のままにならないようにする
-    transform_->UpdateMatrix();
-
-    isLighting_ = objectData_->Load<bool>("Lighting", true);
-    type_ = objectData_->Load<PrimitiveType>("PrimitiveType", PrimitiveType::Count);
-    skeletonDraw_ = objectData_->Load<bool>("skeletonDraw", false);
-    isModelDraw_ = objectData_->Load<bool>("isModelDraw", true);
-    isWireframe_ = objectData_->Load<bool>("isWireframe", isWireframe_);
-    isRainbow_ = objectData_->Load<bool>("isRainbow", isRainbow_);
-    isGizmoSelectable_ = objectData_->Load<bool>("isGizmoSelectable", isGizmoSelectable_);
-    prefabSource_ = objectData_->Load<std::string>("prefabSource", "");
-    parentName_ = objectData_->Load<std::string>("parentName", "");
-
-    // モデルパスをJSONから読み込み（既に設定されている場合は上書きしない）
-    std::string loadedModelPath = objectData_->Load<std::string>("modelName", "");
-    if (!loadedModelPath.empty()) {
-        modelPath_ = loadedModelPath;
+void BaseObject::Deserialize(const json &state) {
+    if (!state.is_object()) {
+        return;
     }
 
-    // 現在のmodelPath_の状態でプリミティブかどうかを判断
-    if (modelPath_.empty()) {
-        // プリミティブの場合
-        isPrimitive_ = true;
-        if (texturePaths_.empty()) {
-            texturePaths_.resize(1);
-            texturePaths_[0] = objectData_->Load<std::string>("textureName_0", "debug/uvChecker.png");
-        } else {
-            texturePaths_[0] = objectData_->Load<std::string>("textureName_0", texturePaths_[0]);
-        }
-    } else {
-        // 3Dモデルの場合
-        isPrimitive_ = false;
-        // obj3d_が既に作成されている場合のみテクスチャパスを読み込み
-        if (obj3d_ && obj3d_->GetMaterialCount() > 0) {
-            texturePaths_.resize(obj3d_->GetMaterialCount());
-            for (int i = 0; i < texturePaths_.size(); i++) {
-                texturePaths_[i] = objectData_->Load<std::string>("textureName_" + std::to_string(i), "debug/uvChecker.png");
+    prefabSource_ = state.value("prefabSource", prefabSource_);
+    isGizmoSelectable_ = state.value("gizmoSelectable", isGizmoSelectable_);
+
+    if (const auto transform = state.find("transform"); transform != state.end() && transform->is_object()) {
+        transform_->translation_ = transform->value("translation", transform_->translation_);
+        transform_->quaternionRotation_ = transform->value("rotation", transform_->quaternionRotation_);
+        transform_->scale_ = transform->value("scale", transform_->scale_);
+        transform_->inheritTranslation_ = transform->value("inheritTranslation", transform_->inheritTranslation_);
+        transform_->inheritRotation_ = transform->value("inheritRotation", transform_->inheritRotation_);
+        transform_->inheritScale_ = transform->value("inheritScale", transform_->inheritScale_);
+        // 初回の全体更新より前にコライダー構築や位置の問い合わせが来ても、単位行列のままにならないようにする
+        transform_->UpdateMatrix();
+    }
+
+    if (const auto render = state.find("render"); render != state.end() && render->is_object()) {
+        isModelDraw_ = render->value("visible", isModelDraw_);
+        isLighting_ = render->value("lighting", isLighting_);
+        isWireframe_ = render->value("wireframe", isWireframe_);
+        isRainbow_ = render->value("rainbow", isRainbow_);
+        skeletonDraw_ = render->value("skeleton", skeletonDraw_);
+        cameraFadeEnabled_ = render->value("cameraFade", cameraFadeEnabled_);
+        blendMode_ = static_cast<BlendMode>(render->value("blendMode", static_cast<int>(blendMode_)));
+    }
+
+    if (const auto materials = state.find("materials"); materials != state.end() && materials->is_array() && obj3d_) {
+        // モデルを差し替えてマテリアル数が変わっていても、収まる範囲だけ戻す
+        const size_t count = (std::min)(materials->size(), static_cast<size_t>(obj3d_->GetMaterialCount()));
+        for (size_t i = 0; i < count; ++i) {
+            const json &material = (*materials)[i];
+            const uint32_t index = static_cast<uint32_t>(i);
+
+            SetTexture(material.value("texture", std::string()), index);
+            if (material.contains("color")) {
+                SetColor(material["color"].get<Vector4>(), static_cast<int>(index));
             }
+
+            Material *mat = obj3d_->GetMaterial(index);
+            if (!mat) {
+                continue;
+            }
+            MaterialData &md = mat->GetMaterialData();
+            // 法線マップ画像があればテクスチャを読み込む。フラグ類はその副作用より保存値を優先する
+            const std::string normalMap = material.value("normalMap", std::string());
+            if (!normalMap.empty()) {
+                mat->SetNormalMap(normalMap);
+            }
+            md.enableNormalMap = material.value("enableNormalMap", md.enableNormalMap);
+            md.enableProceduralNormal = material.value("enableProceduralNormal", md.enableProceduralNormal);
+            md.proceduralScale = material.value("proceduralScale", md.proceduralScale);
+            mat->SetNormalStrength(material.value("normalStrength", md.normalStrength));
+            md.enableToon = material.value("enableToon", md.enableToon);
+            md.emissiveStrength = material.value("emissiveStrength", md.emissiveStrength);
+            md.uvSize = material.value("uvSize", md.uvSize);
+            md.uvPosition = material.value("uvPosition", md.uvPosition);
+            md.uvRotate = material.value("uvRotate", md.uvRotate);
         }
     }
 
-    isLighting_ = objectData_->Load<bool>("isLighting", true);
-    cameraFadeEnabled_ = objectData_->Load<bool>("cameraFade", true);
-    blendMode_ = static_cast<BlendMode>(objectData_->Load<int>("blendMode", int(BlendMode::Normal)));
+    bool resolveCollision = resolveCollision_;
+    if (const auto physics = state.find("physics"); physics != state.end() && physics->is_object()) {
+        rigidBody_.enabled = physics->value("rigidBody", rigidBody_.enabled);
+        rigidBody_.useGravity = physics->value("useGravity", rigidBody_.useGravity);
+        rigidBody_.mass = physics->value("mass", rigidBody_.mass);
+        rigidBody_.gravity = physics->value("gravity", rigidBody_.gravity);
+        rigidBody_.linearDamping = physics->value("linearDamping", rigidBody_.linearDamping);
+        rigidBody_.restitution = physics->value("restitution", rigidBody_.restitution);
+        rigidBody_.friction = physics->value("friction", rigidBody_.friction);
+        rigidBody_.velocity = {0.0f, 0.0f, 0.0f};
+        resolveCollision = physics->value("resolveCollision", resolveCollision);
+    }
 
-    LoadParentChildRelationship();
+    // コライダーはモデルが揃ってから戻す（メッシュコライダーはモデルから三角形を組み直すため）
+    if (const auto colliders = state.find("colliders"); colliders != state.end()) {
+        RestoreColliderState(*colliders);
+    }
+    // 押し出しはコライダーのコールバックで行うので、コライダーが揃ってから仕込む
+    if (resolveCollision != resolveCollision_ || resolveCollision) {
+        SetResolveCollision(resolveCollision);
+    }
 
-    // 物理（リジッドボディ）情報を読み込み
-    LoadPhysics();
-
-    // 足IK（接地）の設定を読み込み
-    LoadFootIk();
-    LoadLookAt();
-    LoadAnimStateMachine();
-
-    // コライダー情報を読み込み
-    LoadColliders();
-
-    // 押し出しが有効ならコライダーにコールバックを仕込む（コライダー生成後に行う）
-    if (resolveCollision_) {
-        InstallResolveCallbacks();
+    if (const auto footIk = state.find("footIk"); footIk != state.end()) {
+        if (FootIkSolver *pSolver = AcquireFootIk()) {
+            pSolver->FromJson(*footIk);
+        }
+    }
+    if (const auto lookAt = state.find("lookAt"); lookAt != state.end()) {
+        if (LookAtSolver *pSolver = AcquireLookAt()) {
+            pSolver->FromJson(*lookAt);
+        }
+    }
+    if (const auto stateMachine = state.find("animStateMachine"); stateMachine != state.end() && stateMachine->is_string()) {
+        SetAnimationStateMachine(stateMachine->get<std::string>());
     }
 }
 

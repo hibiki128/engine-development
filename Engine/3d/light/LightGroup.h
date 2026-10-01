@@ -106,6 +106,20 @@ class LightGroup
     void LoadLightData(const std::string &fileName);
 
     /// <summary>
+    /// 全光源を JSON にまとめる（シーンファイルの "lights" に入る）。
+    /// { "directional": {...}, "points": [...], "spots": [...] } の形。
+    /// 毎フレーム積み直す動的ライト・GPU生成ライトは含めない
+    /// </summary>
+    /// <returns>nlohmann::json: 光源の状態</returns>
+    nlohmann::json ToJson() const;
+
+    /// <summary>
+    /// ToJson の結果で光源を置き換える（シーンファイルの読み込み用。Release でも使う）
+    /// </summary>
+    /// <param name="lights">ToJson で得た状態</param>
+    void FromJson(const nlohmann::json &lights);
+
+    /// <summary>
     /// 光源可視化フラグを設定
     /// </summary>
     void SetShowLightVisualization(bool show) { showLightVisualization_ = show; }
@@ -248,6 +262,11 @@ class LightGroup
     /// 読み込み直後など、名前が重複しうる状態を一意な名前へ整える
     /// </summary>
     void EnsureUniqueNames();
+
+    /// <summary>
+    /// 光源をまとめて置き換えた後の後始末（名前の一意化・選択の解除・ギズモと親子付けの登録し直し）
+    /// </summary>
+    void OnLightsReplaced();
 
     /// ===================================================
     /// ギズモ連携

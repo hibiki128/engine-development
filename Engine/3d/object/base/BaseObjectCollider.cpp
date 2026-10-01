@@ -167,7 +167,6 @@ MeshCollider *BaseObject::AddMeshCollider(const std::string &name) {
     return raw;
 }
 
-#ifdef USE_IMGUI
 nlohmann::json BaseObject::CaptureColliderState() const {
     nlohmann::json list = nlohmann::json::array();
     for (const auto &collider : colliders_) {
@@ -253,7 +252,6 @@ void BaseObject::RestoreColliderState(const nlohmann::json &state) {
         }
     }
 }
-#endif // USE_IMGUI
 
 void BaseObject::UpdatePhysics(float deltaTime) {
     if (!rigidBody_.enabled || deltaTime <= 0.0f || !transform_) {

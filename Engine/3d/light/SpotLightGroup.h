@@ -2,6 +2,7 @@
 #include "LightTypes.h"
 #include "d3d12.h"
 #include "wrl.h"
+#include <nlohmann/json_fwd.hpp>
 #include <string>
 #include <vector>
 
@@ -157,6 +158,18 @@ class SpotLightGroup
     /// </summary>
     /// <param name="handler">読み込み元</param>
     void Load(DataHandler *handler);
+
+    /// <summary>
+    /// 手で置いたライトを JSON 配列へ書き出す（シーンファイルの "lights.spots"）
+    /// </summary>
+    /// <returns>nlohmann::json: ライト1個を1要素とする配列</returns>
+    nlohmann::json ToJson() const;
+
+    /// <summary>
+    /// ToJson の配列でライトを置き換える。名前の一意化は呼び出し側で行うこと
+    /// </summary>
+    /// <param name="lights">ToJson で得た配列</param>
+    void FromJson(const nlohmann::json &lights);
 
   private:
     DirectXCommon *pDxCommon_ = nullptr;              // DirectX基盤

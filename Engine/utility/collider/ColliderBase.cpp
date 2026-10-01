@@ -105,7 +105,6 @@ void ColliderBase::LoadFromJson()
     LoadShapeFromJson(*dataHandler_);
 }
 
-#ifdef USE_IMGUI
 nlohmann::json ColliderBase::CaptureState() const
 {
     nlohmann::json state = nlohmann::json::object();
@@ -154,6 +153,7 @@ void ColliderBase::RestoreState(const nlohmann::json &state)
     ApplyShape(state);
 }
 
+#ifdef USE_IMGUI
 void ColliderBase::ImGuiTagSettings()
 {
     // タグ・マスクを無視して全コライダーと判定する（押し戻し検証用）

@@ -7,7 +7,8 @@ namespace Hagine {
 
 /// <summary>
 /// シーン上の全BaseObjectを一元管理するシングルトン
-/// 生成・削除・更新・描画、親子付け、シーン/オブジェクトの保存・読み込みを行う
+/// 生成・削除・更新・描画、親子付け、シーンファイル用の書き出し・作り直しを行う
+/// （ファイルの読み書きとダイアログは SceneSerializer）
 /// </summary>
 class BaseObjectManager
 {
@@ -98,16 +99,44 @@ class BaseObjectManager
     /// </summary>
     void UpdateImGui();
 
-    /// <summary>
-    /// 全オブジェクトを保存
-    /// </summary>
-    void SaveAll();
+    /// ===================================================
+    /// シーンファイル（保存・読み込みの入口は SceneSerializer）
+    /// ===================================================
 
     /// <summary>
-    /// 指定シーンの全オブジェクトを読み込み
+    /// このマネージャが所有しているオブジェクトか（エディタで置いた物・シーンファイルから作った物）。
+    /// RegisterExternal で登録された、ゲーム側がコードで作るオブジェクトは false
     /// </summary>
-    /// <param name="sceneName">シーン名</param>
-    void LoadAll(std::string sceneName);
+    bool IsOwned(const BaseObject *pObject) const;
+
+    /// <summary>
+    /// シーンファイルへ保存される物か。
+    /// 所有オブジェクトで「シーンに保存する」が付いていて、所有している祖先もすべて保存対象のときだけ true。
+    /// （親を保存しないなら子も保存しない。ゲーム側のオブジェクトの子に付けた物は、親の名前ごと保存する）
+    /// </summary>
+    bool IsSceneSaveTarget(BaseObject *pObject) const;
+
+    /// <summary>
+    /// 保存対象のオブジェクトを、親が子より先に来る順で JSON 配列にする。
+    /// 兄弟は名前順に並べるので、保存のたびに並びが変わらない
+    /// </summary>
+    /// <returns>nlohmann::json: BaseObject::Serialize の結果を並べた配列</returns>
+    nlohmann::json SerializeSceneObjects();
+
+    /// <summary>
+    /// 所有オブジェクトを全部消してから、SerializeSceneObjects の配列どおりに作り直す。
+    /// ゲーム側のオブジェクトには触れない。親がまだ居ない（ゲーム側が後で登録する）物は
+    /// ResolvePendingParents まで親子付けを待つ
+    /// </summary>
+    /// <param name="objects">SerializeSceneObjects の結果</param>
+    /// <returns>int: 作れたオブジェクトの数</returns>
+    int DeserializeSceneObjects(const nlohmann::json &objects);
+
+    /// <summary>
+    /// 読み込み時に親が見つからなかった親子付けを、今いるオブジェクトでもう一度試す。
+    /// シーンの Initialize でゲーム側のオブジェクトが登録された後に呼ぶ
+    /// </summary>
+    void ResolvePendingParents();
 
     /// <summary>
     /// 名前を指定してオブジェクトを取得
@@ -115,16 +144,6 @@ class BaseObjectManager
     /// <param name="name">オブジェクト名</param>
     /// <returns>BaseObject*: 該当オブジェクト（なければ nullptr）</returns>
     BaseObject *GetObjectByName(const std::string &name);
-
-    /// <summary>
-    /// シーン保存モーダルを開く
-    /// </summary>
-    void OpenSceneSaveModal();
-
-    /// <summary>
-    /// シーン読み込みモーダルを開く
-    /// </summary>
-    void OpenSceneLoadModal();
 
     /// <summary>
     /// モデルパスからオブジェクトを生成して追加する
@@ -251,25 +270,10 @@ class BaseObjectManager
     std::vector<std::string> GetSortedObjectNames() const;
 
     /// <summary>
-    /// 全オブジェクトの親子関係を保存
-    /// </summary>
-    void SaveAllParentChildRelationships();
-
-    /// <summary>
-    /// 全オブジェクトの親子関係を読み込み
-    /// </summary>
-    void LoadAllParentChildRelationships();
-
-    /// <summary>
     /// 名前を指定してオブジェクトを削除
     /// </summary>
     /// <param name="name">削除するオブジェクト名</param>
     void RemoveObject(const std::string &name);
-
-    /// <summary>
-    /// 保存対象オブジェクトの管理UIを表示
-    /// </summary>
-    void ShowSaveTargetManager();
 
     /// ===================================================
     /// 描画グループ関連
@@ -309,15 +313,19 @@ class BaseObjectManager
     /// <param name="pObject">対象オブジェクト</param>
     /// <returns>nlohmann::json: 状態JSON（pObject が null なら空）</returns>
     nlohmann::json CaptureObjectState(BaseObject *pObject) const;
+#endif // USE_IMGUI
 
     /// <summary>
     /// 状態JSONのモデル・プリミティブ情報からオブジェクトを作り、所有オブジェクトとして登録する。
-    /// トランスフォームなどの中身は ApplyObjectState で別に流し込む
+    /// トランスフォームなどの中身は ApplyObjectState / BaseObject::Deserialize で別に流し込む。
+    /// シーンの読み込みは Release でも行うので、これは USE_IMGUI では囲まない
     /// </summary>
     /// <param name="name">登録名（一意であること）</param>
-    /// <param name="state">CaptureObjectState の結果</param>
+    /// <param name="state">CaptureObjectState / BaseObject::Serialize の結果</param>
     /// <returns>BaseObject*: 作ったオブジェクト（作れなければ nullptr）</returns>
     BaseObject *CreateObjectFromState(const std::string &name, const nlohmann::json &state);
+
+#ifdef USE_IMGUI
 
     /// <summary>
     /// 状態JSONのトランスフォーム・フラグ・マテリアル・コライダーを既存オブジェクトへ流し込む。
@@ -393,16 +401,6 @@ class BaseObjectManager
     /// ===================================================
 
     /// <summary>
-    /// シーン保存モーダルを描画
-    /// </summary>
-    void DrawSceneSaveModel();
-
-    /// <summary>
-    /// シーン読み込みモーダルを描画
-    /// </summary>
-    void DrawSceneLoadModel();
-
-    /// <summary>
     /// オブジェクト生成モーダルを描画
     /// </summary>
     void DrawObjectCreationModel();
@@ -418,18 +416,6 @@ class BaseObjectManager
     /// <param name="startPath">読み込み開始パス</param>
     /// <param name="objectName">オブジェクト名</param>
     void LoadObjectFromJson(const std::string &startPath, const std::string &objectName);
-
-    /// <summary>
-    /// 保存対象リストにオブジェクトを追加
-    /// </summary>
-    /// <param name="objectName">オブジェクト名</param>
-    void AddToSaveTargets(const std::string &objectName);
-
-    /// <summary>
-    /// 保存対象リストからオブジェクトを除去
-    /// </summary>
-    /// <param name="objectName">オブジェクト名</param>
-    void RemoveFromSaveTargets(const std::string &objectName);
 
     /// <summary>
     /// 指定オブジェクトの親子関係を復元
@@ -465,19 +451,19 @@ class BaseObjectManager
     /// private variables
     /// ===================================================
 
-    // LoadAll/CreateObject が所有するオブジェクト
+    // シーンファイルの読み込み・エディタでの生成で作った、このマネージャが所有するオブジェクト
     std::unordered_map<std::string, std::unique_ptr<BaseObject>> ownedObjects_;
     // Draw/Update/GetObjectByName で使う統合ビュー（所有・外部両方）
     std::unordered_map<std::string, BaseObject *> objects_;
 
-    std::string sceneName_ = "TitleScene"; // 現在のシーン名
+    // 読み込み時に親が見つからなかった親子付け（子の名前 → 親の名前）。ResolvePendingParents で付ける
+    std::unordered_map<std::string, std::string> pendingParents_;
+
     std::string objectName_;               // 入力中のオブジェクト名
     std::string modelPath_;                // 入力中のモデルパス
     std::string texturePath_;              // 入力中のテクスチャパス
 
     // モーダルの状態を管理するフラグ
-    bool showSceneSaveModal_ = false;      // シーン保存モーダル表示フラグ
-    bool showSceneLoadModal_ = false;      // シーン読み込みモーダル表示フラグ
     bool showObjectCreationModal_ = false; // オブジェクト生成モーダル表示フラグ
     // 次の Update で複製するオブジェクト名（UI から予約される）
     std::vector<std::string> pendingDuplicates_{};

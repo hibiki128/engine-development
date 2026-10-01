@@ -24,6 +24,7 @@
 #include "object/base/BaseObject.h"
 #include "offscreen/OffScreen.h"
 #include "scene/SceneManager.h"
+#include "scene/SceneSerializer.h"
 #include <algorithm>
 #include <asset/AssetPath.h>
 #include <data/DataHandler.h>
@@ -598,13 +599,16 @@ void ImGuiManager::ShowMainMenu() {
         // ファイルメニュー
         if (ImGui::BeginMenu(ICON_FA_FILE " ファイル")) {
             // シーン管理セクション
-            if (ImGui::MenuItem(ICON_FA_DOWNLOAD " シーン保存", "Ctrl+Shift+S")) {
-                // BaseObjectManagerのシーン保存モーダルを開く
-                pBaseObjectManager_->OpenSceneSaveModal();
+            SceneSerializer *sceneSerializer = SceneSerializer::GetInstance();
+            const std::string saveLabel = std::format(ICON_FA_SAVE " シーンを保存（{}）", SceneSerializer::CurrentSceneName());
+            if (ImGui::MenuItem(saveLabel.c_str(), "Ctrl+S")) {
+                sceneSerializer->SaveCurrentScene();
             }
-            if (ImGui::MenuItem(ICON_FA_UPLOAD " シーン読み込み", "Ctrl+Shift+L")) {
-                // BaseObjectManagerのシーン読み込みモーダルを開く
-                pBaseObjectManager_->OpenSceneLoadModal();
+            if (ImGui::MenuItem(ICON_FA_DOWNLOAD " 名前を付けて保存...", "Ctrl+Shift+S")) {
+                sceneSerializer->OpenSaveDialog();
+            }
+            if (ImGui::MenuItem(ICON_FA_UPLOAD " シーンを読み込む...", "Ctrl+Shift+L")) {
+                sceneSerializer->OpenLoadDialog();
             }
             ImGui::Separator();
             if (ImGui::MenuItem(ICON_FA_DOOR_OPEN " 終了", "Alt+F4")) {
@@ -1634,6 +1638,8 @@ void ImGuiManager::ShowMainUI(OffScreen *pOffScreen) {
         assetBrowser_->PollFileChanges();
     }
     pBaseObjectManager_->UpdateImGui();
+    // シーンの保存・読み込みダイアログ（メニュー・ショートカット・コマンドパレットのどこから開いても出る）
+    SceneSerializer::GetInstance()->DrawImGui();
     pSpriteManager_->UpdateImGui();
     // 光源はライト設定ウィンドウを閉じていてもギズモで掴めるので、
     // 追跡はウィンドウの表示状態と切り離してここで回す
@@ -2023,7 +2029,13 @@ void ImGuiManager::ShowHelpWindow() {
 
                 ImGui::TableNextRow();
                 ImGui::TableSetColumnIndex(0);
-                ImGui::Text("  シーン保存");
+                ImGui::Text("  シーン保存（上書き）");
+                ImGui::TableSetColumnIndex(1);
+                ImGui::Text("Ctrl + S");
+
+                ImGui::TableNextRow();
+                ImGui::TableSetColumnIndex(0);
+                ImGui::Text("  名前を付けて保存");
                 ImGui::TableSetColumnIndex(1);
                 ImGui::Text("Ctrl + Shift + S");
 

@@ -53,15 +53,17 @@ class BaseObject {
     bool reflect_ = false;
     bool isPrimitive_ = false;
     bool isRainbow_ = false;
-    bool isScene_ = false;
     bool isAlive_ = true;
+    // モデル生成時に jsons/ObjectDatas/名前.json（オブジェクト単体の保存）を読むか。
+    // コードで作るゲーム側のオブジェクトはこれで調整値を引き継ぐ。
+    // エディタで置く物の中身はシーンファイルが持つので、BaseObjectManager が false にする
+    bool loadObjectDataFile_ = true;
 
     std::string objectName_{};
     std::string modelPath_{};
     std::vector<std::string> texturePaths_{};
     std::string texturePath_{};
     std::string normalMapPath_{}; // 法線マップ選択UIで選ばれた（適用前の）パス
-    std::string folderPath_ = "SceneData/Title/ObjectData";
 
     BaseObject *pParent_ = nullptr;
     std::list<BaseObject *> children_{};
@@ -169,11 +171,28 @@ class BaseObject {
     /// セーブロード
     /// ===================================================
 
-    // 派生クラスが独自データ（メタボールの要素リストなど）を足せるよう virtual にしてある。
-    // override する側は基底の実装を必ず呼ぶこと
-    virtual void SceneSaveToJson();
+    /// <summary>
+    /// シーンファイルへ書く、このオブジェクト1体ぶんの状態（トランスフォーム・見た目・
+    /// マテリアル・物理・コライダー・IK など）を JSON にまとめる。
+    /// 作り直しに使うキー（modelPath / isPrimitive / primitiveType）は
+    /// BaseObjectManager::CreateObjectFromState と同じなので、そのまま渡せる。
+    /// 派生クラスが独自データ（メタボールの要素リストなど）を足すときは基底を呼んでから足すこと
+    /// </summary>
+    /// <returns>nlohmann::json: 1体ぶんの状態</returns>
+    virtual nlohmann::json Serialize() const;
+
+    /// <summary>
+    /// Serialize の結果をこのオブジェクトへ戻す。モデルは作り済みであること
+    /// （マテリアルやメッシュコライダーがモデルを前提にするため）。
+    /// 親子付け（"parent"）は相手が揃ってから呼び出し側が行うので、ここでは扱わない。
+    /// 書いていないキーは今の値のまま残る
+    /// </summary>
+    /// <param name="state">Serialize で得た状態</param>
+    virtual void Deserialize(const nlohmann::json &state);
+
+    // オブジェクト単体の保存（jsons/ObjectDatas/名前.json）。コードで作るオブジェクトの調整値用。
+    // 派生クラスが独自データを足せるよう virtual にしてある。override する側は基底を必ず呼ぶこと
     virtual void SaveToJson();
-    virtual void LoadFromJson();
     void LoadFromJson(std::string folderPath, std::string jsonName);
     /// <summary>
     /// 全コライダーを jsons/Collider/ 以下へ保存する。
@@ -186,9 +205,8 @@ class BaseObject {
     /// </summary>
     void LoadColliders();
 
-#ifdef USE_IMGUI
     /// <summary>
-    /// Undo と Play モードのスナップショット用に、持っているコライダーを JSON 配列へ写す。
+    /// 持っているコライダーを JSON 配列へ写す（Undo・Play モード・シーンファイル共通）。
     /// SaveColliders と違いディスクへは書かない（毎フレーム呼ばれるため）
     /// </summary>
     /// <returns>nlohmann::json: コライダー1個を1要素とする配列</returns>
@@ -200,7 +218,6 @@ class BaseObject {
     /// </summary>
     /// <param name="state">戻す状態</param>
     void RestoreColliderState(const nlohmann::json &state);
-#endif // USE_IMGUI
 
     /// <summary>
     /// コライダーの既定名を作る（&lt;オブジェクト名&gt;_&lt;種別&gt;Collider_&lt;連番&gt;）。
@@ -238,13 +255,13 @@ class BaseObject {
     void DebugCollider();
     void SaveParentChildRelationship();
     void LoadParentChildRelationship();
-    void SetFolderPath(const std::string &folderPath) { folderPath_ = folderPath; }
 
     /// ===================================================
     /// getter
     /// ===================================================
     const WorldTransform &GetTransform() { return *transform_; }
     std::string &GetName() { return objectName_; }
+    const std::string &GetName() const { return objectName_; }
     std::string &GetModelPath() { return modelPath_; }
     bool &GetIsModelDraw() { return isModelDraw_; }
     // 範囲外を引かれても落ちないよう、足りなければ伸ばしてから返す
@@ -327,7 +344,11 @@ class BaseObject {
     }
     void SetShouldSave(bool shouldSave) { shouldSave_ = shouldSave; }
     void SetPrimitive(bool isPrimitive) { isPrimitive_ = isPrimitive; }
-    void SetIsScene(bool isScene) { isScene_ = isScene; }
+    /// <summary>
+    /// モデル生成時にオブジェクト単体の保存（jsons/ObjectDatas/名前.json）を読むか。
+    /// CreateModel / CreatePrimitiveModel より前に設定すること
+    /// </summary>
+    void SetLoadObjectDataFile(bool load) { loadObjectDataFile_ = load; }
     void SetGizmoSelectable(bool selectable) { isGizmoSelectable_ = selectable; }
     void SetIsAlive(bool flag) { isAlive_ = flag; }
     void SetIsModelDraw(bool isModelDraw) { isModelDraw_ = isModelDraw; }

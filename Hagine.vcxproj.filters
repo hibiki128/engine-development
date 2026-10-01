@@ -816,6 +816,9 @@
     <ClCompile Include="Engine\utility\scene\SceneManager.cpp">
       <Filter>Engine\utility\scene</Filter>
     </ClCompile>
+    <ClCompile Include="Engine\utility\scene\SceneSerializer.cpp">
+      <Filter>Engine\utility\scene</Filter>
+    </ClCompile>
     <ClCompile Include="Engine\utility\scene\SceneTransition.cpp">
       <Filter>Engine\utility\scene</Filter>
     </ClCompile>
@@ -1369,6 +1372,9 @@
       <Filter>Engine\utility\scene</Filter>
     </ClInclude>
     <ClInclude Include="Engine\utility\scene\SceneRegistry.h">
+      <Filter>Engine\utility\scene</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\utility\scene\SceneSerializer.h">
       <Filter>Engine\utility\scene</Filter>
     </ClInclude>
     <ClInclude Include="Engine\utility\scene\SceneTransition.h">

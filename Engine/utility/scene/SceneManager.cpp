@@ -1,4 +1,5 @@
 #include "SceneManager.h"
+#include "SceneSerializer.h"
 #include <DirectXCommon.h>
 #include <SpriteManager.h>
 #include <camera/CameraManager.h>
@@ -195,10 +196,21 @@ void SceneManager::SceneChange() {
         scene_ = std::move(nextScene_);
 
         scene_->SetSceneManager(this);
-        scene_->Initialize();
+        InitializeSceneWithSavedLayout();
         pTransition_->SetFadeOutStart(true);
         ImGuiNotification::Post("シーンを切り替えました: " + currentSceneName_, {0.4f, 0.8f, 1.0f, 1.0f});
     }
+}
+
+void SceneManager::InitializeSceneWithSavedLayout() {
+    // 保存済みの配置（jsons/Scenes/シーン名.json）があれば、シーンの Initialize より先に読み込む。
+    // こうしておくと、シーンの Initialize の中から GetObjectByName で配置物を引ける
+    SceneSerializer::GetInstance()->LoadIfExists(currentSceneName_);
+
+    scene_->Initialize();
+
+    // ゲーム側のオブジェクト（Initialize で登録される）の子として保存されていた物を、ここで付け直す
+    BaseObjectManager::GetInstance()->ResolvePendingParents();
 }
 
 #ifdef USE_IMGUI
@@ -266,7 +278,7 @@ void SceneManager::RebuildCurrentScene() {
     scene_->SetDrawSystem(pDrawSystem_);
     scene_->SetWinApp(pWinApp_);
     scene_->SetSceneManager(this);
-    scene_->Initialize();
+    InitializeSceneWithSavedLayout();
 
     // 控えておいた視点を新しいデバッグカメラへ移す。
     // 有効化の実際の切り替え（アクティブカメラの差し替え）は DebugCamera::Update が行う。

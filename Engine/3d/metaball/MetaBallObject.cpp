@@ -215,18 +215,94 @@ void MetaBallObject::SaveToJson()
     SaveMetaBallToJson();
 }
 
-void MetaBallObject::SceneSaveToJson()
+nlohmann::json MetaBallObject::Serialize() const
 {
-    BaseObject::SceneSaveToJson();
-    modelPath_ = kMetaBallModelTag;
-    objectData_->Save<std::string>("modelName", modelPath_);
-    SaveMetaBallToJson();
+    nlohmann::json state = BaseObject::Serialize();
+    // 動的モデルにはファイルパスが無いので、読み込み側が種類を判別できるよう目印を入れる
+    state["modelPath"] = kMetaBallModelTag;
+    state["isPrimitive"] = false;
+
+    nlohmann::json &metaBall = state["metaBall"];
+    metaBall["group"] = groupName_;
+
+    nlohmann::json elements = nlohmann::json::array();
+    for (const MetaBallElement &e : elements_)
+    {
+        nlohmann::json element;
+        element["position"] = e.position;
+        element["shape"] = static_cast<int>(e.shape);
+        element["radius"] = e.radius;
+        element["stiffness"] = e.stiffness;
+        element["negative"] = e.negative;
+        element["axis"] = e.axis;
+        element["enabled"] = e.enabled;
+        element["radiusScale"] = e.radiusScale;
+        elements.push_back(std::move(element));
+    }
+    metaBall["elements"] = std::move(elements);
+
+    // グループ設定はメンバー全員で共有するが、シーンファイルが1つで完結するよう各メンバーに持たせる。
+    // 同じグループのメンバーは同じ値を持つので、読み込みでどれが最後に効いても結果は変わらない
+    const MetaBallGroupSettings &settings = MetaBallGroupManager::GetInstance()->GetSettings(groupName_);
+    nlohmann::json &group = metaBall["groupSettings"];
+    group["voxelSize"] = settings.voxelSize;
+    group["threshold"] = settings.threshold;
+    group["uvScale"] = settings.uvScale;
+    group["texturePath"] = settings.texturePath;
+    group["color"] = settings.color;
+    group["blendMode"] = static_cast<int>(settings.blendMode);
+    group["lighting"] = settings.lighting;
+    group["enabled"] = settings.enabled;
+    return state;
 }
 
-void MetaBallObject::LoadFromJson()
+void MetaBallObject::Deserialize(const nlohmann::json &state)
 {
-    BaseObject::LoadFromJson();
-    LoadMetaBallFromJson();
+    BaseObject::Deserialize(state);
+
+    const auto metaBall = state.find("metaBall");
+    if (metaBall == state.end() || !metaBall->is_object())
+    {
+        return;
+    }
+
+    SetGroupName(metaBall->value("group", groupName_));
+
+    if (const auto group = metaBall->find("groupSettings"); group != metaBall->end() && group->is_object())
+    {
+        MetaBallGroupManager *manager = MetaBallGroupManager::GetInstance();
+        MetaBallGroupSettings &settings = manager->GetSettings(groupName_);
+        settings.voxelSize = group->value("voxelSize", settings.voxelSize);
+        settings.threshold = group->value("threshold", settings.threshold);
+        settings.uvScale = group->value("uvScale", settings.uvScale);
+        settings.texturePath = group->value("texturePath", settings.texturePath);
+        settings.color = group->value("color", settings.color);
+        settings.blendMode = static_cast<BlendMode>(group->value("blendMode", static_cast<int>(settings.blendMode)));
+        settings.lighting = group->value("lighting", settings.lighting);
+        settings.enabled = group->value("enabled", settings.enabled);
+        manager->ApplyMaterial(groupName_);
+        manager->MarkDirty(groupName_);
+    }
+
+    if (const auto elements = metaBall->find("elements"); elements != metaBall->end() && elements->is_array())
+    {
+        elements_.clear();
+        elements_.reserve(elements->size());
+        for (const nlohmann::json &element : *elements)
+        {
+            MetaBallElement e{};
+            e.position = element.value("position", Vector3{0.0f, 0.0f, 0.0f});
+            e.shape = static_cast<MetaBallShape>(element.value("shape", 0));
+            e.radius = element.value("radius", 1.0f);
+            e.stiffness = element.value("stiffness", 1.0f);
+            e.negative = element.value("negative", false);
+            e.axis = element.value("axis", Vector3{0.0f, 0.0f, 0.0f});
+            e.enabled = element.value("enabled", true);
+            e.radiusScale = element.value("radiusScale", Vector3{1.0f, 1.0f, 1.0f});
+            elements_.push_back(e);
+        }
+        selectedElement_ = 0;
+    }
 }
 
 void MetaBallObject::SaveMetaBallToJson()

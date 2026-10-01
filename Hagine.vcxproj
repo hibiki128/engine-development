@@ -353,6 +353,7 @@
     <ClCompile Include="Engine\utility\graphics\pipeline\ComputeEffectPipeline.cpp" />
     <ClCompile Include="Engine\utility\graphics\srv\SrvManager.cpp" />
     <ClCompile Include="Engine\utility\scene\SceneManager.cpp" />
+    <ClCompile Include="Engine\utility\scene\SceneSerializer.cpp" />
     <ClCompile Include="Engine\utility\string\StringUtility.cpp" />
     <ClCompile Include="Engine\utility\graphics\texture\TextureManager.cpp" />
     <ClCompile Include="Engine\utility\scene\SceneTransition.cpp" />
@@ -643,6 +644,7 @@
     <ClInclude Include="Engine\utility\graphics\srv\SrvManager.h" />
     <ClInclude Include="Engine\utility\scene\SceneManager.h" />
     <ClInclude Include="Engine\utility\scene\SceneRegistry.h" />
+    <ClInclude Include="Engine\utility\scene\SceneSerializer.h" />
     <ClInclude Include="Engine\utility\string\StringUtility.h" />
     <ClInclude Include="Engine\utility\graphics\texture\TextureManager.h" />
     <ClInclude Include="Engine\utility\scene\SceneTransition.h" />

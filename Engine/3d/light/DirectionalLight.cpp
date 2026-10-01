@@ -151,7 +151,6 @@ void DirectionalLight::Load(DataHandler *handler)
     pData_->intensity = handler->Load<float>("directional_intensity", 1.0f);
 }
 
-#ifdef USE_IMGUI
 nlohmann::json DirectionalLight::CaptureState() const
 {
     nlohmann::json state = nlohmann::json::object();
@@ -191,5 +190,4 @@ void DirectionalLight::RestoreState(const nlohmann::json &state)
     pData_->HalfLambert = state.value("halfLambert", pData_->HalfLambert);
     pData_->BlinnPhong = state.value("blinnPhong", pData_->BlinnPhong);
 }
-#endif // USE_IMGUI
 } // namespace Hagine

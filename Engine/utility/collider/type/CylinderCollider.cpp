@@ -29,7 +29,6 @@ void CylinderCollider::LoadShapeFromJson(DataHandler &json)
     inward_ = json.Load<bool>("inward", inward_);
 }
 
-#ifdef USE_IMGUI
 void CylinderCollider::CaptureShape(nlohmann::json &shape) const
 {
     shape["radius"] = radius_;
@@ -52,5 +51,4 @@ void CylinderCollider::ApplyShape(const nlohmann::json &shape)
         inward_ = shape["inward"].get<bool>();
     }
 }
-#endif // USE_IMGUI
 } // namespace Hagine

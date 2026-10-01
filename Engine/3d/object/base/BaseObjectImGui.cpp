@@ -9,7 +9,9 @@
 #include "model/material/Material.h"
 #include "object/Object3dInstancing.h"
 #include "scene/SceneManager.h"
+#include "scene/SceneSerializer.h"
 #include "utility/debug/imgui/DebugUIHelper.h"
+#include <icon/IconsFontAwesome5.h>
 #include "utility/debug/imgui/ImGuiNotification.h"
 #ifdef USE_IMGUI
 #include "utility/debug/imgui/AssetDragDrop.h"
@@ -60,15 +62,32 @@ void BaseObject::DrawImGui() {
         ImGui::PopStyleColor();
 
         // ---- 保存バー（常に最下部に固定）----
-        if (ConfirmButton("この設定を全て保存##objsave")) {
-            // SaveToJson の中で全コライダーも jsons/Collider/ へ保存される
-            SaveToJson();
-            AnimaSaveToJson();
+        BaseObjectManager *manager = BaseObjectManager::GetInstance();
+        if (manager->IsOwned(this)) {
+            // エディタで置いた物の中身はシーンファイルが持つ。保存はシーン単位で行う
+            ImGui::Checkbox("シーンに保存する##objSceneSave", &shouldSave_);
+            ImGui::SetItemTooltip("外すと、この物と子はシーンファイルに書かれません（今の画面からは消えません）");
+            if (shouldSave_ && !manager->IsSceneSaveTarget(this)) {
+                ImGui::SameLine();
+                ImGui::TextColored(DebugTheme::kAccentOrange, "親が保存しない設定なので書かれません");
+            }
+            if (ConfirmButton(ICON_FA_SAVE " シーンを保存##objsave")) {
+                SceneSerializer::GetInstance()->SaveCurrentScene();
+            }
+            ImGui::SetItemTooltip("今のシーンのファイルへ、置いてある物をまとめて保存する（Ctrl+S）");
+        } else {
+            // ゲーム側がコードで作る物は、オブジェクト単体の保存（jsons/ObjectDatas/）で調整値を持つ
+            if (ConfirmButton("この設定を全て保存##objsave")) {
+                // SaveToJson の中で全コライダーも jsons/Collider/ へ保存される
+                SaveToJson();
+                AnimaSaveToJson();
 
-            ImGuiNotification::Post(std::format("「{}」をセーブしました", objectName_),
-                                    {0.45f, 0.68f, 0.52f, 1.0f});
+                ImGuiNotification::Post(std::format("「{}」をセーブしました", objectName_),
+                                        {0.45f, 0.68f, 0.52f, 1.0f});
+            }
+            ImGui::SetItemTooltip("ゲーム側で作る物なので、シーンではなく jsons/ObjectDatas/ へ保存する\n"
+                                  "（オブジェクト設定・アニメ・全コライダーをまとめて保存）");
         }
-        ImGui::SetItemTooltip("オブジェクト設定・アニメ・全コライダーをまとめて保存する");
 
         ImGui::EndTabItem();
     }

@@ -1,4 +1,5 @@
 #pragma once
+#include <nlohmann/json_fwd.hpp>
 #include <string>
 #include <type/Quaternion.h>
 #include <type/Vector3.h>
@@ -7,7 +8,6 @@
 
 namespace Hagine {
 class WorldTransform;
-class DataHandler;
 
 /// <summary>
 /// 親子付けできる対象の種類。UIのアイコン代わりの分類と、まとめて登録解除するのに使う。
@@ -182,18 +182,17 @@ class AttachmentManager
     void DrawImGui();
 
     /// <summary>
-    /// リンクをJSONへ保存する
+    /// 全リンクをJSON配列へ書き出す（シーンファイルの "attachments" に入る）。
+    /// 子の名前順に並べるので、保存のたびに並びが変わらない
     /// </summary>
-    /// <param name="folderPath">jsons ルートからのフォルダパス</param>
-    /// <param name="fileName">ファイル名</param>
-    void Save(const std::string &folderPath, const std::string &fileName) const;
+    /// <returns>nlohmann::json: リンク1件を1要素とする配列</returns>
+    nlohmann::json ToJson() const;
 
     /// <summary>
-    /// リンクをJSONから読み込む（既存のリンクは置き換える）
+    /// ToJson の結果からリンクを作り直す（既存のリンクは置き換える）
     /// </summary>
-    /// <param name="folderPath">jsons ルートからのフォルダパス</param>
-    /// <param name="fileName">ファイル名</param>
-    void Load(const std::string &folderPath, const std::string &fileName);
+    /// <param name="links">ToJson で得た配列</param>
+    void FromJson(const nlohmann::json &links);
 
     /// <summary>
     /// 全リンクを破棄する（シーン切り替え時など）
