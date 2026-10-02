@@ -422,7 +422,7 @@ void Framework::RegisterShortcutKey() {
         SceneSerializer::GetInstance()->SaveCurrentScene();
     });
     // 名前を付けて保存（保存する物の確認もここで行う）
-    shortcutManager_->RegisterShortcut("SceneSaveAs", {DIK_LCONTROL, DIK_LSHIFT, DIK_S}, []() {
+    shortcutManager_->RegisterShortcut("SceneSaveAs", {DIK_LCONTROL, DIK_LSHIFT, DIK_F}, []() {
         SceneSerializer::GetInstance()->OpenSaveDialog();
     });
     // シーン読み込み
