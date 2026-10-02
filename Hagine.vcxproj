@@ -387,6 +387,7 @@
     <ClCompile Include="Engine\2d\text\TextRenderer.cpp" />
     <ClCompile Include="Engine\2d\ui\UIAnimator.cpp" />
     <ClCompile Include="Engine\2d\ui\UIAnimatorTimeline.cpp" />
+    <ClCompile Include="Engine\3d\line\DrawLine3D.cpp" />
   </ItemGroup>
   <ItemGroup>
     <None Include=".editorconfig" />
@@ -475,6 +476,40 @@
     <None Include="Engine\EngineAssets\shaders\Particle\CSParticle\UpdateParticle.CS.hlsl" />
     <None Include="Engine\EngineAssets\shaders\Particle\CSParticle\UpdateParticleLite.CS.hlsl" />
     <None Include="Engine\EngineAssets\shaders\Shadow\ShadowMap.VS.hlsl" />
+    <None Include="Engine\EngineAssets\shaders\Deferred\Ssao.CS.hlsl" />
+    <None Include="Engine\EngineAssets\shaders\Deferred\SsaoBlur.CS.hlsl" />
+    <None Include="Engine\EngineAssets\shaders\MetaBall\MetaBall.hlsli" />
+    <None Include="Engine\EngineAssets\shaders\MetaBall\MetaBallClear.CS.hlsl" />
+    <None Include="Engine\EngineAssets\shaders\MetaBall\MetaBallDensity.CS.hlsl" />
+    <None Include="Engine\EngineAssets\shaders\MetaBall\MetaBallMarch.CS.hlsl" />
+    <None Include="Engine\EngineAssets\shaders\Object\Object3dInstanced.VS.hlsl" />
+    <None Include="Engine\EngineAssets\shaders\Object\Toon.hlsli" />
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Bloom.CS.hlsl" />
+    <None Include="Engine\EngineAssets\shaders\OffScreen\BloomComposite.CS.hlsl" />
+    <None Include="Engine\EngineAssets\shaders\OffScreen\BloomDistortion.CS.hlsl" />
+    <None Include="Engine\EngineAssets\shaders\OffScreen\BloomDownsample.CS.hlsl" />
+    <None Include="Engine\EngineAssets\shaders\OffScreen\BloomPrefilter.CS.hlsl" />
+    <None Include="Engine\EngineAssets\shaders\OffScreen\BloomUpsample.CS.hlsl" />
+    <None Include="Engine\EngineAssets\shaders\OffScreen\ChromaticAberration.PS.hlsl" />
+    <None Include="Engine\EngineAssets\shaders\OffScreen\ColorGrading.PS.hlsl" />
+    <None Include="Engine\EngineAssets\shaders\OffScreen\DepthOfField.CS.hlsl" />
+    <None Include="Engine\EngineAssets\shaders\OffScreen\DepthOutline.CS.hlsl" />
+    <None Include="Engine\EngineAssets\shaders\OffScreen\FilmGrain.PS.hlsl" />
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Fxaa.PS.hlsl" />
+    <None Include="Engine\EngineAssets\shaders\OffScreen\GaussianBlur.CS.hlsl" />
+    <None Include="Engine\EngineAssets\shaders\OffScreen\HeightFog.CS.hlsl" />
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Impact.PS.hlsl" />
+    <None Include="Engine\EngineAssets\shaders\OffScreen\LensDistortion.PS.hlsl" />
+    <None Include="Engine\EngineAssets\shaders\OffScreen\LightShafts.CS.hlsl" />
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Monochrome.PS.hlsl" />
+    <None Include="Engine\EngineAssets\shaders\OffScreen\RtReflection.CS.hlsl" />
+    <None Include="Engine\EngineAssets\shaders\OffScreen\SceneViewToneMap.CS.hlsl" />
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Ssr.CS.hlsl" />
+    <None Include="Engine\EngineAssets\shaders\OffScreen\ToneMap.PS.hlsl" />
+    <None Include="Engine\EngineAssets\shaders\Raytracing\RtAo.CS.hlsl" />
+    <None Include="Engine\EngineAssets\shaders\Raytracing\RtShadow.CS.hlsl" />
+    <None Include="Engine\EngineAssets\shaders\Shadow\ShadowMapInstanced.VS.hlsl" />
+    <None Include="Engine\EngineAssets\shaders\Shadow\ShadowSample.hlsli" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Engine\utility\debug\param\GameParamHub.h" />
@@ -678,6 +713,9 @@
     <ClInclude Include="Engine\2d\ui\UIAnimator.h" />
     <ClInclude Include="Engine\3d\shadow\ShadowMap.h" />
     <ClInclude Include="Engine\render\DrawGroupManager.h" />
+    <ClInclude Include="Engine\3d\line\DrawLine3D.h" />
+    <ClInclude Include="Engine\utility\edit\play\PlayModeManager.h" />
+    <ClInclude Include="Engine\utility\graphics\pipeline\ComputeEffectPipeline.h" />
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="Engine\EngineAssets\shaders\offscreen\Bloom.PS.hlsl">
@@ -863,6 +901,7 @@
     <Font Include="Engine\EngineAssets\fonts\fa-solid-900.ttf" />
     <Font Include="Engine\EngineAssets\fonts\NotoSansJP-Medium.ttf" />
     <Font Include="Engine\EngineAssets\fonts\PixelMplus12-Regular.ttf" />
+    <Font Include="Engine\EngineAssets\fonts\Buildingsandundertherailwaytracksfree_ver.otf" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
