@@ -309,6 +309,9 @@
     <ClCompile Include="Engine\2d\SpriteManager.cpp">
       <Filter>Engine\2d</Filter>
     </ClCompile>
+    <ClCompile Include="Engine\2d\SpriteManagerImGui.cpp">
+      <Filter>Engine\2d</Filter>
+    </ClCompile>
     <ClCompile Include="Engine\2d\text\TextRenderer.cpp">
       <Filter>Engine\2d\text</Filter>
     </ClCompile>

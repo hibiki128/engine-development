@@ -735,11 +735,12 @@ void ImGuiManager::ShowMainMenu() {
                     pSpriteManager_->ShowSpriteCreationModal();
                 }
                 if (ImGui::MenuItem(ICON_FA_FONT " 文字スプライト作成")) {
-                    // 文字スプライトの作成UIはスプライトマネージャ窓内に表示される
+                    // 文字スプライトの作成UIはスプライトマネージャ窓の「文字から作る」タブにある
                     showSpriteManagerView_ = true;
+                    focusTextSpriteTab_ = true;
                 }
                 if (ImGui::IsItemHovered())
-                    ImGui::SetTooltip("スプライトマネージャ窓を開きます（そこで文字→画像を生成）");
+                    ImGui::SetTooltip("スプライトマネージャ窓の「文字から作る」タブを開きます");
                 ImGui::EndMenu();
             }
 
@@ -1211,11 +1212,23 @@ void ImGuiManager::ShowSpriteManagerWindow() {
 
     ImGui::Begin("スプライトマネージャ", &showSpriteManagerView_, flags);
 
-    pSpriteManager_->DrawSpriteManager();
+    // 文字からスプライトを作るツールは同じ窓のタブにまとめる。
+    // 以前は別窓（テキストレンダラー）がこの窓とぴったり重なって開き、どちらが手前かで迷っていた
+    if (ImGui::BeginTabBar("##spriteManagerTabs")) {
+        if (ImGui::BeginTabItem(ICON_FA_IMAGE " 画像のスプライト")) {
+            pSpriteManager_->DrawSpriteManager();
+            ImGui::EndTabItem();
+        }
+        const ImGuiTabItemFlags textTabFlags = focusTextSpriteTab_ ? ImGuiTabItemFlags_SetSelected : ImGuiTabItemFlags_None;
+        focusTextSpriteTab_ = false;
+        if (ImGui::BeginTabItem(ICON_FA_FONT " 文字から作る", nullptr, textTabFlags)) {
+            TextRenderer::GetInstance()->DrawImGuiContents();
+            ImGui::EndTabItem();
+        }
+        ImGui::EndTabBar();
+    }
 
     ImGui::End();
-
-    TextRenderer::GetInstance()->UpdateImGui();
 }
 
 void ImGuiManager::ShowUIEditorWindow() {
@@ -1521,6 +1534,17 @@ void ImGuiManager::ShowSceneWindow(OffScreen *offScreen, const std::string &scen
         std::string droppedPrefab;
         if (AssetDragDrop::PrefabTarget(droppedPrefab)) {
             pImGuizmoManager_->PlacePrefab(droppedPrefab, pImGuizmoManager_->GetSpawnPositionUnderCursor());
+        }
+        // 画像はスプライトとして、落とした点を中心に置く。
+        // シーンの絵は画面全体（仮想解像度）をそのまま縮めて映しているので、比で座標を戻せる
+        std::string droppedTexture;
+        if (AssetDragDrop::TextureTarget(droppedTexture)) {
+            const ImVec2 imageMin = ImGui::GetItemRectMin();
+            const ImVec2 mouse = ImGui::GetIO().MousePos;
+            const Vector2 position = {
+                (mouse.x - imageMin.x) / sceneTextureSize_.x * static_cast<float>(WinApp::GetVirtualWidth()),
+                (mouse.y - imageMin.y) / sceneTextureSize_.y * static_cast<float>(WinApp::GetVirtualHeight())};
+            pSpriteManager_->PlaceSpriteFromEditor(droppedTexture, position);
         }
     }
 

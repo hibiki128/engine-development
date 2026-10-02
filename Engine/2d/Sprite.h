@@ -101,6 +101,11 @@ class Sprite
     /// </summary>
     void SetUseExternalTransforms(bool use) { useExternalTransforms_ = use; }
 
+    /// <summary>
+    /// 表示サイズを画像の原寸に戻す（テクスチャを差し替えた後にも使う）
+    /// </summary>
+    void ResetSizeToTexture() { AdjustTextureSize(); }
+
   private:
     /// ===================================================
     /// private method

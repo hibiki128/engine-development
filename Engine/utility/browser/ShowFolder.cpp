@@ -37,6 +37,11 @@ void ShowTextureFile(std::string &selectedTexturePath, const char *uiId) {
 
     BrowserState &state = states[uiId];
     if (!state.initialized) {
+        // アプリ側の images がまだ無いプロジェクトでは、最初からエンジン側を開く（空の一覧とエラーで迎えない）
+        std::error_code existsError;
+        if (!fs::is_directory(kRootsTex[state.rootSel], existsError)) {
+            state.rootSel = 0;
+        }
         state.currentDir = kRootsTex[state.rootSel];
         state.initialized = true;
     }
@@ -105,20 +110,29 @@ void ShowTextureFile(std::string &selectedTexturePath, const char *uiId) {
     }
 
     std::vector<std::string> folders, files;
-    try {
-        for (const auto &e : fs::directory_iterator(currentDirTex)) {
-            if (e.is_directory()) {
-                folders.push_back(e.path().filename().string());
-            } else {
-                auto ext = e.path().extension();
-                if (ext == ".png" || ext == ".jpg")
-                    files.push_back(e.path().filename().string());
+    std::error_code folderError;
+    if (!fs::is_directory(currentDirTex, folderError)) {
+        // 例外の英文をそのまま見せても何をすればいいか分からないので、置き場所を案内する
+        ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kAccentOrange);
+        ImGui::TextWrapped("画像のフォルダがまだありません: %s", currentDirTex.string().c_str());
+        ImGui::PopStyleColor();
+        ImGui::TextDisabled("ここへ png / jpg を置くか、上で Engine(debug) を選んでください");
+    } else {
+        try {
+            for (const auto &e : fs::directory_iterator(currentDirTex)) {
+                if (e.is_directory()) {
+                    folders.push_back(e.path().filename().string());
+                } else {
+                    auto ext = e.path().extension();
+                    if (ext == ".png" || ext == ".jpg")
+                        files.push_back(e.path().filename().string());
+                }
             }
+            std::sort(folders.begin(), folders.end());
+            std::sort(files.begin(), files.end());
+        } catch (std::exception &ex) {
+            ImGui::TextColored({1.0f, 0.3f, 0.3f, 1.0f}, "Error: %s", ex.what());
         }
-        std::sort(folders.begin(), folders.end());
-        std::sort(files.begin(), files.end());
-    } catch (std::exception &ex) {
-        ImGui::TextColored({1.0f, 0.3f, 0.3f, 1.0f}, "Error: %s", ex.what());
     }
 
     // 高さ固定の BeginChild → 他の Header が開いていても潰れない

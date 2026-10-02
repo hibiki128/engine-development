@@ -1,5 +1,6 @@
 #pragma once
 #include "Easing.h"
+#include <nlohmann/json.hpp>
 #include <string>
 #include <type/Vector2.h>
 #include <vector>
@@ -70,6 +71,12 @@ struct UIGroupMember
 {
     std::string spriteName;         // メンバースプライト名
     Vector2 offset = {0.0f, 0.0f};  // グループ原点からの相対位置（ピクセル）
+
+    // ---- 実行時状態（保存しない） ----
+    // 前のフレームにグループが書き込んだ位置。今の位置がこれと違えば
+    // 「ギズモなどで外から動かされた」と分かるので、相対位置を取り直す
+    Vector2 lastApplied_ = {0.0f, 0.0f};
+    bool hasApplied_ = false;
 };
 
 /// <summary>
@@ -166,6 +173,9 @@ class UIAnimator
     /// 全グループの相対位置をメンバースプライトへ反映する
     void ApplyGroups();
 
+    /// グループとクリップを保存形式の JSON にまとめる（{ "groups": [...], "clips": [...] }）
+    nlohmann::json ToJson() const;
+
   private:
     std::vector<UIGroup> groups_; // 登録済みグループ
     std::vector<UIClip> clips_;   // 登録済みクリップ
@@ -174,7 +184,23 @@ class UIAnimator
 #ifdef USE_IMGUI
     int selectedGroup_ = -1;      // エディタで選択中のグループindex
     int selectedClip_ = -1;       // エディタで選択中のクリップindex
-    char newNameBuffer_[128] = {}; // 新規作成・リネーム用の入力バッファ
+    std::string newGroupName_;    // 新しく作るグループの名前
+    std::string newClipName_;     // 新しく作るクリップの名前
+    std::string addMemberTarget_; // メンバーに足すスプライト
+    nlohmann::json savedState_;   // 最後に保存・読み込みした内容（未保存の変更があるかを見る）
+    int deleteGroupRequest_ = -1; // 削除の確認を出しているグループ
+    int deleteClipRequest_ = -1;  // 削除の確認を出しているクリップ
+
+    /// 「グループ」タブ
+    void DrawGroupTab();
+    /// 「クリップ」タブ
+    void DrawClipTab();
+    /// 選んだグループの中身（原点・メンバー）
+    void DrawGroupDetail(UIGroup &group);
+    /// 1本のトゥイーンの設定欄
+    void DrawTweenEditor(UITween &tween);
+    /// 新しいトゥイーンの対象の候補（シーンで選んでいるスプライト → 直前のトゥイーンの対象）
+    std::string SuggestTweenTarget(const UIClip &clip) const;
 
     // ---- タイムライン・プレビュー（UIAnimatorTimeline.cpp）----
     /// <summary>プレビューする前の値（「プレビュー前に戻す」で書き戻す）</summary>

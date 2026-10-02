@@ -88,9 +88,14 @@ class TextRenderer
         Vector4 outlineColor = {0.0f, 0.0f, 0.0f, 1.0f});
 
     /// <summary>
-    /// テキストスプライト作成UIを描画する（ImGui）
+    /// テキストスプライト作成UIを、専用の窓として描画する（ImGui）
     /// </summary>
     void UpdateImGui();
+
+    /// <summary>
+    /// テキストスプライト作成UIの中身だけを描く（窓は呼び出し側が用意する。スプライトマネージャのタブで使う）
+    /// </summary>
+    void DrawImGuiContents();
 
   private:
     /// <summary>

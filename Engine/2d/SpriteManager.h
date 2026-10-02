@@ -179,6 +179,33 @@ class SpriteManager
     void LoadAllSprites();
     void Clear();
 
+    /// <summary>
+    /// 所有スプライト（RegisterSprite した物）だけを全部消す。
+    /// Clear と違い、ゲーム側が RegisterExternal したスプライトには触れない
+    /// </summary>
+    void RemoveOwnedSprites();
+
+    /// <summary>
+    /// 登録済みの名前と重ならないスプライト名を作る（重なったら _1, _2 … と連番を振る）
+    /// </summary>
+    /// <param name="baseName">付けたい名前</param>
+    /// <returns>std::string: 一意な名前</returns>
+    std::string MakeUniqueSpriteName(const std::string &baseName);
+
+    /// <summary>
+    /// スプライトを複製して、元の1つ手前（描画順の直後）へ置く。少しずらして置くのですぐ掴める
+    /// </summary>
+    /// <param name="name">複製元の名前</param>
+    /// <returns>SpriteData*: 複製した物（元が無ければ nullptr）</returns>
+    SpriteData *DuplicateSprite(const std::string &name);
+
+    /// <summary>
+    /// 描画順を動かす（手前へ移すほど後から描かれて上に重なる）
+    /// </summary>
+    /// <param name="name">動かすスプライト</param>
+    /// <param name="toIndex">移動先の描画順（0 が一番奥。範囲外は端に丸める）</param>
+    void MoveDrawOrder(const std::string &name, int toIndex);
+
 #ifdef USE_IMGUI
     /// <summary>
     /// Undo用: 全所有スプライトの編集可能状態をJSON化する
@@ -215,6 +242,59 @@ class SpriteManager
     /// ギズモ登録は必ずこの関数を経由し gizmoBound_ で現在の登録先を追跡する。
     /// </summary>
     void SyncGizmoTarget(SpriteData *spriteData, int instanceIndex);
+
+  public:
+    /// <summary>
+    /// エディタからテクスチャを置く（シーンへ画像をドロップしたとき）。
+    /// 名前は画像のファイル名から付け、基準点を中央にして position へ置き、選択状態にする。Undo に積む
+    /// </summary>
+    /// <param name="texturePath">images ルートからの相対パス</param>
+    /// <param name="position">置く位置（仮想解像度のピクセル座標）</param>
+    void PlaceSpriteFromEditor(const std::string &texturePath, const Vector2 &position);
+
+  private:
+    // ---- エディタUI（SpriteManagerImGui.cpp）----
+
+    /// <summary>
+    /// 登録して Undo 履歴へ積み、一覧とシーンで選択状態にする（エディタからの生成はすべてここを通る）
+    /// </summary>
+    void RegisterSpriteFromEditor(const std::string &name, const std::string &texturePath,
+                                  const SpriteTransform &transform);
+
+    /// <summary>一覧（描画順。上が手前）</summary>
+    void DrawSpriteList();
+
+    /// <summary>選択中スプライトの詳細</summary>
+    void DrawSpriteDetails(SpriteData *spriteData);
+
+    /// <summary>詳細の「配置」（位置・拡大・回転・インスタンス）</summary>
+    void DrawSpritePlacement(SpriteData *spriteData);
+
+    /// <summary>詳細の「見た目」（サイズ・色・基準点・反転・ブレンド）</summary>
+    void DrawSpriteAppearance(SpriteData *spriteData);
+
+    /// <summary>詳細の「UV」</summary>
+    void DrawSpriteUV(SpriteData *spriteData);
+
+    /// <summary>保存・読み込み（全シーン共通の保存先）</summary>
+    void DrawSpriteFileSection();
+
+    /// <summary>
+    /// 生成ダイアログの入力内容
+    /// </summary>
+    struct CreationForm
+    {
+        std::string name;          // スプライト名
+        std::string autoName;      // 画像から自動で付けた名前（手で書き換えたかの判定用）
+        std::string lastTexture;   // 名前を付けたときの画像
+        SpriteTransform transform; // 位置・色・基準点など
+    };
+    CreationForm creation_{};
+    bool creationNeedsReset_ = true;      // 次に開いたとき入力を初期値へ戻すか
+    std::string selectedName_;            // 一覧で選択中のスプライト
+    std::string lastGizmoPick_;           // シーンで最後に掴んだスプライト（一覧へ反映済みか）
+    std::unordered_map<std::string, int> selectedInstance_; // スプライトごとの編集中インスタンス
+    std::string listFilter_;              // 一覧の絞り込み
 #endif // USE_IMGUI
 
   private:

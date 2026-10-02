@@ -462,6 +462,7 @@ class ImGuiManager {
     bool showBehaviorTreeView_ = false; // ビヘイビアツリーエディタ窓
     bool showAnimStateMachineView_ = false; // アニメーションのステートマシン窓
     bool showSpriteManagerView_ = true;
+    bool focusTextSpriteTab_ = false; // 次に描くとき、スプライトマネージャの「文字から作る」タブを前に出す
     bool showUIEditorView_ = false; // UIエディタ窓
     bool showColliderTagManagerView_ = false;
     bool showAudioManagerView_ = false;

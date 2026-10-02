@@ -390,6 +390,7 @@ void SceneSerializer::DrawImGui()
 void SceneSerializer::DrawSaveDialog()
 {
     ImGui::SetNextWindowSizeConstraints(ImVec2(460.0f, 0.0f), ImVec2(FLT_MAX, FLT_MAX));
+    ImGui::SetNextWindowBgAlpha(1.0f); // 後ろの窓が透けると文字が重なって読めない
     if (!ImGui::BeginPopupModal(kSavePopup, nullptr, ImGuiWindowFlags_AlwaysAutoResize))
     {
         return;
@@ -615,6 +616,7 @@ void SceneSerializer::RefreshLoadList()
 void SceneSerializer::DrawLoadDialog()
 {
     ImGui::SetNextWindowSizeConstraints(ImVec2(460.0f, 0.0f), ImVec2(FLT_MAX, FLT_MAX));
+    ImGui::SetNextWindowBgAlpha(1.0f); // 後ろの窓が透けると文字が重なって読めない
     if (!ImGui::BeginPopupModal(kLoadPopup, nullptr, ImGuiWindowFlags_AlwaysAutoResize))
     {
         return;

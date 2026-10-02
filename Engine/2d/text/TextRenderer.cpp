@@ -151,12 +151,17 @@ void TextRenderer::CreateCharacterAtlasSprite(
 void TextRenderer::UpdateImGui()
 {
 #ifdef USE_IMGUI
-    if (!ImGui::Begin("テキストレンダラー (TextRenderer)", nullptr, ImGuiWindowFlags_NoFocusOnAppearing))
+    if (ImGui::Begin("テキストレンダラー (TextRenderer)", nullptr, ImGuiWindowFlags_NoFocusOnAppearing))
     {
-        ImGui::End();
-        return;
+        DrawImGuiContents();
     }
+    ImGui::End();
+#endif // USE_IMGUI
+}
 
+void TextRenderer::DrawImGuiContents()
+{
+#ifdef USE_IMGUI
     // 作成モードを RadioButton で切り替える（くすみ緑のアクセント）
     ImGui::PushStyleColor(ImGuiCol_CheckMark, ImVec4(0.45f, 0.68f, 0.52f, 1.0f));
     ImGui::RadioButton("テキストスプライト", &imguiMode_, 0);
@@ -403,8 +408,6 @@ void TextRenderer::UpdateImGui()
             ImGui::EndDisabled();
         }
     }
-
-    ImGui::End();
 #endif // USE_IMGUI
 }
 

@@ -381,6 +381,7 @@
     <ClCompile Include="Engine\3d\particle\gpu\ParticleCSEditorCreate.cpp" />
     <ClCompile Include="Engine\3d\particle\gpu\ParticleCSSpawner.cpp" />
     <ClCompile Include="Engine\2d\SpriteManager.cpp" />
+    <ClCompile Include="Engine\2d\SpriteManagerImGui.cpp" />
     <ClCompile Include="Engine\3d\particle\gpu\ParticleCSFieldManager.cpp" />
     <ClCompile Include="Engine\3d\particle\gpu\ParticleCSFieldManagerImGui.cpp" />
     <ClCompile Include="Engine\2d\text\TextRenderer.cpp" />
