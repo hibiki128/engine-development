@@ -1,37 +1,36 @@
 #include "Framework.h"
-#include <metaball/MetaBallGroupManager.h>
 #include "utility/debug/imgui/ImGuiNotification.h"
 #include "utility/scene/SceneRegistry.h"
 #include "utility/scene/SceneSerializer.h"
 #include <2d/ui/UIAnimator.h>
+#include <Frame.h>
+#include <attachment/AttachmentManager.h>
+#include <camera/CameraManager.h>
+#include <debug/log/Logger.h>
 #include <debug/profiler/CpuProfiler.h>
 #include <debug/profiler/GpuProfiler.h>
-#include <debug/log/Logger.h>
-#include <Frame.h>
-#include <camera/CameraManager.h>
-#include <render/RenderCulling.h>
-#include <render/SceneViewRenderer.h>
+#include <graphics/pipeline/ShaderHotReload.h>
+#include <iterator>
+#include <light/ToonSettings.h>
+#include <metaball/MetaBallGroupManager.h>
 #include <object/Object3dInstancing.h>
 #include <particle/gpu/ParticleCSSpawner.h>
-#include <attachment/AttachmentManager.h>
-#include <light/ToonSettings.h>
-#include <graphics/pipeline/ShaderHotReload.h>
+#include <render/RenderCulling.h>
+#include <render/SceneViewRenderer.h>
+#include <render/ToneMapSettings.h>
+#include <render/bloom/BloomPass.h>
 #include <render/raytracing/RaytracingScene.h>
 #include <render/raytracing/RtAoPass.h>
 #include <render/raytracing/RtShadowPass.h>
-#include <render/ToneMapSettings.h>
-#include <render/bloom/BloomPass.h>
 #include <render/ssao/SsaoRenderer.h>
 #include <shadow/ShadowMap.h>
-#include <iterator>
 #ifdef USE_IMGUI
 #include <edit/undo/UndoRedoManager.h>
 #include <imgui.h>
 #endif // USE_IMGUI
 
 namespace Hagine {
-void Framework::Run()
-{
+void Framework::Run() {
     // ゲームの初期化
     Initialize();
 
@@ -40,8 +39,7 @@ void Framework::Run()
         // 更新
         Update();
         // 終了リクエストが来たら抜ける
-        if (IsEndRequest())
-        {
+        if (IsEndRequest()) {
             break;
         }
         // 描画
@@ -51,8 +49,7 @@ void Framework::Run()
     Finalize();
 }
 
-void Framework::Initialize()
-{
+void Framework::Initialize() {
     Logger::Info("Application initialization started.");
 
     ///---------WinApp--------
@@ -299,8 +296,7 @@ void Framework::Initialize()
     Logger::Info("Application initialization finished.");
 }
 
-void Framework::Finalize()
-{
+void Framework::Finalize() {
     Logger::Info("Application shutting down.");
 
     pCollisionManager_->Clear();
@@ -366,8 +362,7 @@ void Framework::Finalize()
     pDxCommon_->Finalize();
 }
 
-void Framework::RegisterShortcutKey()
-{
+void Framework::RegisterShortcutKey() {
     // フルスクリーン
     shortcutManager_->RegisterShortcut("FullScreen", DIK_F11, [this]() {
         winApp_->ToggleFullScreen();
@@ -379,12 +374,9 @@ void Framework::RegisterShortcutKey()
     // 連番録画の開始・停止
     shortcutManager_->RegisterShortcut("RecordToggle", DIK_F10, []() {
         CaptureManager *capture = CaptureManager::GetInstance();
-        if (capture->IsRecording())
-        {
+        if (capture->IsRecording()) {
             capture->StopSequence();
-        }
-        else
-        {
+        } else {
             capture->StartSequence();
         }
     });
@@ -395,12 +387,9 @@ void Framework::RegisterShortcutKey()
     // 再生 / 一時停止のトグル（Unity の Ctrl+P 相当）
     shortcutManager_->RegisterShortcut("PlayPause", {DIK_LCONTROL, DIK_P}, []() {
         PlayModeManager *playMode = PlayModeManager::GetInstance();
-        if (playMode->IsPlaying())
-        {
+        if (playMode->IsPlaying()) {
             playMode->Pause();
-        }
-        else
-        {
+        } else {
             playMode->Play();
         }
     });
@@ -411,8 +400,7 @@ void Framework::RegisterShortcutKey()
     // デバッグカメラ切り替え（シーン設定ウィンドウのチェックボックスと同じ操作）
     shortcutManager_->RegisterShortcut("DebugCamera", DIK_F3, [this]() {
         BaseScene *currentScene = pSceneManager_->GetBaseScene();
-        if (!currentScene)
-        {
+        if (!currentScene) {
             return;
         }
         const bool active = currentScene->ToggleDebugCamera();
@@ -430,7 +418,7 @@ void Framework::RegisterShortcutKey()
         winApp_->ClosedWindow();
     });
     // シーンを上書き保存（今のシーン名のファイルへ。確認ダイアログは出さない）
-    shortcutManager_->RegisterShortcut("SceneSave", {DIK_LCONTROL, DIK_S}, []() {
+    shortcutManager_->RegisterShortcut("SceneSave", {DIK_LCONTROL, DIK_LSHIFT, DIK_S}, []() {
         SceneSerializer::GetInstance()->SaveCurrentScene();
     });
     // 名前を付けて保存（保存する物の確認もここで行う）
@@ -448,8 +436,7 @@ void Framework::RegisterShortcutKey()
     // シーン切替（SceneRegistry に自己登録された全シーンへ Ctrl+数字 を割り当てる）
     const std::vector<std::string> sceneNames = SceneRegistry::GetInstance()->GetSceneNames();
     constexpr BYTE kNumberKeys[] = {DIK_1, DIK_2, DIK_3, DIK_4, DIK_5, DIK_6, DIK_7, DIK_8, DIK_9};
-    for (size_t i = 0; i < sceneNames.size() && i < std::size(kNumberKeys); ++i)
-    {
+    for (size_t i = 0; i < sceneNames.size() && i < std::size(kNumberKeys); ++i) {
         const std::string sceneName = sceneNames[i];
         shortcutManager_->RegisterShortcut(sceneName + "Scene", {DIK_LCONTROL, kNumberKeys[i]}, [this, sceneName]() {
             pSceneManager_->SceneSelection(sceneName);
@@ -461,27 +448,23 @@ void Framework::RegisterShortcutKey()
     });
     // 元に戻す（ImGuiのテキスト入力中は入力欄自身のUndoを優先してスキップ）
     shortcutManager_->RegisterShortcut("Undo", {DIK_LCONTROL, DIK_Z}, []() {
-        if (ImGui::GetCurrentContext() && ImGui::GetIO().WantTextInput)
-        {
+        if (ImGui::GetCurrentContext() && ImGui::GetIO().WantTextInput) {
             return;
         }
         UndoRedoManager *undoMgr = UndoRedoManager::GetInstance();
         const std::string label = undoMgr->GetUndoLabel();
-        if (undoMgr->Undo())
-        {
+        if (undoMgr->Undo()) {
             ImGuiNotification::Post("元に戻す: " + label, {0.42f, 0.66f, 0.68f, 1.0f});
         }
     });
     // やり直し
     shortcutManager_->RegisterShortcut("Redo", {DIK_LCONTROL, DIK_Y}, []() {
-        if (ImGui::GetCurrentContext() && ImGui::GetIO().WantTextInput)
-        {
+        if (ImGui::GetCurrentContext() && ImGui::GetIO().WantTextInput) {
             return;
         }
         UndoRedoManager *undoMgr = UndoRedoManager::GetInstance();
         const std::string label = undoMgr->GetRedoLabel();
-        if (undoMgr->Redo())
-        {
+        if (undoMgr->Redo()) {
             ImGuiNotification::Post("やり直し: " + label, {0.42f, 0.66f, 0.68f, 1.0f});
         }
     });
@@ -505,8 +488,7 @@ void Framework::RegisterShortcutKey()
 #endif // USE_IMGUI
 }
 
-void Framework::Update()
-{
+void Framework::Update() {
 
     /// deltaTimeの更新
     Frame::Update();
@@ -523,22 +505,18 @@ void Framework::Update()
     // 線の積み上げをリセットし、視錐台カリング用の平面を更新する。
     // このフレーム中に積まれた線は、DrawSystem の Render で一括描画される。
     // （カリングには前フレームのカメラ行列を使う。1フレームぶんの遅れはデバッグ線では問題にならない）
-    if (BaseScene *currentScene = pSceneManager_->GetBaseScene())
-    {
+    if (BaseScene *currentScene = pSceneManager_->GetBaseScene()) {
         pLineRenderer_->BeginFrame(*currentScene->GetViewProjection());
 
         // デバッグカメラを使っている間は、使う前のカメラ（メイン）の行列をカリングへ渡す。
         // ポインタではなく行列を写すので、シーンを切り替えても古いカメラを指さない
         DebugCamera *pDebugCamera = currentScene->GetDebugCamera();
         Camera *pMainCamera = pDebugCamera ? pDebugCamera->GetPreviousCamera() : nullptr;
-        if (pMainCamera)
-        {
+        if (pMainCamera) {
             const ViewProjection &mainView = pMainCamera->GetViewProjection();
             const Matrix4x4 mainViewProjection = mainView.matView_ * mainView.matProjection_;
             RenderCulling::SetInspectionCamera(&mainViewProjection);
-        }
-        else
-        {
+        } else {
             RenderCulling::SetInspectionCamera(nullptr);
         }
         RenderCulling::SubmitDebugLines();
@@ -557,8 +535,7 @@ void Framework::Update()
     const bool updateGameWorld = true;
 #endif // USE_IMGUI
 
-    if (updateGameWorld)
-    {
+    if (updateGameWorld) {
         HAGINE_CPU_PROFILE("Update/ParticleField");
         pParticleCSFieldManager_->Update();
     }
@@ -591,8 +568,7 @@ void Framework::Update()
         // テクスチャ差し替えで退避したリソースを、GPUが使い終わった頃に解放する
         pTextureManager_->EndFrame();
     }
-    if (updateGameWorld)
-    {
+    if (updateGameWorld) {
         HAGINE_CPU_PROFILE("Update/Collision");
         pCollisionManager_->Update();
     }
@@ -613,8 +589,7 @@ void Framework::Update()
         // 音はゲーム時間を止めても鳴り続けるので実時間で進める
         // （ゲーム時間で割るとヒットストップ中のカメラの揺れがドップラーを暴れさせる）
         const float deltaTime = Frame::UnscaledDeltaTime();
-        if (BaseScene *currentScene = pSceneManager_->GetBaseScene())
-        {
+        if (BaseScene *currentScene = pSceneManager_->GetBaseScene()) {
             const ViewProjection &viewProjection = *currentScene->GetViewProjection();
             SoundListener listener;
             listener.position = viewProjection.translation_;
@@ -627,8 +602,7 @@ void Framework::Update()
                                    .Normalize();
             // ドップラー用の速度は前フレームとの差から求める。
             // シーン切り替え直後は位置が飛ぶので、その1フレームだけ速度0にする
-            if (audioListenerInitialized_ && deltaTime > 0.0f)
-            {
+            if (audioListenerInitialized_ && deltaTime > 0.0f) {
                 listener.velocity = (listener.position - audioListenerPreviousPosition_) * (1.0f / deltaTime);
             }
             audioListenerPreviousPosition_ = listener.position;
@@ -654,15 +628,13 @@ void Framework::Update()
     // （内部レンダリング解像度は固定のまま、最終合成時に拡縮される）
     {
         uint32_t newWidth = 0, newHeight = 0;
-        if (winApp_->ConsumeResize(newWidth, newHeight))
-        {
+        if (winApp_->ConsumeResize(newWidth, newHeight)) {
             pDxCommon_->ResizeSwapChain(newWidth, newHeight);
         }
     }
 }
 
-void Framework::LoadResource()
-{
+void Framework::LoadResource() {
 
     pTextureManager_->LoadAllTextures();
 
@@ -674,11 +646,9 @@ void Framework::LoadResource()
     Logger::Info("All base resources loaded.");
 }
 
-void Framework::PlaySounds()
-{
+void Framework::PlaySounds() {
 }
 
-void Framework::Draw()
-{
+void Framework::Draw() {
 }
 } // namespace Hagine
