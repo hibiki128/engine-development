@@ -2,6 +2,7 @@
 #include "camera/projection/ViewProjection.h"
 #include <Frustum.h>
 #include "line/LineBatchId.h"
+#include "line/LineCategory.h"
 #include <cstdint>
 #include <d3d12.h>
 #include <memory>
@@ -143,10 +144,22 @@ class LineRenderer
     /// <param name="packedColor">PackLineColorで詰めた色</param>
     void AddLinePacked(const Vector3 &start, const Vector3 &end, uint32_t packedColor)
     {
+        // 取り出し中は描画に回さず、呼び出し元の配列へ渡す（種類のオン/オフも見ない）
+        if (pCapture_)
+        {
+            pCapture_->push_back({start, end, packedColor});
+            return;
+        }
+        // 「デバッグ線」窓で隠した種類は積まない
+        if (!currentCategoryEnabled_)
+        {
+            return;
+        }
         if (lineCount_ >= lineCapacity_ && !Grow())
         {
             return;
         }
+        ++categoryLines_[currentCategory_];
         LineVertex *dst = staging_.get() + lineCount_ * 2;
         dst[0].position = start;
         dst[0].color = packedColor;
@@ -282,6 +295,91 @@ class LineRenderer
     /// </summary>
     uint32_t GetLiveBatchCount() const { return static_cast<uint32_t>(batches_.size()); }
 
+    /// ===================================================
+    /// 線の取り出し
+    /// ===================================================
+
+    /// <summary>取り出した線（ワールド座標・RGBA8 の色）</summary>
+    struct CapturedLine
+    {
+        Vector3 start;
+        Vector3 end;
+        uint32_t color;
+    };
+
+    /// <summary>
+    /// これ以降に積まれる線を描画せず pOut へ取り出す（EndCapture まで）。
+    /// 図形の作り方（球・円柱など）をそのまま使って、シーン窓の上へ重ねて描きたいとき用。
+    /// 静的バッチ（SubmitBatch）は取り出せないので、その間は何もしない
+    /// </summary>
+    void BeginCapture(std::vector<CapturedLine> *pOut) { pCapture_ = pOut; }
+    void EndCapture() { pCapture_ = nullptr; }
+    bool IsCapturing() const { return pCapture_ != nullptr; }
+
+    /// ===================================================
+    /// 線の種類（「デバッグ線」窓で、種類ごとに確かめる・隠す）
+    /// ===================================================
+
+    /// <summary>
+    /// これから積む線の種類を切り替え、切り替える前の種類を返す（LineCategoryScope が使う）
+    /// </summary>
+    LineCategory SwapCategory(LineCategory category)
+    {
+        const LineCategory previous = static_cast<LineCategory>(currentCategory_);
+        currentCategory_ = static_cast<uint8_t>(category);
+        currentCategoryEnabled_ = IsCategoryShown(category);
+        return previous;
+    }
+
+    /// <summary>
+    /// その種類を描くか（全体のスイッチ・種類のスイッチ・持ち主側のスイッチがすべて入っているか）
+    /// </summary>
+    bool IsCategoryShown(LineCategory category) const;
+
+    /// <summary>
+    /// 種類のスイッチ（持ち主側のスイッチとは別。窓のチェックはこの2つをまとめて見せる）
+    /// </summary>
+    bool IsCategoryEnabled(LineCategory category) const { return categoryEnabled_[static_cast<int>(category)]; }
+    void SetCategoryEnabled(LineCategory category, bool enabled);
+
+    /// <summary>
+    /// 全部の線のスイッチ
+    /// </summary>
+    bool IsAllLinesEnabled() const { return allLinesEnabled_; }
+    void SetAllLinesEnabled(bool enabled);
+
+    /// <summary>
+    /// 種類のスイッチをビットにまとめて取得・設定する（bit i = LineCategory i。保存用）
+    /// </summary>
+    uint32_t GetCategoryMask() const;
+    void SetCategoryMask(uint32_t mask);
+
+    /// <summary>
+    /// 持ち主側が持っている表示スイッチ（グリッドの表示・コライダーの表示など）を種類に結び付ける。
+    /// 窓のチェックは「種類のスイッチ && 持ち主のスイッチ」を見せ、入れたときは両方を入れる
+    /// （どこで切っていたかを探さなくても、窓から入れればそのまま出る）。
+    /// flag は持ち主が生きている間だけ有効にすること（消えるときは nullptr で外す）
+    /// </summary>
+    void BindCategoryFlag(LineCategory category, bool *flag) { categoryFlags_[static_cast<int>(category)] = flag; }
+
+    /// <summary>
+    /// 線を LineRenderer を通さずに描く種類（シーン窓に重ねる選択枠など）が、描いた本数を数えに入れる
+    /// </summary>
+    void AddExternalLineCount(LineCategory category, uint32_t count) { categoryLines_[static_cast<int>(category)] += count; }
+
+    /// <summary>
+    /// 直前のフレームにその種類で積まれた本数（静的バッチの本数も含む）
+    /// </summary>
+    uint32_t GetCategoryLineCount(LineCategory category) const { return lastCategoryLines_[static_cast<int>(category)]; }
+
+#ifdef USE_IMGUI
+    /// <summary>
+    /// 種類の一覧（本数とオン/オフ）を描く。窓の Begin/End は呼び出し元
+    /// </summary>
+    /// <param name="compact">シーンのツールバーから開く小さい版（説明を省く）</param>
+    void DrawCategoryImGui(bool compact);
+#endif // USE_IMGUI
+
   private:
     /// ===================================================
     /// private struct
@@ -342,7 +440,14 @@ class LineRenderer
     /// private method
     /// ===================================================
 
-    LineRenderer() = default;
+    LineRenderer()
+    {
+        // 種類のスイッチは全部入りから始める（保存値は ImGuiManager の LoadFlag が後から入れる）
+        for (bool &enabled : categoryEnabled_)
+        {
+            enabled = true;
+        }
+    }
     ~LineRenderer() = default;
     LineRenderer(const LineRenderer &) = delete;
     LineRenderer &operator=(const LineRenderer &) = delete;
@@ -415,5 +520,32 @@ class LineRenderer
     Matrix4x4 *pCameraData_ = nullptr;                    // 定数バッファのマップ先
 
     Frustum frustum_; // 視錐台（毎フレーム、描画するビュー射影から作り直す）
+
+    std::vector<CapturedLine> *pCapture_ = nullptr; // 取り出し先（取り出していなければ nullptr）
+
+    // ---- 線の種類 ----
+    uint8_t currentCategory_ = static_cast<uint8_t>(LineCategory::Other); // 今積んでいる種類
+    bool currentCategoryEnabled_ = true;                                  // 今積んでいる種類を描くか
+    bool allLinesEnabled_ = true;                                         // 全部の線のスイッチ
+    bool categoryEnabled_[kLineCategoryCount] = {};                       // 種類のスイッチ（コンストラクタで全部入れる）
+    bool *categoryFlags_[kLineCategoryCount] = {};                        // 持ち主側の表示スイッチ（無ければ nullptr）
+    uint32_t categoryLines_[kLineCategoryCount] = {};                     // このフレームに積まれた本数
+    uint32_t lastCategoryLines_[kLineCategoryCount] = {};                 // 直前のフレームの本数（窓に出す）
+};
+
+/// <summary>
+/// このスコープの間に積んだ線を、指定の種類として扱う（抜けると元の種類へ戻る）。
+/// 例: { LineCategoryScope scope(LineCategory::Collider); pCollider->DebugDraw(vp); }
+/// </summary>
+class LineCategoryScope
+{
+  public:
+    explicit LineCategoryScope(LineCategory category) : previous_(LineRenderer::GetInstance()->SwapCategory(category)) {}
+    ~LineCategoryScope() { LineRenderer::GetInstance()->SwapCategory(previous_); }
+    LineCategoryScope(const LineCategoryScope &) = delete;
+    LineCategoryScope &operator=(const LineCategoryScope &) = delete;
+
+  private:
+    LineCategory previous_;
 };
 } // namespace Hagine

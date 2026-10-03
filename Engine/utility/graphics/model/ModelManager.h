@@ -103,6 +103,14 @@ class ModelManager
     void RemoveModel(const std::string &key);
 
     /// <summary>
+    /// ファイルが書き換わったモデルを、次の LoadModel で読み直させる（ホットリロード用）。
+    /// 共有している .obj などの実体は別のキーへ退かし（今使っている体は差し替えるまで古い形のまま描ける）、
+    /// gltf の体同士で共有している読み込み結果も捨てる
+    /// </summary>
+    /// <param name="filePath">models ルートからの相対パス（LoadModel に渡すのと同じ物）</param>
+    void ForgetModelFile(const std::string &filePath);
+
+    /// <summary>
     /// 破棄を待っているモデルのうち、GPU が触り終わったものを実際に捨てる。
     /// フレームの先頭で1回だけ呼ぶこと
     /// </summary>

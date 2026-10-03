@@ -419,6 +419,9 @@ void DirectXCommon::PostDraw()
     // （同じアロケータを 2 フレーム後に安全に再利用するため）
     directQueue_->WaitForFenceCPU(fenceValues_[frameIndex_]);
 
+    // CreateStaticBuffer の写し元のうち、GPU が写し終わった物を捨てる
+    std::erase_if(pendingUploads_, [](PendingUpload &upload) { return --upload.framesLeft == 0; });
+
     // 次フレームのコマンドアロケータ・リストをリセット
     directCommandList_->Reset(frameIndex_);
 
@@ -604,6 +607,57 @@ IDxcBlob *DirectXCommon::CompileShaderWithReflection(const std::wstring &filePat
 bool DirectXCommon::TryCompileShader(const std::wstring &filePath, const wchar_t *profile, std::string *outError)
 {
     return shaderCompiler_->TryCompile(filePath, profile, outError);
+}
+
+Microsoft::WRL::ComPtr<ID3D12Resource> DirectXCommon::CreateStaticBuffer(const void *data, size_t sizeInBytes, D3D12_RESOURCE_STATES stateAfterCopy)
+{
+    // 写し元（アップロードヒープ）
+    Microsoft::WRL::ComPtr<ID3D12Resource> upload = CreateBufferResource(sizeInBytes);
+    void *mapped = nullptr;
+    upload->Map(0, nullptr, &mapped);
+    std::memcpy(mapped, data, sizeInBytes);
+    upload->Unmap(0, nullptr);
+
+    // 写し先（デフォルトヒープ）。バッファは COMMON で作られ、写すときに COPY_DEST へ暗黙に上がる
+    D3D12_HEAP_PROPERTIES heapProperties{};
+    heapProperties.Type = D3D12_HEAP_TYPE_DEFAULT;
+    D3D12_RESOURCE_DESC resourceDesc{};
+    resourceDesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
+    resourceDesc.Width = sizeInBytes;
+    resourceDesc.Height = 1;
+    resourceDesc.DepthOrArraySize = 1;
+    resourceDesc.MipLevels = 1;
+    resourceDesc.SampleDesc.Count = 1;
+    resourceDesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+    Microsoft::WRL::ComPtr<ID3D12Resource> resource;
+    HRESULT hr = GetDevice()->CreateCommittedResource(&heapProperties, D3D12_HEAP_FLAG_NONE, &resourceDesc,
+                                                      D3D12_RESOURCE_STATE_COMMON, nullptr, IID_PPV_ARGS(&resource));
+    assert(SUCCEEDED(hr));
+    resource->SetName(L"StaticBuffer");
+
+    ID3D12GraphicsCommandList *pCommandList = directCommandList_->Get();
+    pCommandList->CopyBufferRegion(resource.Get(), 0, upload.Get(), 0, sizeInBytes);
+    D3D12_RESOURCE_BARRIER barrier{};
+    barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+    barrier.Transition.pResource = resource.Get();
+    barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+    barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_DEST;
+    barrier.Transition.StateAfter = stateAfterCopy;
+    pCommandList->ResourceBarrier(1, &barrier);
+
+    // 写し元は GPU が写し終わってから捨てる（フレームが一周するまで）
+    pendingUploads_.push_back({upload, kFrameCount + 1});
+    return resource;
+}
+
+void DirectXCommon::ClearShaderCache()
+{
+    shaderCompiler_->ClearCache();
+}
+
+void DirectXCommon::GetShaderCacheStats(size_t &outHits, size_t &outMisses, size_t &outEntries) const
+{
+    shaderCompiler_->GetCacheStats(outHits, outMisses, outEntries);
 }
 
 Microsoft::WRL::ComPtr<ID3D12Resource> DirectXCommon::CreateBufferResource(size_t sizeInBytes, bool isUAV)

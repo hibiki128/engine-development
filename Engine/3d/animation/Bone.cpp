@@ -5,7 +5,7 @@
 #include <algorithm>
 
 namespace Hagine {
-void Bone::Initialize(ModelData modelData)
+void Bone::Initialize(const ModelData &modelData)
 {
     // モデルデータのルートノードからスケルトン構造を生成
     skeleton_ = CreateSkeleton(modelData.rootNode);

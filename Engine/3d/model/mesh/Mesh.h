@@ -29,6 +29,18 @@ class Mesh
     void Initialize();
 
     /// <summary>
+    /// 頂点・インデックスの GPU バッファを、同じファイルから作った別のメッシュと共有して初期化する
+    /// （meshData_ は先に入れておく。バッファは中身が同じなので作り直さない）
+    /// </summary>
+    void InitializeShared(Microsoft::WRL::ComPtr<ID3D12Resource> vertexResource, Microsoft::WRL::ComPtr<ID3D12Resource> indexResource);
+
+    /// <summary>頂点バッファ（共有するときの元）</summary>
+    const Microsoft::WRL::ComPtr<ID3D12Resource> &GetVertexResource() const { return vertexResource_; }
+
+    /// <summary>インデックスバッファ（共有するときの元）</summary>
+    const Microsoft::WRL::ComPtr<ID3D12Resource> &GetIndexResource() const { return indexResource_; }
+
+    /// <summary>
     /// 動的メッシュとして初期化する。
     /// 指定容量のバッファをフレーム数ぶん確保し、以後 Rebuild() で中身だけ差し替える。
     /// </summary>

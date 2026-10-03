@@ -126,6 +126,7 @@ bool RenderCulling::IsInspectWithMainCamera()
 
 void RenderCulling::SubmitDebugLines()
 {
+    LineCategoryScope lineScope(LineCategory::Culling);
     CullingState &state = State();
     if (!IsInspectingState(state))
     {

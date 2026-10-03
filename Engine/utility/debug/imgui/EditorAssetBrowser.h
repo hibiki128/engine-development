@@ -124,6 +124,7 @@ class EditorAssetBrowser
     // ホットリロード（画像の更新日時を覚えておき、変わったら読み直す）
     bool autoReloadTextures_ = true;
     std::map<std::string, int64_t> imageWriteTimes_; // 画像の相対パス → 最後に見た更新日時
+    std::map<std::string, int64_t> modelWriteTimes_; // モデルの相対パス → 最後に見た更新日時（本体・.bin・.mtl の新しい方）
     double lastPollTime_ = 0.0;
 
     std::string pendingDeletePrefab_;

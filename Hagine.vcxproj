@@ -229,6 +229,9 @@
     <ClCompile Include="Engine\3d\animation\Animator.cpp" />
     <ClCompile Include="Engine\3d\animation\ik\FootIkSolver.cpp" />
     <ClCompile Include="Engine\3d\animation\ik\LookAtSolver.cpp" />
+    <ClCompile Include="Engine\3d\animation\ik\HandIkSolver.cpp" />
+    <ClCompile Include="Engine\3d\animation\ik\TwoBoneIk.cpp" />
+    <ClCompile Include="Engine\3d\animation\ik\SpringBoneSolver.cpp" />
     <ClCompile Include="Engine\3d\camera\Camera.cpp" />
     <ClCompile Include="Engine\3d\camera\CameraManager.cpp" />
     <ClCompile Include="Engine\3d\camera\debug\DebugCamera.cpp" />
@@ -243,10 +246,12 @@
     <ClCompile Include="Engine\3d\metaball\MetaBallGroupManager.cpp" />
     <ClCompile Include="Engine\3d\metaball\MetaBallObject.cpp" />
     <ClCompile Include="Engine\3d\line\LineRenderer.cpp" />
+    <ClCompile Include="Engine\3d\line\LineRendererImGui.cpp" />
     <ClCompile Include="Engine\render\deferred\DeferredRenderer.cpp" />
     <ClCompile Include="Engine\frame\Frame.cpp" />
     <ClCompile Include="Engine\input\Mouse.cpp" />
     <ClCompile Include="Engine\utility\collider\CollisionManager.cpp" />
+    <ClCompile Include="Engine\utility\collider\CollisionManagerImGui.cpp" />
     <ClCompile Include="Engine\3d\particle\ParticleCommon.cpp" />
     <ClCompile Include="Engine\3d\particle\ParticleManager.cpp" />
     <ClCompile Include="Engine\utility\edit\LevelData.cpp" />
@@ -326,6 +331,7 @@
     <ClCompile Include="Engine\utility\graphics\rtv\RtvManager.cpp" />
     <ClCompile Include="Engine\utility\graphics\dsv\DsvManager.cpp" />
     <ClCompile Include="Engine\input\Input.cpp" />
+    <ClCompile Include="Engine\input\InputActions.cpp" />
     <ClCompile Include="Engine\utility\debug\param\GameParamHub.cpp" />
     <ClCompile Include="Engine\utility\debug\imgui\ImGuiManager.cpp" />
     <ClCompile Include="Engine\utility\debug\imgui\ShaderEditorWindow.cpp" />
@@ -571,6 +577,7 @@
     <ClInclude Include="Engine\utility\debug\imgui\EditorAssetBrowser.h" />
     <ClInclude Include="Engine\utility\debug\imgui\ImGuizmoManagerInternal.h" />
     <ClInclude Include="Engine\utility\debug\imgui\ImGuiManagerSceneOverlayInternal.h" />
+    <ClInclude Include="Engine\utility\debug\imgui\SceneProjector.h" />
     <ClInclude Include="Engine\utility\graphics\pipeline\ComputePipelineManager.h" />
     <ClInclude Include="Engine\3d\object\base\BaseObjectManager.h" />
     <ClInclude Include="Engine\utility\data\DataHandler.h" />
@@ -592,6 +599,9 @@
     <ClInclude Include="Engine\3d\animation\Animator.h" />
     <ClInclude Include="Engine\3d\animation\ik\FootIkSolver.h" />
     <ClInclude Include="Engine\3d\animation\ik\LookAtSolver.h" />
+    <ClInclude Include="Engine\3d\animation\ik\HandIkSolver.h" />
+    <ClInclude Include="Engine\3d\animation\ik\TwoBoneIk.h" />
+    <ClInclude Include="Engine\3d\animation\ik\SpringBoneSolver.h" />
     <ClInclude Include="Engine\3d\camera\Camera.h" />
     <ClInclude Include="Engine\3d\camera\CameraManager.h" />
     <ClInclude Include="Engine\3d\camera\debug\DebugCamera.h" />
@@ -611,6 +621,7 @@
     <ClInclude Include="Engine\3d\metaball\MetaBallObject.h" />
     <ClInclude Include="Engine\3d\line\LineRenderer.h" />
     <ClInclude Include="Engine\3d\line\LineBatchId.h" />
+    <ClInclude Include="Engine\3d\line\LineCategory.h" />
     <ClInclude Include="Engine\render\deferred\DeferredRenderer.h" />
     <ClInclude Include="Engine\3d\model\ModelStructs.h" />
     <ClInclude Include="Engine\frame\Frame.h" />
@@ -664,6 +675,7 @@
     <ClInclude Include="Engine\utility\graphics\rtv\RtvManager.h" />
     <ClInclude Include="Engine\utility\graphics\dsv\DsvManager.h" />
     <ClInclude Include="Engine\input\Input.h" />
+    <ClInclude Include="Engine\input\InputActions.h" />
     <ClInclude Include="Engine\utility\debug\imgui\ImGuiManager.h" />
     <ClInclude Include="Engine\utility\debug\imgui\ImGuiExtras.h" />
     <ClInclude Include="Engine\utility\debug\imgui\ShaderEditorWindow.h" />

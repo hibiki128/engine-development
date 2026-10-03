@@ -324,7 +324,20 @@ Matrix4x4 MakeAffineMatrix(const Vector3 &scale, const Quaternion &rotate, const
 
 Matrix4x4 MakeBoneMatrix(const Vector3 &scale, const Quaternion &rotate, const Vector3 &translate)
 {
-    return MakeScaleMatrix(scale) * QuaternionToBoneMatrix(rotate) * MakeTranslateMatrix(translate);
+    // 拡縮 × 回転 × 平行移動 を、行列の掛け算を2回せずに直接組み立てる（結果は同じ）。
+    // 全ジョイント × 全キャラで毎フレーム呼ばれる所なので、掛け算 128 回ぶんを省く
+    Matrix4x4 result = QuaternionToBoneMatrix(rotate);
+    for (int column = 0; column < 3; ++column)
+    {
+        result.m[0][column] *= scale.x;
+        result.m[1][column] *= scale.y;
+        result.m[2][column] *= scale.z;
+    }
+    result.m[3][0] = translate.x;
+    result.m[3][1] = translate.y;
+    result.m[3][2] = translate.z;
+    result.m[3][3] = 1.0f;
+    return result;
 }
 
 Matrix4x4 QuaternionToBoneMatrix(const Quaternion &q)

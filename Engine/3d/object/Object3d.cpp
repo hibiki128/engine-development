@@ -16,12 +16,76 @@
 #include <shadow/ShadowMap.h>
 #include <line/LineRenderer.h>
 #include <MyMath.h>
+#include <algorithm>
 #include <type/Matrix4x4.h>
 
 namespace Hagine {
+std::vector<Object3d *> Object3d::pendingSkinning_;
+
 Object3d::~Object3d()
 {
+    // まとめスキニングに積んだまま消えると、描画の頭で解放済みの物を触る
+    if (skinningQueued_)
+    {
+        std::erase(pendingSkinning_, this);
+    }
     ReleaseOwnedModel();
+}
+
+void Object3d::FlushPendingSkinning(ID3D12GraphicsCommandList *pCommandList)
+{
+    if (pendingSkinning_.empty())
+    {
+        return;
+    }
+    std::vector<Model *> models;
+    models.reserve(pendingSkinning_.size());
+    Object3dCommon *pCommon = nullptr;
+    for (Object3d *pObject : pendingSkinning_)
+    {
+        pObject->skinningQueued_ = false;
+        if (pObject->skinnedThisFrame_ || !pObject->pModel_ || !pObject->pModel_->IsSkinned())
+        {
+            continue;
+        }
+        // 同じ Model を指す体が2つあっても計算は1回でよい
+        if (std::find(models.begin(), models.end(), pObject->pModel_) == models.end())
+        {
+            models.push_back(pObject->pModel_);
+        }
+        pObject->skinnedThisFrame_ = true;
+        pCommon = pObject->objectCommon_.get();
+    }
+    pendingSkinning_.clear();
+    if (models.empty() || !pCommon)
+    {
+        return;
+    }
+
+    std::vector<D3D12_RESOURCE_BARRIER> barriers;
+    barriers.reserve(models.size());
+    for (Model *pModel : models)
+    {
+        pModel->AppendSkinningBeginBarrier(barriers);
+    }
+    if (!barriers.empty())
+    {
+        pCommandList->ResourceBarrier(static_cast<UINT>(barriers.size()), barriers.data());
+    }
+
+    // 出力先はそれぞれ別のバッファなので、計算同士の間に待ちは要らない
+    pCommon->computeSkinningDrawCommonSetting();
+    for (Model *pModel : models)
+    {
+        pModel->DispatchSkinning(pCommandList);
+    }
+
+    barriers.clear();
+    for (Model *pModel : models)
+    {
+        pModel->AppendSkinningEndBarrier(barriers);
+    }
+    pCommandList->ResourceBarrier(static_cast<UINT>(barriers.size()), barriers.data());
 }
 
 void Object3d::ReleaseOwnedModel()
@@ -85,7 +149,7 @@ void Object3d::CreateModel(const std::string &filePath)
     if (pModel_->IsGltf())
     {
         currentModelAnimation_ = std::make_unique<ModelAnimation>();
-        currentModelAnimation_->SetModelData(pModel_->GetModelData());
+        currentModelAnimation_->SetModelData(pModel_->GetSharedModelData());
         currentModelAnimation_->Initialize(AssetPath::ModelsRoot(modelFilePath_), modelFilePath_);
 
         pModel_->SetAnimator(currentModelAnimation_->GetAnimator());
@@ -333,6 +397,12 @@ void Object3d::AnimationUpdate()
 {
     // 新しいフレームの開始。影パス／本描画のどちらか最初の1回だけスキニングする
     skinnedThisFrame_ = false;
+    // 描画の頭でまとめて実行する一覧に積む（積めなかった物は従来どおり描くときに1体ずつ実行される）
+    if (!skinningQueued_ && pModel_ && pModel_->IsSkinned())
+    {
+        pendingSkinning_.push_back(this);
+        skinningQueued_ = true;
+    }
 
     if (currentModelAnimation_)
     {
@@ -572,7 +642,7 @@ void Object3d::AddAnimation(const std::string &fileName, bool loop)
 
     auto animation = std::make_unique<ModelAnimation>();
 
-    animation->SetModelData(pModel_->GetModelData());
+    animation->SetModelData(pModel_->GetSharedModelData());
     animation->Initialize(AssetPath::ModelsRoot(fileName), fileName);
     animation->GetAnimator()->SetAnimationTime(0.0f);
     animation->SetSpeed(animationSpeed_);
@@ -625,6 +695,7 @@ bool Object3d::GetAnimationLoop(const std::string &fileName)
 
 void Object3d::DrawWireframe(const WorldTransform &worldTransform, const ViewProjection &viewProjection, bool isRainbow)
 {
+    LineCategoryScope lineScope(LineCategory::Wireframe);
     // worldTransformを更新
     Update(worldTransform, viewProjection);
     if (!pModel_)
@@ -763,6 +834,7 @@ void Object3d::DrawWireframe(const WorldTransform &worldTransform, const ViewPro
 
 void Object3d::DrawSkeleton(const WorldTransform &worldTransform, const ViewProjection &viewProjection)
 {
+    LineCategoryScope lineScope(LineCategory::Skeleton);
     const Skeleton &skeleton = currentModelAnimation_->GetSkeletonData();
 
     // モデルに適用されているワールド変換を生成
@@ -908,13 +980,99 @@ void Object3d::SetModel(const std::string &filePath)
 
     if (pModel_->IsGltf())
     {
-        currentModelAnimation_->SetModelData(pModel_->GetModelData());
+        currentModelAnimation_->SetModelData(pModel_->GetSharedModelData());
         currentModelAnimation_->Initialize(AssetPath::ModelsRoot(filePath), filePath);
 
         pModel_->SetAnimator(currentModelAnimation_->GetAnimator());
         pModel_->SetBone(currentModelAnimation_->GetBone());
         pModel_->SetSkin(currentModelAnimation_->GetSkin());
     }
+}
+
+bool Object3d::ReloadModel(const std::string &modelPath)
+{
+    if (modelPath.empty() || !pModel_)
+    {
+        return false;
+    }
+
+    // 今再生しているアニメーションを控える（登録名＝ファイル名。登録に無ければアニメーターのファイル）
+    std::string currentFile;
+    for (const auto &[name, animation] : modelAnimations_)
+    {
+        if (animation == currentModelAnimation_)
+        {
+            currentFile = name;
+        }
+    }
+    if (currentFile.empty() && currentModelAnimation_ && currentModelAnimation_->GetAnimator())
+    {
+        currentFile = currentModelAnimation_->GetAnimator()->GetCurrentFilename();
+    }
+    if (currentFile.empty())
+    {
+        currentFile = modelPath;
+    }
+
+    // 読み直す（ModelManager::ForgetModelFile を先に呼んでおくこと。呼ばないと前の読み込み結果が返る）
+    ReleaseOwnedModel();
+    modelKey_ = ModelManager::GetInstance()->LoadModel(modelPath);
+    ownsModel_ = (modelKey_ != modelPath);
+    pModel_ = ModelManager::GetInstance()->FindModelByKey(modelKey_);
+    if (!pModel_)
+    {
+        return false;
+    }
+
+    // マテリアルは数が同じなら今の設定（色・テクスチャの差し替え）をそのまま使う。増えた分だけモデルの値で足す
+    const std::vector<MaterialData> &modelMaterials = pModel_->GetModelData().materials;
+    const size_t oldCount = materials_.size();
+    if (oldCount != modelMaterials.size())
+    {
+        materials_.resize(modelMaterials.size());
+        color_.resize(modelMaterials.size());
+        for (size_t i = oldCount; i < modelMaterials.size(); ++i)
+        {
+            materials_[i] = std::make_unique<Material>();
+            materials_[i]->Initialize();
+            materials_[i]->GetMaterialData() = modelMaterials[i];
+            materials_[i]->LoadTexture();
+            materials_[i]->SetCameraFade(cameraFade_);
+            color_[i].Initialize();
+            color_[i].SetColor(modelMaterials[i].color);
+        }
+    }
+
+    if (pModel_->IsGltf())
+    {
+        // アニメーションは古い読み込み結果（骨・ウェイト）を指しているので、新しい物で作り直す。
+        // 再生位置は頭に戻る
+        auto rebuild = [&](const std::string &file) {
+            auto animation = std::make_shared<ModelAnimation>();
+            animation->SetModelData(pModel_->GetSharedModelData());
+            animation->Initialize(AssetPath::ModelsRoot(file), file);
+            animation->SetSpeed(animationSpeed_);
+            animation->SetBlendDuration(blendDuration_);
+            return animation;
+        };
+        for (auto &[name, animation] : modelAnimations_)
+        {
+            animation = rebuild(name);
+        }
+        auto it = modelAnimations_.find(currentFile);
+        currentModelAnimation_ = (it != modelAnimations_.end()) ? it->second : rebuild(currentFile);
+
+        pModel_->SetAnimator(currentModelAnimation_->GetAnimator());
+        if (pModel_->GetModelData().hasBones)
+        {
+            pModel_->SetBone(currentModelAnimation_->GetBone());
+            pModel_->SetSkin(currentModelAnimation_->GetSkin());
+        }
+        modelFilePath_ = currentFile;
+        isAnimationSwitchPending_ = false;
+        nextAnimationFileName_.clear();
+    }
+    return true;
 }
 
 void Object3d::SetCameraFade(float fade)

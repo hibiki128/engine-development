@@ -28,7 +28,7 @@ void AABBCollider::DebugDraw(const ViewProjection &viewProjection)
         return;
     }
 
-    pLine->AddBox(cachedAABB_.min, cachedAABB_.max, color_);
+    pLine->AddBox(cachedAABB_.min, cachedAABB_.max, drawColor_);
 }
 
 void AABBCollider::SaveShapeToJson(DataHandler &json)

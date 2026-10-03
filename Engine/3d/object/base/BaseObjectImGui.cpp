@@ -105,8 +105,12 @@ void BaseObject::DebugObject() {
     // セクションが増えて縦一列では探しづらくなったので、カテゴリごとのタブに分ける。
     // 選択中のタブの中身だけが描かれるので、スクロール量も毎フレームのUIコストも減る。
     // タブの中では従来どおり折りたたみヘッダーで畳める（開閉状態は imgui.ini に残る）。
+    // 検索中は、この子窓のいちばん外側の見出しを絞り込みの対象にする
+    if (InspectorSearch::IsActive()) {
+        InspectorSearch::BeginBody();
+    }
     const std::string categoryTabId = "BaseObjectCategories##" + objectName_;
-    if (!ImGui::BeginTabBar(categoryTabId.c_str(), ImGuiTabBarFlags_FittingPolicyScroll)) {
+    if (!InspectorSearch::BeginTabBar(categoryTabId.c_str(), ImGuiTabBarFlags_FittingPolicyScroll)) {
         ImGui::PopStyleVar(4);
         return;
     }
@@ -114,7 +118,7 @@ void BaseObject::DebugObject() {
     // ====================================================
     // 基本（トランスフォーム）
     // ====================================================
-    if (ImGui::BeginTabItem("基本")) {
+    if (InspectorSearch::BeginTab("基本")) {
 
         // ====================================================
         // トランスフォーム
@@ -326,7 +330,7 @@ void BaseObject::DebugObject() {
             ImGui::Spacing();
         }
 
-        ImGui::EndTabItem();
+        InspectorSearch::EndTab();
     }
 
     // ====================================================
@@ -334,16 +338,18 @@ void BaseObject::DebugObject() {
     // 基本の隣に固定で出すことで、そのオブジェクト固有の設定を見つけやすくする
     // ====================================================
     if (const char *extensionName = GetImGuiExtensionName()) {
-        if (ImGui::BeginTabItem(extensionName)) {
-            DrawImGuiExtension();
-            ImGui::EndTabItem();
+        if (InspectorSearch::BeginTab(extensionName)) {
+            if (InspectorSearch::ShowLooseContent()) {
+                DrawImGuiExtension();
+            }
+            InspectorSearch::EndTab();
         }
     }
 
     // ====================================================
     // 見た目（表示・マテリアル・アニメーション）
     // ====================================================
-    if (ImGui::BeginTabItem("見た目")) {
+    if (InspectorSearch::BeginTab("見た目")) {
 
         // ====================================================
         // 表示（描画モード・ライティング・ギズモ）
@@ -409,11 +415,13 @@ void BaseObject::DebugObject() {
         // ここを触っても何も変わらないので出さない（専用タブ側に用意する）
         // ====================================================
         if (!HasInspectorMaterial()) {
-            ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kTextDim);
-            const char *extensionName = GetImGuiExtensionName();
-            ImGui::TextWrapped("マテリアルは「%s」タブで設定します", extensionName ? extensionName : "専用");
-            ImGui::PopStyleColor();
-            ImGui::Spacing();
+            if (InspectorSearch::ShowLooseContent()) {
+                ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kTextDim);
+                const char *extensionName = GetImGuiExtensionName();
+                ImGui::TextWrapped("マテリアルは「%s」タブで設定します", extensionName ? extensionName : "専用");
+                ImGui::PopStyleColor();
+                ImGui::Spacing();
+            }
         } else if (ThemedHeader("マテリアル##hdr", DebugTheme::kAccentPurple)) {
             ImGui::Indent(6.0f);
             static int selMat = 0;
@@ -732,13 +740,13 @@ void BaseObject::DebugObject() {
             }
         }
 
-        ImGui::EndTabItem();
+        InspectorSearch::EndTab();
     }
 
     // ====================================================
     // 物理（コライダー・押し出し・リジッドボディ）
     // ====================================================
-    if (ImGui::BeginTabItem("物理")) {
+    if (InspectorSearch::BeginTab("物理")) {
 
         // ====================================================
         // コライダー
@@ -752,54 +760,15 @@ void BaseObject::DebugObject() {
             ImGui::SetItemTooltip("形状を選んで追加。当たって押し返す挙動は『物理』セクションで設定する");
 
             if (ImGui::BeginPopup("AddColliderPopup##acp")) {
-                // 既定の衝突マスクはゲーム側が ColliderTagManager に設定したものを使う
-                // （エンジンが "Player" 等のゲーム固有タグを直接知らないようにするため）
-                auto makeDefault = [](auto *c) {
-                    c->SetTag("Environment");
-                    for (const std::string &mask : ColliderTagManager::GetInstance()->GetDefaultCollisionMasks()) {
-                        c->AddCollisionMask(mask);
+                const std::pair<const char *, ColliderType> kShapes[] = {{"Sphere", ColliderType::Sphere},
+                                                                         {"AABB", ColliderType::AABB},
+                                                                         {"OBB", ColliderType::OBB},
+                                                                         {"Cylinder", ColliderType::Cylinder},
+                                                                         {"Mesh", ColliderType::Mesh}};
+                for (const auto &[shapeName, shapeType] : kShapes) {
+                    if (ImGui::MenuItem(shapeName)) {
+                        AddColliderForEditor(shapeType);
                     }
-                };
-                // AddXxxCollider は保存済みJSON(jsons/Collider)があればそれを読み込んで返す。
-                // そこへ既定値を被せると、保存しておいたサイズやタグが消えてしまうので、
-                // 既定値を入れるのは「保存済み設定が無かったとき」だけにする
-                auto isFresh = [](auto *c) {
-                    return !DataHandler("Collider", c->GetName()).Exists();
-                };
-                if (ImGui::MenuItem("Sphere")) {
-                    auto *c = AddSphereCollider();
-                    if (isFresh(c)) {
-                        makeDefault(c);
-                        c->SetRadius(1.0f);
-                    }
-                }
-                if (ImGui::MenuItem("AABB")) {
-                    auto *c = AddAABBCollider();
-                    if (isFresh(c)) {
-                        makeDefault(c);
-                        c->SetSize({2.0f, 2.0f, 2.0f});
-                    }
-                }
-                if (ImGui::MenuItem("OBB")) {
-                    auto *c = AddOBBCollider();
-                    if (isFresh(c)) {
-                        makeDefault(c);
-                        c->SetSize({2.0f, 2.0f, 2.0f});
-                    }
-                }
-                if (ImGui::MenuItem("Cylinder")) {
-                    auto *c = AddCylinderCollider();
-                    if (isFresh(c)) {
-                        makeDefault(c);
-                        c->SetRadius(2.0f);
-                        c->SetHeight(4.0f);
-                        c->SetInward(false); // 障害物として外側に押し出す
-                    }
-                }
-                if (ImGui::MenuItem("Mesh")) {
-                    // 自身のモデル形状から三角形メッシュコライダーを生成する
-                    auto *c = AddMeshCollider();
-                    makeDefault(c);
                 }
                 ImGui::EndPopup();
             }
@@ -907,13 +876,33 @@ void BaseObject::DebugObject() {
             ImGui::Spacing();
         }
 
-        ImGui::EndTabItem();
+        // ====================================================
+        // 手のIK（手首を目標へ伸ばす）
+        // ====================================================
+        if (obj3d_ && obj3d_->GetHaveAnimation() && ThemedHeader("手のIK（目標へ手を伸ばす）##handikhdr", DebugTheme::kAccentGreen)) {
+            ImGui::Indent(6.0f);
+            DrawHandIkImGui();
+            ImGui::Unindent(6.0f);
+            ImGui::Spacing();
+        }
+
+        // ====================================================
+        // 揺れ物（髪・布・しっぽ）
+        // ====================================================
+        if (obj3d_ && obj3d_->GetHaveAnimation() && ThemedHeader("揺れ物（髪・布・しっぽ）##springhdr", DebugTheme::kAccentOrange)) {
+            ImGui::Indent(6.0f);
+            DrawSpringBoneImGui();
+            ImGui::Unindent(6.0f);
+            ImGui::Spacing();
+        }
+
+        InspectorSearch::EndTab();
     }
 
     // ====================================================
     // ツール（複製・スケールイージング検証）
     // ====================================================
-    if (ImGui::BeginTabItem("ツール")) {
+    if (InspectorSearch::BeginTab("ツール")) {
 
         // ====================================================
         // ツール（スケールイージング検証）
@@ -941,10 +930,10 @@ void BaseObject::DebugObject() {
             ImGui::Spacing();
         }
 
-        ImGui::EndTabItem();
+        InspectorSearch::EndTab();
     }
 
-    ImGui::EndTabBar();
+    InspectorSearch::EndTabBar();
 
     ImGui::PopStyleVar(4);
 #endif // USE_IMGUI
@@ -1090,6 +1079,300 @@ void BaseObject::DrawLookAtImGui() {
             pSolver->AutoDetect(pBone->GetSkeletonRef());
         }
     }
+    ImGui::EndDisabled();
+#endif // USE_IMGUI
+}
+
+#ifdef USE_IMGUI
+namespace {
+/// <summary>ジョイントを名前で選ぶコンボ（骨が多いので絞り込み欄つき）</summary>
+/// <returns>bool: 選び直したら true</returns>
+bool JointCombo(const char *id, std::string &jointName, const Skeleton *pSkeleton) {
+    static std::string filter;
+    ImGui::SetNextItemWidth(-1);
+    if (!ImGui::BeginCombo(id, jointName.empty() ? "(未選択)" : jointName.c_str(), ImGuiComboFlags_HeightLarge)) {
+        return false;
+    }
+    bool changed = false;
+    if (ImGui::IsWindowAppearing()) {
+        filter.clear();
+        ImGui::SetKeyboardFocusHere();
+    }
+    ImGui::SetNextItemWidth(-1);
+    ImGui::InputTextWithHint("##jointFilter", ICON_FA_SEARCH " 骨の名前で絞る", &filter);
+    if (pSkeleton) {
+        for (const Joint &joint : pSkeleton->joints) {
+            if (!filter.empty() && joint.name.find(filter) == std::string::npos) {
+                continue;
+            }
+            if (ImGui::Selectable(joint.name.c_str(), joint.name == jointName)) {
+                jointName = joint.name;
+                changed = true;
+            }
+        }
+    }
+    ImGui::EndCombo();
+    return changed;
+}
+} // namespace
+#endif // USE_IMGUI
+
+void BaseObject::DrawHandIkImGui() {
+#ifdef USE_IMGUI
+    ModelAnimation *pAnimation = obj3d_ ? obj3d_->GetCurrentModelAnimation() : nullptr;
+    Bone *pBone = pAnimation ? pAnimation->GetBone() : nullptr;
+    const Skeleton *pSkeleton = pBone ? &pBone->GetSkeletonRef() : nullptr;
+    HandIkSolver *pSolver = GetHandIk();
+
+    // まだ使っていないオブジェクトには、腕のジョイントを拾うところから始めてもらう
+    if (!pSolver) {
+        ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kTextDim);
+        ImGui::TextWrapped("上腕と前腕を曲げ直して、手首を目標の位置へ運びます（武器を握る・壁に手をつく など）。\n"
+                           "目標はゲーム側のコード（SetHandIkTarget）が毎フレーム渡します。ここで試しの目標を置いて確かめられます");
+        ImGui::PopStyleColor();
+        if (PrimaryButton("腕のジョイントを自動で拾う##handikdetect", ImVec2(-1, 0))) {
+            pSolver = AcquireHandIk();
+            const size_t found = (pSolver && pSkeleton) ? pSolver->AutoDetect(*pSkeleton) : 0;
+            if (found > 0) {
+                pSolver->GetSettings().enabled = true;
+                ImGuiNotification::Post(std::format("手のIK: 腕を{}本拾いました", found), {0.45f, 0.68f, 0.52f, 1.0f});
+            } else {
+                ImGuiNotification::Post("手のIK: 手首のジョイントが見つかりませんでした", {0.82f, 0.58f, 0.36f, 1.0f});
+            }
+        }
+        return;
+    }
+
+    HandIkSettings &settings = pSolver->GetSettings();
+    std::vector<HandIkSolver::LimbState> &states = pSolver->GetLimbStates();
+    if (states.size() != settings.limbs.size()) {
+        states.resize(settings.limbs.size());
+    }
+
+    AccentCheckbox("手のIKを効かせる##handikenable", &settings.enabled, DebugTheme::kAccentGreen);
+    ImGui::BeginDisabled(!settings.enabled);
+    ImGui::DragFloat("効き具合##handikweight", &settings.weight, 0.01f, 0.0f, 1.0f, "%.2f");
+    ImGui::SetItemTooltip("0で素のアニメーションのまま。見比べるときに使う");
+    ImGui::DragFloat("出入りの速さ[1/秒]##handikblend", &settings.blendSpeed, 0.1f, 0.0f, 40.0f, "%.1f");
+    ImGui::SetItemTooltip("目標ができた / 外れたときに、IK を効かせ始める / 抜く速さ");
+    AccentCheckbox("腕と目標を線で描く##handikdebug", &settings.drawDebug, DebugTheme::kAccentGreen);
+
+    ImGui::Spacing();
+    SectionHeader("[ 腕 ]", DebugTheme::kAccentGreen);
+    int removeLimb = -1;
+    for (size_t i = 0; i < settings.limbs.size(); ++i) {
+        HandIkLimb &limb = settings.limbs[i];
+        HandIkSolver::LimbState &state = states[i];
+        ImGui::PushID(static_cast<int>(i));
+        const std::string label = std::format("{} {}###limb", ICON_FA_HAND_PAPER, limb.label.empty() ? std::string("(名前なし)") : limb.label);
+        if (ImGui::TreeNodeEx(label.c_str(), ImGuiTreeNodeFlags_SpanAvailWidth | ImGuiTreeNodeFlags_DefaultOpen)) {
+            // 今の状態（何を目標にしているか・届いているか）
+            if (state.useTestTarget) {
+                StatusBadge("試しの目標", DebugTheme::kAccentYellow);
+            } else if (state.hasTarget) {
+                StatusBadge("ゲームの目標", DebugTheme::kAccentGreen);
+            } else {
+                StatusBadge("目標なし", DebugTheme::kTextDim);
+            }
+            ImGui::SameLine();
+            ImGui::PushStyleColor(ImGuiCol_Text, state.reachRate > 1.0f && (state.useTestTarget || state.hasTarget) ? DebugTheme::kAccentOrange : DebugTheme::kTextDim);
+            ImGui::Text("効き %.0f%%  距離/腕の長さ %.2f%s", state.blend * 100.0f, state.reachRate,
+                        state.reachRate > 1.0f ? "（届かない）" : "");
+            ImGui::PopStyleColor();
+
+            ImGui::Checkbox("解く##limbEnabled", &limb.enabled);
+            ImGui::SameLine();
+            ImGui::SetNextItemWidth(-1);
+            ImGui::InputTextWithHint("##limbLabel", "呼び名（SetHandIkTarget で使う）", &limb.label);
+            ImGui::TextDisabled("上腕");
+            JointCombo("##limbUpper", limb.upperJoint, pSkeleton);
+            ImGui::TextDisabled("前腕（肘）");
+            JointCombo("##limbLower", limb.lowerJoint, pSkeleton);
+            ImGui::TextDisabled("手首");
+            JointCombo("##limbHand", limb.handJoint, pSkeleton);
+
+            // エディタで試す: 手の今の位置から目標を動かして、腕の曲がり方を見る
+            ImGui::Spacing();
+            if (ImGui::Checkbox("試しの目標で確かめる##limbTest", &state.useTestTarget) && state.useTestTarget) {
+                state.testTarget = state.animatedHandWorld;
+            }
+            ImGui::SetItemTooltip("ゲームからの目標より優先して、ここで置いた位置へ手を運ぶ（保存しない）");
+            if (state.useTestTarget) {
+                ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.65f);
+                ImGui::DragFloat3("目標（ワールド）##limbTestTarget", &state.testTarget.x, 0.01f, 0.0f, 0.0f, "%.2f");
+                if (NeutralButton("手の今の位置へ戻す##limbTestReset")) {
+                    state.testTarget = state.animatedHandWorld;
+                }
+            }
+            if (DangerButton(ICON_FA_TRASH_ALT " この腕を外す##limbRemove")) {
+                removeLimb = static_cast<int>(i);
+            }
+            ImGui::TreePop();
+        }
+        ImGui::PopID();
+    }
+    if (removeLimb >= 0) {
+        settings.limbs.erase(settings.limbs.begin() + removeLimb);
+        states.erase(states.begin() + removeLimb);
+    }
+    if (ConfirmButton("+ 腕を追加##limbAdd")) {
+        settings.limbs.push_back({});
+        states.push_back({});
+    }
+    ImGui::SameLine();
+    if (NeutralButton("左右の腕を自動で拾い直す##handikredetect") && pSkeleton) {
+        const size_t found = pSolver->AutoDetect(*pSkeleton);
+        ImGuiNotification::Post(std::format("手のIK: 腕を{}本拾い直しました", found), {0.45f, 0.68f, 0.52f, 1.0f});
+    }
+    ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kTextDim);
+    ImGui::TextWrapped("ゲームから: SetHandIkTarget(\"左手\", 位置) を毎フレーム / 外すときは ClearHandIkTargets()");
+    ImGui::PopStyleColor();
+    ImGui::EndDisabled();
+#endif // USE_IMGUI
+}
+
+void BaseObject::DrawSpringBoneImGui() {
+#ifdef USE_IMGUI
+    ModelAnimation *pAnimation = obj3d_ ? obj3d_->GetCurrentModelAnimation() : nullptr;
+    Bone *pBone = pAnimation ? pAnimation->GetBone() : nullptr;
+    SpringBoneSolver *pSolver = GetSpringBone();
+
+    // まだ使っていないオブジェクトには、揺らす骨を拾うところから始めてもらう
+    if (!pSolver) {
+        ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kTextDim);
+        ImGui::TextWrapped("髪・スカート・しっぽなどの骨を、体の動きに遅れてついてくるように揺らします。\n"
+                           "アニメーションを付け直さなくても、動きに揺れが乗ります");
+        ImGui::PopStyleColor();
+        if (PrimaryButton("揺らす骨を名前から自動で拾う##springdetect", ImVec2(-1, 0))) {
+            pSolver = AcquireSpringBone();
+            const size_t found = (pSolver && pBone) ? pSolver->AutoDetect(pBone->GetSkeletonRef()) : 0;
+            if (found > 0) {
+                pSolver->GetSettings().enabled = true;
+                ImGuiNotification::Post(std::format("揺れ物: {}か所を拾いました", found), {0.45f, 0.68f, 0.52f, 1.0f});
+            } else {
+                ImGuiNotification::Post("揺れ物: hair / skirt / tail などの名前の骨が見つかりませんでした。根元を手で選んでください",
+                                        {0.82f, 0.58f, 0.36f, 1.0f});
+            }
+        }
+        if (NeutralButton("空で始める（根元の骨を手で選ぶ）##springempty", ImVec2(-1, 0))) {
+            AcquireSpringBone();
+        }
+        return;
+    }
+
+    SpringBoneSettings &settings = pSolver->GetSettings();
+    const Skeleton *pSkeleton = pBone ? &pBone->GetSkeletonRef() : nullptr;
+
+    auto jointCombo = [&](const char *id, std::string &jointName) { return JointCombo(id, jointName, pSkeleton); };
+
+    AccentCheckbox("揺れ物を効かせる##springenable", &settings.enabled, DebugTheme::kAccentOrange);
+    ImGui::SameLine();
+    StatusBadge(std::format("揺らしている骨 {} 本", pSolver->GetSimulatedJointCount()).c_str(),
+                pSolver->GetSimulatedJointCount() > 0 ? DebugTheme::kAccentGreen : DebugTheme::kTextDim);
+
+    ImGui::BeginDisabled(!settings.enabled);
+    ImGui::DragFloat("効き具合##springweight", &settings.weight, 0.01f, 0.0f, 1.0f, "%.2f");
+    ImGui::SetItemTooltip("0で素のアニメーションのまま。見比べるときに使う");
+    ImGui::DragFloat("末端の骨の長さ##springtip", &settings.tipLengthRate, 0.01f, 0.0f, 2.0f, "親の骨の %.2f 倍");
+    ImGui::SetItemTooltip("いちばん先の骨は子が無いので、親の骨を伸ばした仮の先端で向きを決める");
+    AccentCheckbox("揺れと当たり球を線で描く##springdebug", &settings.drawDebug, DebugTheme::kAccentOrange);
+    ImGui::SameLine();
+    if (NeutralButton("揺れをリセット##springreset")) {
+        pSolver->Reset();
+    }
+    ImGui::SetItemTooltip("今のアニメーションのポーズから揺れをやり直す");
+
+    // ---- 揺らすまとまり ----
+    ImGui::Spacing();
+    SectionHeader("[ 揺らすまとまり（根元の骨ごと）]", DebugTheme::kAccentOrange);
+    int removeChain = -1;
+    for (size_t i = 0; i < settings.chains.size(); ++i) {
+        SpringBoneChain &chain = settings.chains[i];
+        ImGui::PushID(static_cast<int>(i));
+        const std::string label = std::format("{} {}###chain", chain.enabled ? ICON_FA_WIND : ICON_FA_PAUSE,
+                                              chain.rootJoint.empty() ? std::string("(根元が未選択)") : chain.rootJoint);
+        if (ImGui::TreeNodeEx(label.c_str(), ImGuiTreeNodeFlags_SpanAvailWidth)) {
+            jointCombo("##chainRoot", chain.rootJoint);
+            ImGui::Checkbox("揺らす##chainEnabled", &chain.enabled);
+
+            // よく使う組み合わせ（そのあと数値で詰める）
+            ImGui::SameLine();
+            ImGui::TextDisabled("プリセット:");
+            struct Preset {
+                const char *name;
+                float stiffness;
+                float drag;
+                float gravity;
+            };
+            static constexpr Preset kPresets[] = {
+                {"髪", 1.0f, 0.4f, 0.0f}, {"布", 0.5f, 0.2f, 0.6f}, {"しっぽ", 1.6f, 0.3f, 0.1f}, {"ぷるん", 2.5f, 0.15f, 0.0f}};
+            for (const Preset &preset : kPresets) {
+                ImGui::SameLine();
+                if (ImGui::SmallButton(preset.name)) {
+                    chain.stiffness = preset.stiffness;
+                    chain.drag = preset.drag;
+                    chain.gravityPower = preset.gravity;
+                }
+            }
+
+            ImGui::DragFloat("戻る強さ##stiff", &chain.stiffness, 0.01f, 0.0f, 8.0f, "%.2f");
+            ImGui::SetItemTooltip("元のポーズへ戻ろうとする力。大きいほど硬く、小さいほどだらんとする");
+            ImGui::DragFloat("減衰##drag", &chain.drag, 0.005f, 0.0f, 1.0f, "%.2f");
+            ImGui::SetItemTooltip("0でいつまでも揺れ続け、1で揺れずにすぐ止まる");
+            ImGui::DragFloat("重力##gravity", &chain.gravityPower, 0.01f, 0.0f, 8.0f, "%.2f");
+            ImGui::DragFloat3("重力の向き##gravityDir", &chain.gravityDirection.x, 0.01f, -1.0f, 1.0f, "%.2f");
+            ImGui::SetItemTooltip("ワールドの向き。横にすると風に吹かれているように見える");
+            ImGui::DragFloat("当たりの太さ##hitRadius", &chain.hitRadius, 0.001f, 0.0f, 10.0f, "%.3f");
+            ImGui::SetItemTooltip("下の「めり込み防止の球」との当たりに使う骨の太さ（モデルの長さの単位）");
+            if (DangerButton(ICON_FA_TRASH_ALT " このまとまりを外す##chainRemove")) {
+                removeChain = static_cast<int>(i);
+            }
+            ImGui::TreePop();
+        }
+        ImGui::PopID();
+    }
+    if (removeChain >= 0) {
+        settings.chains.erase(settings.chains.begin() + removeChain);
+        pSolver->Reset();
+    }
+    if (ConfirmButton("+ まとまりを追加##chainAdd")) {
+        settings.chains.push_back({});
+    }
+
+    // ---- めり込み防止の球 ----
+    ImGui::Spacing();
+    SectionHeader("[ めり込み防止の球 ]", DebugTheme::kAccentOrange);
+    int removeCollider = -1;
+    for (size_t i = 0; i < settings.colliders.size(); ++i) {
+        SpringBoneCollider &collider = settings.colliders[i];
+        ImGui::PushID(static_cast<int>(1000 + i));
+        const std::string label = std::format("{} {}###collider", ICON_FA_CIRCLE,
+                                              collider.joint.empty() ? std::string("(骨が未選択)") : collider.joint);
+        if (ImGui::TreeNodeEx(label.c_str(), ImGuiTreeNodeFlags_SpanAvailWidth)) {
+            jointCombo("##colliderJoint", collider.joint);
+            ImGui::DragFloat3("ずれ##colliderOffset", &collider.offset.x, 0.001f, 0.0f, 0.0f, "%.3f");
+            ImGui::SetItemTooltip("骨の位置からのずれ（骨の向きに沿った空間）");
+            ImGui::DragFloat("半径##colliderRadius", &collider.radius, 0.001f, 0.0f, 100.0f, "%.3f");
+            if (DangerButton(ICON_FA_TRASH_ALT " この球を外す##colliderRemove")) {
+                removeCollider = static_cast<int>(i);
+            }
+            ImGui::TreePop();
+        }
+        ImGui::PopID();
+    }
+    if (removeCollider >= 0) {
+        settings.colliders.erase(settings.colliders.begin() + removeCollider);
+    }
+    if (ConfirmButton("+ 球を追加##colliderAdd")) {
+        settings.colliders.push_back({});
+    }
+
+    ImGui::Spacing();
+    if (NeutralButton("名前から自動で拾い直す##springredetect", ImVec2(-1, 0)) && pSkeleton) {
+        const size_t found = pSolver->AutoDetect(*pSkeleton);
+        ImGuiNotification::Post(std::format("揺れ物: {}か所を拾い直しました", found), {0.45f, 0.68f, 0.52f, 1.0f});
+    }
+    ImGui::SetItemTooltip("hair / skirt / tail / cape などを含む名前の骨を根元として拾い、頭に当たり球を置き直す（今の設定は消える）");
     ImGui::EndDisabled();
 #endif // USE_IMGUI
 }

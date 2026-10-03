@@ -281,6 +281,7 @@ void ImGuiManager::UpdateSceneIcons(const ImVec2 &imageMin, const ImVec2 &imageS
 
 void ImGuiManager::DrawSelectedIconRanges()
 {
+    LineCategoryScope lineScope(LineCategory::SceneIcon);
     LineRenderer *line = LineRenderer::GetInstance();
     LightGroup *lights = LightGroup::GetInstance();
     for (const SceneIcon &icon : sceneIcons_)

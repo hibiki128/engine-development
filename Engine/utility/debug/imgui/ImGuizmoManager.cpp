@@ -187,7 +187,8 @@ void ImGuizmoManager::Update(const ImVec2 &scenePosition, const ImVec2 &sceneSiz
         isBoxSelecting_ = false;
     }
 
-    DrawSelectedObjectHighlight();
+    // 選択中の物の枠・マウスを乗せている物の枠（ギズモより先に描いて、ギズモが上に来るようにする）
+    DrawSelectionOverlay(scenePosition, sceneSize, sceneHovered);
 
     if (!selectedNames_.empty())
     {
@@ -196,7 +197,16 @@ void ImGuizmoManager::Update(const ImVec2 &scenePosition, const ImVec2 &sceneSiz
     }
 
     // 移動スナップの刻みを見せる（掴んでいる間だけ）
-    DrawSnapGrid();
+    {
+        LineCategoryScope lineScope(LineCategory::SnapGrid);
+        DrawSnapGrid();
+    }
+    // 補助表示（AABB・外接球・レイ）。以前はトランスフォームマネージャの窓を開いている間しか描かれなかった
+    if (isDrawDebug_)
+    {
+        LineCategoryScope lineScope(LineCategory::GizmoDebug);
+        DrawDebugRaycast();
+    }
     sceneClickConsumed_ = false;
 }
 

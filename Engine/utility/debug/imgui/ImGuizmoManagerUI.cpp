@@ -9,8 +9,13 @@
 #include <transform/WorldTransform.h>
 #include <edit/undo/UndoRedoManager.h>
 #include "WinApp.h"
+#include <algorithm>
+#include <cctype>
 #include <format>
+#include <icon/IconsFontAwesome5.h>
 #include <imgui.h>
+#include <map>
+#include <vector>
 // DebugUIHelper.h は ImVec4 / ImGui:: を使うので imgui.h の後に include する
 #include "DebugUIHelper.h"
 
@@ -19,6 +24,123 @@
 // =======================================================================
 
 namespace Hagine {
+namespace {
+/// <summary>種類ごとのアイコンと色（シーンのラベル・インスペクタの色分けとそろえる）</summary>
+const char *CategoryIcon(GizmoCategory category)
+{
+    switch (category)
+    {
+    case GizmoCategory::Sprite:
+        return ICON_FA_IMAGE;
+    case GizmoCategory::Particle:
+        return ICON_FA_STAR;
+    case GizmoCategory::Light:
+        return ICON_FA_LIGHTBULB;
+    default:
+        return ICON_FA_CUBE;
+    }
+}
+
+ImVec4 CategoryAccent(GizmoCategory category)
+{
+    switch (category)
+    {
+    case GizmoCategory::Sprite:
+        return DebugTheme::kAccentPurple;
+    case GizmoCategory::Particle:
+        return DebugTheme::kAccentOrange;
+    case GizmoCategory::Light:
+        return DebugTheme::kAccentYellow;
+    default:
+        return DebugTheme::kAccentBlue;
+    }
+}
+
+std::string ToLower(std::string text)
+{
+    std::transform(text.begin(), text.end(), text.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return text;
+}
+
+/// <summary>
+/// 連番を外した名前（cube_12 → cube / cube (3) → cube / Light2 → Light）。
+/// 連番が無ければそのまま返す。外した結果が空になる名前（"12" など）もそのまま返す
+/// </summary>
+std::string StripNumberSuffix(const std::string &name)
+{
+    std::string base = name;
+    // 「名前 (3)」の形
+    if (!base.empty() && base.back() == ')')
+    {
+        const size_t open = base.rfind('(');
+        if (open != std::string::npos && open + 2 < base.size() &&
+            std::all_of(base.begin() + open + 1, base.end() - 1, [](unsigned char c) { return std::isdigit(c) != 0; }))
+        {
+            base.erase(open);
+        }
+    }
+    // 末尾の数字
+    size_t end = base.size();
+    while (end > 0 && std::isdigit(static_cast<unsigned char>(base[end - 1])))
+    {
+        --end;
+    }
+    base.erase(end);
+    // 区切り（_ - . 空白）
+    while (!base.empty() && (base.back() == '_' || base.back() == '-' || base.back() == '.' || base.back() == ' '))
+    {
+        base.pop_back();
+    }
+    return base.empty() ? name : base;
+}
+
+/// <summary>数字を数として比べる並び（cube_2 が cube_10 より前に来る）</summary>
+bool NaturalLess(const std::string &a, const std::string &b)
+{
+    size_t i = 0;
+    size_t j = 0;
+    while (i < a.size() && j < b.size())
+    {
+        const unsigned char ca = static_cast<unsigned char>(a[i]);
+        const unsigned char cb = static_cast<unsigned char>(b[j]);
+        if (std::isdigit(ca) && std::isdigit(cb))
+        {
+            size_t ei = i;
+            size_t ej = j;
+            while (ei < a.size() && std::isdigit(static_cast<unsigned char>(a[ei])))
+                ++ei;
+            while (ej < b.size() && std::isdigit(static_cast<unsigned char>(b[ej])))
+                ++ej;
+            // 先頭の0を飛ばして桁数→中身の順で比べる（桁あふれさせない）
+            size_t si = i;
+            size_t sj = j;
+            while (si + 1 < ei && a[si] == '0')
+                ++si;
+            while (sj + 1 < ej && b[sj] == '0')
+                ++sj;
+            if (ei - si != ej - sj)
+                return (ei - si) < (ej - sj);
+            const int compared = a.compare(si, ei - si, b, sj, ej - sj);
+            if (compared != 0)
+                return compared < 0;
+            i = ei;
+            j = ej;
+            continue;
+        }
+        const int la = std::tolower(ca);
+        const int lb = std::tolower(cb);
+        if (la != lb)
+            return la < lb;
+        ++i;
+        ++j;
+    }
+    if ((a.size() - i) != (b.size() - j))
+        return (a.size() - i) < (b.size() - j);
+    // 大文字小文字・0埋めだけが違う名前も別物として並べる（map のキーで同じ扱いにしない）
+    return a < b;
+}
+} // namespace
+
 // ---- imgui ------------------------------------------------------------
 
 void ImGuizmoManager::DrawImGui()
@@ -26,29 +148,104 @@ void ImGuizmoManager::DrawImGui()
     if (!pViewProjection_)
         return;
 
-    ImGui::PushStyleColor(ImGuiCol_CheckMark, DebugTheme::kAccentGreen);
-    ImGui::Checkbox("デバッグ表示する", &isDrawDebug_);
-    ImGui::PopStyleColor();
-    ImGui::SetItemTooltip("選択中オブジェクトの AABB / スフィア / レイを線で表示します");
+    // ---- オブジェクト選択（一番よく使うので一番上）----
+    SectionHeader("[ オブジェクト選択 ]", DebugTheme::kAccentPurple);
+    DrawObjectBrowser();
 
-    if (isDrawDebug_)
+    // ---- 選択中の物の操作 ----
+    if (!selectedNames_.empty())
     {
+        auto it = transformMap_.find(*selectedNames_.begin());
+        const bool isObject = it != transformMap_.end() && it->second.type == GizmoTarget::Type::BaseObject;
+        const float width = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x * 3.0f) / 4.0f;
+        ImGui::BeginDisabled(!isObject);
+        if (NeutralButton(ICON_FA_CLONE " 複製", ImVec2(width, 0.0f)))
+            DuplicateSelectedObjects();
+        ImGui::SetItemTooltip("Ctrl+D: その場で複製して、複製したほうを選びます（オブジェクトのみ）");
+        ImGui::SameLine();
+        if (NeutralButton(ICON_FA_COPY " コピー", ImVec2(width, 0.0f)))
+            CopySelectedObjects();
+        ImGui::SameLine();
+        ImGui::BeginDisabled(copiedNames_.empty());
+        if (NeutralButton(ICON_FA_PASTE " 貼り付け", ImVec2(width, 0.0f)))
+            PasteObjects();
+        ImGui::EndDisabled();
+        ImGui::EndDisabled();
+        ImGui::SameLine();
+        if (DangerButton(ICON_FA_TRASH_ALT " 削除", ImVec2(width, 0.0f)))
+            DeleteSelectedObjects();
+        ImGui::SetItemTooltip("選択中の全オブジェクトを削除します");
+
+        // 重なっていた候補（Tab で順に選べる）
+        if (overlapCandidates_.size() > 1)
+        {
+            ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kAccentYellow);
+            ImGui::Text(ICON_FA_LAYER_GROUP " 重なり %zu件（Tab で順に選択）", overlapCandidates_.size());
+            ImGui::PopStyleColor();
+            for (int i = 0; i < static_cast<int>(overlapCandidates_.size()); ++i)
+            {
+                const bool isCurrent = (i == overlapCycleIndex_);
+                ImGui::PushStyleColor(ImGuiCol_Text, isCurrent ? DebugTheme::kAccentGreen : DebugTheme::kTextDim);
+                ImGui::Text("  [%d] %s", i, overlapCandidates_[i].first.c_str());
+                ImGui::PopStyleColor();
+            }
+        }
+
+        if (inspectorWindowOpen_)
+        {
+            // 詳細はインスペクタ窓に出ているので、ここに同じものを重ねない
+            DimText("詳細はインスペクタ窓に表示しています");
+        }
+        else if (ThemedHeader(std::format("詳細 ({})###gizmoDetail", *selectedNames_.begin()).c_str(), DebugTheme::kAccentYellow, true))
+        {
+            ShowSelectedObjectImGui();
+        }
+    }
+
+    ImGui::Spacing();
+    ImGui::Separator();
+
+    // ---- 選択の表示 ----
+    if (ThemedHeader("選択の表示##gizmoSelectionLook", DebugTheme::kAccentOrange))
+    {
+        AccentCheckbox("選んだ物の枠", &showSelectionOutline_, DebugTheme::kAccentOrange);
+        ImGui::SameLine();
+        ImGui::ColorEdit4("##selectionColor", &selectionColor_.x, ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_NoAlpha);
+        ImGui::SetItemTooltip("選んだ物の枠の色");
+        ImGui::BeginDisabled(!showSelectionOutline_);
         ImGui::Indent();
-        ImGui::PushStyleColor(ImGuiCol_CheckMark, DebugTheme::kAccentGreen);
-        ImGui::Checkbox("選択中のみ", &debugSelectedOnly_);
+        ImGui::Checkbox("奥の辺を破線で出す", &showSelectionHiddenEdges_);
         ImGui::SameLine();
-        ImGui::Checkbox("AABB", &showDebugAABB_);
-        ImGui::SameLine();
-        ImGui::Checkbox("スフィア", &showDebugSphere_);
-        ImGui::SameLine();
-        ImGui::Checkbox("レイ", &showDebugHitPoints_);
-        ImGui::PopStyleColor();
+        ImGui::Checkbox("中をうっすら塗る", &showSelectionFill_);
         ImGui::Unindent();
+        ImGui::EndDisabled();
+        AccentCheckbox("マウスを乗せた物の枠", &showHoverOutline_, DebugTheme::kAccentCyan);
+        ImGui::SetItemTooltip("クリックしたら選ばれる物を、先に細い枠で知らせます（一覧の行に乗せたときも出ます）");
+        ImGui::SameLine();
+        ImGui::ColorEdit4("##hoverColor", &hoverColor_.x, ImGuiColorEditFlags_NoInputs);
+
+        ImGui::Spacing();
+        AccentCheckbox("補助表示（AABB・外接球・レイ）", &isDrawDebug_, DebugTheme::kAccentGreen);
+        ImGui::SetItemTooltip("当たり判定の確認用に、対象の AABB / 外接球 / マウスのレイを線で表示します");
+        if (isDrawDebug_)
+        {
+            ImGui::Indent();
+            ImGui::PushStyleColor(ImGuiCol_CheckMark, DebugTheme::kAccentGreen);
+            ImGui::Checkbox("選択中のみ", &debugSelectedOnly_);
+            ImGui::SameLine();
+            ImGui::Checkbox("AABB", &showDebugAABB_);
+            ImGui::SameLine();
+            ImGui::Checkbox("スフィア", &showDebugSphere_);
+            ImGui::SameLine();
+            ImGui::Checkbox("レイ", &showDebugHitPoints_);
+            ImGui::PopStyleColor();
+            ImGui::Unindent();
+        }
+        DimText("線の種類ごとの表示は 表示 → デバッグ線 でまとめて切り替えられます");
     }
 
     // ---- 操作説明 ----
-    ImGui::Spacing();
-    if (ImGui::CollapsingHeader("[ ショートカット ]"))
+    if (ThemedHeader("ショートカット##gizmoShortcuts", DebugTheme::kAccentBlue))
     {
         ImGui::BulletText("1 / 2 / 3 : 移動 / 回転 / スケール");
         ImGui::BulletText("4 : ローカル ⇔ ワールド 切替");
@@ -198,146 +395,221 @@ void ImGuizmoManager::DrawImGui()
     }
     ImGui::SetItemTooltip("選択中のオブジェクトを、真下にある他のオブジェクトの上面へ落とします\n"
                           "（下に何も無ければ Y=0 へ）");
+}
 
-    ImGui::Separator();
+// ---- DrawObjectBrowser ------------------------------------------------
 
-    SectionHeader("[ オブジェクト選択 ]", DebugTheme::kAccentPurple);
-    // 検索ボックス（ヒント付き・全幅）
-    ImGui::SetNextItemWidth(-1);
-    bool searchChanged = ImGui::InputTextWithHint("##ObjectSearch", "名前で絞り込み...", searchBuffer_, sizeof(searchBuffer_));
-    if (searchChanged)
+// シーンの物を探して選ぶ一覧。cube_1, cube_2 … のような連番は「cube」に1行でまとめ、▼で開くと中身が出る。
+// 以前はコンボボックス1つで、物が増えると長いリストを上下に探すしかなかった。
+void ImGuizmoManager::DrawObjectBrowser()
+{
+    // ---- 絞り込み ----
+    const float comboWidth = 120.0f;
+    ImGui::SetNextItemWidth((std::max)(ImGui::GetContentRegionAvail().x - comboWidth - ImGui::GetFrameHeight() - ImGui::GetStyle().ItemSpacing.x * 2.0f, 80.0f));
+    if (ImGui::InputTextWithHint("##ObjectSearch", ICON_FA_SEARCH " 名前で絞り込み...", searchBuffer_, sizeof(searchBuffer_)))
+    {
         UpdateFilteredNames();
-    if (filteredNames_.empty())
-        UpdateFilteredNames();
-
-    std::string currentDisplayName = selectedNames_.empty() ? "なし"
-                                                            : (selectedNames_.size() == 1 ? *selectedNames_.begin()
-                                                                                          : "複数選択 (" + std::to_string(selectedNames_.size()) + "個)");
-
-    if (ImGui::BeginCombo("選択オブジェクト", currentDisplayName.c_str()))
-    {
-        bool isNoneSelected = selectedNames_.empty();
-        if (ImGui::Selectable("なし", isNoneSelected))
-            selectedNames_.clear();
-        if (isNoneSelected)
-            ImGui::SetItemDefaultFocus();
-
-        for (const std::string &name : filteredNames_)
-        {
-            auto it = transformMap_.find(name);
-            if (it != transformMap_.end())
-            {
-                bool isSelected = (selectedNames_.find(name) != selectedNames_.end());
-                if (ImGui::Selectable(name.c_str(), isSelected))
-                {
-                    selectedNames_.clear();
-                    selectedNames_.insert(name);
-                }
-                if (isSelected)
-                    ImGui::SetItemDefaultFocus();
-            }
-        }
-        ImGui::EndCombo();
-    }
-
-    if (strlen(searchBuffer_) > 0)
-    {
-        ImGui::Text("検索結果: %zu個", filteredNames_.size());
-    }
-
-    ImGui::Spacing();
-    ImGui::Text("選択中のオブジェクト数: %zu", selectedNames_.size());
-    if (!selectedNames_.empty())
-    {
-        ImGui::Text("選択中:");
-        for (const std::string &name : selectedNames_)
-        {
-            ImGui::BulletText("%s", name.c_str());
-        }
-    }
-
-    ImGui::Separator();
-
-    if (ImGui::Button("全選択"))
-    {
-        selectedNames_.clear();
-        for (const auto &pair : transformMap_)
-            selectedNames_.insert(pair.first);
     }
     ImGui::SameLine();
-    if (ImGui::Button("選択解除"))
-        selectedNames_.clear();
-
-    ImGui::Spacing();
-
-    if (!selectedNames_.empty())
     {
-        if (inspectorWindowOpen_)
-        {
-            // 詳細はインスペクタ窓に出ているので、ここに同じものを重ねない
-            DimText("詳細はインスペクタ窓に表示しています");
-        }
-        else
-        {
-            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 0.6f, 1.0f));
-            ImGui::Text("オブジェクト詳細 (%s)", selectedNames_.begin()->c_str());
-            ImGui::PopStyleColor();
-            ImGui::Separator();
+        static const char *kFilterLabels[] = {"すべての種類", "オブジェクト", "スプライト", "パーティクル", "ライト"};
+        int filterIndex = browserCategoryFilter_ + 1;
+        ImGui::SetNextItemWidth(comboWidth);
+        if (ImGui::Combo("##browserCategory", &filterIndex, kFilterLabels, IM_ARRAYSIZE(kFilterLabels)))
+            browserCategoryFilter_ = filterIndex - 1;
+    }
+    ImGui::SameLine();
+    {
+        ScopedButtonColors colors(browserGroupNumbered_ ? DebugTheme::kButtonPrimary : DebugTheme::kButtonGhost,
+                                  browserGroupNumbered_ ? DebugTheme::kButtonPrimaryHover : DebugTheme::kButtonGhostHover);
+        if (ImGui::Button(ICON_FA_LAYER_GROUP "##browserGroup", ImVec2(ImGui::GetFrameHeight(), 0.0f)))
+            browserGroupNumbered_ = !browserGroupNumbered_;
+    }
+    ImGui::SetItemTooltip(browserGroupNumbered_ ? "連番をまとめて表示中（cube_1, cube_2 → cube ▼）。押すと1つずつ並べます"
+                                                : "1つずつ並べています。押すと連番をまとめます（cube_1, cube_2 → cube ▼）");
 
-            ShowSelectedObjectImGui();
-        }
+    // ---- 並べる物を集める ----
+    const std::string query = ToLower(searchBuffer_);
+    struct Row
+    {
+        const std::string *name;
+        GizmoCategory category;
+    };
+    std::map<std::string, std::vector<Row>, bool (*)(const std::string &, const std::string &)> groups(NaturalLess);
+    int shownCount = 0;
+    for (const auto &[name, target] : transformMap_)
+    {
+        if (browserCategoryFilter_ >= 0 && static_cast<int>(target.category) != browserCategoryFilter_)
+            continue;
+        if (!query.empty() && ToLower(name).find(query) == std::string::npos)
+            continue;
+        const std::string key = browserGroupNumbered_ ? StripNumberSuffix(name) : name;
+        groups[key].push_back({&name, target.category});
+        ++shownCount;
+    }
+    for (auto &[key, rows] : groups)
+    {
+        std::sort(rows.begin(), rows.end(), [](const Row &l, const Row &r) { return NaturalLess(*l.name, *r.name); });
+    }
 
-        ImGui::Spacing();
-        ImGui::Spacing();
+    // 選択が外から（シーンのクリックなどで）変わったら、その行が見えるよう開いて送る
+    const std::string currentSelection = selectedNames_.size() == 1 ? *selectedNames_.begin() : std::string();
+    if (currentSelection != browserLastSelection_)
+    {
+        browserLastSelection_ = currentSelection;
+        browserScrollToSelection_ = !currentSelection.empty();
+    }
 
-        // BaseObject のみコピー・ペーストが可能
-        auto it = transformMap_.find(*selectedNames_.begin());
-        if (it != transformMap_.end() && it->second.type == GizmoTarget::Type::BaseObject)
+    // 範囲選択（Shift+クリック）用に、一覧の並び（閉じたまとまりの中身も含む）を控える
+    std::vector<const std::string *> visibleOrder;
+    visibleOrder.reserve(shownCount);
+    for (const auto &[key, rows] : groups)
+        for (const Row &row : rows)
+            visibleOrder.push_back(row.name);
+
+    auto selectRow = [&](const std::string &name) {
+        const ImGuiIO &io = ImGui::GetIO();
+        if (io.KeyShift && !browserRangeAnchor_.empty())
         {
-            if (ImGui::Button("複製 (Ctrl+D)", ImVec2(-1, 30)))
-                DuplicateSelectedObjects();
-            ImGui::SetItemTooltip("選択中のオブジェクトをその場で複製し、複製したほうを選択状態にします");
-            if (ImGui::Button("コピー", ImVec2(-1, 30)))
-                CopySelectedObjects();
-            if (!copiedNames_.empty())
+            // 起点から今の行までを選ぶ（見えている並びで）
+            auto anchorIt = std::find_if(visibleOrder.begin(), visibleOrder.end(), [&](const std::string *n) { return *n == browserRangeAnchor_; });
+            auto currentIt = std::find_if(visibleOrder.begin(), visibleOrder.end(), [&](const std::string *n) { return *n == name; });
+            if (anchorIt != visibleOrder.end() && currentIt != visibleOrder.end())
             {
-                if (ImGui::Button("ペースト", ImVec2(-1, 30)))
-                    PasteObjects();
+                if (!io.KeyCtrl)
+                    selectedNames_.clear();
+                if (anchorIt > currentIt)
+                    std::swap(anchorIt, currentIt);
+                for (auto it = anchorIt; it <= currentIt; ++it)
+                    selectedNames_.insert(**it);
+                return;
             }
-            ImGui::Spacing();
         }
+        if (io.KeyCtrl)
+            ToggleSelect(name);
+        else
+            SelectOnly(name);
+        browserRangeAnchor_ = name;
+        browserScrollToSelection_ = false; // 一覧で選んだ物は見えているので送らない
+        browserLastSelection_ = selectedNames_.size() == 1 ? *selectedNames_.begin() : std::string();
+    };
 
-        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.8f, 0.3f, 0.3f, 0.8f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(1.0f, 0.4f, 0.4f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.7f, 0.2f, 0.2f, 1.0f));
-        if (ImGui::Button("選択オブジェクトを削除", ImVec2(-1, 0)))
-            DeleteSelectedObjects();
-        if (ImGui::IsItemHovered())
-            ImGui::SetTooltip("選択中の全オブジェクトを削除します");
-        ImGui::PopStyleColor(3);
-    }
-
-    // 重複オブジェクト候補（Tab でサイクル）
-    if (overlapCandidates_.size() > 1)
-    {
-        ImGui::Separator();
-        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.9f, 0.4f, 1.0f));
-        ImGui::Text("重複候補: %zu個 (Tab でサイクル選択)", overlapCandidates_.size());
+    auto drawItem = [&](const Row &row, const char *label) {
+        const std::string &name = *row.name;
+        const bool selected = IsSelected(name);
+        ImGui::PushID(name.c_str());
+        ImGui::PushStyleColor(ImGuiCol_Text, CategoryAccent(row.category));
+        ImGui::TextUnformatted(CategoryIcon(row.category));
         ImGui::PopStyleColor();
-        for (int i = 0; i < static_cast<int>(overlapCandidates_.size()); ++i)
+        ImGui::SameLine();
+        if (ImGui::Selectable(label, selected, ImGuiSelectableFlags_AllowDoubleClick))
         {
-            bool isCurrent = (i == overlapCycleIndex_);
-            if (isCurrent)
-                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.4f, 1.0f, 0.4f, 1.0f));
-            ImGui::Text("  [%d] %s", i, overlapCandidates_[i].first.c_str());
-            if (isCurrent)
-                ImGui::PopStyleColor();
+            selectRow(name);
+            if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
+                FocusOnSelection();
         }
-    }
+        if (ImGui::IsItemHovered())
+        {
+            // シーンでも同じ物を枠で知らせる（次のフレームのシーン描画で使う）
+            browserHoveredName_ = name;
+            ImGui::SetTooltip("%s\nダブルクリック: カメラを寄せる / Ctrl: 追加・解除 / Shift: 範囲", name.c_str());
+        }
+        if (ImGui::BeginPopupContextItem("##browserItemContext"))
+        {
+            if (!selected)
+                SelectOnly(name);
+            if (ImGui::MenuItem(ICON_FA_CROSSHAIRS " カメラを寄せる", "F"))
+                FocusOnSelection();
+            if (ImGui::MenuItem(ICON_FA_CLONE " 複製", "Ctrl+D"))
+                DuplicateSelectedObjects();
+            ImGui::Separator();
+            if (ImGui::MenuItem(ICON_FA_TRASH_ALT " 削除"))
+                DeleteSelectedObjects();
+            ImGui::EndPopup();
+        }
+        if (selected && browserScrollToSelection_ && name == currentSelection)
+        {
+            ImGui::SetScrollHereY(0.4f);
+            browserScrollToSelection_ = false;
+        }
+        ImGui::PopID();
+    };
 
-    ImGui::Separator();
-    if (isDrawDebug_)
-        DrawDebugRaycast();
+    // ---- 一覧 ----
+    browserHoveredName_.clear();
+    ImGui::BeginChild("##objectBrowser", ImVec2(0.0f, 220.0f), ImGuiChildFlags_Borders | ImGuiChildFlags_ResizeY);
+    const bool filtering = !query.empty();
+    for (const auto &[key, rows] : groups)
+    {
+        if (rows.size() == 1)
+        {
+            drawItem(rows.front(), rows.front().name->c_str());
+            continue;
+        }
+
+        // まとめた行。見出しを押すと中身を全部選ぶ（▼で開閉）
+        int selectedInGroup = 0;
+        bool containsTarget = false;
+        for (const Row &row : rows)
+        {
+            selectedInGroup += IsSelected(*row.name) ? 1 : 0;
+            containsTarget |= (*row.name == currentSelection);
+        }
+        if (filtering || (browserScrollToSelection_ && containsTarget))
+            ImGui::SetNextItemOpen(true);
+
+        ImGui::PushID(key.c_str());
+        ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_OpenOnDoubleClick | ImGuiTreeNodeFlags_SpanAvailWidth;
+        if (selectedInGroup == static_cast<int>(rows.size()))
+            flags |= ImGuiTreeNodeFlags_Selected;
+        const std::string header = selectedInGroup > 0 && selectedInGroup < static_cast<int>(rows.size())
+                                       ? std::format("{}  ({})  {}つ選択中###group", key, rows.size(), selectedInGroup)
+                                       : std::format("{}  ({})###group", key, rows.size());
+        ImGui::PushStyleColor(ImGuiCol_Text, CategoryAccent(rows.front().category));
+        const bool open = ImGui::TreeNodeEx(header.c_str(), flags);
+        ImGui::PopStyleColor();
+        if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen())
+        {
+            // 見出しを押したら中身を全部選ぶ（Ctrl なら今の選択に足す）
+            if (!ImGui::GetIO().KeyCtrl)
+                selectedNames_.clear();
+            for (const Row &row : rows)
+                selectedNames_.insert(*row.name);
+            browserScrollToSelection_ = false;
+        }
+        ImGui::SetItemTooltip("押す: %s を全部選ぶ（Ctrl で追加）\n▼ / ダブルクリック: 開く", key.c_str());
+        if (open)
+        {
+            for (const Row &row : rows)
+            {
+                drawItem(row, row.name->c_str());
+            }
+            ImGui::TreePop();
+        }
+        ImGui::PopID();
+    }
+    if (groups.empty())
+    {
+        DimText(transformMap_.empty() ? "シーンに物がありません" : "一致する物がありません");
+    }
+    ImGui::EndChild();
+
+    // ---- 件数と全体の操作 ----
+    ImGui::TextDisabled("%d 件 / 選択 %zu", shownCount, selectedNames_.size());
+    ImGui::SameLine();
+    const float buttonsWidth = ImGui::CalcTextSize("全部選ぶ選択解除").x + ImGui::GetStyle().FramePadding.x * 4.0f + ImGui::GetStyle().ItemSpacing.x;
+    ImGui::SetCursorPosX((std::max)(ImGui::GetCursorPosX(), ImGui::GetContentRegionMax().x - buttonsWidth));
+    if (ImGui::SmallButton("全部選ぶ"))
+    {
+        // 絞り込み中なら、見えている物だけ
+        selectedNames_.clear();
+        for (const auto &[key, rows] : groups)
+            for (const Row &row : rows)
+                selectedNames_.insert(*row.name);
+    }
+    ImGui::SameLine();
+    if (ImGui::SmallButton("選択解除"))
+        selectedNames_.clear();
 }
 
 // ---- ShowSelectedObjectImGui ------------------------------------------

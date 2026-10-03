@@ -4,7 +4,10 @@
 // dxcapi.h は d3d12shader.h より先に include する必要がある
 #include "dxcapi.h"
 #include "d3d12shader.h"
+#include <filesystem>
 #include <string>
+#include <unordered_map>
+#include <wrl.h>
 
 namespace Hagine {
 
@@ -66,6 +69,33 @@ class ShaderCompiler
 
     IDxcUtils *GetDxcUtils() const { return pDxcUtils_; }
     IDxcCompiler3 *GetDxcCompiler() const { return pDxcCompiler_; }
+
+    /// <summary>
+    /// コンパイル結果の使い回しを全部捨てる。
+    /// .hlsli（インクルード）を書き換えたときに呼ぶ（.hlsl 自身の書き換えは更新時刻で自動的に捨てる）
+    /// </summary>
+    void ClearCache();
+
+    /// <summary>コンパイル結果の使い回しの様子（使い回した回数・コンパイルした回数・控えている本数）</summary>
+    void GetCacheStats(size_t &outHits, size_t &outMisses, size_t &outEntries) const;
+
+  private:
+    /// <summary>
+    /// 1本ぶんのコンパイル結果。同じファイル・同じプロファイルは、ファイルの更新時刻が
+    /// 変わっていない限り使い回す（起動時に FullScreen.VS を60回以上コンパイルしていたため）
+    /// </summary>
+    struct CachedShader
+    {
+        std::filesystem::file_time_type writeTime{};      // コンパイルしたときのファイルの更新時刻
+        Microsoft::WRL::ComPtr<IDxcBlob> object;          // 実行用のバイナリ
+        Microsoft::WRL::ComPtr<IDxcBlob> reflectionData;  // リフレクションの元データ（必要になったら作る）
+    };
+    std::unordered_map<std::wstring, CachedShader> cache_; // キー: パス + "|" + プロファイル
+    size_t cacheHits_ = 0;
+    size_t cacheMisses_ = 0;
+
+    /// <summary>キャッシュの控えからリフレクションを作る</summary>
+    void CreateReflectionFromCache(const CachedShader &cached, ID3D12ShaderReflection **ppReflection);
 
   private:
     // DXCコンパイラ関連

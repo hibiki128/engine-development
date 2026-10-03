@@ -153,48 +153,6 @@ class FootIkSolver
                   const Matrix4x4 &worldMatrix, const Matrix4x4 &inverseWorld);
 
     /// <summary>
-    /// 腿・すね・足首の3点を、足首が目標へ届くように曲げ直す（2ボーンIK）
-    /// </summary>
-    /// <param name="skeleton">対象のスケルトン</param>
-    /// <param name="upperIndex">腿のジョイント添字</param>
-    /// <param name="lowerIndex">すねのジョイント添字</param>
-    /// <param name="footIndex">足首のジョイント添字</param>
-    /// <param name="targetSkeletonSpace">足首の目標位置（スケルトン空間）</param>
-    void SolveTwoBone(Skeleton &skeleton, int32_t upperIndex, int32_t lowerIndex, int32_t footIndex,
-                      const Vector3 &targetSkeletonSpace);
-
-    /// <summary>
-    /// ジョイントを自分の位置を中心に回し、子孫のスケルトン空間行列を作り直す
-    /// </summary>
-    /// <param name="skeleton">対象のスケルトン</param>
-    /// <param name="jointIndex">回すジョイントの添字</param>
-    /// <param name="rotation">かける回転（スケルトン空間）</param>
-    void RotateJoint(Skeleton &skeleton, int32_t jointIndex, const Quaternion &rotation);
-
-    /// <summary>
-    /// ジョイントを平行移動し、子孫のスケルトン空間行列を作り直す
-    /// </summary>
-    /// <param name="skeleton">対象のスケルトン</param>
-    /// <param name="jointIndex">動かすジョイントの添字</param>
-    /// <param name="offset">移動量（スケルトン空間）</param>
-    void TranslateJoint(Skeleton &skeleton, int32_t jointIndex, const Vector3 &offset);
-
-    /// <summary>
-    /// 書き換えたスケルトン空間行列に合わせて、そのジョイントのローカル行列も直す。
-    /// 後から祖先を動かしたときに、入れた曲げが消えないようにするために要る
-    /// </summary>
-    /// <param name="skeleton">対象のスケルトン</param>
-    /// <param name="jointIndex">対象のジョイント添字</param>
-    static void WriteBackLocalMatrix(Skeleton &skeleton, int32_t jointIndex);
-
-    /// <summary>
-    /// 子孫のスケルトン空間行列を親から組み直す（自分自身は対象外）
-    /// </summary>
-    /// <param name="skeleton">対象のスケルトン</param>
-    /// <param name="jointIndex">根になるジョイントの添字</param>
-    void RefreshDescendants(Skeleton &skeleton, int32_t jointIndex);
-
-    /// <summary>
     /// ジョイント名から添字を引く（見つからなければ -1）
     /// </summary>
     /// <param name="skeleton">対象のスケルトン</param>

@@ -275,6 +275,14 @@ class BaseObjectManager
     /// <param name="name">削除するオブジェクト名</param>
     void RemoveObject(const std::string &name);
 
+    /// <summary>
+    /// モデルのファイルが書き換わったとき、そのモデルを使っている全オブジェクトを読み直す（ホットリロード）。
+    /// GPU を待ってから差し替えるので、少し止まる
+    /// </summary>
+    /// <param name="modelPath">models ルートからの相対パス</param>
+    /// <returns>int: 読み直したオブジェクトの数</returns>
+    int ReloadModelFile(const std::string &modelPath);
+
     /// ===================================================
     /// 描画グループ関連
     /// ===================================================

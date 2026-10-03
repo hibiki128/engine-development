@@ -6,6 +6,7 @@
 #include "MyMath.h"
 #include "sstream"
 #include <algorithm>
+#include <unordered_map>
 #include <debug/log/Logger.h>
 #include <render/raytracing/RaytracingScene.h>
 #include <shadow/ShadowMap.h>
@@ -18,11 +19,63 @@ void Model::Initialize(ModelCommon *modelCommon)
     pSrvManager_ = SrvManager::GetInstance();
 }
 
+std::unordered_map<std::string, std::weak_ptr<Model::SharedSource>> &Model::SharedSources()
+{
+    // ファイルのパス → 共有している読み込み結果（使っている体がいなくなれば自然に切れる）
+    static std::unordered_map<std::string, std::weak_ptr<SharedSource>> sharedSources;
+    return sharedSources;
+}
+
+void Model::ForgetSharedSource(const std::string &filename)
+{
+    // 次に読むときは必ずファイルから読み直させる。
+    // 更新時刻を見るのは本体のファイルだけなので、.bin や .mtl だけ書き換わったときはここで捨てないと古いまま使われる
+    auto &sharedSources = SharedSources();
+    const std::string suffix = "/" + filename;
+    for (auto it = sharedSources.begin(); it != sharedSources.end();)
+    {
+        const std::string &key = it->first;
+        const bool matches = key.size() >= suffix.size() && key.compare(key.size() - suffix.size(), suffix.size(), suffix) == 0;
+        it = matches ? sharedSources.erase(it) : std::next(it);
+    }
+}
+
 void Model::CreateModel(const std::string &directorypath, const std::string &filename)
 {
     // 引数で受け取ってメンバ変数に記録する
     directorypath_ = directorypath;
     filename_ = filename;
+
+    // 同じファイルを読んだ体がまだいれば、解析結果と頂点・インデックスのバッファを借りる
+    auto &sharedSources = SharedSources();
+    const std::string filePath = directorypath_ + "/" + filename_;
+    std::error_code timeError;
+    const std::filesystem::file_time_type writeTime = std::filesystem::last_write_time(filePath, timeError);
+    std::shared_ptr<SharedSource> source;
+    if (auto it = sharedSources.find(filePath); it != sharedSources.end())
+    {
+        source = it->second.lock();
+        if (source && (timeError || source->writeTime != writeTime))
+        {
+            source.reset(); // ファイルが書き換わっていたら読み直す
+        }
+    }
+
+    if (source)
+    {
+        isGltf_ = filename_.size() >= 5 && filename_.substr(filename_.size() - 5) == ".gltf";
+        modelData_ = source->data;
+        meshes_.resize(modelData_.meshes.size());
+        for (size_t i = 0; i < modelData_.meshes.size(); ++i)
+        {
+            meshes_[i] = std::make_unique<Mesh>();
+            meshes_[i]->GetMeshData() = modelData_.meshes[i];
+            meshes_[i]->InitializeShared(source->vertexBuffers[i], source->indexBuffers[i]);
+        }
+        sharedSource_ = std::move(source);
+        CalcLocalBounds();
+        return;
+    }
 
     // モデル読み込み
     modelData_ = LoadModelFile(directorypath_, filename_);
@@ -36,6 +89,21 @@ void Model::CreateModel(const std::string &directorypath, const std::string &fil
         meshes_[i] = std::make_unique<Mesh>();
         meshes_[i]->GetMeshData() = modelData_.meshes[i];
         meshes_[i]->Initialize();
+    }
+
+    // 次に同じファイルを読む体のために、解析結果とバッファを控える
+    if (!timeError)
+    {
+        auto created = std::make_shared<SharedSource>();
+        created->writeTime = writeTime;
+        created->data = modelData_;
+        for (const std::unique_ptr<Mesh> &mesh : meshes_)
+        {
+            created->vertexBuffers.push_back(mesh->GetVertexResource());
+            created->indexBuffers.push_back(mesh->GetIndexResource());
+        }
+        sharedSources[filePath] = created;
+        sharedSource_ = std::move(created);
     }
 
     CalcLocalBounds();
@@ -200,45 +268,75 @@ void Model::CalcLocalBounds()
 
 void Model::Update()
 {
-    if (IsSkinned())
+    if (!IsSkinned())
     {
-        pSkin_->UpdateInputVertices(modelData_);
-
-        ID3D12GraphicsCommandList *pCommandList = pModelCommon_->GetDxCommon()->GetCommandList().Get();
-
-        D3D12_RESOURCE_BARRIER barrier = {};
-        barrier.Transition.pResource = pSkin_->GetOutputVertexResource();
-        barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
-
-        if (skinOutputInVertexState_)
-        {
-            // VERTEX → UAV（2フレーム目以降: 前フレームでVERTEX状態になっているので遷移）
-            barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
-            barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER;
-            barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
-            pCommandList->ResourceBarrier(1, &barrier);
-        }
-
-        pSkin_->ExecuteSkinning(pCommandList);
-
-        // ── レイトレーシングの加速構造へ、今のポーズを載せる ──
-        // ここが「スキニングの実行順と噛み合わせる」場所。出力頂点バッファは今 UAV 状態で、
-        // 加速構造は NON_PIXEL_SHADER_RESOURCE でしか読めないので、
-        // BLAS を作るときだけそちらを経由してから頂点バッファ状態へ戻す
-        D3D12_RESOURCE_STATES stateBeforeVertex = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
-        if (RaytracingScene::GetInstance()->BuildSkinnedBlas(this))
-        {
-            stateBeforeVertex = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
-        }
-
-        // → VERTEX
-        barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
-        barrier.Transition.StateBefore = stateBeforeVertex;
-        barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER;
-        pCommandList->ResourceBarrier(1, &barrier);
-
-        skinOutputInVertexState_ = true;
+        return;
     }
+    ID3D12GraphicsCommandList *pCommandList = pModelCommon_->GetDxCommon()->GetCommandList().Get();
+    std::vector<D3D12_RESOURCE_BARRIER> barriers;
+    AppendSkinningBeginBarrier(barriers);
+    if (!barriers.empty())
+    {
+        pCommandList->ResourceBarrier(static_cast<UINT>(barriers.size()), barriers.data());
+    }
+    DispatchSkinning(pCommandList);
+    barriers.clear();
+    AppendSkinningEndBarrier(barriers);
+    pCommandList->ResourceBarrier(static_cast<UINT>(barriers.size()), barriers.data());
+}
+
+void Model::AppendSkinningBeginBarrier(std::vector<D3D12_RESOURCE_BARRIER> &outBarriers)
+{
+    if (!IsSkinned() || !skinOutputInVertexState_)
+    {
+        return; // 初回は作ったときの UAV 状態のまま
+    }
+    // VERTEX → UAV（2フレーム目以降: 前フレームでVERTEX状態になっているので遷移）
+    D3D12_RESOURCE_BARRIER barrier = {};
+    barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+    barrier.Transition.pResource = pSkin_->GetOutputVertexResource();
+    barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+    barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER;
+    barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+    outBarriers.push_back(barrier);
+}
+
+void Model::DispatchSkinning(ID3D12GraphicsCommandList *pCommandList)
+{
+    if (!IsSkinned())
+    {
+        return;
+    }
+    pSkin_->UpdateInputVertices(modelData_);
+    pSkin_->ExecuteSkinning(pCommandList);
+}
+
+void Model::AppendSkinningEndBarrier(std::vector<D3D12_RESOURCE_BARRIER> &outBarriers)
+{
+    if (!IsSkinned())
+    {
+        return;
+    }
+    // ── レイトレーシングの加速構造へ、今のポーズを載せる ──
+    // ここが「スキニングの実行順と噛み合わせる」場所。出力頂点バッファは今 UAV 状態で、
+    // 加速構造は NON_PIXEL_SHADER_RESOURCE でしか読めないので、
+    // BLAS を作るときだけそちらを経由してから頂点バッファ状態へ戻す
+    D3D12_RESOURCE_STATES stateBeforeVertex = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+    if (RaytracingScene::GetInstance()->BuildSkinnedBlas(this))
+    {
+        stateBeforeVertex = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
+    }
+
+    // → VERTEX
+    D3D12_RESOURCE_BARRIER barrier = {};
+    barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+    barrier.Transition.pResource = pSkin_->GetOutputVertexResource();
+    barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+    barrier.Transition.StateBefore = stateBeforeVertex;
+    barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER;
+    outBarriers.push_back(barrier);
+
+    skinOutputInVertexState_ = true;
 }
 
 void Model::Draw(const std::vector<std::unique_ptr<Material>> &materials, std::vector<ObjColor> &color, bool lighting, bool reflect, uint32_t instanceCount)

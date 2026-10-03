@@ -41,6 +41,7 @@
 #include <imgui_impl_dx12.h>
 #include <implot.h>
 #include <implot3d.h>
+#include <input/InputActions.h>
 #include <line/LineRenderer.h>
 #include <map>
 #include <debug/capture/CaptureManager.h>
@@ -215,6 +216,14 @@ void ImGuiManager::Initialize(WinApp *winApp, ImGuizmoManager *imguizmoManager) 
     ImGui_ImplDX12_Init(&initInfo);
 
     pImGuizmoManager_ = imguizmoManager;
+
+    // 持ち主側の表示スイッチを「デバッグ線」窓と結び付ける（窓で入れると、元の窓で切っていた物も出る）
+    LineRenderer *pLines = LineRenderer::GetInstance();
+    pLines->BindCategoryFlag(LineCategory::Grid, &showGrid_);
+    pLines->BindCategoryFlag(LineCategory::Collider, CollisionManager::GetInstance()->GetVisibleFlag());
+    pLines->BindCategoryFlag(LineCategory::Light, LightGroup::GetInstance()->GetShowLightVisualizationFlag());
+    pLines->BindCategoryFlag(LineCategory::GizmoDebug, imguizmoManager->GetDrawDebugFlag());
+    pLines->BindCategoryFlag(LineCategory::SnapGrid, &imguizmoManager->ShowSnapGrid());
 }
 
 void ImGuiManager::SetupTheme() {
@@ -491,6 +500,8 @@ void ImGuiManager::CreateDescriptorHeap() {
 }
 
 void ImGuiManager::Finalize() {
+    // 自分が持っているスイッチの結び付けを外す（この後に線の窓が描かれることは無いが、残しておかない）
+    LineRenderer::GetInstance()->BindCategoryFlag(LineCategory::Grid, nullptr);
     SaveCurrentLayout();
 // 後始末
 #ifdef USE_IMGUI
@@ -583,6 +594,7 @@ void ImGuiManager::UpdateIni() {
         RebuildGridBatchIfNeeded();
         if (gridBatch_ != kInvalidLineBatch) {
             // バッチはY=0のローカル座標。Y位置はワールド行列、色はtintで差し替える
+            LineCategoryScope lineScope(LineCategory::Grid);
             LineRenderer::GetInstance()->SubmitBatch(gridBatch_, MakeTranslateMatrix({0.0f, gridY_, 0.0f}), gridColor_);
         }
     }
@@ -1240,16 +1252,24 @@ void ImGuiManager::ShowUIEditorWindow() {
 }
 
 void ImGuiManager::ShowColliderTagManagerWindow() {
+    // インスペクタの「コライダー窓で開く」から頼まれたら、窓を開いて前へ出す
+    const bool openRequested = CollisionManager::GetInstance()->ConsumeEditorOpenRequest();
+    if (openRequested) {
+        showColliderTagManagerView_ = true;
+        ImGui::SetNextWindowFocus();
+    }
     if (!showColliderTagManagerView_)
         return; // 表示しない場合は早期リターン
 
     ImGuiWindowFlags flags = ImGuiWindowFlags_NoFocusOnAppearing;
 
+    // 一覧と詳細を左右に並べるので、初めて開くときは広めにする
+    ImGui::SetNextWindowSize(ImVec2(820.0f, 560.0f), ImGuiCond_FirstUseEver);
     ImGui::Begin("コライダー", &showColliderTagManagerView_, flags);
 
     if (ImGui::BeginTabBar("##ColliderTabs")) {
-        // コライダーの選択・サイズ調整・デバッグ表示の切り替え
-        if (ImGui::BeginTabItem("コライダー設定")) {
+        // コライダーの一覧・追加・削除・形・タグ・当たる相手の編集（ここだけで完結する）
+        if (ImGui::BeginTabItem("コライダー設定", nullptr, openRequested ? ImGuiTabItemFlags_SetSelected : 0)) {
             CollisionManager::GetInstance()->ImGuiColliderInspector();
             ImGui::EndTabItem();
         }
@@ -1313,6 +1333,10 @@ void ImGuiManager::ShowCameraWindow() {
     ImGuiWindowFlags flags = ImGuiWindowFlags_NoFocusOnAppearing;
     ImGui::Begin("カメラ", &showCameraView_, flags);
 
+    // エディタの視点（デバッグカメラ）の状態。ゲームのカメラと一緒に見られるよう頭に置く
+    DrawDebugCameraSummary();
+    ImGui::Separator();
+
     // カメラを置くときの2大操作: 「今シーンで見ている視点をこのカメラへ写す」「このカメラの視点からシーンを見る」
     CameraManager *cameraManager = CameraManager::GetInstance();
     Camera *selectedCamera = cameraManager->Find(cameraManager->GetSelectedName());
@@ -1345,6 +1369,78 @@ void ImGuiManager::ShowCameraWindow() {
     ImGui::Separator();
 
     cameraManager->DrawImGui();
+    ImGui::End();
+}
+
+void ImGuiManager::DrawDebugCameraSummary() {
+    DebugCamera *debugCamera = pCurrentScene_ ? pCurrentScene_->GetDebugCamera() : nullptr;
+    ImGui::PushID("debugCameraSummary");
+    SectionHeader("[ デバッグカメラ（エディタの視点）]", DebugTheme::kAccentBlue);
+    if (!debugCamera) {
+        DimText("このシーンにはデバッグカメラがありません");
+        ImGui::PopID();
+        return;
+    }
+
+    bool active = debugCamera->GetActive();
+    if (ThemedToggle("使う (F3)##dbgcamActive", &active, DebugTheme::kAccentGreen)) {
+        pCurrentScene_->ToggleDebugCamera();
+    }
+    ImGui::SetItemTooltip("入れると、ゲームのカメラを動かさずにエディタの視点で自由に見回せます");
+    ImGui::SameLine();
+    StatusBadge(active ? "使用中" : "ゲームのカメラ", active ? DebugTheme::kAccentGreen : DebugTheme::kTextDim);
+    ImGui::SameLine(ImGui::GetContentRegionMax().x - ImGui::CalcTextSize(ICON_FA_SLIDERS_H " 詳しく").x - ImGui::GetStyle().FramePadding.x * 2.0f);
+    if (NeutralButton(ICON_FA_SLIDERS_H " 詳しく##dbgcamDetail")) {
+        showDebugCameraView_ = true;
+        ImGui::SetWindowFocus("デバッグカメラ");
+    }
+    ImGui::SetItemTooltip("デバッグカメラの窓を開きます（位置・向き・動かし方）");
+
+    if (active) {
+        float speed = debugCamera->GetMoveSpeed();
+        ImGui::SetNextItemWidth(-1.0f);
+        if (ImGui::SliderFloat("##dbgcamSpeed", &speed, 0.001f, 0.1f, "移動の速さ %.3f", ImGuiSliderFlags_Logarithmic)) {
+            debugCamera->SetMoveSpeed(speed);
+        }
+        const Vector3 &position = debugCamera->GetViewPosition();
+        const Vector3 &rotation = debugCamera->GetViewRotation();
+        constexpr float kToDegree = 180.0f / 3.14159265f;
+        ImGui::TextDisabled("位置 (%.1f, %.1f, %.1f)  向き (%.0f°, %.0f°)", position.x, position.y, position.z, rotation.x * kToDegree,
+                            rotation.y * kToDegree);
+    }
+    ImGui::PopID();
+}
+
+void ImGuiManager::ShowDebugCameraWindow() {
+    if (!showDebugCameraView_)
+        return;
+
+    ImGui::Begin("デバッグカメラ", &showDebugCameraView_, ImGuiWindowFlags_NoFocusOnAppearing);
+    if (pCurrentScene_ && pCurrentScene_->GetDebugCamera()) {
+        DimText("F3 で切り替え / 右ドラッグで向き / WASD で移動・Space と Shift で上下（Ctrl で速く）/ F で選んだ物へ寄る");
+        ImGui::Spacing();
+        pCurrentScene_->DrawDebugCameraImGui();
+    } else {
+        DimText("このシーンにはデバッグカメラがありません");
+    }
+    ImGui::End();
+}
+
+void ImGuiManager::ShowDebugLineWindow() {
+    if (!showDebugLineView_)
+        return;
+
+    ImGui::Begin("デバッグ線", &showDebugLineView_, ImGuiWindowFlags_NoFocusOnAppearing);
+    LineRenderer::GetInstance()->DrawCategoryImGui(false);
+    ImGui::End();
+}
+
+void ImGuiManager::ShowInputActionWindow() {
+    if (!showInputActionView_)
+        return;
+
+    ImGui::Begin("入力（キーコンフィグ）", &showInputActionView_, ImGuiWindowFlags_NoFocusOnAppearing);
+    InputActions::GetInstance()->DrawImGui();
     ImGui::End();
 }
 
@@ -1574,6 +1670,10 @@ void ImGuiManager::ShowSceneWindow(OffScreen *offScreen, const std::string &scen
     // ライト・カメラ等のアイコンのクリックは、ギズモのクリック選択より先に処理する（押したら奥の物は選ばない）
     UpdateSceneIcons(actualScenePos_, sceneTextureSize_, sceneHovered);
     pImGuizmoManager_->Update(actualScenePos_, sceneTextureSize_, sceneHovered);
+    // コライダー窓・インスペクタで選んだコライダーを、物に隠れても見えるよう上に重ねる
+    if (const ViewProjection *viewProjection = pImGuizmoManager_->GetViewProjection()) {
+        CollisionManager::GetInstance()->DrawSelectedOverlay(ImGui::GetWindowDrawList(), *viewProjection, actualScenePos_, sceneTextureSize_);
+    }
     DrawSceneIcons(actualScenePos_, sceneTextureSize_);
 
     // ツールバー・軸の向き表示（子ウィンドウなので、上にマウスがある間はシーンの選択が発火しない）
@@ -1644,6 +1744,10 @@ void ImGuiManager::ShowMainUI(OffScreen *pOffScreen) {
     ShowShaderEditorWindow();
     // カメラ窓を描画
     ShowCameraWindow();
+    // デバッグカメラ・デバッグ線の窓を描画
+    ShowDebugCameraWindow();
+    ShowDebugLineWindow();
+    ShowInputActionWindow();
     // アセットブラウザ窓を描画
     ShowAssetBrowserWindow();
     // ゲームパラメータHub窓を描画
@@ -2254,6 +2358,11 @@ void ImGuiManager::SaveFlag() {
     data->Save("showUndoHistoryView", showUndoHistoryView_);
     data->Save("showPlacementToolView", showPlacementToolView_);
     data->Save("showColorPaletteView", showColorPaletteView_);
+    data->Save("showDebugCameraView", showDebugCameraView_);
+    data->Save("showDebugLineView", showDebugLineView_);
+    data->Save("showInputActionView", showInputActionView_);
+    data->Save("debugLineCategoryMask", static_cast<int>(LineRenderer::GetInstance()->GetCategoryMask()));
+    data->Save("debugLinesEnabled", LineRenderer::GetInstance()->IsAllLinesEnabled());
     data->Save("sceneLabelMode", sceneLabelMode_);
     data->Save("showSceneMeasure", showSceneMeasure_);
     data->Save("showThirdsGuide", showThirdsGuide_);
@@ -2323,6 +2432,12 @@ void ImGuiManager::LoadFlag() {
     showUndoHistoryView_ = data->Load("showUndoHistoryView", false);
     showPlacementToolView_ = data->Load("showPlacementToolView", false);
     showColorPaletteView_ = data->Load("showColorPaletteView", false);
+    showDebugCameraView_ = data->Load("showDebugCameraView", false);
+    showDebugLineView_ = data->Load("showDebugLineView", false);
+    showInputActionView_ = data->Load("showInputActionView", false);
+    LineRenderer::GetInstance()->SetCategoryMask(static_cast<uint32_t>(
+        data->Load("debugLineCategoryMask", static_cast<int>(LineRenderer::GetInstance()->GetCategoryMask()))));
+    LineRenderer::GetInstance()->SetAllLinesEnabled(data->Load("debugLinesEnabled", true));
     sceneLabelMode_ = data->Load("sceneLabelMode", 1);
     showSceneMeasure_ = data->Load("showSceneMeasure", true);
     showThirdsGuide_ = data->Load("showThirdsGuide", false);

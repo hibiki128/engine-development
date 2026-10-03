@@ -20,6 +20,9 @@
 #include <graphics/srv/SrvManager.h>
 #include <primitive/PrimitiveModel.h>
 #include <transform/ObjColor.h>
+#include <filesystem>
+#include <memory>
+#include <unordered_map>
 #include <unordered_set>
 
 /// <summary>
@@ -46,6 +49,13 @@ class Model
     /// <param name="directorypath">ディレクトリパス</param>
     /// <param name="filename">ファイル名</param>
     void CreateModel(const std::string &directorypath, const std::string &filename);
+
+    /// <summary>
+    /// 同じファイルの体同士で共有している読み込み結果を捨てる（次の CreateModel でファイルから読み直す）。
+    /// モデルのホットリロード用。今その結果を使っている体はそのまま描ける（共有は参照カウントなので）
+    /// </summary>
+    /// <param name="filename">models ルートからの相対パス（CreateModel の filename と同じ物）</param>
+    static void ForgetSharedSource(const std::string &filename);
 
     /// <summary>
     /// プリミティブモデル作成
@@ -92,9 +102,25 @@ class Model
     uint32_t GetGpuVertexCapacity() const;
 
     /// <summary>
-    /// 更新処理
+    /// 更新処理（スキニングを1体ぶん実行する。まとめて実行するときは下の3つを使う）
     /// </summary>
     void Update();
+
+    /// <summary>
+    /// まとめてスキニングする1段目: 出力頂点バッファを「頂点バッファ → UAV」へ切り替える遷移を積む。
+    /// 何体ぶんもの遷移を1回の ResourceBarrier に束ねるために、呼ぶ側が配列を持つ
+    /// </summary>
+    /// <param name="outBarriers">遷移を積む先</param>
+    void AppendSkinningBeginBarrier(std::vector<D3D12_RESOURCE_BARRIER> &outBarriers);
+
+    /// <summary>まとめてスキニングする2段目: コンピュートシェーダーを実行する（パイプラインは呼ぶ側で設定済み）</summary>
+    void DispatchSkinning(ID3D12GraphicsCommandList *pCommandList);
+
+    /// <summary>
+    /// まとめてスキニングする3段目: レイトレの加速構造へ載せ、「UAV → 頂点バッファ」の遷移を積む
+    /// </summary>
+    /// <param name="outBarriers">遷移を積む先</param>
+    void AppendSkinningEndBarrier(std::vector<D3D12_RESOURCE_BARRIER> &outBarriers);
 
     /// <summary>
     /// 描画処理
@@ -118,6 +144,12 @@ class Model
     // ModelData は全メッシュの頂点配列を抱えるため、値返しにすると
     // 参照するたびにフルコピーが走る。必ず参照で受けること。
     const ModelData &GetModelData() const { return modelData_; }
+
+    /// <summary>
+    /// 同じファイルから読み込んだ体同士で共有している読み込み結果（共有していなければ自分の物）。
+    /// 実体の場所で「同じモデルか」を見分けられるので、スキンの入力のように体をまたいで共有したい物のキーに使う
+    /// </summary>
+    const ModelData &GetSharedModelData() const { return sharedSource_ ? sharedSource_->data : modelData_; }
     bool IsGltf() { return isGltf_; }
 
     /// <summary>
@@ -183,6 +215,23 @@ class Model
     /// ===================================================
     /// private variables
     /// ===================================================
+
+    /// <summary>
+    /// 同じファイルから読み込んだ体同士で共有する物（読み込み結果と、頂点・インデックスの GPU バッファ）。
+    /// gltf は体ごとに Model を作る（スキンの出力先を体ごとに持つため）が、ファイルの解析と
+    /// 頂点バッファまで体ごとに作り直すと、同じキャラを何十体も出したときに読み込みと VRAM が膨らむ
+    /// </summary>
+    struct SharedSource
+    {
+        std::filesystem::file_time_type writeTime{}; // 読んだときのファイルの更新時刻（変わっていたら読み直す）
+        ModelData data;                              // 解析結果
+        std::vector<Microsoft::WRL::ComPtr<ID3D12Resource>> vertexBuffers;
+        std::vector<Microsoft::WRL::ComPtr<ID3D12Resource>> indexBuffers;
+    };
+    // 使っている体がいる間だけ生きる（最後の体が消えたら解放される）
+    std::shared_ptr<SharedSource> sharedSource_;
+    /// <summary>ファイルのパス → 共有している読み込み結果</summary>
+    static std::unordered_map<std::string, std::weak_ptr<SharedSource>> &SharedSources();
 
     ModelCommon *pModelCommon_;  // モデル共通クラス
     SrvManager *pSrvManager_;    // SRVマネージャー

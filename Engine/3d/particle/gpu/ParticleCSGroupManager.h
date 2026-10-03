@@ -1,5 +1,6 @@
 #pragma once
 #include "data/DataHandler.h"
+#include <frame/Frame.h>
 #include <particle/gpu/ParticleCSGroup.h>
 #include <algorithm>
 #include <memory>
@@ -140,7 +141,7 @@ class ParticleCSGroupManager
         auto poolIt = groupPool_.find(name);
         if (poolIt != groupPool_.end() && !poolIt->second.empty())
         {
-            std::unique_ptr<ParticleCSGroup> reused = std::move(poolIt->second.back());
+            std::unique_ptr<ParticleCSGroup> reused = std::move(poolIt->second.back().group);
             poolIt->second.pop_back();
             ParticleCSGroup *groupPtr = reused.get();
             groupPtr->ResetForReuse(); // GPU 上のパーティクル状態を初期化し直す
@@ -181,7 +182,7 @@ class ParticleCSGroupManager
                 auto &pool = groupPool_[name];
                 if (pool.size() < kMaxPooledPerTemplate)
                 {
-                    pool.emplace_back(std::move(*it)); // 上限内なら再利用のため保持
+                    pool.push_back({std::move(*it), Frame::Time()}); // 上限内なら再利用のため保持
                 }
                 // 上限超過分は unique_ptr 破棄（GPU リソース解放）
                 independentGroups_.erase(it);
@@ -214,7 +215,7 @@ class ParticleCSGroupManager
             auto &pool = groupPool_[group->GetGroupName()];
             if (pool.size() < kMaxPooledPerTemplate)
             {
-                pool.emplace_back(std::move(group));
+                pool.push_back({std::move(group), Frame::Time()});
             }
         }
         independentGroups_.clear(); // 退避できなかった(上限超過)分はここで解放
@@ -253,12 +254,12 @@ class ParticleCSGroupManager
         outParticles = 0;
         for (const auto &[name, pool] : groupPool_)
         {
-            for (const auto &group : pool)
+            for (const PooledGroup &pooled : pool)
             {
-                if (!group)
+                if (!pooled.group)
                     continue;
                 ++outGroups;
-                outParticles += group->GetMaxParticleCount();
+                outParticles += pooled.group->GetMaxParticleCount();
             }
         }
     }
@@ -268,6 +269,38 @@ class ParticleCSGroupManager
     /// 直前のフレームで使っていたかもしれないので、呼ぶ前に GPU の完了を待つこと
     /// </summary>
     void ClearPool() { groupPool_.clear(); }
+
+    /// <summary>
+    /// 再利用プールのうち、返してから一定時間（poolIdleSeconds_）使われていない分を捨てて GPU バッファを返す。
+    /// 毎フレーム呼んでよい（時刻を比べるだけ）。返してから何秒もたった物は GPU も触り終わっているので待たずに捨てられる
+    /// </summary>
+    /// <returns>捨てたグループの数</returns>
+    size_t PruneIdlePool()
+    {
+        if (!poolAutoPrune_)
+        {
+            return 0;
+        }
+        const float now = Frame::Time();
+        size_t pruned = 0;
+        for (auto it = groupPool_.begin(); it != groupPool_.end();)
+        {
+            auto &pool = it->second;
+            const size_t before = pool.size();
+            pool.erase(std::remove_if(pool.begin(), pool.end(),
+                                      [&](const PooledGroup &pooled) { return now - pooled.returnedTime > poolIdleSeconds_; }),
+                       pool.end());
+            pruned += before - pool.size();
+            it = pool.empty() ? groupPool_.erase(it) : std::next(it);
+        }
+        return pruned;
+    }
+
+    /// <summary>使われていないプール分を自動で捨てるか</summary>
+    bool &PoolAutoPrune() { return poolAutoPrune_; }
+
+    /// <summary>返してから何秒使われなければ捨てるか</summary>
+    float &PoolIdleSeconds() { return poolIdleSeconds_; }
 
     void RemoveUnusedIndependentGroups(const std::unordered_set<std::string> &usedGroupNames)
     {
@@ -313,8 +346,19 @@ class ParticleCSGroupManager
     // 現在エミッターに割り当て中の独立グループ
     std::vector<std::unique_ptr<ParticleCSGroup>> independentGroups_;
 
+    // 再利用プールの1件（返した時刻を持ち、長く使われなければ捨てる）
+    struct PooledGroup
+    {
+        std::unique_ptr<ParticleCSGroup> group;
+        float returnedTime = 0.0f; // Frame::Time() での返却時刻
+    };
+
     // 解放済みグループの再利用プール（テンプレート名 → 空きグループ群）
-    std::unordered_map<std::string, std::vector<std::unique_ptr<ParticleCSGroup>>> groupPool_;
+    std::unordered_map<std::string, std::vector<PooledGroup>> groupPool_;
+
+    // 返してからこの秒数使われなかったプール分は捨てる（同じ演出を何度も出している間は残る）
+    bool poolAutoPrune_ = true;
+    float poolIdleSeconds_ = 60.0f;
 
     // テンプレートごとのプール保持上限（メモリの青天井退避を防ぐ）
     static constexpr size_t kMaxPooledPerTemplate = 32;

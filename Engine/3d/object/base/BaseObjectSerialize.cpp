@@ -62,6 +62,8 @@ void BaseObject::SaveToJson() {
     // 足IK（接地）の設定を保存
     SaveFootIk();
     SaveLookAt();
+    SaveHandIk();
+    SaveSpringBone();
     SaveAnimStateMachine();
 
     // マテリアル（ノーマルマップ関連）情報を保存
@@ -155,6 +157,12 @@ nlohmann::json BaseObject::Serialize() const {
     }
     if (lookAt_) {
         state["lookAt"] = lookAt_->ToJson();
+    }
+    if (handIk_) {
+        state["handIk"] = handIk_->ToJson();
+    }
+    if (springBone_) {
+        state["springBone"] = springBone_->ToJson();
     }
     if (animStateMachine_) {
         state["animStateMachine"] = animStateMachine_->GetAssetName();
@@ -257,6 +265,16 @@ void BaseObject::Deserialize(const json &state) {
             pSolver->FromJson(*lookAt);
         }
     }
+    if (const auto handIk = state.find("handIk"); handIk != state.end()) {
+        if (HandIkSolver *pSolver = AcquireHandIk()) {
+            pSolver->FromJson(*handIk);
+        }
+    }
+    if (const auto springBone = state.find("springBone"); springBone != state.end()) {
+        if (SpringBoneSolver *pSolver = AcquireSpringBone()) {
+            pSolver->FromJson(*springBone);
+        }
+    }
     if (const auto stateMachine = state.find("animStateMachine"); stateMachine != state.end() && stateMachine->is_string()) {
         SetAnimationStateMachine(stateMachine->get<std::string>());
     }
@@ -324,6 +342,8 @@ void BaseObject::LoadFromJson(std::string folderPath, std::string jsonName) {
     // 足IK（接地）の設定を読み込み
     LoadFootIk();
     LoadLookAt();
+    LoadHandIk();
+    LoadSpringBone();
     LoadAnimStateMachine();
 
     // コライダー情報を読み込み

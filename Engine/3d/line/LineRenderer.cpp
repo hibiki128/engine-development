@@ -91,6 +91,11 @@ void LineRenderer::Finalize()
     staging_.reset();
     lineCount_ = 0;
     lineCapacity_ = 0;
+    // 持ち主側のスイッチは持ち主と一緒に消えるので、結び付けを残さない
+    for (bool *&flag : categoryFlags_)
+    {
+        flag = nullptr;
+    }
 }
 
 bool LineRenderer::Grow()
@@ -120,6 +125,60 @@ void LineRenderer::BeginFrame(const ViewProjection &viewProjection)
     batchSubmissions_.clear();
     frustum_.ExtractFromViewProjection(viewProjection.matView_ * viewProjection.matProjection_);
     TickPendingReleases();
+
+    // 種類ごとの本数は1フレーム分を窓に見せる（積んでいる途中の数を出すと毎回ちらつく）
+    for (int i = 0; i < kLineCategoryCount; ++i)
+    {
+        lastCategoryLines_[i] = categoryLines_[i];
+        categoryLines_[i] = 0;
+    }
+    // 持ち主側のスイッチが前のフレームから変わっているかもしれないので、今の種類の可否を取り直す
+    currentCategoryEnabled_ = IsCategoryShown(static_cast<LineCategory>(currentCategory_));
+}
+
+bool LineRenderer::IsCategoryShown(LineCategory category) const
+{
+    const int index = static_cast<int>(category);
+    if (!allLinesEnabled_ || !categoryEnabled_[index])
+    {
+        return false;
+    }
+    const bool *flag = categoryFlags_[index];
+    return !flag || *flag;
+}
+
+void LineRenderer::SetCategoryEnabled(LineCategory category, bool enabled)
+{
+    categoryEnabled_[static_cast<int>(category)] = enabled;
+    currentCategoryEnabled_ = IsCategoryShown(static_cast<LineCategory>(currentCategory_));
+}
+
+void LineRenderer::SetAllLinesEnabled(bool enabled)
+{
+    allLinesEnabled_ = enabled;
+    currentCategoryEnabled_ = IsCategoryShown(static_cast<LineCategory>(currentCategory_));
+}
+
+uint32_t LineRenderer::GetCategoryMask() const
+{
+    uint32_t mask = 0;
+    for (int i = 0; i < kLineCategoryCount; ++i)
+    {
+        if (categoryEnabled_[i])
+        {
+            mask |= 1u << i;
+        }
+    }
+    return mask;
+}
+
+void LineRenderer::SetCategoryMask(uint32_t mask)
+{
+    for (int i = 0; i < kLineCategoryCount; ++i)
+    {
+        categoryEnabled_[i] = (mask & (1u << i)) != 0;
+    }
+    currentCategoryEnabled_ = IsCategoryShown(static_cast<LineCategory>(currentCategory_));
 }
 
 void LineRenderer::AddPolyline(const Vector3 *points, uint32_t pointCount, const Vector4 &color, bool closed)
@@ -338,10 +397,11 @@ void LineRenderer::DestroyBatch(LineBatchId id)
 void LineRenderer::SubmitBatch(LineBatchId id, const Matrix4x4 &world, const Vector4 &tint)
 {
     auto it = batches_.find(id);
-    if (it == batches_.end() || it->second.vertexCount == 0)
+    if (it == batches_.end() || it->second.vertexCount == 0 || !currentCategoryEnabled_ || pCapture_)
     {
         return;
     }
+    categoryLines_[currentCategory_] += it->second.vertexCount / 2;
     batchSubmissions_.push_back({id, world, tint});
 }
 

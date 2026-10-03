@@ -421,6 +421,7 @@ void MotionEditor::Update(float deltaTime)
     }
 
     CleanupFinishedTemporaryMotions();
+    LineCategoryScope lineScope(LineCategory::Motion);
     DrawControlPoints();
     DrawCatmullRomCurve();
 }

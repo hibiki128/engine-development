@@ -908,6 +908,18 @@ void ParticleCSEditor::ShowGPUParticleStatistics()
             ImGuiNotification::Post(std::format("再利用プールを空にしました（{} グループ）", pooledGroups), {0.45f, 0.68f, 0.52f, 1.0f});
         }
         ImGui::EndDisabled();
+
+        // 長く使われていないプール分を自動で捨てる（同じ演出を出し続けている間は残る）
+        ImGui::Checkbox("使われていない分を自動で捨てる##particlePoolPrune", &pParticleGroupManager_->PoolAutoPrune());
+        ImGui::SetItemTooltip("返してから指定の秒数、一度も使い回されなかったグループの GPU バッファを返す（保存しない）");
+        if (pParticleGroupManager_->PoolAutoPrune())
+        {
+            ImGui::SameLine();
+            ImGui::SetNextItemWidth(120.0f);
+            // 1秒未満にすると、返した直後（GPU がまだ触っているかもしれない間）に捨てることになるので下限を置く
+            ImGui::DragFloat("秒##particlePoolIdle", &pParticleGroupManager_->PoolIdleSeconds(), 1.0f, 1.0f, 600.0f, "%.0f",
+                             ImGuiSliderFlags_AlwaysClamp);
+        }
     }
 #endif // USE_IMGUI
 }

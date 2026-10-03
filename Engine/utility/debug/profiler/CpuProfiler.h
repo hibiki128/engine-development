@@ -51,6 +51,9 @@ class CpuProfiler
     /// 表示用: BeginFrame 間の実フレーム時間 ms（present 待ち込み）。
     double GetFrameWallMs() const { return smoothedWallMs_; }
 
+    /// 区間ごとの ms（均した値）を「名前 ms」の1行ずつにまとめる（ログへ書き出して比べる用）。
+    std::string FormatSummary() const;
+
     /// スコープの開始・終了を記録する（CpuProfileScope から呼ばれる。フレームの記録用）
     void RecordEvent(const char *label, std::chrono::high_resolution_clock::time_point begin,
                      std::chrono::high_resolution_clock::time_point end, int depth);

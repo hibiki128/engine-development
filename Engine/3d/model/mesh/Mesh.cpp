@@ -15,6 +15,24 @@ void Mesh::Initialize()
     CreateIndexResource();
 }
 
+void Mesh::InitializeShared(Microsoft::WRL::ComPtr<ID3D12Resource> vertexResource, Microsoft::WRL::ComPtr<ID3D12Resource> indexResource)
+{
+    pDxCommon_ = DirectXCommon::GetInstance();
+
+    vertexCount_ = static_cast<uint32_t>(meshData_.vertices.size());
+    indexCount_ = static_cast<uint32_t>(meshData_.indices.size());
+
+    vertexResource_ = std::move(vertexResource);
+    vertexBufferView_.BufferLocation = vertexResource_->GetGPUVirtualAddress();
+    vertexBufferView_.SizeInBytes = UINT(sizeof(VertexData) * meshData_.vertices.size());
+    vertexBufferView_.StrideInBytes = sizeof(VertexData);
+
+    indexResource_ = std::move(indexResource);
+    indexBufferView_.BufferLocation = indexResource_->GetGPUVirtualAddress();
+    indexBufferView_.SizeInBytes = UINT(sizeof(uint32_t) * meshData_.indices.size());
+    indexBufferView_.Format = DXGI_FORMAT_R32_UINT;
+}
+
 void Mesh::PrimitiveInitialize(const PrimitiveType &type)
 {
     meshData_.vertices = PrimitiveModel::GetInstance()->GetPrimitiveData(type).vertices;
@@ -143,27 +161,36 @@ void Mesh::Rebuild(MeshData &&data)
 
 void Mesh::CreateVertexData()
 {
-    vertexResource_ = pDxCommon_->CreateBufferResource(sizeof(VertexData) * meshData_.vertices.size());
+    // 読み込んだモデルの頂点は後から変わらないので VRAM に置く（アップロードヒープのままだと
+    // 描くたびに GPU が PCIe 越しに読む）。レイトレの加速構造を作るときにも読むので、その状態も足しておく
+    const size_t sizeInBytes = sizeof(VertexData) * (std::max)(meshData_.vertices.size(), size_t(1));
+    std::vector<VertexData> fallback;
+    const void *source = meshData_.vertices.data();
+    if (meshData_.vertices.empty())
+    {
+        fallback.resize(1);
+        source = fallback.data();
+    }
+    vertexResource_ = pDxCommon_->CreateStaticBuffer(
+        source, sizeInBytes, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER | D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+    pVertexData_ = nullptr;
     // リソースの先頭のアドレスから使う
     vertexBufferView_.BufferLocation = vertexResource_->GetGPUVirtualAddress();
-    // 使用するリソースのサイズは頂点6つ分のサイズ
     vertexBufferView_.SizeInBytes = UINT(sizeof(VertexData) * meshData_.vertices.size());
     // 1頂点あたりのサイズ
     vertexBufferView_.StrideInBytes = sizeof(VertexData);
-
-    // 頂点データの設定
-    vertexResource_->Map(0, nullptr, reinterpret_cast<void **>(&pVertexData_));
-
-    std::memcpy(pVertexData_, meshData_.vertices.data(), sizeof(VertexData) * meshData_.vertices.size());
 }
 
 void Mesh::CreateIndexResource()
 {
-    indexResource_ = pDxCommon_->CreateBufferResource(sizeof(uint32_t) * meshData_.indices.size());
+    const size_t sizeInBytes = sizeof(uint32_t) * (std::max)(meshData_.indices.size(), size_t(1));
+    const uint32_t zero = 0;
+    const void *source = meshData_.indices.empty() ? static_cast<const void *>(&zero) : meshData_.indices.data();
+    indexResource_ = pDxCommon_->CreateStaticBuffer(
+        source, sizeInBytes, D3D12_RESOURCE_STATE_INDEX_BUFFER | D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+    pIndexData_ = nullptr;
     indexBufferView_.BufferLocation = indexResource_->GetGPUVirtualAddress();
     indexBufferView_.SizeInBytes = UINT(sizeof(uint32_t) * meshData_.indices.size());
     indexBufferView_.Format = DXGI_FORMAT_R32_UINT;
-    indexResource_->Map(0, nullptr, reinterpret_cast<void **>(&pIndexData_));
-    std::memcpy(pIndexData_, meshData_.indices.data(), sizeof(uint32_t) * meshData_.indices.size());
 }
 } // namespace Hagine

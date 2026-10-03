@@ -123,6 +123,8 @@ class LightGroup
     /// 光源可視化フラグを設定
     /// </summary>
     void SetShowLightVisualization(bool show) { showLightVisualization_ = show; }
+    /// <summary>可視化のスイッチ（「デバッグ線」窓と結び付ける）</summary>
+    bool *GetShowLightVisualizationFlag() { return &showLightVisualization_; }
 
     /// ===================================================
     /// 種類ごとのライトへの入口

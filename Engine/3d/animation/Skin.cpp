@@ -3,7 +3,11 @@
 #include <DirectXCommon.h>
 #include <graphics/srv/SrvManager.h>
 #include <cassert>
+#include <cmath>
 #include <MyMath.h>
+#include <format>
+#include <string>
+#include <unordered_map>
 
 namespace Hagine {
 Skin::~Skin()
@@ -32,19 +36,96 @@ void Skin::Initialize(const Skeleton &skeleton, const ModelData &modelData)
     pSrvManager_ = SrvManager::GetInstance();
     // モデルデータとスケルトンに基づいて、GPUスキニングに必要なバッファ類を作成
     skinCluster_ = CreateSkinCluster(skeleton, modelData);
+
+    // 入力頂点とウェイトは、同じモデル（ModelData の実体が同じ = Model が共有している読み込み結果）の体と共有する。
+    // 体が全部消えると共有も解放され、同じ所に別のモデルが来たときは作り直す
+    static std::unordered_map<std::string, std::weak_ptr<SharedInputs>> sharedCache;
+    const std::string cacheKey = std::format("{}|{}|{}", static_cast<const void *>(&modelData), totalVertexCount_, skeleton.joints.size());
+    std::shared_ptr<SharedInputs> shared = sharedCache[cacheKey].lock();
+    if (!shared && totalVertexCount_ > 0)
+    {
+        shared = CreateSharedInputs(modelData);
+        sharedCache[cacheKey] = shared;
+    }
+    sharedInputs_ = shared;
+    if (sharedInputs_)
+    {
+        skinCluster_.inputVertexResource = sharedInputs_->inputVertices;
+        skinCluster_.influenceResource = sharedInputs_->influences;
+        pSrvManager_->CreateSRVforStructuredBuffer(skinClusterInputVertexSrvIndex_, skinCluster_.inputVertexResource.Get(),
+                                                   UINT(totalVertexCount_), sizeof(VertexData));
+        pSrvManager_->CreateSRVforStructuredBuffer(skinClusterInfluenceSrvIndex_, skinCluster_.influenceResource.Get(),
+                                                   UINT(totalVertexCount_), sizeof(VertexInfluence));
+    }
+    // 作業場所はもう要らない
+    skinCluster_.mappedInfluence = {};
+    skinCluster_.mappedVertex = {};
+    influenceScratch_.clear();
+    influenceScratch_.shrink_to_fit();
+    inputVerticesUploaded_ = true;
 }
+
+std::shared_ptr<Skin::SharedInputs> Skin::CreateSharedInputs(const ModelData &modelData) const
+{
+    auto shared = std::make_shared<SharedInputs>();
+    // 入力頂点（全メッシュぶんを1本に並べる。描画の BaseVertexLocation と同じ並び）
+    std::vector<VertexData> vertices;
+    vertices.reserve(totalVertexCount_);
+    for (const auto &mesh : modelData.meshes)
+    {
+        vertices.insert(vertices.end(), mesh.vertices.begin(), mesh.vertices.end());
+    }
+    vertices.resize(totalVertexCount_);
+    shared->inputVertices = pDxCommon_->CreateStaticBuffer(vertices.data(), sizeof(VertexData) * totalVertexCount_,
+                                                           D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+    // ウェイト（CreateSkinCluster が作業場所に組んだ物）
+    shared->influences = pDxCommon_->CreateStaticBuffer(influenceScratch_.data(), sizeof(VertexInfluence) * totalVertexCount_,
+                                                        D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+    return shared;
+}
+
+namespace {
+/// <summary>
+/// 法線用の逆転置行列。シェーダーは上の 3x3 しか使わないので、4x4 の逆行列を作らず
+/// 3x3 の余因子行列 / 行列式で求める（関節の数×体の数だけ毎フレーム呼ぶので軽くしておく）
+/// </summary>
+Matrix4x4 InverseTranspose3x3(const Matrix4x4 &m)
+{
+    const float a = m.m[0][0], b = m.m[0][1], c = m.m[0][2];
+    const float d = m.m[1][0], e = m.m[1][1], f = m.m[1][2];
+    const float g = m.m[2][0], h = m.m[2][1], i = m.m[2][2];
+    // 余因子（逆行列の転置 = 余因子行列 / 行列式）
+    const float c00 = e * i - f * h, c01 = -(d * i - f * g), c02 = d * h - e * g;
+    const float c10 = -(b * i - c * h), c11 = a * i - c * g, c12 = -(a * h - b * g);
+    const float c20 = b * f - c * e, c21 = -(a * f - c * d), c22 = a * e - b * d;
+    const float det = a * c00 + b * c01 + c * c02;
+    const float invDet = (std::abs(det) > 1.0e-12f) ? 1.0f / det : 0.0f;
+    Matrix4x4 result = MakeIdentity4x4();
+    result.m[0][0] = c00 * invDet;
+    result.m[0][1] = c01 * invDet;
+    result.m[0][2] = c02 * invDet;
+    result.m[1][0] = c10 * invDet;
+    result.m[1][1] = c11 * invDet;
+    result.m[1][2] = c12 * invDet;
+    result.m[2][0] = c20 * invDet;
+    result.m[2][1] = c21 * invDet;
+    result.m[2][2] = c22 * invDet;
+    return result;
+}
+} // namespace
 
 void Skin::Update(const Skeleton &skeleton)
 {
     // 各ジョイントについて、現在のスケルトン空間行列と逆バインドポーズ行列を掛け合わせ、
-    // シェーダーが頂点変形に使える行列（Palette）を算出
+    // シェーダーが頂点変形に使える行列（Palette）を算出。
+    // mappedPalette はアップロードヒープ（書き込み結合メモリ）なので、手元で作ってから1回で書く
     for (size_t jointIndex = 0; jointIndex < skeleton.joints.size(); ++jointIndex)
     {
         assert(jointIndex < skinCluster_.inverseBindPoseMatrices.size());
-        skinCluster_.mappedPalette[jointIndex].skeletonSpaceMatrix =
-            skinCluster_.inverseBindPoseMatrices[jointIndex] * skeleton.joints[jointIndex].skeletonSpaceMatrix;
-        skinCluster_.mappedPalette[jointIndex].skeletonSpaceInverseTransposeMatrix =
-            Transpose(Inverse(skinCluster_.mappedPalette[jointIndex].skeletonSpaceMatrix));
+        WellForGPU palette;
+        palette.skeletonSpaceMatrix = skinCluster_.inverseBindPoseMatrices[jointIndex] * skeleton.joints[jointIndex].skeletonSpaceMatrix;
+        palette.skeletonSpaceInverseTransposeMatrix = InverseTranspose3x3(palette.skeletonSpaceMatrix);
+        skinCluster_.mappedPalette[jointIndex] = palette;
     }
 }
 
@@ -190,31 +271,20 @@ void Skin::CreatePaletteResource(SkinCluster &skinCluster, const Skeleton &skele
 
 void Skin::CreateInfluenceResource(SkinCluster &skinCluster, const Skeleton &skeleton)
 {
-    // 頂点ごとのボーン影響データ用のバッファ生成とSRV登録
-    skinCluster.influenceResource = pDxCommon_->CreateBufferResource(sizeof(VertexInfluence) * totalVertexCount_);
-    VertexInfluence *mappedInfluence = nullptr;
-    skinCluster.influenceResource->Map(0, nullptr, reinterpret_cast<void **>(&mappedInfluence));
-    std::memset(mappedInfluence, 0, sizeof(VertexInfluence) * totalVertexCount_);
-    skinCluster.mappedInfluence = {mappedInfluence, totalVertexCount_};
+    // 頂点ごとのボーン影響データは、まず CPU の作業場所に組む（GPU のバッファは同じモデルの体と共有する）
+    influenceScratch_.assign(totalVertexCount_, VertexInfluence{});
+    skinCluster.mappedInfluence = {influenceScratch_.data(), totalVertexCount_};
     skinClusterInfluenceSrvIndex_ = pSrvManager_->Allocate() + 1;
     skinCluster.influenceSrvHandle.first = pSrvManager_->GetCPUDescriptorHandle(skinClusterInfluenceSrvIndex_);
     skinCluster.influenceSrvHandle.second = pSrvManager_->GetGPUDescriptorHandle(skinClusterInfluenceSrvIndex_);
-
-    pSrvManager_->CreateSRVforStructuredBuffer(skinClusterInfluenceSrvIndex_, skinCluster.influenceResource.Get(), UINT(totalVertexCount_), sizeof(VertexInfluence));
 }
 
 void Skin::CreateInputVertexResource(SkinCluster &skinCluster, const Skeleton &skeleton)
 {
-    // スキニング前の入力頂点バッファ生成とSRV登録
-    skinCluster.inputVertexResource = pDxCommon_->CreateBufferResource(sizeof(VertexData) * totalVertexCount_);
-    VertexData *mappedVertex = nullptr;
-    skinCluster.inputVertexResource->Map(0, nullptr, reinterpret_cast<void **>(&mappedVertex));
-    skinCluster.mappedVertex = {mappedVertex, totalVertexCount_};
+    // スキニング前の入力頂点は同じモデルの体と共有する（Initialize で割り当てる）ので、ここではSRVの枠だけ取る
     skinClusterInputVertexSrvIndex_ = pSrvManager_->Allocate() + 1;
     skinCluster.inputVertexSrvHandle.first = pSrvManager_->GetCPUDescriptorHandle(skinClusterInputVertexSrvIndex_);
     skinCluster.inputVertexSrvHandle.second = pSrvManager_->GetGPUDescriptorHandle(skinClusterInputVertexSrvIndex_);
-
-    pSrvManager_->CreateSRVforStructuredBuffer(skinClusterInputVertexSrvIndex_, skinCluster.inputVertexResource.Get(), UINT(totalVertexCount_), sizeof(VertexData));
 }
 
 void Skin::CreateOutputVertexResource(SkinCluster &skinCluster, const Skeleton &skeleton)

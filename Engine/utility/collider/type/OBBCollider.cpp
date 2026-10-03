@@ -83,7 +83,7 @@ void OBBCollider::DebugDraw(const ViewProjection &viewProjection)
     }
 
     const Vector3 corners[8] = {bits[0], bits[1], bits[3], bits[2], bits[4], bits[5], bits[7], bits[6]};
-    pLine->AddBoxCorners(corners, color_);
+    pLine->AddBoxCorners(corners, drawColor_);
 
     DrawRotationCenter(viewProjection);
 }
@@ -91,7 +91,7 @@ void OBBCollider::DebugDraw(const ViewProjection &viewProjection)
 void OBBCollider::DrawRotationCenter(const ViewProjection &viewProjection)
 {
     // 回転中心の目印。3つの大円で描くので旧実装（緯度経度メッシュ200本）より大幅に軽い
-    LineRenderer::GetInstance()->AddSphere(cachedOBB_.rotationCenter, 0.1f, color_, 12);
+    LineRenderer::GetInstance()->AddSphere(cachedOBB_.rotationCenter, 0.1f, drawColor_, 12);
 }
 
 void OBBCollider::SaveShapeToJson(DataHandler &json)

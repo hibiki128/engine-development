@@ -161,6 +161,7 @@ void ParticleEmitter::DrawEmitter()
 {
     if (!isVisible_)
         return;
+    LineCategoryScope lineScope(LineCategory::Particle);
 
     std::array<Vector3, 8> localVertices = {
         Vector3{-1.0f, -1.0f, -1.0f},

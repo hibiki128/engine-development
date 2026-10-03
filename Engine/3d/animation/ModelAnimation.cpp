@@ -17,23 +17,23 @@ void ModelAnimation::Initialize(const std::string &directorypath, const std::str
     animator_->Initialize(directorypath_, filename_);
 
     // モデルがボーン情報を持っている場合のみ初期化処理を実行
-    if (modelData_.hasBones)
+    if (hasBones_ && pModelData_)
     {
-        bone_->Initialize(modelData_);
-        skin_->Initialize(bone_->GetSkeleton(), modelData_);
+        bone_->Initialize(*pModelData_);
+        skin_->Initialize(bone_->GetSkeletonRef(), *pModelData_);
     }
 }
 
 void ModelAnimation::Update(bool loop, const BlendSpacePose *blendSpace)
 {
     // アニメーションデータがある場合は、現在のアニメーション時間を更新
-    if (modelData_.hasAnimations)
+    if (hasAnimations_)
     {
         // ループ設定に基づいてアニメーションの時間を進める
         animator_->Update(loop);
     }
     // ボーン情報がある場合は、ボーン階層とスキン（頂点ウェイト）を最新状態に更新
-    if (modelData_.hasBones)
+    if (hasBones_)
     {
         // レイヤー（上半身だけ差し替える等）の時間と重みを進める
         if (layerAnimator_)
@@ -73,8 +73,10 @@ void ModelAnimation::Update(bool loop, const BlendSpacePose *blendSpace)
             bone_->Update(baseAnimation, animator_->GetAnimationTime(), blendSpace);
         }
 
-        // 計算されたボーン行列を元に、シェーダーに送るパレット行列を更新
-        skin_->Update(bone_->GetSkeleton());
+        // 計算されたボーン行列を元に、シェーダーに送るパレット行列を更新。
+        // GetSkeleton() は値返し（全ジョイントの名前・子の配列・名前の表まで複製する）なので、
+        // 毎フレーム呼ぶここでは参照で渡す
+        skin_->Update(bone_->GetSkeletonRef());
     }
 }
 
@@ -82,7 +84,7 @@ void ModelAnimation::PlayLayerAnimation(const std::string &directorypath, const 
                                         const std::string &maskRootJoint, bool loop, float fadeDuration)
 {
     // ボーンが無いモデル・マスク指定なしではレイヤーを使えない
-    if (!modelData_.hasBones || maskRootJoint.empty())
+    if (!hasBones_ || maskRootJoint.empty())
     {
         return;
     }
@@ -116,7 +118,7 @@ void ModelAnimation::PlayLayerAnimation(const std::string &directorypath, const 
     }
 
     layerAnimator_ = std::make_unique<Animator>();
-    layerAnimator_->SetModelData(modelData_);
+    layerAnimator_->SetModelInfo(hasBones_, rootNodeName_);
     layerAnimator_->Initialize(directorypath, filename);
     layerAnimator_->SetSpeed(animator_->GetSpeed());
     layerFilename_ = filename;

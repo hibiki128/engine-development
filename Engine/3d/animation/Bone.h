@@ -19,7 +19,7 @@ class Bone
     /// 初期化
     /// </summary>
     /// <param name="modelData">モデルデータ</param>
-    void Initialize(ModelData modelData);
+    void Initialize(const ModelData &modelData);
 
     /// <summary>
     /// 更新処理

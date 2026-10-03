@@ -634,8 +634,22 @@ void MeshCollider::DebugDraw(const ViewProjection &viewProjection)
     if (!pLine->IsSphereVisible(worldCenter, localBoundingRadius_ * cachedScale_))
         return;
 
+    if (pLine->IsCapturing())
+    {
+        // 取り出し中（シーン窓に重ねて強調する）は静的バッチが使えないので辺を直接渡す。
+        // 地形のような巨大なメッシュで重くならないよう、多すぎる分は間引く
+        constexpr size_t kMaxCapturedEdges = 4096;
+        const size_t stride = (std::max)(localEdges_.size() / kMaxCapturedEdges, static_cast<size_t>(1));
+        const uint32_t packed = PackLineColor(drawColor_);
+        for (size_t i = 0; i < localEdges_.size(); i += stride)
+        {
+            pLine->AddLinePacked(Transformation(localEdges_[i].first, cachedWorld_), Transformation(localEdges_[i].second, cachedWorld_), packed);
+        }
+        return;
+    }
+
     // 頂点は白なので tint がそのまま線の色になる（当たり判定の色変化に追従する）
-    pLine->SubmitBatch(wireframeBatch_, cachedWorld_, color_);
+    pLine->SubmitBatch(wireframeBatch_, cachedWorld_, drawColor_);
 }
 
 void MeshCollider::SaveShapeToJson(DataHandler &json)

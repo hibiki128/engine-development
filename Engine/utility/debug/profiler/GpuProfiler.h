@@ -48,6 +48,9 @@ class GpuProfiler
     /// ImGui 表示（ラベル別 ms とキュー合計）。
     void DrawImGui();
 
+    /// ラベル別 ms を「名前 ms」の1行ずつにまとめる（ログへ書き出して比べる用）。
+    std::string FormatSummary() const;
+
     /// <summary>
     /// 1フレームぶんの描画統計（GPU が数えた値。Direct キューの分だけ）
     /// </summary>

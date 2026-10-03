@@ -1,7 +1,9 @@
 #include "collider/CollisionManager.h"
 #include "MyMath.h"
+#include "line/LineRenderer.h"
 #include <algorithm>
 #include <cmath>
+#include <functional>
 #include <utility>
 #ifdef USE_IMGUI
 #include <imgui.h>
@@ -13,29 +15,6 @@
 
 namespace Hagine {
 
-#ifdef USE_IMGUI
-namespace {
-/// <summary>コライダー種別を表示用の日本語名に変換する（保存名に使う ColliderTypeName とは別物）</summary>
-const char *ColliderTypeDisplayName(ColliderType type)
-{
-    switch (type)
-    {
-    case ColliderType::Sphere:
-        return "球 (Sphere)";
-    case ColliderType::AABB:
-        return "AABB";
-    case ColliderType::OBB:
-        return "OBB";
-    case ColliderType::Cylinder:
-        return "円柱 (Cylinder)";
-    case ColliderType::Mesh:
-        return "メッシュ (Mesh)";
-    default:
-        return "不明";
-    }
-}
-} // namespace
-#endif
 
 namespace {
 /// <summary>
@@ -117,6 +96,93 @@ bool RaycastAABB(const AABB &box, const Vector3 &origin, const Vector3 &directio
         // 始点が箱の中：面を特定できないのでレイの逆向きを返す
         outNormal = -direction;
     }
+    return true;
+}
+
+/// <summary>
+/// レイとY軸に直立した円柱（側面＋上下のふた）の交差判定。
+/// 円柱コライダーは押し出しでも「Y軸直立」として扱っているので、それと同じ形で当てる
+/// </summary>
+/// <param name="center">円柱の中心</param>
+/// <param name="radius">半径</param>
+/// <param name="halfHeight">高さの半分</param>
+/// <param name="origin">レイの始点</param>
+/// <param name="direction">レイの方向（正規化済み）</param>
+/// <param name="maxDistance">判定する最大距離</param>
+/// <param name="outDistance">始点からの距離</param>
+/// <param name="outNormal">当たった面の法線（レイと向かい合う側）</param>
+/// <returns>bool: 当たったら true</returns>
+bool RaycastUprightCylinder(const Vector3 &center, float radius, float halfHeight, const Vector3 &origin,
+                            const Vector3 &direction, float maxDistance, float &outDistance, Vector3 &outNormal)
+{
+    if (radius <= 0.0f || halfHeight <= 0.0f)
+    {
+        return false;
+    }
+    bool hit = false;
+    float bestT = maxDistance;
+    Vector3 bestNormal{};
+
+    // ---- 側面: XZ 平面の円とレイの交点を解き、高さの範囲に入る物だけ採る ----
+    const float ox = origin.x - center.x;
+    const float oz = origin.z - center.z;
+    const float a = direction.x * direction.x + direction.z * direction.z;
+    if (a > 1e-8f)
+    {
+        const float b = ox * direction.x + oz * direction.z;
+        const float c = ox * ox + oz * oz - radius * radius;
+        const float discriminant = b * b - a * c;
+        if (discriminant >= 0.0f)
+        {
+            const float sqrtD = std::sqrt(discriminant);
+            for (const float t : {(-b - sqrtD) / a, (-b + sqrtD) / a})
+            {
+                if (t < 0.0f || t > bestT)
+                {
+                    continue;
+                }
+                const float y = origin.y + direction.y * t - center.y;
+                if (std::abs(y) > halfHeight)
+                {
+                    continue;
+                }
+                bestT = t;
+                bestNormal = Vector3{ox + direction.x * t, 0.0f, oz + direction.z * t} / radius;
+                hit = true;
+                break; // 手前の解が採れたら奥の解は要らない
+            }
+        }
+    }
+
+    // ---- 上下のふた: 平面との交点が円の中に入るか ----
+    if (std::abs(direction.y) > 1e-8f)
+    {
+        for (const float sign : {1.0f, -1.0f})
+        {
+            const float t = (center.y + sign * halfHeight - origin.y) / direction.y;
+            if (t < 0.0f || t > bestT)
+            {
+                continue;
+            }
+            const float px = ox + direction.x * t;
+            const float pz = oz + direction.z * t;
+            if (px * px + pz * pz > radius * radius)
+            {
+                continue;
+            }
+            bestT = t;
+            bestNormal = {0.0f, sign, 0.0f};
+            hit = true;
+        }
+    }
+
+    if (!hit)
+    {
+        return false;
+    }
+    outDistance = bestT;
+    // 始点が中にあって奥の面に当たったときは、レイと向かい合う側へ裏返す
+    outNormal = bestNormal.Dot(direction) > 0.0f ? -bestNormal : bestNormal;
     return true;
 }
 
@@ -428,7 +494,6 @@ void CollisionManager::Unregister(ColliderBase *pCollider)
     // エディタが覚えているポインタも外す（破棄後に触らないように）
     if (pInspectorSelected_ == pCollider)
         pInspectorSelected_ = nullptr;
-    colorsBeforeTagTint_.erase(pCollider);
 #endif
     if (it != collidersByTag_.end())
     {
@@ -502,16 +567,7 @@ void CollisionManager::UpdateColliders()
             }
 
             pCollider->UpdateWorldTransform();
-
-            if (pCollider->IsCollidingInCurrentFrame())
-            {
-                pCollider->SetHitColor();
-            }
-            else
-            {
-                pCollider->SetDefaultColor();
-            }
-
+            // 線の色は描くとき（DebugDraw）に決める。ここで色を書き換えると、窓で設定した色が毎フレーム消える
             pCollider->ResetCollisionFlag();
         }
     }
@@ -810,10 +866,12 @@ bool CollisionManager::RaycastCollider(const ColliderBase *pCollider, const Vect
         return true;
     }
 
-    case ColliderType::Cylinder:
-        // Y軸直立の近似しか持たないうえ、側面と底面で法線の扱いが分かれる。
-        // 足IK・遮蔽判定のどちらでも要らないので対象外にしている
-        return false;
+    case ColliderType::Cylinder: {
+        // 押し出しと同じく Y軸に直立した円柱として当てる（側面は放射状、ふたは上下の法線）
+        const auto *pCylinder = static_cast<const CylinderCollider *>(pCollider);
+        return RaycastUprightCylinder(pCylinder->GetCenterPosition(), pCylinder->GetRadius(), pCylinder->GetHeight() * 0.5f,
+                                      origin, direction, maxDistance, outDistance, outNormal);
+    }
     }
     return false;
 }
@@ -873,396 +931,81 @@ bool CollisionManager::RaycastClosest(const Vector3 &origin, const Vector3 &dire
     return hitAny;
 }
 
+Vector4 CollisionManager::TagColor(const std::string &tag)
+{
+    // 色相だけをタグ名から決める（彩度・明度は固定で、どのタグも暗い背景で見やすい明るさにする）
+    const size_t hash = std::hash<std::string>{}(tag);
+    const float hue = static_cast<float>(hash % 360u) / 60.0f;
+    constexpr float kSaturation = 0.65f;
+    constexpr float kValue = 0.95f;
+    const float chroma = kValue * kSaturation;
+    const float x = chroma * (1.0f - std::abs(std::fmod(hue, 2.0f) - 1.0f));
+    const float m = kValue - chroma;
+    float r = 0.0f, g = 0.0f, b = 0.0f;
+    switch (static_cast<int>(hue))
+    {
+    case 0: r = chroma, g = x; break;
+    case 1: r = x, g = chroma; break;
+    case 2: g = chroma, b = x; break;
+    case 3: g = x, b = chroma; break;
+    case 4: r = x, b = chroma; break;
+    default: r = chroma, b = x; break;
+    }
+    return {r + m, g + m, b + m, 1.0f};
+}
+
 void CollisionManager::DebugDraw(const ViewProjection &viewProjection)
 {
+    // 描く色はここで決める（強調 > 当たっている > タグの色 > 設定の色）。設定の色そのものは書き換えない
+    ColliderBase *pHighlight = nullptr;
+    bool useTagColor = false;
+#ifdef USE_IMGUI
+    pHighlight = GetHighlightedCollider();
+    useTagColor = colorByTag_;
+#endif
+
     if (isVisible_)
     {
+        LineCategoryScope lineScope(LineCategory::Collider);
         for (auto &[tag, colliders] : collidersByTag_)
         {
             for (auto *pCollider : colliders)
             {
+                if (pCollider == pHighlight)
+                {
+                    continue; // 下でまとめて描く（2回描くと色が混ざって点滅が見えにくい）
+                }
+                if (pCollider->IsCollidingInCurrentFrame())
+                    pCollider->SetDrawColor(hitColor_);
+                else
+                    pCollider->SetDrawColor(useTagColor ? TagColor(tag) : pCollider->GetColor());
                 pCollider->DebugDraw(viewProjection);
             }
         }
     }
 #ifdef USE_IMGUI
-    // インスペクタで選んだコライダーは、全体の表示を切っていても点滅させて場所を見せる
-    if (highlightSelected_ && pInspectorSelected_ && IsRegistered(pInspectorSelected_))
+    // 選んだコライダーは、全体の表示や1つずつの表示を切っていても点滅させて場所を見せる
+    if (pHighlight)
     {
-        ColliderBase *c = pInspectorSelected_;
-        const Vector4 color = c->GetColor();
-        const bool visible = c->IsVisible();
-        const bool enabled = c->IsEnabled();
-        const bool blink = std::fmod(ImGui::GetTime() * 3.0, 1.0) < 0.5;
-        c->SetColor(blink ? Vector4{1.0f, 0.95f, 0.2f, 1.0f} : Vector4{1.0f, 1.0f, 1.0f, 1.0f});
-        c->SetVisible(true);
-        c->SetEnabled(true);
-        c->DebugDraw(viewProjection);
-        c->SetEnabled(enabled);
-        c->SetVisible(visible);
-        c->SetColor(color);
+        // 選択の表示として数える（コライダーを全部隠していても、選んだ物は出したいので）
+        LineCategoryScope lineScope(LineCategory::Selection);
+        const bool blink = std::fmod(ImGui::GetTime() * 2.5, 1.0) < 0.5;
+        Vector4 normalColor = pHighlight->IsCollidingInCurrentFrame() ? hitColor_ : pHighlight->GetColor();
+        if (useTagColor && !pHighlight->IsCollidingInCurrentFrame())
+            normalColor = TagColor(pHighlight->GetTag());
+        pHighlight->SetDrawColor(blink ? highlightColor_ : normalColor);
+        const bool visible = pHighlight->IsVisible();
+        const bool enabled = pHighlight->IsEnabled();
+        pHighlight->SetVisible(true);
+        pHighlight->SetEnabled(true);
+        pHighlight->DebugDraw(viewProjection);
+        pHighlight->SetEnabled(enabled);
+        pHighlight->SetVisible(visible);
     }
 #endif
 }
 
-#ifdef USE_IMGUI
-namespace {
-// タグ名から決まる見分けやすい色（同じタグはいつも同じ色）
-Vector4 TagColor(const std::string &tag)
-{
-    const size_t hash = std::hash<std::string>{}(tag);
-    const float hue = static_cast<float>(hash % 360u) / 360.0f;
-    float r = 0.0f, g = 0.0f, b = 0.0f;
-    ImGui::ColorConvertHSVtoRGB(hue, 0.65f, 0.95f, r, g, b);
-    return {r, g, b, 1.0f};
-}
-
-const char *const kTypeFilterNames[] = {"すべての種類", "球", "AABB", "OBB", "円柱", "メッシュ"}; // ColliderType と同じ並び（先頭だけ「すべて」）
-} // namespace
-
-bool CollisionManager::IsRegistered(const ColliderBase *pCollider) const
-{
-    for (const auto &[tag, colliders] : collidersByTag_)
-    {
-        for (const ColliderBase *c : colliders)
-        {
-            if (c == pCollider)
-                return true;
-        }
-    }
-    return false;
-}
-
-void CollisionManager::SetColorByTag(bool enable)
-{
-    if (enable == colorByTag_)
-        return;
-    colorByTag_ = enable;
-    if (enable)
-    {
-        colorsBeforeTagTint_.clear();
-        for (auto &[tag, colliders] : collidersByTag_)
-        {
-            const Vector4 color = TagColor(tag);
-            for (auto *c : colliders)
-            {
-                colorsBeforeTagTint_[c] = c->GetColor();
-                c->SetColor(color);
-            }
-        }
-    }
-    else
-    {
-        for (auto &[c, color] : colorsBeforeTagTint_)
-        {
-            if (IsRegistered(c))
-                c->SetColor(color);
-        }
-        colorsBeforeTagTint_.clear();
-    }
-}
-
-void CollisionManager::ImGuiColliderInspector()
-{
-    // ── 全体操作 ──
-    ImGui::PushStyleColor(ImGuiCol_CheckMark, DebugTheme::kAccentCyan);
-    ImGui::Checkbox("コライダーを表示", &isVisible_);
-    ImGui::PopStyleColor();
-    ImGui::SetItemTooltip("全コライダーのデバッグ描画のオン/オフ（個別はリストで切替）");
-
-    ImGui::SameLine();
-    if (ImGui::SmallButton("全部表示"))
-    {
-        for (auto &[tag, colliders] : collidersByTag_)
-            for (auto *c : colliders)
-                c->SetVisible(true);
-    }
-    ImGui::SameLine();
-    if (ImGui::SmallButton("全部非表示"))
-    {
-        for (auto &[tag, colliders] : collidersByTag_)
-            for (auto *c : colliders)
-                c->SetVisible(false);
-    }
-    ImGui::SameLine();
-    ImGui::PushStyleColor(ImGuiCol_Button, DebugTheme::kBgGreen);
-    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.45f, 0.68f, 0.52f, 0.40f));
-    bool saveAll = ImGui::SmallButton("全部保存");
-    ImGui::PopStyleColor(2);
-    ImGui::SetItemTooltip("全コライダー設定を jsons/Collider/ 以下へ保存");
-    if (saveAll)
-    {
-        int saved = 0;
-        for (auto &[tag, colliders] : collidersByTag_)
-            for (auto *c : colliders)
-            {
-                c->SaveToJson();
-                ++saved;
-            }
-        ImGuiNotification::Post(std::to_string(saved) + " 個のコライダーを保存しました", {0.45f, 0.68f, 0.52f, 1.0f});
-    }
-
-    ImGui::PushStyleColor(ImGuiCol_CheckMark, DebugTheme::kAccentYellow);
-    ImGui::Checkbox("選んだ物をシーンで点滅", &highlightSelected_);
-    ImGui::PopStyleColor();
-    ImGui::SetItemTooltip("一覧で選んだコライダーを、全体の表示を切っていても黄色く点滅させて場所を見せる");
-    ImGui::SameLine();
-    bool colorByTag = colorByTag_;
-    if (ImGui::Checkbox("タグの色で塗り分け", &colorByTag))
-        SetColorByTag(colorByTag);
-    ImGui::SetItemTooltip("タグごとに決まった色で描く（外すと元の色に戻る。塗り分けたまま保存すると色も保存される）");
-
-    // ---- 絞り込み ----
-    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.45f);
-    ImGui::InputTextWithHint("##colliderSearch", "名前・タグで絞り込み", &inspectorSearch_);
-    ImGui::SameLine();
-    ImGui::SetNextItemWidth(110.0f);
-    int typeIndex = inspectorTypeFilter_ + 1;
-    if (ImGui::Combo("##colliderType", &typeIndex, kTypeFilterNames, IM_ARRAYSIZE(kTypeFilterNames)))
-        inspectorTypeFilter_ = typeIndex - 1;
-    ImGui::SameLine();
-    ImGui::Checkbox("有効な物だけ", &inspectorEnabledOnly_);
-    auto lower = [](std::string text) {
-        for (char &ch : text)
-        {
-            if (ch >= 'A' && ch <= 'Z')
-                ch = static_cast<char>(ch - 'A' + 'a');
-        }
-        return text;
-    };
-    const std::string query = lower(inspectorSearch_);
-    auto passes = [&](ColliderBase *c, const std::string &tag) {
-        if (inspectorEnabledOnly_ && !c->IsEnabled())
-            return false;
-        if (inspectorTypeFilter_ >= 0 && static_cast<int>(c->GetType()) != inspectorTypeFilter_)
-            return false;
-        if (query.empty())
-            return true;
-        return lower(c->GetName()).find(query) != std::string::npos || lower(tag).find(query) != std::string::npos;
-    };
-
-    int total = 0;
-    for (auto &[tag, colliders] : collidersByTag_)
-        total += static_cast<int>(colliders.size());
-    ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kTextDim);
-    ImGui::Text("登録: %d コライダー / %d タグ", total, static_cast<int>(collidersByTag_.size()));
-    ImGui::PopStyleColor();
-
-    // 選択中ポインタの有効性チェック（破棄/登録解除済みなら選択を解除する）
-    bool stillExists = false;
-    if (pInspectorSelected_)
-    {
-        for (auto &[tag, colliders] : collidersByTag_)
-        {
-            if (std::find(colliders.begin(), colliders.end(), pInspectorSelected_) != colliders.end())
-            {
-                stillExists = true;
-                break;
-            }
-        }
-    }
-    if (!stillExists)
-        pInspectorSelected_ = nullptr;
-
-    ImGui::Separator();
-
-    // ── 左ペイン: 登録コライダー一覧（タグごと） ──
-    ImGui::BeginChild("##ColliderList", ImVec2(240.0f, 340.0f), ImGuiChildFlags_Borders);
-
-    std::vector<std::string> tags;
-    for (auto &[tag, colliders] : collidersByTag_)
-        tags.push_back(tag);
-    std::sort(tags.begin(), tags.end());
-
-    int shownTotal = 0;
-    for (const auto &tag : tags)
-    {
-        auto &colliders = collidersByTag_[tag];
-        int matched = 0;
-        for (auto *c : colliders)
-        {
-            if (passes(c, tag))
-                ++matched;
-        }
-        if (matched == 0)
-            continue;
-        shownTotal += matched;
-
-        // タグの色の印（塗り分けに使う色）
-        const Vector4 tagColor = TagColor(tag);
-        ImGui::ColorButton(("##tagColor" + tag).c_str(), ImVec4(tagColor.x, tagColor.y, tagColor.z, 1.0f),
-                           ImGuiColorEditFlags_NoTooltip | ImGuiColorEditFlags_NoBorder, ImVec2(10.0f, 10.0f));
-        ImGui::SameLine();
-        std::string header = tag + "  (" + std::to_string(matched) + ")";
-        if (!query.empty() || inspectorTypeFilter_ >= 0 || inspectorEnabledOnly_)
-            ImGui::SetNextItemOpen(true);
-        if (ImGui::TreeNodeEx(header.c_str(), ImGuiTreeNodeFlags_DefaultOpen))
-        {
-            for (auto *c : colliders)
-            {
-                if (!passes(c, tag))
-                    continue;
-                ImGui::PushID(c);
-
-                // 個別の表示トグル
-                bool vis = c->IsVisible();
-                if (ImGui::Checkbox("##vis", &vis))
-                    c->SetVisible(vis);
-
-                ImGui::SameLine();
-
-                // 選択
-                const std::string &name = c->GetName();
-                std::string label = name.empty() ? "(名前なし)" : name;
-                if (!c->IsEnabled())
-                    label += "  (無効)";
-                if (ImGui::Selectable(label.c_str(), pInspectorSelected_ == c))
-                    pInspectorSelected_ = c;
-                ImGui::SetItemTooltip("%s / %s", ColliderTypeDisplayName(c->GetType()), tag.c_str());
-
-                ImGui::PopID();
-            }
-            ImGui::TreePop();
-        }
-    }
-    if (shownTotal == 0)
-    {
-        ImGui::TextDisabled(total == 0 ? "コライダーがありません" : "一致するコライダーがありません");
-    }
-    ImGui::EndChild();
-
-    ImGui::SameLine();
-
-    // ── 右ペイン: 選択中コライダーの詳細 ──
-    ImGui::BeginChild("##ColliderDetail", ImVec2(0.0f, 340.0f), ImGuiChildFlags_Borders);
-    if (pInspectorSelected_)
-    {
-        ColliderBase *c = pInspectorSelected_;
-
-        SectionHeader("[ 基本情報 ]", DebugTheme::kAccentBlue);
-        const std::string &name = c->GetName();
-        ReadOnlyRow("名前", "%s", name.empty() ? "(名前なし)" : name.c_str());
-        ReadOnlyRow("タグ", "%s", c->GetTag().c_str());
-        ReadOnlyRow("種別", "%s", ColliderTypeDisplayName(c->GetType()));
-
-        ImGui::Spacing();
-        bool enabled = c->IsEnabled();
-        ImGui::PushStyleColor(ImGuiCol_CheckMark, DebugTheme::kAccentGreen);
-        if (ImGui::Checkbox("当たり判定 有効", &enabled))
-            c->SetEnabled(enabled);
-        ImGui::PopStyleColor();
-        ImGui::SameLine();
-        bool vis = c->IsVisible();
-        ImGui::PushStyleColor(ImGuiCol_CheckMark, DebugTheme::kAccentCyan);
-        if (ImGui::Checkbox("デバッグ表示", &vis))
-            c->SetVisible(vis);
-        ImGui::PopStyleColor();
-
-        Vector4 col = c->GetColor();
-        float colArr[4] = {col.x, col.y, col.z, col.w};
-        if (ImGui::ColorEdit4("描画色", colArr, ImGuiColorEditFlags_NoInputs))
-            c->SetColor({colArr[0], colArr[1], colArr[2], colArr[3]});
-
-        ImGui::Spacing();
-        SectionHeader("[ サイズ設定 ]", DebugTheme::kAccentOrange);
-
-        switch (c->GetType())
-        {
-        case ColliderType::OBB: {
-            auto *obb = static_cast<OBBCollider *>(c);
-            Vector3 size = obb->GetSize();
-            float s[3] = {size.x, size.y, size.z};
-            if (ImGui::DragFloat3("サイズ", s, 0.05f, 0.0f, 1000.0f))
-                obb->SetSize({s[0], s[1], s[2]});
-            Vector3 off = obb->GetPositionOffset();
-            float o[3] = {off.x, off.y, off.z};
-            if (ImGui::DragFloat3("位置オフセット", o, 0.05f))
-                obb->SetPositionOffSet({o[0], o[1], o[2]});
-            Vector3 rot = obb->GetRotationOffset();
-            float r[3] = {rot.x, rot.y, rot.z};
-            if (ImGui::DragFloat3("回転オフセット", r, 0.01f))
-                obb->SetRotationOffset({r[0], r[1], r[2]});
-            break;
-        }
-        case ColliderType::AABB: {
-            auto *aabb = static_cast<AABBCollider *>(c);
-            Vector3 size = aabb->GetSize();
-            float s[3] = {size.x, size.y, size.z};
-            if (ImGui::DragFloat3("サイズ", s, 0.05f, 0.0f, 1000.0f))
-                aabb->SetSize({s[0], s[1], s[2]});
-            Vector3 off = aabb->GetOffset();
-            float o[3] = {off.x, off.y, off.z};
-            if (ImGui::DragFloat3("オフセット", o, 0.05f))
-                aabb->SetOffset({o[0], o[1], o[2]});
-            break;
-        }
-        case ColliderType::Sphere: {
-            auto *sph = static_cast<SphereCollider *>(c);
-            float radius = sph->GetRadius();
-            if (ImGui::DragFloat("半径", &radius, 0.05f, 0.0f, 1000.0f))
-                sph->SetRadius(radius);
-            Vector3 off = sph->GetOffset();
-            float o[3] = {off.x, off.y, off.z};
-            if (ImGui::DragFloat3("オフセット", o, 0.05f))
-                sph->SetOffset({o[0], o[1], o[2]});
-            break;
-        }
-        case ColliderType::Cylinder: {
-            auto *cyl = static_cast<CylinderCollider *>(c);
-            float radius = cyl->GetRadius();
-            if (ImGui::DragFloat("半径", &radius, 0.05f, 0.0f, 1000.0f))
-                cyl->SetRadius(radius);
-            float height = cyl->GetHeight();
-            if (ImGui::DragFloat("高さ", &height, 0.05f, 0.0f, 1000.0f))
-                cyl->SetHeight(height);
-            bool inward = cyl->IsInward();
-            if (ImGui::Checkbox("内側に閉じ込める（フィールド壁）", &inward))
-                cyl->SetInward(inward);
-            break;
-        }
-        case ColliderType::Mesh: {
-            auto *pMesh = static_cast<MeshCollider *>(c);
-            ReadOnlyRow("三角形数", "%d", static_cast<int>(pMesh->GetTriangleCount()));
-            if (!pMesh->GetSourceModelPath().empty())
-                ReadOnlyRow("ソース", "%s", pMesh->GetSourceModelPath().c_str());
-            bool wire = pMesh->IsWireframeVisible();
-            if (ImGui::Checkbox("ワイヤーフレーム表示", &wire))
-                pMesh->SetWireframeVisible(wire);
-            break;
-        }
-        }
-
-        ImGui::Spacing();
-        SectionHeader("[ 保存 / 読込 ]", DebugTheme::kAccentGreen);
-
-        // jsons/Collider/<名前>.json への保存・読込
-        float bw = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
-        if (ConfirmButton("保存", ImVec2(bw, 0.0f)))
-        {
-            c->SaveToJson();
-            ImGuiNotification::Post("コライダーを保存しました: " + (name.empty() ? std::string("(名前なし)") : name), {0.45f, 0.68f, 0.52f, 1.0f});
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("読込", ImVec2(bw, 0.0f)))
-        {
-            c->LoadFromJson();
-            ImGuiNotification::Post("コライダーを読み込みました: " + (name.empty() ? std::string("(名前なし)") : name), {0.42f, 0.66f, 0.68f, 1.0f});
-        }
-        ImGui::SetItemTooltip("保存済みの設定を読み込み直す");
-
-        ImGui::Spacing();
-        Vector3 center = c->GetCenterPosition();
-        ReadOnlyRow("中心座標", "%.2f, %.2f, %.2f", center.x, center.y, center.z);
-    }
-    else
-    {
-        ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kTextDim);
-        ImGui::TextUnformatted("左の一覧からコライダーを選択してください");
-        ImGui::PopStyleColor();
-    }
-    ImGui::EndChild();
-}
-#endif
+// コライダー窓（一覧・追加・削除・詳細）は CollisionManagerImGui.cpp
 
 bool CollisionManager::CalculateDepenetration(OBBCollider *colliderA, OBBCollider *colliderB, Vector3 &outMTV)
 {

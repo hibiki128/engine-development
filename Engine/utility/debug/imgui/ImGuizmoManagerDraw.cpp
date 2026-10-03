@@ -9,60 +9,299 @@
 #include <transform/WorldTransform.h>
 #include <edit/undo/UndoRedoManager.h>
 #include "WinApp.h"
+#include <algorithm>
 #include <format>
 #include <imgui.h>
+#include <limits>
+#include <vector>
 // DebugUIHelper.h は ImVec4 / ImGui:: を使うので imgui.h の後に include する
 #include "DebugUIHelper.h"
+#include "SceneProjector.h"
 
 // =======================================================================
 // ImGuizmoManager: 補助描画（選択ハイライト・ワイヤーフレーム・レイ）
 // =======================================================================
 
 namespace Hagine {
-// ---- DrawSelectedObjectHighlight / DrawSelectionMarker ----------------
-
-// 選択中の全エントリにハイライトマーカーを描画する
-void ImGuizmoManager::DrawSelectedObjectHighlight()
+namespace {
+/// <summary>破線（ImDrawList には破線が無いので、短い線を並べる）</summary>
+void AddDashedLine(ImDrawList *pDrawList, const ImVec2 &a, const ImVec2 &b, ImU32 color, float thickness)
 {
-    if (selectedNames_.empty() || !pViewProjection_)
-        return;
-
-    for (const std::string &selectedName : selectedNames_)
+    constexpr float kDash = 5.0f;
+    constexpr float kGap = 4.0f;
+    const float dx = b.x - a.x;
+    const float dy = b.y - a.y;
+    const float length = std::sqrt(dx * dx + dy * dy);
+    if (length < 1.0f)
     {
-        auto it = transformMap_.find(selectedName);
-        if (it == transformMap_.end())
-            continue;
-
-        // スクリーン空間ターゲットはピクセル座標を3D世界座標として扱えないためスキップ
-        if (it->second.isScreenSpace)
-            continue;
-
-        DrawSelectionMarker(it->second.GetWorldPosition());
+        return;
+    }
+    const float ux = dx / length;
+    const float uy = dy / length;
+    // 画面いっぱいの線で数が膨らまないよう、本数に上限を置く
+    const float step = (std::max)(kDash + kGap, length / 200.0f);
+    for (float t = 0.0f; t < length; t += step)
+    {
+        const float end = (std::min)(t + kDash, length);
+        pDrawList->AddLine(ImVec2(a.x + ux * t, a.y + uy * t), ImVec2(a.x + ux * end, a.y + uy * end), color, thickness);
     }
 }
 
-// オブジェクトの上方に逆ピラミッド型の選択マーカーを描画する
-void ImGuizmoManager::DrawSelectionMarker(const Vector3 &worldPosition)
+/// <summary>2D の凸包（時計回り。画面座標は y が下向きなので、見た目で時計回りになる並び）</summary>
+std::vector<ImVec2> ConvexHull(std::vector<ImVec2> points)
 {
-    Vector3 markerPos = worldPosition + Vector3(0.0f, 2.0f, 0.0f);
-    Vector4 markerColor = {1.0f, 1.0f, 0.0f, 1.0f};
-    float markerSize = 0.5f;
+    std::sort(points.begin(), points.end(), [](const ImVec2 &l, const ImVec2 &r) { return l.x < r.x || (l.x == r.x && l.y < r.y); });
+    auto cross = [](const ImVec2 &o, const ImVec2 &a, const ImVec2 &b) {
+        return (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+    };
+    std::vector<ImVec2> hull(points.size() * 2);
+    size_t k = 0;
+    for (size_t i = 0; i < points.size(); ++i)
+    {
+        while (k >= 2 && cross(hull[k - 2], hull[k - 1], points[i]) <= 0.0f)
+            --k;
+        hull[k++] = points[i];
+    }
+    for (size_t i = points.size() - 1, t = k + 1; i > 0; --i)
+    {
+        while (k >= t && cross(hull[k - 2], hull[k - 1], points[i - 1]) <= 0.0f)
+            --k;
+        hull[k++] = points[i - 1];
+    }
+    hull.resize(k > 1 ? k - 1 : k);
+    return hull;
+}
 
-    Vector3 apex = markerPos - Vector3(0.0f, markerSize, 0.0f);
-    Vector3 topLeft = markerPos + Vector3(-markerSize, markerSize, -markerSize);
-    Vector3 topRight = markerPos + Vector3(markerSize, markerSize, -markerSize);
-    Vector3 topFront = markerPos + Vector3(-markerSize, markerSize, markerSize);
-    Vector3 topBack = markerPos + Vector3(markerSize, markerSize, markerSize);
+ImU32 ToU32(const Vector4 &color, float alphaScale)
+{
+    return ImGui::ColorConvertFloat4ToU32(ImVec4(color.x, color.y, color.z, color.w * alphaScale));
+}
+} // namespace
 
-    LineRenderer *pLine = LineRenderer::GetInstance();
-    pLine->AddLine(apex, topLeft, markerColor);
-    pLine->AddLine(apex, topRight, markerColor);
-    pLine->AddLine(apex, topFront, markerColor);
-    pLine->AddLine(apex, topBack, markerColor);
-    pLine->AddLine(topLeft, topRight, markerColor);
-    pLine->AddLine(topRight, topBack, markerColor);
-    pLine->AddLine(topBack, topFront, markerColor);
-    pLine->AddLine(topFront, topLeft, markerColor);
+// ---- DrawSelectionOverlay ----------------------------------------------
+
+// 選択中の物の枠と、マウスを乗せている物の枠をシーン窓の上に描く。
+// 以前は D3D の1ピクセルの線（黄色い箱と頭上の逆ピラミッド）で、背景によっては見づらく、
+// 物の中に埋まると見えなかった。シーン窓の描画リストへ太さのある滑らかな線で重ね、
+// 手前の辺は濃く・奥の辺は薄い破線にして、箱の向きが読み取れるようにした。
+void ImGuizmoManager::DrawSelectionOverlay(const ImVec2 &scenePosition, const ImVec2 &sceneSize, bool sceneHovered)
+{
+    hoveredName_.clear();
+    if (!pViewProjection_ || !LineRenderer::GetInstance()->IsCategoryShown(LineCategory::Selection))
+    {
+        return;
+    }
+
+    ImDrawList *pDrawList = ImGui::GetWindowDrawList();
+    const SceneProjector projector(*pViewProjection_, scenePosition, sceneSize);
+    pDrawList->PushClipRect(scenePosition, ImVec2(scenePosition.x + sceneSize.x, scenePosition.y + sceneSize.y), true);
+
+    // ---- マウスを乗せている物（クリックしたら選ばれる物を先に知らせる）----
+    const ImVec2 mouse = ImGui::GetMousePos();
+    const bool mouseInScene = mouse.x >= scenePosition.x && mouse.x <= scenePosition.x + sceneSize.x &&
+                              mouse.y >= scenePosition.y && mouse.y <= scenePosition.y + sceneSize.y;
+    if (showHoverOutline_ && sceneHovered && mouseInScene && !ImGuizmo::IsUsing() && !ImGuizmo::IsOver() && !isBoxSelecting_ &&
+        !ImGui::IsMouseDown(ImGuiMouseButton_Right) && !ImGui::IsMouseDown(ImGuiMouseButton_Middle))
+    {
+        hoveredName_ = PickTargetUnderMouse(scenePosition, sceneSize);
+    }
+    // 一覧（トランスフォームマネージャ）の行に乗せている物も同じ枠で知らせる
+    const std::string &outlineName = !hoveredName_.empty() ? hoveredName_ : browserHoveredName_;
+    if (showHoverOutline_ && !outlineName.empty() && !IsSelected(outlineName))
+    {
+        auto it = transformMap_.find(outlineName);
+        if (it != transformMap_.end() && !it->second.isScreenSpace)
+        {
+            DrawTargetOutline(pDrawList, projector, it->second, hoverColor_, false);
+        }
+    }
+    // 一覧側は窓を描くたびに入れ直す（窓を閉じたら残らないよう、使ったら消す）
+    browserHoveredName_.clear();
+
+    // ---- 選択中の物 ----
+    if (showSelectionOutline_)
+    {
+        for (const std::string &selectedName : selectedNames_)
+        {
+            auto it = transformMap_.find(selectedName);
+            // スクリーン空間ターゲット（スプライト）はギズモの十字で場所が分かるので枠は描かない
+            if (it == transformMap_.end() || it->second.isScreenSpace)
+                continue;
+            DrawTargetOutline(pDrawList, projector, it->second, selectionColor_, true);
+        }
+    }
+    pDrawList->PopClipRect();
+}
+
+// 対象のローカルAABBをワールドへ写した箱を描く（選択中は手前の辺を太く、奥の辺を破線、うっすら塗る）
+void ImGuizmoManager::DrawTargetOutline(ImDrawList *pDrawList, const SceneProjector &projector, const GizmoTarget &target,
+                                        const Vector4 &color, bool selected)
+{
+    const Matrix4x4 world = target.GetWorldMatrix();
+    const AABB bounds = target.GetLocalBounds();
+
+    // 角はビット順（x:1, y:2, z:4）
+    Vector3 corners[8];
+    for (int i = 0; i < 8; ++i)
+    {
+        const Vector3 local = {(i & 1) ? bounds.max.x : bounds.min.x, (i & 2) ? bounds.max.y : bounds.min.y,
+                               (i & 4) ? bounds.max.z : bounds.min.z};
+        corners[i] = Transformation(local, world);
+    }
+    Vector3 center = {0.0f, 0.0f, 0.0f};
+    for (const Vector3 &corner : corners)
+    {
+        center = center + corner;
+    }
+    center = center / 8.0f;
+
+    // 面（4隅）。カメラの方を向いている面を「手前」とし、手前の面に触れていない辺が奥の辺
+    static constexpr int kFaces[6][4] = {
+        {0, 2, 6, 4}, // -X
+        {1, 3, 7, 5}, // +X
+        {0, 1, 5, 4}, // -Y
+        {2, 3, 7, 6}, // +Y
+        {0, 1, 3, 2}, // -Z
+        {4, 5, 7, 6}, // +Z
+    };
+    const Matrix4x4 &cameraWorld = pViewProjection_->matWorld_;
+    const Vector3 cameraPosition = {cameraWorld.m[3][0], cameraWorld.m[3][1], cameraWorld.m[3][2]};
+    bool frontFacing[6] = {};
+    for (int f = 0; f < 6; ++f)
+    {
+        const Vector3 &a = corners[kFaces[f][0]];
+        const Vector3 faceCenter = (corners[kFaces[f][0]] + corners[kFaces[f][1]] + corners[kFaces[f][2]] + corners[kFaces[f][3]]) / 4.0f;
+        Vector3 normal = (corners[kFaces[f][1]] - a).Cross(corners[kFaces[f][3]] - a);
+        if (normal.LengthSq() < 1e-12f)
+        {
+            // 厚みの無い箱（板など）は向きが決まらないので、全部手前として描く
+            frontFacing[f] = true;
+            continue;
+        }
+        if (normal.Dot(faceCenter - center) < 0.0f)
+        {
+            normal = normal * -1.0f; // 外向きにそろえる
+        }
+        frontFacing[f] = normal.Dot(cameraPosition - faceCenter) > 0.0f;
+    }
+
+    // 辺と、その辺に接する2面
+    struct Edge
+    {
+        int a, b, faceA, faceB;
+    };
+    static constexpr Edge kEdges[12] = {
+        {0, 1, 2, 4}, {2, 3, 3, 4}, {4, 5, 2, 5}, {6, 7, 3, 5}, // X 方向
+        {0, 2, 0, 4}, {1, 3, 1, 4}, {4, 6, 0, 5}, {5, 7, 1, 5}, // Y 方向
+        {0, 4, 0, 2}, {1, 5, 1, 2}, {2, 6, 0, 3}, {3, 7, 1, 3}, // Z 方向
+    };
+
+    // うっすら塗る（全部の角がカメラの前にあるときだけ。後ろへはみ出すと凸包が壊れる）
+    if (selected && showSelectionFill_)
+    {
+        std::vector<ImVec2> points;
+        points.reserve(8);
+        for (const Vector3 &corner : corners)
+        {
+            ImVec2 screen;
+            if (!projector.Point(corner, screen))
+            {
+                points.clear();
+                break;
+            }
+            points.push_back(screen);
+        }
+        if (points.size() == 8)
+        {
+            const std::vector<ImVec2> hull = ConvexHull(points);
+            if (hull.size() >= 3)
+            {
+                pDrawList->AddConvexPolyFilled(hull.data(), static_cast<int>(hull.size()), ToU32(color, 0.07f));
+            }
+        }
+    }
+
+    const ImU32 shadow = IM_COL32(0, 0, 0, selected ? 150 : 90);
+    const ImU32 front = ToU32(color, 1.0f);
+    const ImU32 back = ToU32(color, 0.40f);
+    const float thickness = selected ? 2.0f : 1.4f;
+    uint32_t drawn = 0;
+    // 奥の辺 → 手前の辺の順に描いて、手前が上に来るようにする
+    for (int pass = 0; pass < 2; ++pass)
+    {
+        const bool frontPass = (pass == 1);
+        for (const Edge &edge : kEdges)
+        {
+            const bool isFront = frontFacing[edge.faceA] || frontFacing[edge.faceB];
+            if (isFront != frontPass)
+                continue;
+            if (!isFront && (!selected || !showSelectionHiddenEdges_))
+                continue;
+            ImVec2 a, b;
+            if (!projector.Segment(corners[edge.a], corners[edge.b], a, b))
+                continue;
+            if (isFront)
+            {
+                // 下に暗い縁を敷いて、明るい背景でも暗い背景でも線が沈まないようにする
+                pDrawList->AddLine(a, b, shadow, thickness + 2.0f);
+                pDrawList->AddLine(a, b, front, thickness);
+            }
+            else
+            {
+                AddDashedLine(pDrawList, a, b, back, 1.2f);
+            }
+            ++drawn;
+        }
+    }
+
+    // 原点（ギズモの中心）に小さな点
+    if (selected)
+    {
+        ImVec2 pivot;
+        if (projector.Point(target.GetWorldPosition(), pivot))
+        {
+            pDrawList->AddCircleFilled(pivot, 4.0f, IM_COL32(0, 0, 0, 160), 12);
+            pDrawList->AddCircleFilled(pivot, 2.6f, front, 12);
+        }
+    }
+    LineRenderer::GetInstance()->AddExternalLineCount(LineCategory::Selection, drawn);
+}
+
+// マウスの下にある物の名前（シーンのクリック選択と同じ決め方。無ければ空）
+std::string ImGuizmoManager::PickTargetUnderMouse(const ImVec2 &scenePosition, const ImVec2 &sceneSize)
+{
+    const ImVec2 mouse = ImGui::GetMousePos();
+    const Ray ray = Input::GetInstance()->GetCurrentRay();
+    std::string bestName;
+    float bestScreenDistance = std::numeric_limits<float>::max();
+    float bestRayDistance = std::numeric_limits<float>::max();
+    for (const auto &[name, target] : transformMap_)
+    {
+        if (!target.selectable || target.isScreenSpace || !IsCategoryEnabled(target.category))
+            continue;
+        if (target.type == GizmoTarget::Type::BaseObject && (!target.baseObject || !target.baseObject->IsGizmoSelectable()))
+            continue;
+        RayHitInfo hit;
+        if (!Input::RayIntersectOBBByMatrix(ray, target.GetWorldMatrix(), hit, target.GetLocalBounds()))
+            continue;
+        float screenDistance = std::numeric_limits<float>::max();
+        Vector3 screenCenter;
+        if (WorldToScreen(target.GetWorldPosition(), screenCenter, scenePosition, sceneSize))
+        {
+            screenDistance = std::sqrt((mouse.x - screenCenter.x) * (mouse.x - screenCenter.x) + (mouse.y - screenCenter.y) * (mouse.y - screenCenter.y));
+        }
+        // クリック選択と同じく、画面上で中心が近い物を優先（差が小さければ手前の物）
+        constexpr float kScreenDistThreshold = 20.0f;
+        const bool better = std::abs(screenDistance - bestScreenDistance) > kScreenDistThreshold ? screenDistance < bestScreenDistance
+                                                                                                  : hit.distance < bestRayDistance;
+        if (bestName.empty() || better)
+        {
+            bestName = name;
+            bestScreenDistance = screenDistance;
+            bestRayDistance = hit.distance;
+        }
+    }
+    return bestName;
 }
 
 // ---- DrawSnapGrid -----------------------------------------------------

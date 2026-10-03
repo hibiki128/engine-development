@@ -140,7 +140,18 @@ class Animator
     /// ===================================================
     void SetIsAnimation(bool isAnimation) { isAnimation_ = isAnimation; }
     void SetAnimationTime(float time) { animationTime_ = time; }
-    void SetModelData(ModelData modelData) { modelData_ = modelData; }
+    // モデルのうち使うのは「ボーンがあるか」と根のノード名だけなので、それだけ控える
+    // （ModelData は全頂点・全ウェイトを抱えていて、丸ごと写すと1体あたり数ミリ秒かかっていた）
+    void SetModelData(const ModelData &modelData)
+    {
+        hasBones_ = modelData.hasBones;
+        rootNodeName_ = modelData.rootNode.name;
+    }
+    void SetModelInfo(bool hasBones, const std::string &rootNodeName)
+    {
+        hasBones_ = hasBones;
+        rootNodeName_ = rootNodeName;
+    }
     void SetSpeed(float speed) { speed_ = speed; }
     void SetBlendDuration(float duration) { blendDuration_ = duration; }
 
@@ -210,7 +221,8 @@ class Animator
     Matrix4x4 localMatrix_;          // ローカル行列
     bool isAnimation_ = true;        // アニメーション再生フラグ
     bool isFinish_ = false;          // アニメーション終了フラグ
-    ModelData modelData_;            // モデルデータ
+    bool hasBones_ = false;          // モデルがボーンを持つか
+    std::string rootNodeName_;       // モデルの根のノード名（ボーンが無いモデルの動きに使う）
     float speed_ = 1.0f;             // アニメーション速度
     float blendDuration_ = 0.5f;     // アニメーション補間時間
 

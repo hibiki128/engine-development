@@ -1,7 +1,9 @@
 #pragma once
 #include "Easing.h"
 #include "animation/ik/FootIkSolver.h"
+#include "animation/ik/HandIkSolver.h"
 #include "animation/ik/LookAtSolver.h"
+#include "animation/ik/SpringBoneSolver.h"
 #include "animation/state/AnimationStateMachineRunner.h"
 #include "camera/projection/ViewProjection.h"
 #include "collider/ColliderBase.h"
@@ -88,6 +90,14 @@ class BaseObject {
     virtual void CreateModel(const std::string modelname);
     virtual void CreatePrimitiveModel(const PrimitiveType &type);
 
+    /// <summary>
+    /// モデルのファイルが書き換わったときに読み直す（BaseObjectManager::ReloadModelFile から呼ぶ）。
+    /// 位置・色・テクスチャの差し替え・コライダーなどはそのまま。メッシュコライダーは新しい形で作り直し、
+    /// 骨の数が変わったときは IK・揺れ物の骨を拾い直す
+    /// </summary>
+    /// <returns>bool: 読み直せたら true</returns>
+    bool ReloadModel();
+
     virtual void DrawImGui();
 
     /// <summary>
@@ -127,6 +137,18 @@ class BaseObject {
     CylinderCollider *AddCylinderCollider(const std::string &name = "");
     // 自身のモデル形状から三角形メッシュコライダーを生成する（静的な複雑形状向け）
     MeshCollider *AddMeshCollider(const std::string &name = "");
+
+    /// <summary>
+    /// エディタから形を選んでコライダーを足す。保存済みの設定が無ければ、
+    /// タグ（Environment）・当たる相手（ゲーム側の既定）・大きさの既定値を入れる
+    /// </summary>
+    /// <param name="type">形</param>
+    /// <returns>ColliderBase*: 足したコライダー</returns>
+    ColliderBase *AddColliderForEditor(ColliderType type);
+
+    /// <summary>コライダーを外して破棄する（持っていなければ何もしない）</summary>
+    /// <returns>bool: 外したら true</returns>
+    bool RemoveCollider(const ColliderBase *pCollider);
 
     // 中心座標取得
     WorldTransform *GetWorldTransform() { return transform_.get(); }
@@ -486,6 +508,55 @@ class BaseObject {
     void ClearLookAtTarget();
 
     /// ===================================================
+    /// 手のIK（手首を目標へ伸ばす）
+    /// ===================================================
+
+    /// <summary>
+    /// 手のIKを解く。注視IKの後（背骨の向きが決まってから）・揺れ物より前に呼ぶ
+    /// </summary>
+    void SolveHandIk();
+
+    /// <summary>
+    /// 手のIKを取得する。まだ持っていなければ作って返す（スキンモデルでなければ nullptr）
+    /// </summary>
+    /// <returns>HandIkSolver*: 手のIK</returns>
+    HandIkSolver *AcquireHandIk();
+
+    /// <summary>手のIKを持っているか（持っていなければ nullptr）</summary>
+    HandIkSolver *GetHandIk() const { return handIk_.get(); }
+
+    /// <summary>
+    /// 手首を運ぶ先を設定する（手のIKを持っていなければ何もしない）。毎フレーム呼んでよい
+    /// </summary>
+    /// <param name="limbLabel">腕の呼び名（自動で拾った場合は "左手" / "右手"）</param>
+    /// <param name="targetWorld">手首を運ぶ先（ワールド）</param>
+    void SetHandIkTarget(const std::string &limbLabel, const Vector3 &targetWorld);
+
+    /// <summary>手首の目標をすべて外す（なめらかにアニメーションどおりへ戻る）</summary>
+    void ClearHandIkTargets();
+
+    /// ===================================================
+    /// 揺れ物（髪・布・しっぽ）
+    /// ===================================================
+
+    /// <summary>
+    /// 揺れ物を解く。注視IKの後（頭の向きが決まってから髪を揺らす）・スキニングより前に呼ぶ
+    /// </summary>
+    void SolveSpringBone();
+
+    /// <summary>
+    /// 揺れ物を取得する。まだ持っていなければ作って返す（スキンモデルでなければ nullptr）
+    /// </summary>
+    /// <returns>SpringBoneSolver*: 揺れ物</returns>
+    SpringBoneSolver *AcquireSpringBone();
+
+    /// <summary>揺れ物を持っているか（持っていなければ nullptr）</summary>
+    SpringBoneSolver *GetSpringBone() const { return springBone_.get(); }
+
+    /// <summary>揺れをリセットする（瞬間移動させた直後など。持っていなければ何もしない）</summary>
+    void ResetSpringBone();
+
+    /// ===================================================
     /// アニメーションのステートマシン
     /// ===================================================
 
@@ -541,6 +612,12 @@ class BaseObject {
     /// <summary>注視IKの設定を objectData_ へ保存 / から読み込み</summary>
     void SaveLookAt();
     void LoadLookAt();
+    /// <summary>手のIKの設定を objectData_ へ保存 / から読み込み</summary>
+    void SaveHandIk();
+    void LoadHandIk();
+    /// <summary>揺れ物の設定を objectData_ へ保存 / から読み込み</summary>
+    void SaveSpringBone();
+    void LoadSpringBone();
     /// <summary>ステートマシンの名前を objectData_ へ保存 / から読み込み</summary>
     void SaveAnimStateMachine();
     void LoadAnimStateMachine();
@@ -564,6 +641,12 @@ class BaseObject {
 
     // --- 注視IK ---（使うオブジェクトだけが持つ）
     std::unique_ptr<LookAtSolver> lookAt_;
+
+    // --- 手のIK ---（使うオブジェクトだけが持つ）
+    std::unique_ptr<HandIkSolver> handIk_;
+
+    // --- 揺れ物 ---（使うオブジェクトだけが持つ）
+    std::unique_ptr<SpringBoneSolver> springBone_;
 
     // --- アニメーションのステートマシン ---（付けたオブジェクトだけが持つ）
     std::unique_ptr<AnimationStateMachineRunner> animStateMachine_;
@@ -606,6 +689,12 @@ class BaseObject {
 
     // 注視IKの設定UIを描画する。インスペクタの「物理」タブから呼ばれる
     void DrawLookAtImGui();
+
+    // 手のIKの設定UIを描画する。インスペクタの「物理」タブから呼ばれる
+    void DrawHandIkImGui();
+
+    // 揺れ物の設定UIを描画する。インスペクタの「物理」タブから呼ばれる
+    void DrawSpringBoneImGui();
 
     // ステートマシンの選択と実行中の様子。インスペクタの「見た目」タブのアニメーションから呼ばれる
     void DrawAnimStateMachineImGui();

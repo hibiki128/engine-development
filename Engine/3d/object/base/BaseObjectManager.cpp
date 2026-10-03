@@ -16,6 +16,9 @@
 #include <icon/IconsFontAwesome5.h>
 #include <debug/profiler/CpuProfiler.h>
 #include <browser/ShowFolder.h>
+#include <line/LineRenderer.h>
+#include <DirectXCommon.h>
+#include <graphics/model/ModelManager.h>
 #include "render/DrawGroupManager.h"
 #include <render/raytracing/RaytracingScene.h>
 
@@ -213,11 +216,17 @@ void BaseObjectManager::Update()
     // 足IKを持っていないオブジェクトでは即 return する
     {
         HAGINE_CPU_PROFILE("Update/Objects/FootIK");
+        // IK・揺れ物の確認用の線は「デバッグ線」窓で「IK・揺れ物」として数える
+        LineCategoryScope lineScope(LineCategory::Ik);
         for (auto &[name, obj] : objects_)
         {
             obj->SolveFootIk();
             // 注視（頭を見る先へ向ける）も同じ「アニメーション後・スキニング前」で掛ける
             obj->SolveLookAt();
+            // 手を目標へ伸ばすのは、背骨の向き（注視）が決まってから
+            obj->SolveHandIk();
+            // 揺れ物は頭や体の向きが決まってから揺らす（注視・手のIKの後）
+            obj->SolveSpringBone();
         }
     }
 
@@ -1501,6 +1510,36 @@ std::vector<std::string> BaseObjectManager::GetSortedObjectNames() const
     std::vector<std::string> names = GetObjectNames();
     std::sort(names.begin(), names.end());
     return names;
+}
+
+int BaseObjectManager::ReloadModelFile(const std::string &modelPath)
+{
+    std::vector<BaseObject *> targets;
+    for (const auto &[name, obj] : objects_)
+    {
+        if (obj && !obj->IsPrimitive() && obj->GetModelPath() == modelPath)
+        {
+            targets.push_back(obj);
+        }
+    }
+    if (targets.empty())
+    {
+        // 使っている物が無くても、次に置くときに新しい形で出るよう読み込み結果だけは捨てておく
+        ModelManager::GetInstance()->ForgetModelFile(modelPath);
+        return 0;
+    }
+
+    // 差し替えるとスキンなどの GPU バッファが作り直しになる。前のフレームの描画が使い終わってから行う
+    // （ホットリロードは時々しか起きないので、待つ分の引っかかりは許す）
+    DirectXCommon::GetInstance()->WaitForGPU();
+    ModelManager::GetInstance()->ForgetModelFile(modelPath);
+
+    int reloaded = 0;
+    for (BaseObject *obj : targets)
+    {
+        reloaded += obj->ReloadModel() ? 1 : 0;
+    }
+    return reloaded;
 }
 
 void BaseObjectManager::RemoveObject(const std::string &name)

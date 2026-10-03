@@ -152,6 +152,7 @@ void ParticleCSGroup::DrawImGui()
 
     ImGui::PopItemWidth();
 
+    LineCategoryScope lineScope(LineCategory::Particle);
     if (pSettingsData_->enableGather)
         LineRenderer::GetInstance()->AddSphere(pSettingsData_->gatherTarget, 0.1f, {1.0f, 0.0f, 1.0f, 1.0f}, 8);
     if (pSettingsData_->enableVortex)

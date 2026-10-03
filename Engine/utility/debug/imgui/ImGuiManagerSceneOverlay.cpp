@@ -21,6 +21,7 @@
 #include <icon/IconsFontAwesome5.h>
 #include <imgui.h>
 #include <imgui_internal.h>
+#include <line/LineRenderer.h>
 #include <numbers>
 
 namespace Hagine {
@@ -247,6 +248,24 @@ void ImGuiManager::DrawSceneOverlay(const ImVec2 &imageMin, const ImVec2 &imageS
         ToolSeparator();
         if (ToolButton("grid", ICON_FA_BORDER_ALL, showGrid_, "床のグリッド表示"))
             showGrid_ = !showGrid_;
+
+        // デバッグ線（種類ごとの表示）。グリッド・コライダー・ライト・選択の枠などをここでまとめて切り替える
+        ImGui::SameLine();
+        LineRenderer *lines = LineRenderer::GetInstance();
+        if (ToolButton("debugLines", ICON_FA_PENCIL_RULER, lines->IsAllLinesEnabled(),
+                       "デバッグ線（種類ごとに出す/隠す）\n右クリック: 全部の線を出す/隠す"))
+            ImGui::OpenPopup("##debugLinePopup");
+        if (ImGui::IsItemClicked(ImGuiMouseButton_Right))
+            lines->SetAllLinesEnabled(!lines->IsAllLinesEnabled());
+        ImGui::SetNextWindowSizeConstraints(ImVec2(300.0f, 0.0f), ImVec2(420.0f, FLT_MAX));
+        if (ImGui::BeginPopup("##debugLinePopup"))
+        {
+            lines->DrawCategoryImGui(true);
+            ImGui::Separator();
+            if (ImGui::Selectable(ICON_FA_EXTERNAL_LINK_ALT " 窓で開く"))
+                showDebugLineView_ = true;
+            ImGui::EndPopup();
+        }
 
         ToolSeparator();
         DebugCamera *debugCamera = pCurrentScene_ ? pCurrentScene_->GetDebugCamera() : nullptr;

@@ -7,9 +7,13 @@
 #include "type/OBBCollider.h"
 #include "type/SphereCollider.h"
 #include <camera/projection/ViewProjection.h>
+#include <map>
 #include <string>
 #include <unordered_map>
 #include <vector>
+
+struct ImDrawList;
+struct ImVec2;
 
 namespace Hagine {
 
@@ -88,7 +92,7 @@ class CollisionManager
     /// 一方向の当たりだけが欲しい場面で使う。
     /// 判定が無効（IsEnabled が false）のコライダーは無視する。
     ///
-    /// 円柱コライダーは対象外（Y軸直立の近似しか持たず、面の法線が定義できないため）。
+    /// 円柱コライダーは押し出しと同じく「Y軸に直立した円柱」として当てる。
     /// </summary>
     /// <param name="origin">レイの始点（ワールド空間）</param>
     /// <param name="direction">レイの方向（正規化不要）</param>
@@ -165,11 +169,59 @@ class CollisionManager
     }
 
     /// <summary>
-    /// コライダーの選択・サイズ調整・デバッグ表示切り替えUI（コライダー設定タブ）。
-    /// 登録済みコライダーを一覧から選び、サイズ・色・表示/判定の有効を個別に編集できる
+    /// コライダー窓（コライダー設定タブ）。一覧から選んで、形・タグ・当たる相手・押し出し・
+    /// 保存・削除まで全部ここで編集できる。オブジェクトへのコライダーの追加もここから行える
     /// </summary>
     void ImGuiColliderInspector();
+
+    /// <summary>
+    /// コライダー1つの詳細の編集UI（コライダー窓の右側。インスペクタからも同じ物を呼ぶ）
+    /// </summary>
+    /// <param name="pCollider">編集するコライダー</param>
+    void DrawColliderEditor(ColliderBase *pCollider);
+
+    /// <summary>コライダー窓を開いて、このコライダーを選んだ状態にする</summary>
+    void OpenInEditor(ColliderBase *pCollider);
+
+    /// <summary>OpenInEditor の依頼を受け取る（窓を持つ側が毎フレーム呼ぶ。依頼があれば true）</summary>
+    bool ConsumeEditorOpenRequest();
+
+    /// <summary>
+    /// エディタから頼まれた削除などを行う。UIを描いていない所（フレームの頭）で毎フレーム呼ぶ
+    /// </summary>
+    void ProcessEditorRequests();
+
+    /// <summary>今このコライダーと当たっている相手の一覧</summary>
+    std::vector<ColliderBase *> GetCollidingPartners(const ColliderBase *pCollider) const;
+
+    /// <summary>
+    /// 窓は開かずに、このコライダーを選んだ状態にする（インスペクタのコライダー欄から）
+    /// </summary>
+    void SelectInEditor(ColliderBase *pCollider)
+    {
+        pInspectorSelected_ = pCollider;
+        MarkEditorShown();
+    }
+
+    /// <summary>
+    /// 選んだコライダーを、シーン窓の上に重ねて描く（物の中に埋まっていても見えるように）。
+    /// シーン窓の描画中に呼ぶ
+    /// </summary>
+    /// <param name="pDrawList">シーン窓の描画リスト</param>
+    /// <param name="viewProjection">シーンのカメラ</param>
+    /// <param name="sceneMin">シーンの絵の左上（画面座標）</param>
+    /// <param name="sceneSize">シーンの絵の大きさ</param>
+    void DrawSelectedOverlay(ImDrawList *pDrawList, const ViewProjection &viewProjection, const ImVec2 &sceneMin, const ImVec2 &sceneSize);
+
+    /// <summary>全体の表示スイッチ（「デバッグ線」窓と結び付ける）</summary>
+    bool *GetVisibleFlag() { return &isVisible_; }
+
+    /// <summary>コライダーの詳細をこのフレームに出した（選んだコライダーの強調はこの間だけ出す）</summary>
+    void MarkEditorShown();
 #endif
+
+    /// <summary>タグ名から決まる見分けやすい色（同じタグはいつも同じ色）</summary>
+    static Vector4 TagColor(const std::string &tag);
 
   private:
     /// ===================================================
@@ -278,6 +330,7 @@ class CollisionManager
     std::unordered_map<CollisionPair, bool, CollisionPairHash> collisionStates_; // ペアごとの衝突状態
 
     bool isVisible_ = false; // コライダーのデバッグ表示フラグ（全体）
+    Vector4 hitColor_ = {1.0f, 0.25f, 0.25f, 1.0f}; // 当たっている間の線の色
 
 #ifdef USE_IMGUI
     ColliderBase *pInspectorSelected_ = nullptr; // インスペクタで選択中のコライダー
@@ -285,14 +338,34 @@ class CollisionManager
     int inspectorTypeFilter_ = -1;               // 種類の絞り込み（-1 = すべて / ColliderType）
     bool inspectorEnabledOnly_ = false;          // 当たり判定が有効な物だけ
     bool highlightSelected_ = true;              // 選んだコライダーをシーンで点滅させる
-    bool colorByTag_ = false;                    // タグの色で塗り分けている
-    std::unordered_map<ColliderBase *, Vector4> colorsBeforeTagTint_; // 塗り分ける前の色（戻す用）
+    bool highlightXRay_ = true;                  // 点滅に加えて、物に隠れても見えるようシーン窓に重ねて描く
+    bool colorByTag_ = false;                    // タグの色で塗り分けている（設定の色は書き換えない）
+    Vector4 highlightColor_ = {1.0f, 0.82f, 0.15f, 1.0f}; // 選んだコライダーの点滅の色
+    int editorShownFrame_ = -100;                // コライダーの詳細を最後に出したフレーム（強調はその間だけ）
 
     /// <summary>コライダーがまだ登録されているか（ポインタの比較だけで確かめる）</summary>
     bool IsRegistered(const ColliderBase *pCollider) const;
 
-    /// <summary>タグの色で塗り分ける / 元の色へ戻す</summary>
-    void SetColorByTag(bool enable);
+    /// <summary>タグの色で塗り分けるか（塗り分けは描くときに決めるので、外せば設定の色に戻る）</summary>
+    void SetColorByTag(bool enable) { colorByTag_ = enable; }
+
+    /// <summary>強調して見せるコライダー（無ければ nullptr）</summary>
+    ColliderBase *GetHighlightedCollider() const;
+
+    /// <summary>シーンの選択が変わったら、その物のコライダーを選ぶ（窓が閉じていても追従する）</summary>
+    void FollowSceneSelection();
+
+    /// <summary>「＋追加」のポップアップ（付ける物と形を選ぶ）</summary>
+    void DrawAddColliderPopup();
+
+    bool inspectorGroupByOwner_ = true;      // 一覧を持ち主ごとにまとめる（false ならタグごと）
+    bool inspectorSelectedOnly_ = false;     // シーンで選んでいる物のコライダーだけ出す
+    bool inspectorFollowSelection_ = true;   // シーンで選んだ物のコライダーを一覧でも選ぶ
+    std::string lastSceneSelection_;         // 前のフレームにシーンで選んでいた物
+    std::string addOwnerName_;               // 「＋追加」で付ける先
+    std::string addOwnerFilter_;             // 付ける先を選ぶときの絞り込み
+    ColliderBase *pPendingDelete_ = nullptr; // 次のフレームの頭で消すコライダー
+    bool openEditorRequested_ = false;       // コライダー窓を開いてほしいという依頼
 #endif
 };
 } // namespace Hagine

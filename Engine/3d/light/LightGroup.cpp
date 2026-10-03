@@ -1075,6 +1075,7 @@ void LightGroup::DrawLightVisualization()
     if (!showLightVisualization_)
         return;
 
+    LineCategoryScope lineScope(LineCategory::Light);
     LineRenderer *drawLine = LineRenderer::GetInstance();
 
     // 平行光源は選択中のときだけ（線が多く画面を埋めるため）

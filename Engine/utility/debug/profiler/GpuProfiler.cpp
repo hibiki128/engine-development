@@ -1,5 +1,6 @@
 #include "GpuProfiler.h"
 #include <DirectXCommon.h>
+#include <format>
 #ifdef USE_IMGUI
 #include <cstdio>
 #include <string>
@@ -429,5 +430,15 @@ void GpuProfiler::DrawImGui()
         ImGui::EndTable();
     }
 #endif
+}
+
+std::string GpuProfiler::FormatSummary() const
+{
+    std::string text;
+    for (const Result &result : results_)
+    {
+        text += std::format("  {}{} {:.3f}\n", result.isCompute ? "[CS] " : "", result.label, result.ms);
+    }
+    return text;
 }
 } // namespace Hagine

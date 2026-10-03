@@ -10,6 +10,7 @@
 #include <debug/profiler/CpuProfiler.h>
 #include <debug/profiler/GpuProfiler.h>
 #include <graphics/pipeline/ShaderHotReload.h>
+#include <input/InputActions.h>
 #include <iterator>
 #include <light/ToonSettings.h>
 #include <metaball/MetaBallGroupManager.h>
@@ -501,6 +502,8 @@ void Framework::Update() {
     // GPU が触り終わったものを実際に捨てる。描画を始める前のここで済ませておく
     pModelManager_->Update();
     pSrvManager_->Update();
+    // GPU パーティクルの再利用プールのうち、長く使われていない分の GPU バッファを返す
+    pParticleCSGroupManager_->PruneIdlePool();
 
     // 線の積み上げをリセットし、視錐台カリング用の平面を更新する。
     // このフレーム中に積まれた線は、DrawSystem の Render で一括描画される。
@@ -568,6 +571,10 @@ void Framework::Update() {
         // テクスチャ差し替えで退避したリソースを、GPUが使い終わった頃に解放する
         pTextureManager_->EndFrame();
     }
+#ifdef USE_IMGUI
+    // コライダー窓・インスペクタから頼まれた削除は、UIを描いていないここで行う（止めている間も効くように外に置く）
+    pCollisionManager_->ProcessEditorRequests();
+#endif // USE_IMGUI
     if (updateGameWorld) {
         HAGINE_CPU_PROFILE("Update/Collision");
         pCollisionManager_->Update();
@@ -615,6 +622,8 @@ void Framework::Update() {
     {
         HAGINE_CPU_PROFILE("Update/Input");
         pInput_->Update();
+        // 行動の名前で引く入力（キーコンフィグ）は、生の入力が揃った直後に求める
+        InputActions::GetInstance()->Update();
         shortcutManager_->Update();
         endRequest_ = winApp_->ProcessMessage();
     }

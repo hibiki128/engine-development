@@ -155,6 +155,24 @@ void ModelManager::RemoveModel(const std::string &key)
     models_.erase(it);
 }
 
+void ModelManager::ForgetModelFile(const std::string &filePath)
+{
+    Model::ForgetSharedSource(filePath);
+    // .gltf 以外はパスがそのままキー。キーを空けておけば次の LoadModel が新しく読む。
+    // 古い実体は捨てずに別のキーへ移して残す: BaseObject 以外（ゲーム側が直接持つ Object3d など）が
+    // まだ指しているかもしれず、捨てるとそこが解放済みを触る。ホットリロードはエディタで
+    // 時々やるだけなので、古い形が少し残るのは許す（終了時にまとめて捨てる）
+    auto it = models_.find(filePath);
+    if (it == models_.end())
+    {
+        return;
+    }
+    static int staleIndex = 0;
+    std::unique_ptr<Model> stale = std::move(it->second);
+    models_.erase(it);
+    models_.emplace(filePath + "#stale" + std::to_string(staleIndex++), std::move(stale));
+}
+
 void ModelManager::Update()
 {
     for (auto it = pendingRelease_.begin(); it != pendingRelease_.end();)

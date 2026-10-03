@@ -4,6 +4,7 @@
 #include <assimp/scene.h>
 #include <cassert>
 #include <MyMath.h>
+#include <algorithm>
 #include <set>
 
 namespace Hagine {
@@ -126,9 +127,9 @@ void Animator::UpdateSingle(bool loop)
         animationTime_ = std::fmod(animationTime_, currentAnimation_.duration);
 
         // ボーンを持たないモデルの場合、ルートノードのアニメーションを適用
-        if (!modelData_.hasBones)
+        if (!hasBones_)
         {
-            NodeAnimation &rootNodeAnimation = currentAnimation_.nodeAnimations[modelData_.rootNode.name];
+            NodeAnimation &rootNodeAnimation = currentAnimation_.nodeAnimations[rootNodeName_];
             Vector3 translate = CalculateValue(rootNodeAnimation.translate, animationTime_);
             Quaternion rotate = CalculateValue(rootNodeAnimation.rotate, animationTime_);
             Vector3 scale = CalculateValue(rootNodeAnimation.scale, animationTime_);
@@ -144,9 +145,9 @@ void Animator::UpdateSingle(bool loop)
             animationTime_ += Frame::DeltaTime() * speed_;
 
             // ボーンを持たないモデルの場合のルートノード適用
-            if (!modelData_.hasBones)
+            if (!hasBones_)
             {
-                NodeAnimation &rootNodeAnimation = currentAnimation_.nodeAnimations[modelData_.rootNode.name];
+                NodeAnimation &rootNodeAnimation = currentAnimation_.nodeAnimations[rootNodeName_];
                 Vector3 translate = CalculateValue(rootNodeAnimation.translate, animationTime_);
                 Quaternion rotate = CalculateValue(rootNodeAnimation.rotate, animationTime_);
                 Vector3 scale = CalculateValue(rootNodeAnimation.scale, animationTime_);
@@ -456,6 +457,29 @@ Animation Animator::LoadAnimationFile(const std::string &directoryPath, const st
     return animation;
 }
 
+namespace {
+/// <summary>
+/// time を挟む2つのキーの前側の添字と補間係数を求める（キーは時刻順に並んでいる）。
+/// 先頭から順に探すと、長いクリップの終わり近くでは関節ごとに全キーをなめることになるので二分探索にする
+/// </summary>
+template <typename Keyframe>
+bool FindKeyframeSpan(const std::vector<Keyframe> &keyframes, float time, size_t &outIndex, float &outT)
+{
+    // time より後ろにある最初のキー
+    auto next = std::upper_bound(keyframes.begin(), keyframes.end(), time,
+                                 [](float value, const Keyframe &keyframe) { return value < keyframe.time; });
+    if (next == keyframes.end())
+    {
+        return false; // 最後のキーより後
+    }
+    const size_t nextIndex = static_cast<size_t>(next - keyframes.begin());
+    outIndex = nextIndex - 1;
+    const float span = keyframes[nextIndex].time - keyframes[outIndex].time;
+    outT = (span > 0.0f) ? (time - keyframes[outIndex].time) / span : 0.0f;
+    return true;
+}
+} // namespace
+
 Vector3 Animator::CalculateValue(const std::vector<KeyframeVector3> &keyframes, float time)
 {
     assert(!keyframes.empty());
@@ -464,14 +488,11 @@ Vector3 Animator::CalculateValue(const std::vector<KeyframeVector3> &keyframes, 
         return keyframes[0].value;
     }
 
-    for (size_t index = 0; index < keyframes.size() - 1; ++index)
+    size_t index = 0;
+    float t = 0.0f;
+    if (FindKeyframeSpan(keyframes, time, index, t))
     {
-        size_t nextIndex = index + 1;
-        if (keyframes[index].time <= time && time <= keyframes[nextIndex].time)
-        {
-            float t = (time - keyframes[index].time) / (keyframes[nextIndex].time - keyframes[index].time);
-            return Lerp(keyframes[index].value, keyframes[nextIndex].value, t);
-        }
+        return Lerp(keyframes[index].value, keyframes[index + 1].value, t);
     }
     return (*keyframes.rbegin()).value;
 }
@@ -484,14 +505,11 @@ Quaternion Animator::CalculateValue(const std::vector<KeyframeQuaternion> &keyfr
         return keyframes[0].value;
     }
 
-    for (size_t index = 0; index < keyframes.size() - 1; ++index)
+    size_t index = 0;
+    float t = 0.0f;
+    if (FindKeyframeSpan(keyframes, time, index, t))
     {
-        size_t nextIndex = index + 1;
-        if (keyframes[index].time <= time && time <= keyframes[nextIndex].time)
-        {
-            float t = (time - keyframes[index].time) / (keyframes[nextIndex].time - keyframes[index].time);
-            return Slerp(keyframes[index].value, keyframes[nextIndex].value, t);
-        }
+        return Slerp(keyframes[index].value, keyframes[index + 1].value, t);
     }
     return (*keyframes.rbegin()).value;
 }

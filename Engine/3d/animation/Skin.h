@@ -1,6 +1,7 @@
 #pragma once
 #include "model/ModelStructs.h"
 #include <cstdint>
+#include <memory>
 
 namespace Hagine {
 class DirectXCommon;
@@ -128,6 +129,20 @@ class Skin
     /// <param name="skeleton">スケルトンデータ</param>
     void CreateSkinningInformationResource(SkinCluster &skinCluster, const Skeleton &skeleton);
 
+    /// <summary>
+    /// 入力頂点（バインドポーズ）とウェイト。どちらも作ったあと変わらないので VRAM に置き、
+    /// 同じモデルの体同士で1組を共有する（アップロードヒープに置くと GPU が毎回 PCIe 越しに読むうえ、
+    /// 体ごとに作ると同じキャラを何十体も出したときに読み込みと VRAM が膨らむ）
+    /// </summary>
+    struct SharedInputs
+    {
+        Microsoft::WRL::ComPtr<ID3D12Resource> inputVertices;
+        Microsoft::WRL::ComPtr<ID3D12Resource> influences;
+    };
+
+    /// <summary>入力頂点とウェイトを VRAM に作る（同じモデルの1体目だけ）</summary>
+    std::shared_ptr<SharedInputs> CreateSharedInputs(const ModelData &modelData) const;
+
   private:
     /// ===================================================
     /// private variables
@@ -143,5 +158,7 @@ class Skin
     DirectXCommon *pDxCommon_ = nullptr;            // DirectX共通クラス
     SrvManager *pSrvManager_ = nullptr;             // SRVマネージャー
     std::vector<size_t> meshVertexOffsets_;        // メッシュごとの頂点オフセット
+    std::shared_ptr<SharedInputs> sharedInputs_;   // 同じモデルの体と共有する入力頂点とウェイト
+    std::vector<VertexInfluence> influenceScratch_; // ウェイトを組み立てる作業場所（組み終わったら捨てる）
 };
 } // namespace Hagine

@@ -64,6 +64,7 @@ void ColliderBase::SaveToJson()
     dataHandler_->Save("isEnabled", isEnabled_);
     dataHandler_->Save("collideWithAll", collideWithAll_);
     dataHandler_->Save("tag", tag_);
+    dataHandler_->Save("color", color_);
 
     // 衝突マスクを配列として保存
     std::vector<std::string> maskList(collisionMask_.begin(), collisionMask_.end());
@@ -88,6 +89,7 @@ void ColliderBase::LoadFromJson()
     isEnabled_ = dataHandler_->Load<bool>("isEnabled", isEnabled_);
     collideWithAll_ = dataHandler_->Load<bool>("collideWithAll", collideWithAll_);
     ApplyLoadedTag(dataHandler_->Load<std::string>("tag", tag_));
+    color_ = dataHandler_->Load<Vector4>("color", color_);
 
     // 衝突マスクを配列から読み込み。
     // 保存されていない場合は、呼び出し側がコードで入れたマスクを消さずに残す
@@ -113,6 +115,7 @@ nlohmann::json ColliderBase::CaptureState() const
     state["isEnabled"] = isEnabled_;
     state["isVisible"] = isVisible_;
     state["collideWithAll"] = collideWithAll_;
+    state["color"] = {color_.x, color_.y, color_.z, color_.w};
 
     // collisionMask_ は unordered_set なので並びが実行ごとに変わる。
     // Undo トラッカーは毎フレーム JSON 同士を比べているので、
@@ -137,6 +140,11 @@ void ColliderBase::RestoreState(const nlohmann::json &state)
     isEnabled_ = state.value("isEnabled", isEnabled_);
     isVisible_ = state.value("isVisible", isVisible_);
     collideWithAll_ = state.value("collideWithAll", collideWithAll_);
+    if (state.contains("color") && state["color"].is_array() && state["color"].size() == 4)
+    {
+        const nlohmann::json &color = state["color"];
+        color_ = {color[0].get<float>(), color[1].get<float>(), color[2].get<float>(), color[3].get<float>()};
+    }
 
     if (state.contains("collisionMask") && state["collisionMask"].is_array())
     {

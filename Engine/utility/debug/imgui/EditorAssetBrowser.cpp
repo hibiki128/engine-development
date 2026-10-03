@@ -430,8 +430,42 @@ void EditorAssetBrowser::PollFileChanges()
     lastPollTime_ = now;
 
     std::vector<std::string> reloaded;
+    std::vector<std::string> reloadedModels;
+    int reloadedObjects = 0;
     for (const Entry &entry : entries_)
     {
+        if (entry.kind == Kind::Model)
+        {
+            // モデルは本体と、同じ名前の .bin（gltf の頂点）・.mtl（obj のマテリアル）のどれかが変われば読み直す
+            int64_t stamp = 0;
+            const fs::path mainPath = entry.fullPath;
+            for (const char *extension : {"", ".bin", ".mtl"})
+            {
+                fs::path path = mainPath;
+                if (*extension != '\0')
+                {
+                    path.replace_extension(extension);
+                }
+                std::error_code ec;
+                const auto writeTime = fs::last_write_time(path, ec);
+                if (!ec)
+                {
+                    stamp = (std::max)(stamp, static_cast<int64_t>(writeTime.time_since_epoch().count()));
+                }
+            }
+            if (stamp == 0)
+            {
+                continue;
+            }
+            auto [it, inserted] = modelWriteTimes_.try_emplace(entry.relPath, stamp);
+            if (!inserted && it->second != stamp)
+            {
+                it->second = stamp;
+                reloadedObjects += BaseObjectManager::GetInstance()->ReloadModelFile(entry.relPath);
+                reloadedModels.push_back(entry.name);
+            }
+            continue;
+        }
         if (entry.kind != Kind::Image)
         {
             continue;
@@ -463,6 +497,12 @@ void EditorAssetBrowser::PollFileChanges()
     else if (reloaded.size() > 1)
     {
         ImGuiNotification::Post(std::format("画像を {} 枚読み直しました", reloaded.size()), {0.45f, 0.68f, 0.52f, 1.0f});
+    }
+    if (!reloadedModels.empty())
+    {
+        const std::string names = reloadedModels.size() == 1 ? reloadedModels.front() : std::format("{} 個", reloadedModels.size());
+        ImGuiNotification::Post(std::format("モデルを読み直しました: {}（使っている物 {} 個に反映）", names, reloadedObjects),
+                                {0.45f, 0.68f, 0.52f, 1.0f});
     }
 }
 
@@ -563,7 +603,8 @@ void EditorAssetBrowser::DrawToolbar()
             SaveSettings();
         }
     }
-    ImGui::SetItemTooltip(autoReloadTextures_ ? "ホットリロード ON: 画像を上書き保存すると、その場で読み直します（再起動不要）"
+    ImGui::SetItemTooltip(autoReloadTextures_ ? "ホットリロード ON: 画像・モデルを上書き保存すると、その場で読み直します（再起動不要）\n"
+                                                "モデルは使っているオブジェクトの色やテクスチャの差し替えを残したまま、形だけ新しくなります"
                                               : "ホットリロード OFF（押すと ON）");
     ImGui::SameLine();
     if (NeutralButton(ICON_FA_SYNC_ALT "##rescan"))

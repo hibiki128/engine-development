@@ -17,7 +17,7 @@ void SphereCollider::DebugDraw(const ViewProjection &viewProjection)
 
     // 3つの大円で表現する（旧実装の緯度経度メッシュ200本に対して48本）。
     // 視錐台カリングと三角関数テーブルは LineRenderer 側で行われる。
-    LineRenderer::GetInstance()->AddSphere(cachedSphere_.center, cachedSphere_.radius, color_, 16);
+    LineRenderer::GetInstance()->AddSphere(cachedSphere_.center, cachedSphere_.radius, drawColor_, 16);
 }
 
 void SphereCollider::SaveShapeToJson(DataHandler &json)

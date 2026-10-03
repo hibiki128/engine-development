@@ -10,6 +10,7 @@
 #include "bloom/BloomPass.h"
 #include "deferred/DeferredRenderer.h"
 #include "light/LightGroup.h"
+#include "object/Object3d.h"
 #include "object/Object3dInstancing.h"
 #include "utility/debug/imgui/ImGuiNotification.h"
 #include "graphics/srv/SrvManager.h"
@@ -175,6 +176,17 @@ void DrawSystem::Draw(const ViewProjection &vp)
     // 後段のステージループ(PreRenderTexture)がオフスクリーンRTと全画面ビューポートを束ね直すため復元不要。
     ParticleCSEditor::GetInstance()->RenderPreview();
 #endif
+
+    // ─── スキニング（このフレームに動いた体の全員分をまとめて）───
+    // 影パスより前に済ませ、影・本描画・カメラビューのどれもが今のポーズを使えるようにする
+    {
+        HAGINE_CPU_PROFILE("DS/Skinning");
+        ID3D12GraphicsCommandList *pCommandList = pDxCommon_->GetCommandList().Get();
+        pSrvManager_->SetDescriptorHeap();
+        const int gpuSkinning = GpuProfiler::GetInstance()->OpenGraphics(pCommandList, "Skinning");
+        Object3d::FlushPendingSkinning(pCommandList);
+        GpuProfiler::GetInstance()->Close(pCommandList, gpuSkinning);
+    }
 
     // ─── シャドウプレパス ───
     {

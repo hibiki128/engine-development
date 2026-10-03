@@ -213,8 +213,18 @@ bool ShaderHotReload::RunReload(bool verifyAll, const std::string &changedShader
     const auto startTime = std::chrono::steady_clock::now();
     pDxCommon_->WaitForGPU();
 
-    // 1本直しただけでも全PSOを作り直している。どのシェーダーがどのPSOに使われているかの
-    // 対応表を持っていないため。数秒かかるが、再起動してシーンを開き直すよりはるかに速い
+    // 全PSOを作り直すが、コンパイルは書き換わったファイルの分だけで済む
+    // （コンパイラが「ファイル・プロファイル・更新時刻」が同じ結果を使い回すため）。
+    // .hlsli は .hlsl の更新時刻に表れないので、変わったとき（と手で押したとき）は使い回しを捨てる
+    if (verifyAll)
+    {
+        pDxCommon_->ClearShaderCache();
+    }
+    size_t hitsBefore = 0;
+    size_t missesBefore = 0;
+    size_t entries = 0;
+    pDxCommon_->GetShaderCacheStats(hitsBefore, missesBefore, entries);
+
     PipelineManager::GetInstance()->Reload();
     ComputePipelineManager::GetInstance()->Reload();
     // ポストエフェクトのCSは必要になった時点で作り直される
@@ -223,10 +233,14 @@ bool ShaderHotReload::RunReload(bool verifyAll, const std::string &changedShader
     const auto elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(
                                std::chrono::steady_clock::now() - startTime)
                                .count();
+    size_t hitsAfter = 0;
+    size_t missesAfter = 0;
+    pDxCommon_->GetShaderCacheStats(hitsAfter, missesAfter, entries);
 
     ++reloadCount_;
     lastReloadSucceeded_ = true;
-    lastMessage_ = "作り直しました (" + std::to_string(elapsedMs) + " ms)";
+    lastMessage_ = "作り直しました (" + std::to_string(elapsedMs) + " ms / コンパイル " + std::to_string(missesAfter - missesBefore) +
+                   " 本・使い回し " + std::to_string(hitsAfter - hitsBefore) + " 本)";
     Logger::Info("シェーダーを作り直しました (" + std::to_string(elapsedMs) + " ms)");
 #ifdef USE_IMGUI
     ImGuiNotification::Post(lastMessage_, {0.35f, 0.80f, 0.45f, 1.0f});
@@ -329,6 +343,18 @@ void ShaderHotReload::DrawImGui()
     }
     ImGui::SameLine();
     ImGui::TextDisabled("作り直した回数: %d", reloadCount_);
+
+    // コンパイル結果の使い回し（同じファイルを何度もコンパイルしない）
+    size_t hits = 0;
+    size_t misses = 0;
+    size_t entries = 0;
+    if (pDxCommon_)
+    {
+        pDxCommon_->GetShaderCacheStats(hits, misses, entries);
+    }
+    ImGui::TextDisabled("コンパイルの使い回し: %zu 本を控え中（コンパイル %zu 回・使い回し %zu 回）", entries, misses, hits);
+    ImGui::SetItemTooltip("同じファイル・同じプロファイルは、ファイルが書き換わるまでコンパイル結果を使い回す。\n"
+                          ".hlsli を書き換えたときと「今すぐ作り直す」では、控えを捨ててから作り直す");
 
     if (!lastMessage_.empty())
     {

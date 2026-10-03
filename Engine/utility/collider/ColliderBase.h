@@ -266,26 +266,23 @@ class ColliderBase
     const std::string &GetOwnerName() const { return ownerName_; }
 
     /// <summary>
-    /// 描画色を設定
+    /// 線の色（設定値。保存される）を設定
     /// </summary>
     /// <param name="color">設定する色</param>
     void SetColor(const Vector4 &color) { color_ = color; }
 
     /// <summary>
-    /// 描画色を取得
+    /// 線の色（設定値）を取得
     /// </summary>
-    /// <returns>const Vector4&: 現在の色</returns>
+    /// <returns>const Vector4&: 設定されている色</returns>
     const Vector4 &GetColor() const { return color_; }
 
     /// <summary>
-    /// 描画色を衝突中の色（赤）に設定
+    /// このフレームに実際に描く色を設定する（CollisionManager が描く直前に決める）。
+    /// 衝突中の赤・タグの色・選択の点滅はここで上書きし、設定値の color_ は書き換えない
+    /// （以前は毎フレーム color_ を白/赤で上書きしていて、窓で変えた色が効かなかった）
     /// </summary>
-    void SetHitColor() { color_ = {1.0f, 0.0f, 0.0f, 1.0f}; }
-
-    /// <summary>
-    /// 描画色を既定色（白）に設定
-    /// </summary>
-    void SetDefaultColor() { color_ = {1.0f, 1.0f, 1.0f, 1.0f}; }
+    void SetDrawColor(const Vector4 &color) { drawColor_ = color; }
 
     /// <summary>
     /// 現フレームの衝突状態を設定
@@ -423,7 +420,8 @@ class ColliderBase
     bool isVisible_ = true;                         // デバッグ表示の可視フラグ
     bool isCollidingInCurrentFrame_ = false;        // 現フレームの衝突フラグ
 
-    Vector4 color_ = {1.0f, 1.0f, 1.0f, 1.0f}; // デバッグ描画色
+    Vector4 color_ = {1.0f, 1.0f, 1.0f, 1.0f};     // 線の色（設定値）
+    Vector4 drawColor_ = {1.0f, 1.0f, 1.0f, 1.0f}; // このフレームに描く色（DebugDraw はこちらを使う）
 
     CollisionCallback onCollisionEnter_; // 衝突した瞬間のコールバック
     CollisionCallback onCollision_;      // 衝突継続中のコールバック

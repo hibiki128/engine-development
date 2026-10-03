@@ -110,11 +110,25 @@ class Object3d
     // AnimationUpdate()（フレーム先頭）で false に戻す。
     bool skinnedThisFrame_ = false;
 
+    // このフレームのまとめスキニング（FlushPendingSkinning）に積んであるか
+    bool skinningQueued_ = false;
+    // まとめてスキニングする体の一覧（AnimationUpdate で積み、描画の頭で FlushPendingSkinning が実行する）
+    static std::vector<Object3d *> pendingSkinning_;
+
   public: // メンバ関数
     /// <summary>
     /// デストラクタ。自分専用に作られたモデル（gltf）を ModelManager へ返す
     /// </summary>
     ~Object3d();
+
+    /// <summary>
+    /// このフレームにアニメーションを進めた全員のスキニングを、まとめて実行する。
+    /// 1体ずつ「頂点バッファ→UAV→計算→頂点バッファ」をすると、遷移のたびに GPU が前の計算の完了を待つので、
+    /// 体が多いと直列になって重い（100体で影パスが 12ms 以上かかっていた）。
+    /// 遷移を全員分まとめて1回ずつにし、計算は続けて流す。描画（影パス）より前に1回呼ぶ
+    /// </summary>
+    /// <param name="pCommandList">記録先</param>
+    static void FlushPendingSkinning(ID3D12GraphicsCommandList *pCommandList);
 
     void Initialize();
 
@@ -409,6 +423,15 @@ class Object3d
     void SetRotation(const Vector3 &rotation_) { this->rotation_ = rotation_; }
     void SetSize(const Vector3 &size_) { this->size_ = size_; }
     void SetModel(const std::string &filePath);
+
+    /// <summary>
+    /// モデルのファイルを読み直して差し替える（ホットリロード）。マテリアルの設定は数が同じならそのまま残す。
+    /// gltf はアニメーションも新しい骨で作り直す（再生位置は頭に戻る）。
+    /// 先に ModelManager::ForgetModelFile を呼んでおくこと。GPU が古いバッファを使い終わってから呼ぶこと
+    /// </summary>
+    /// <param name="modelPath">models ルートからの相対パス（最初に読んだときと同じ物）</param>
+    /// <returns>bool: 読み直せたら true</returns>
+    bool ReloadModel(const std::string &modelPath);
     void SetBlendMode(BlendMode blendMode) { blendMode_ = blendMode; }
 
     /// <summary>

@@ -155,6 +155,27 @@ class DirectXCommon
     bool TryCompileShader(const std::wstring &filePath, const wchar_t *profile,
                           std::string *outError = nullptr);
 
+    /// <summary>
+    /// 中身が変わらないバッファを VRAM（デフォルトヒープ）に作り、data を写す。
+    /// CreateBufferResource（アップロードヒープ＝メインメモリ）に置いたままだと、GPU は使うたびに
+    /// PCIe 越しに読みに行くので、毎フレーム読む頂点・インデックス・ウェイトはこちらに置く。
+    /// 写しはこのフレームのコマンドリストに積むので、同じフレームから使ってよい
+    /// </summary>
+    /// <param name="data">写す中身</param>
+    /// <param name="sizeInBytes">大きさ</param>
+    /// <param name="stateAfterCopy">写したあとの状態（頂点バッファなら VERTEX_AND_CONSTANT_BUFFER など）</param>
+    /// <returns>VRAM 上のバッファ</returns>
+    Microsoft::WRL::ComPtr<ID3D12Resource> CreateStaticBuffer(const void *data, size_t sizeInBytes, D3D12_RESOURCE_STATES stateAfterCopy);
+
+    /// <summary>
+    /// コンパイル結果の使い回しを全部捨てる（.hlsli を書き換えたとき用。
+    /// .hlsl 自身の書き換えは更新時刻で見分けるので呼ばなくてよい）
+    /// </summary>
+    void ClearShaderCache();
+
+    /// <summary>コンパイル結果の使い回しの様子（使い回した回数・コンパイルした回数・控えている本数）</summary>
+    void GetShaderCacheStats(size_t &outHits, size_t &outMisses, size_t &outEntries) const;
+
     // Resourceの作成
     Microsoft::WRL::ComPtr<ID3D12Resource> CreateBufferResource(size_t sizeInBytes, bool isUAV = false);
 
@@ -364,6 +385,14 @@ class DirectXCommon
     // 同時に進めるフレーム数（DXCommandList::kFrameCount と同じ値。.cpp の static_assert で確かめている）
     static constexpr UINT kFrameCount = 2;
     UINT64 fenceValues_[kFrameCount] = {}; // フレームごとの最終 Signal 値
+
+    // CreateStaticBuffer の写し元。GPU が写し終わるまで（数フレーム）持っておいてから捨てる
+    struct PendingUpload
+    {
+        Microsoft::WRL::ComPtr<ID3D12Resource> resource;
+        UINT framesLeft = 0;
+    };
+    std::vector<PendingUpload> pendingUploads_;
     UINT frameIndex_ = 0;                                 // 現在の描画フレームスロット（0 or 1）
 
     // ビューポート（オフスクリーン描画用・仮想解像度固定）

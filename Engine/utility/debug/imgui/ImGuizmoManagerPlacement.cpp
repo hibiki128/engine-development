@@ -284,6 +284,7 @@ void ImGuizmoManager::DrawPlacementTool()
     // ---- 下描き（置く場所をシーンに描く）----
     const std::vector<PlacementPoint> points = BuildPlacementPoints(source->GetWorldPosition());
     {
+        LineCategoryScope lineScope(LineCategory::Placement);
         LineRenderer *line = LineRenderer::GetInstance();
         const Vector4 color = {0.45f, 0.85f, 0.60f, 0.9f};
         const Vector3 origin = source->GetWorldPosition();

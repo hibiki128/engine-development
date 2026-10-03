@@ -205,6 +205,18 @@ class ImGuiManager {
     // カメラ窓（登録カメラの一覧・切り替え・各カメラの設定）
     void ShowCameraWindow();
 
+    // デバッグカメラ窓（使う/使わない・位置と向き・動かし方）
+    void ShowDebugCameraWindow();
+
+    // デバッグ線の窓（線の種類ごとの本数とオン/オフ）
+    void ShowDebugLineWindow();
+
+    // 入力（キーコンフィグ）の窓
+    void ShowInputActionWindow();
+
+    // カメラ窓の頭に出すデバッグカメラの状態（使う/使わない・速さ・窓を開く）
+    void DrawDebugCameraSummary();
+
     // アセットブラウザ窓（images ルートをサムネ一覧表示、各サムネをD&Dのドラッグ元にする）
     void ShowAssetBrowserWindow();
 
@@ -488,6 +500,9 @@ class ImGuiManager {
     bool showUndoHistoryView_ = false;  // Undo 履歴の窓
     bool showPlacementToolView_ = false; // 配置ツールの窓
     bool showColorPaletteView_ = false;  // カラーパレットの窓
+    bool showDebugCameraView_ = false;   // デバッグカメラの窓
+    bool showDebugLineView_ = false;     // デバッグ線の窓
+    bool showInputActionView_ = false;   // 入力（キーコンフィグ）の窓
 #ifdef USE_IMGUI
     std::vector<PaletteSwatch> paletteSwatches_;
     bool paletteLoaded_ = false;

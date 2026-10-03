@@ -755,6 +755,7 @@ void ParticleCSEmitter::DrawEmitter()
 {
     if (!isVisible_)
         return;
+    LineCategoryScope lineScope(LineCategory::Particle);
     Vector3 translate = pEmitterMeshData_->translate;
     Quaternion rotation = pEmitterMeshData_->rotation;
     Vector3 scale = pEmitterMeshData_->scale;

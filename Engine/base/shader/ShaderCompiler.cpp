@@ -25,6 +25,8 @@ void ShaderCompiler::Initialize()
 
 void ShaderCompiler::Finalize()
 {
+    // 控えているバイナリは DXC が作った物なので、DXC を手放す前に捨てる
+    cache_.clear();
     // ComPtrではなく生ポインタで保持しているため手動でReleaseが必要
     if (pIncludeHandler_)
     {
@@ -55,6 +57,28 @@ IDxcBlob *ShaderCompiler::CompileWithReflection(const std::wstring &filePath, co
     {
         *ppReflection = nullptr;
     }
+
+    // 同じファイル・同じプロファイルで、ファイルが書き換わっていなければ前の結果を使い回す。
+    // 返すバイナリは呼び出し側が Release してよいよう、参照を1つ足して渡す
+    const std::wstring cacheKey = filePath + L"|" + profile;
+    std::error_code timeError;
+    const std::filesystem::file_time_type writeTime = std::filesystem::last_write_time(filePath, timeError);
+    if (!timeError)
+    {
+        auto cached = cache_.find(cacheKey);
+        if (cached != cache_.end() && cached->second.writeTime == writeTime && cached->second.object)
+        {
+            ++cacheHits_;
+            if (ppReflection)
+            {
+                CreateReflectionFromCache(cached->second, ppReflection);
+            }
+            IDxcBlob *pBlob = cached->second.object.Get();
+            pBlob->AddRef();
+            return pBlob;
+        }
+    }
+    ++cacheMisses_;
 
     // これからシェーダーをコンパイルする旨をログに出す
     Log(ConvertString(std::format(L"Begin CompileShader, path:{}, profile:{}\n", filePath, profile)));
@@ -112,22 +136,27 @@ IDxcBlob *ShaderCompiler::CompileWithReflection(const std::wstring &filePath, co
     hr = shaderResult->GetOutput(DXC_OUT_OBJECT, IID_PPV_ARGS(&shaderBlob), nullptr);
     assert(SUCCEEDED(hr));
 
-    // リフレクション（シェーダーが宣言しているリソース一覧）を取り出す。
-    // これを使ってルートシグネチャを自動生成する。
-    if (ppReflection)
+    // リフレクション（シェーダーが宣言しているリソース一覧）の元データを取り出す。
+    // これを使ってルートシグネチャを自動生成する。今は要らなくても、使い回したときに
+    // リフレクションを求められることがあるので控えておく
+    CachedShader entry;
+    entry.writeTime = writeTime;
+    entry.object = shaderBlob;
     {
         IDxcBlob *reflectionBlob = nullptr;
         hr = shaderResult->GetOutput(DXC_OUT_REFLECTION, IID_PPV_ARGS(&reflectionBlob), nullptr);
         if (SUCCEEDED(hr) && reflectionBlob)
         {
-            DxcBuffer reflectionBuffer{};
-            reflectionBuffer.Ptr = reflectionBlob->GetBufferPointer();
-            reflectionBuffer.Size = reflectionBlob->GetBufferSize();
-            reflectionBuffer.Encoding = DXC_CP_ACP;
-            hr = pDxcUtils_->CreateReflection(&reflectionBuffer, IID_PPV_ARGS(ppReflection));
-            assert(SUCCEEDED(hr) && "シェーダーリフレクションの生成に失敗");
-            reflectionBlob->Release();
+            entry.reflectionData.Attach(reflectionBlob);
         }
+    }
+    if (ppReflection)
+    {
+        CreateReflectionFromCache(entry, ppReflection);
+    }
+    if (!timeError)
+    {
+        cache_[cacheKey] = std::move(entry);
     }
 
     // 成功したログを出す
@@ -141,6 +170,34 @@ IDxcBlob *ShaderCompiler::CompileWithReflection(const std::wstring &filePath, co
     shaderResult->Release();
     // 実行用のバイナリを返却
     return shaderBlob;
+}
+
+void ShaderCompiler::CreateReflectionFromCache(const CachedShader &cached, ID3D12ShaderReflection **ppReflection)
+{
+    *ppReflection = nullptr;
+    if (!cached.reflectionData)
+    {
+        return;
+    }
+    DxcBuffer reflectionBuffer{};
+    reflectionBuffer.Ptr = cached.reflectionData->GetBufferPointer();
+    reflectionBuffer.Size = cached.reflectionData->GetBufferSize();
+    reflectionBuffer.Encoding = DXC_CP_ACP;
+    const HRESULT hr = pDxcUtils_->CreateReflection(&reflectionBuffer, IID_PPV_ARGS(ppReflection));
+    assert(SUCCEEDED(hr) && "シェーダーリフレクションの生成に失敗");
+    (void)hr;
+}
+
+void ShaderCompiler::ClearCache()
+{
+    cache_.clear();
+}
+
+void ShaderCompiler::GetCacheStats(size_t &outHits, size_t &outMisses, size_t &outEntries) const
+{
+    outHits = cacheHits_;
+    outMisses = cacheMisses_;
+    outEntries = cache_.size();
 }
 
 bool ShaderCompiler::TryCompile(const std::wstring &filePath, const wchar_t *profile, std::string *outError)

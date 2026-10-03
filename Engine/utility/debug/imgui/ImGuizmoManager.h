@@ -15,6 +15,7 @@
 
 namespace Hagine {
 class Sprite;
+class SceneProjector;
 
 /// <summary>
 /// ギズモ操作対象の大分類。
@@ -147,7 +148,25 @@ class ImGuizmoManager
     std::vector<std::string> copiedNames_;
 
     bool isMultiSelecting_ = false;
-    bool isDrawDebug_ = true;
+    // 補助表示（AABB・外接球・レイ）。選択の枠は DrawSelectionOverlay が出すので既定は切っておく
+    bool isDrawDebug_ = false;
+
+    // ---- 選択の表示（シーン窓に重ねる枠）----
+    bool showSelectionOutline_ = true;                     // 選択中の物の枠
+    bool showSelectionHiddenEdges_ = true;                 // 奥の辺を破線で出す
+    bool showSelectionFill_ = true;                        // 枠の中をうっすら塗る
+    bool showHoverOutline_ = true;                         // マウスを乗せている物の枠
+    Vector4 selectionColor_ = {1.0f, 0.62f, 0.18f, 1.0f};  // 選択の色
+    Vector4 hoverColor_ = {0.78f, 0.88f, 1.0f, 0.75f};     // マウスを乗せている物の色
+    std::string hoveredName_;                              // マウスを乗せている物（このフレーム）
+
+    // ---- オブジェクト選択の一覧 ----
+    int browserCategoryFilter_ = -1;      // 種類の絞り込み（-1 = すべて / GizmoCategory）
+    bool browserGroupNumbered_ = true;    // cube_1, cube_2 … を「cube」にまとめる
+    bool browserScrollToSelection_ = false; // 選択が変わったら一覧をそこまで送る
+    std::string browserLastSelection_;    // 前のフレームの選択（変化の検出用）
+    std::string browserRangeAnchor_;      // Shift+クリックの範囲選択の起点
+    std::string browserHoveredName_;      // 一覧でマウスを乗せている行（シーンでも枠を出す）
 
     // シーンのクリック対象フィルタ。GizmoCategory ごとに ON/OFF。
     // 効くのはシーン上のクリック・矩形選択だけで、階層やインスペクタからは OFF の種類も選べる。
@@ -209,6 +228,7 @@ class ImGuizmoManager
     std::vector<std::string> inspectorHistory_;
     int inspectorHistoryIndex_ = -1;
     static constexpr size_t kInspectorHistoryMax = 32;
+    std::string inspectorFilter_; // 項目検索の文字（見出しの名前で絞る。空なら全部出す）
 
     /// <summary>トランスフォームのコピー（インスペクタの「…」メニューから貼れる）</summary>
     struct TransformClipboard
@@ -389,9 +409,13 @@ class ImGuizmoManager
     /// <returns>Vector3: 配置位置</returns>
     Vector3 GetSpawnPositionUnderCursor(float fallbackDistance = 12.0f) const;
 
-    void DrawSelectedObjectHighlight();
-    void DrawSelectionMarker(const Vector3 &worldPosition);
     void UpdateFilteredNames();
+
+    /// <summary>マウスを乗せている物の名前（無ければ空。シーン窓の描画中に決まる）</summary>
+    const std::string &GetHoveredName() const { return hoveredName_; }
+
+    /// <summary>ギズモの補助表示（AABB・外接球・レイ）のスイッチ（「デバッグ線」窓と結び付ける）</summary>
+    bool *GetDrawDebugFlag() { return &isDrawDebug_; }
 
     // ギズモの選択状態をセット
     // selectable が false になった場合は、現在の選択状態からも除外する
@@ -759,6 +783,8 @@ class ImGuizmoManager
     void ShowSelectedObjectImGui();
     // インスペクタの見出し（アイコン・名前・種類・親・表示/フォーカス/ピン留め/メニュー）
     void DrawInspectorHeader(GizmoTarget &target);
+    // インスペクタの項目検索の欄（Ctrl+F で入る・Esc で消す）
+    void DrawInspectorSearchBar();
     // 複数選択時の「まとめて編集」
     void DrawMultiSelectionInspector();
     // インスペクタの履歴（戻る・進む）
@@ -796,6 +822,15 @@ class ImGuizmoManager
     /// <param name="offset">複製先に加える位置のずらし量</param>
     /// <returns>std::string: 追加されたオブジェクト名（失敗時は空文字）</returns>
     std::string CloneObject(BaseObject *pSource, const Vector3 &offset);
+
+    // 選択中の物の枠・マウスを乗せている物の枠をシーン窓へ重ねて描く
+    void DrawSelectionOverlay(const ImVec2 &scenePosition, const ImVec2 &sceneSize, bool sceneHovered);
+    void DrawTargetOutline(ImDrawList *pDrawList, const SceneProjector &projector, const GizmoTarget &target, const Vector4 &color,
+                           bool selected);
+    // マウスの下にある物（クリック選択と同じ決め方）
+    std::string PickTargetUnderMouse(const ImVec2 &scenePosition, const ImVec2 &sceneSize);
+    // 「オブジェクト選択」の一覧（同じ名前の連番をまとめて出す）
+    void DrawObjectBrowser();
 
     void DrawDebugRaycast();
     void DrawAABBWireframe(const Matrix4x4 &worldMatrix, const AABB &localBounds, const Vector4 &color);

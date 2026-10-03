@@ -471,6 +471,213 @@ inline bool AccentButton(const char *label, ImVec4 accent, float width = -1.0f)
 // テーマ配色のウィジェット
 // ------------------------------------------------------------
 
+// ------------------------------------------------------------
+// インスペクタの項目検索
+//
+// インスペクタ窓の検索欄に文字があるあいだ、ThemedHeader の見出しを名前で絞る。
+// 絞るのは「本体のいちばん外側の見出し」だけで、開いた見出しの中に入れ子になった
+// 見出しはそのまま出す（中身ごと見せたいので）。タブは InspectorTab で描くと、
+// 検索中はタブをやめて全タブの中身を縦に並べ、タブ名が一致したタブは中身を全部出す。
+// 検索欄が空のときは何もしない（ほかの窓の ThemedHeader にも影響しない）。
+// ------------------------------------------------------------
+namespace InspectorSearch {
+struct State
+{
+    std::string filter;               // 検索文字（空なら無効）
+    const ImDrawList *body = nullptr; // 絞り込む窓（窓ごとに描画リストが別なので識別に使う）
+    float baseX = 0.0f;               // いちばん外側の見出しの X（これより右は入れ子）
+    bool tabMatched = false;          // 今のタブ名が一致した
+    std::string pendingTab;           // まだ見出しを出していないタブ名（最初の一致の前に出す）
+    int matchCount = 0;               // このフレームで出した見出しの数
+};
+
+inline State &Get()
+{
+    static State state;
+    return state;
+}
+
+/// <summary>検索中か</summary>
+inline bool IsActive()
+{
+    return !Get().filter.empty();
+}
+
+/// <summary>ラベル（## 以降は除く）が検索文字を含むか。英字は大文字小文字を区別しない</summary>
+inline bool Matches(const char *label)
+{
+    const std::string &filter = Get().filter;
+    if (filter.empty())
+    {
+        return true;
+    }
+    std::string text = label;
+    if (const size_t idPos = text.find("##"); idPos != std::string::npos)
+    {
+        text.resize(idPos);
+    }
+    auto lower = [](std::string s) {
+        for (char &c : s)
+        {
+            if (c >= 'A' && c <= 'Z')
+            {
+                c = static_cast<char>(c - 'A' + 'a');
+            }
+        }
+        return s;
+    };
+    return lower(text).find(lower(filter)) != std::string::npos;
+}
+
+/// <summary>
+/// 絞り込む本体の始まり。今の窓・今の X を「いちばん外側」として覚える。
+/// 子窓の中で見出しを描くときは、その子窓に入った直後にもう一度呼ぶ
+/// </summary>
+inline void BeginBody()
+{
+    State &state = Get();
+    state.body = ImGui::GetWindowDrawList();
+    state.baseX = ImGui::GetCursorPosX();
+    state.tabMatched = false;
+    state.pendingTab.clear();
+}
+
+/// <summary>検索のスコープ（インスペクタ本体を描く間だけ有効にする）</summary>
+struct Scope
+{
+    explicit Scope(const std::string &filter)
+    {
+        State &state = Get();
+        state.filter = filter;
+        state.matchCount = 0;
+        BeginBody();
+    }
+    ~Scope()
+    {
+        State &state = Get();
+        state.filter.clear();
+        state.body = nullptr;
+        state.pendingTab.clear();
+    }
+    Scope(const Scope &) = delete;
+    Scope &operator=(const Scope &) = delete;
+};
+
+/// <summary>
+/// タブの代わりに使う。検索していなければ ImGui::BeginTabItem と同じ。
+/// 検索中はタブを描かずに常に true を返す（終わりは InspectorTabEnd）
+/// </summary>
+inline bool BeginTab(const char *label)
+{
+    if (!IsActive())
+    {
+        return ImGui::BeginTabItem(label);
+    }
+    State &state = Get();
+    state.tabMatched = Matches(label);
+    state.pendingTab = label;
+    return true;
+}
+
+/// <summary>BeginTab の終わり</summary>
+inline void EndTab()
+{
+    if (!IsActive())
+    {
+        ImGui::EndTabItem();
+        return;
+    }
+    State &state = Get();
+    state.tabMatched = false;
+    state.pendingTab.clear();
+}
+
+/// <summary>タブ列の代わりに使う。検索中はタブ列を出さずに true を返す（終わりは EndTabBar）</summary>
+inline bool BeginTabBar(const char *id, ImGuiTabBarFlags flags = 0)
+{
+    return IsActive() ? true : ImGui::BeginTabBar(id, flags);
+}
+
+/// <summary>BeginTabBar の終わり</summary>
+inline void EndTabBar()
+{
+    if (!IsActive())
+    {
+        ImGui::EndTabBar();
+    }
+}
+
+/// <summary>どのタブの見出しか分かるよう、タブ名を1回だけ挟む</summary>
+inline void EmitPendingTab()
+{
+    State &state = Get();
+    if (state.pendingTab.empty())
+    {
+        return;
+    }
+    std::string tabName = state.pendingTab;
+    if (const size_t idPos = tabName.find("##"); idPos != std::string::npos)
+    {
+        tabName.resize(idPos);
+    }
+    ImGui::SeparatorText(tabName.c_str());
+    state.pendingTab.clear();
+}
+
+/// <summary>
+/// 見出しを出すかの判定。出さないなら false。
+/// 出すときに forceOpen が true なら、検索中は開いた状態で見せる
+/// </summary>
+inline bool FilterHeader(const char *label, bool &forceOpen)
+{
+    forceOpen = false;
+    if (!IsActive())
+    {
+        return true;
+    }
+    State &state = Get();
+    const bool outermost = ImGui::GetWindowDrawList() == state.body && ImGui::GetCursorPosX() <= state.baseX + 0.5f;
+    if (!outermost)
+    {
+        return true; // 入れ子の見出しは親に任せる
+    }
+    if (!state.tabMatched && !Matches(label))
+    {
+        return false;
+    }
+    forceOpen = true;
+    ++state.matchCount;
+    EmitPendingTab();
+    return true;
+}
+
+/// <summary>
+/// 見出しの外に直接置いた中身（案内文や派生クラスのタブの中身など）を出すか。
+/// 検索中はタブ名が一致したときだけ出す
+/// </summary>
+inline bool ShowLooseContent()
+{
+    if (!IsActive())
+    {
+        return true;
+    }
+    State &state = Get();
+    if (!state.tabMatched)
+    {
+        return false;
+    }
+    ++state.matchCount;
+    EmitPendingTab();
+    return true;
+}
+
+/// <summary>このフレームで検索に一致して出した見出しの数</summary>
+inline int MatchCount()
+{
+    return Get().matchCount;
+}
+} // namespace InspectorSearch
+
 /// <summary>アクセント色から3状態の色を作り、折りたたみヘッダーを描く</summary>
 /// <param name="label">ヘッダーラベル（## でID付与可）</param>
 /// <param name="accent">基準となるアクセント色</param>
@@ -478,6 +685,15 @@ inline bool AccentButton(const char *label, ImVec4 accent, float width = -1.0f)
 /// <returns>bool: 開いていれば true</returns>
 inline bool ThemedHeader(const char *label, ImVec4 accent, bool defaultOpen = false)
 {
+    bool forceOpen = false;
+    if (!InspectorSearch::FilterHeader(label, forceOpen))
+    {
+        return false;
+    }
+    if (forceOpen)
+    {
+        ImGui::SetNextItemOpen(true);
+    }
     ImVec4 base = accent;
     base.w = 0.22f;
     ImVec4 hov = accent;

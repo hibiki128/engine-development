@@ -3,6 +3,7 @@
 #include "BaseObjectManager.h"
 #include "browser/ShowFolder.h"
 #include "collider/CollisionManager.h"
+#include "collider/ColliderTagManager.h"
 #include "debug/profiler/CpuProfiler.h"
 #include "frame/Frame.h"
 #include "model/material/Material.h"
@@ -522,6 +523,215 @@ void BaseObject::LoadLookAt() {
 }
 
 // ===================================================
+// エディタからのコライダーの追加・削除
+// ===================================================
+
+ColliderBase *BaseObject::AddColliderForEditor(ColliderType type) {
+    // 既定の衝突マスクはゲーム側が ColliderTagManager に設定したものを使う
+    // （エンジンが "Player" 等のゲーム固有タグを直接知らないようにするため）
+    auto makeDefault = [](ColliderBase *c) {
+        c->SetTag("Environment");
+        for (const std::string &mask : ColliderTagManager::GetInstance()->GetDefaultCollisionMasks()) {
+            c->AddCollisionMask(mask);
+        }
+    };
+    // AddXxxCollider は保存済みJSON(jsons/Collider)があればそれを読み込んで返す。
+    // そこへ既定値を被せると、保存しておいたサイズやタグが消えてしまうので、
+    // 既定値を入れるのは「保存済み設定が無かったとき」だけにする
+    auto isFresh = [](const ColliderBase *c) { return !DataHandler("Collider", c->GetName()).Exists(); };
+
+    switch (type) {
+    case ColliderType::Sphere: {
+        auto *c = AddSphereCollider();
+        if (isFresh(c)) {
+            makeDefault(c);
+            c->SetRadius(1.0f);
+        }
+        return c;
+    }
+    case ColliderType::AABB: {
+        auto *c = AddAABBCollider();
+        if (isFresh(c)) {
+            makeDefault(c);
+            c->SetSize({2.0f, 2.0f, 2.0f});
+        }
+        return c;
+    }
+    case ColliderType::OBB: {
+        auto *c = AddOBBCollider();
+        if (isFresh(c)) {
+            makeDefault(c);
+            c->SetSize({2.0f, 2.0f, 2.0f});
+        }
+        return c;
+    }
+    case ColliderType::Cylinder: {
+        auto *c = AddCylinderCollider();
+        if (isFresh(c)) {
+            makeDefault(c);
+            c->SetRadius(2.0f);
+            c->SetHeight(4.0f);
+            c->SetInward(false); // 障害物として外側に押し出す
+        }
+        return c;
+    }
+    case ColliderType::Mesh: {
+        // 自身のモデル形状から三角形メッシュコライダーを生成する
+        auto *c = AddMeshCollider();
+        makeDefault(c);
+        return c;
+    }
+    }
+    return nullptr;
+}
+
+bool BaseObject::RemoveCollider(const ColliderBase *pCollider) {
+    // colliders_ は unique_ptr 所有。erase で ~ColliderBase が走り
+    // CollisionManager から自動的に Unregister される（delete は呼ばない）
+    auto it = std::find_if(colliders_.begin(), colliders_.end(),
+                           [pCollider](const std::unique_ptr<ColliderBase> &c) { return c.get() == pCollider; });
+    if (it == colliders_.end()) {
+        return false;
+    }
+    colliders_.erase(it);
+    return true;
+}
+
+// ===================================================
+// 手のIK（手首を目標へ伸ばす）
+// ===================================================
+
+HandIkSolver *BaseObject::AcquireHandIk() {
+    if (!obj3d_ || !obj3d_->GetHaveAnimation()) {
+        return nullptr;
+    }
+    if (!handIk_) {
+        handIk_ = std::make_unique<HandIkSolver>();
+    }
+    return handIk_.get();
+}
+
+void BaseObject::SetHandIkTarget(const std::string &limbLabel, const Vector3 &targetWorld) {
+    if (handIk_) {
+        handIk_->SetTarget(limbLabel, targetWorld);
+    }
+}
+
+void BaseObject::ClearHandIkTargets() {
+    if (handIk_) {
+        handIk_->ClearAllTargets();
+    }
+}
+
+void BaseObject::SolveHandIk() {
+    if (!handIk_ || !obj3d_) {
+        return;
+    }
+    ModelAnimation *pAnimation = obj3d_->GetCurrentModelAnimation();
+    if (!pAnimation) {
+        return;
+    }
+    Bone *pBone = pAnimation->GetBone();
+    Skin *pSkin = pAnimation->GetSkin();
+    if (!pBone || !pSkin || pBone->GetSkeletonRef().joints.empty()) {
+        return;
+    }
+
+    float deltaTime = Frame::DeltaTime();
+#ifdef USE_IMGUI
+    // 一時停止中は効きの出入りを進めない（ポーズ自体は毎フレーム掛ける）
+    if (!PlayModeManager::GetInstance()->ShouldUpdateGame()) {
+        deltaTime = 0.0f;
+    }
+#endif // USE_IMGUI
+
+    if (handIk_->Solve(pBone->GetSkeletonRef(), GetRenderWorldMatrix(), deltaTime)) {
+        // ポーズを書き換えたので、シェーダーへ渡すパレットを作り直す
+        pSkin->Update(pBone->GetSkeletonRef());
+    }
+}
+
+void BaseObject::SaveHandIk() {
+    if (!objectData_ || !handIk_) {
+        return;
+    }
+    objectData_->Save<nlohmann::json>("handIk", handIk_->ToJson());
+}
+
+void BaseObject::LoadHandIk() {
+    if (!objectData_ || !objectData_->Contains("handIk")) {
+        return;
+    }
+    if (HandIkSolver *pSolver = AcquireHandIk()) {
+        pSolver->FromJson(objectData_->Load<nlohmann::json>("handIk", nlohmann::json::object()));
+    }
+}
+
+// ===================================================
+// 揺れ物（髪・布・しっぽ）
+// ===================================================
+
+SpringBoneSolver *BaseObject::AcquireSpringBone() {
+    if (!obj3d_ || !obj3d_->GetHaveAnimation()) {
+        return nullptr;
+    }
+    if (!springBone_) {
+        springBone_ = std::make_unique<SpringBoneSolver>();
+    }
+    return springBone_.get();
+}
+
+void BaseObject::ResetSpringBone() {
+    if (springBone_) {
+        springBone_->Reset();
+    }
+}
+
+void BaseObject::SolveSpringBone() {
+    if (!springBone_ || !springBone_->GetSettings().enabled || !obj3d_) {
+        return;
+    }
+    ModelAnimation *pAnimation = obj3d_->GetCurrentModelAnimation();
+    if (!pAnimation) {
+        return;
+    }
+    Bone *pBone = pAnimation->GetBone();
+    Skin *pSkin = pAnimation->GetSkin();
+    if (!pBone || !pSkin || pBone->GetSkeletonRef().joints.empty()) {
+        return;
+    }
+
+    float deltaTime = Frame::DeltaTime();
+#ifdef USE_IMGUI
+    // 一時停止中は揺れを進めない（止めた絵のまま見られるように。今の揺れの形は毎フレーム掛ける）
+    if (!PlayModeManager::GetInstance()->ShouldUpdateGame()) {
+        deltaTime = 0.0f;
+    }
+#endif // USE_IMGUI
+
+    if (springBone_->Solve(pBone->GetSkeletonRef(), GetRenderWorldMatrix(), deltaTime)) {
+        // ポーズを書き換えたので、シェーダーへ渡すパレットを作り直す
+        pSkin->Update(pBone->GetSkeletonRef());
+    }
+}
+
+void BaseObject::SaveSpringBone() {
+    if (!objectData_ || !springBone_) {
+        return;
+    }
+    objectData_->Save<nlohmann::json>("springBone", springBone_->ToJson());
+}
+
+void BaseObject::LoadSpringBone() {
+    if (!objectData_ || !objectData_->Contains("springBone")) {
+        return;
+    }
+    if (SpringBoneSolver *pSolver = AcquireSpringBone()) {
+        pSolver->FromJson(objectData_->Load<nlohmann::json>("springBone", nlohmann::json::object()));
+    }
+}
+
+// ===================================================
 // アニメーションのステートマシン
 // ===================================================
 
@@ -576,6 +786,63 @@ void BaseObject::LoadFootIk() {
     if (FootIkSolver *pSolver = AcquireFootIk()) {
         pSolver->FromJson(objectData_->Load<nlohmann::json>("footIk", nlohmann::json::object()));
     }
+}
+
+// ---- モデルのホットリロード ----------------------------------------------------
+
+bool BaseObject::ReloadModel() {
+    if (isPrimitive_ || modelPath_.empty() || !obj3d_) {
+        return false;
+    }
+
+    auto jointCount = [this]() -> size_t {
+        ModelAnimation *pAnimation = obj3d_->GetCurrentModelAnimation();
+        Bone *pBone = pAnimation ? pAnimation->GetBone() : nullptr;
+        return pBone ? pBone->GetSkeletonRef().joints.size() : 0;
+    };
+    const size_t jointsBefore = jointCount();
+
+    if (!obj3d_->ReloadModel(modelPath_)) {
+        return false;
+    }
+
+    // テクスチャの差し替えはマテリアルごと残っている。マテリアルが増えた分だけ、保存用の一覧をモデルの物で埋める
+    const size_t materialCount = obj3d_->GetMaterialCount();
+    if (texturePaths_.size() < materialCount) {
+        const std::vector<std::string> modelTextures = obj3d_->GetAllTexturePath();
+        for (size_t i = texturePaths_.size(); i < materialCount && i < modelTextures.size(); ++i) {
+            texturePaths_.push_back(modelTextures[i]);
+        }
+    }
+
+    // このモデルから作ったメッシュコライダーは新しい形で作り直す
+    for (const std::unique_ptr<ColliderBase> &collider : colliders_) {
+        if (collider && collider->GetType() == ColliderType::Mesh) {
+            auto *pMesh = static_cast<MeshCollider *>(collider.get());
+            if (pMesh->GetSourceModelPath() == modelPath_ && obj3d_->GetModel()) {
+                pMesh->BuildFromModel(obj3d_->GetModel());
+            }
+        }
+    }
+
+    // 骨の数が変わったら、IK・揺れ物が覚えている骨の番号は当てにならないので名前から拾い直す
+    const size_t jointsAfter = jointCount();
+    if (jointsAfter != jointsBefore && jointsAfter > 0) {
+        const Skeleton &skeleton = obj3d_->GetCurrentModelAnimation()->GetBone()->GetSkeletonRef();
+        if (footIk_) {
+            footIk_->AutoDetect(skeleton);
+        }
+        if (lookAt_) {
+            lookAt_->AutoDetect(skeleton);
+        }
+        if (handIk_) {
+            handIk_->AutoDetect(skeleton);
+        }
+        if (springBone_) {
+            springBone_->AutoDetect(skeleton);
+        }
+    }
+    return true;
 }
 
 } // namespace Hagine

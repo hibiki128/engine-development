@@ -959,6 +959,7 @@ void ParticleCSFieldManager::DrawFieldGizmos()
 
 void ParticleCSFieldManager::DrawFieldGizmo(int index)
 {
+    LineCategoryScope lineScope(LineCategory::Particle);
     if (index < 0 || index >= static_cast<int>(fields_.size()))
         return;
     const ParticleField &field = fields_[index];

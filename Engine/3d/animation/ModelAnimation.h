@@ -81,7 +81,15 @@ class ModelAnimation
     /// <summary>
     /// Setter
     /// </summary>
-    void SetModelData(ModelData modelData) { modelData_ = modelData; }
+    // 中身は Model が持っている物を指すだけにする（写すと全頂点・全ウェイトの複製になる）。
+    // 中身を読むのは Initialize の間だけで、その後は控えた印だけを使う
+    void SetModelData(const ModelData &modelData)
+    {
+        pModelData_ = &modelData;
+        hasBones_ = modelData.hasBones;
+        hasAnimations_ = modelData.hasAnimations;
+        rootNodeName_ = modelData.rootNode.name;
+    }
     void SetIsAnimation(bool anime) { animator_->SetIsAnimation(anime); }
     void SetSpeed(float speed) { animator_->SetSpeed(speed); }
     void SetBlendDuration(float duration) { animator_->SetBlendDuration(duration); }
@@ -106,7 +114,10 @@ class ModelAnimation
     std::unique_ptr<Skin> skin_;         // スキン
     std::string directorypath_;          // ディレクトリパス
     std::string filename_;               // ファイル名
-    ModelData modelData_;                // モデルデータ
+    const ModelData *pModelData_ = nullptr; // モデルデータ（Initialize の間だけ読む）
+    bool hasBones_ = false;                 // ボーンがあるか
+    bool hasAnimations_ = false;            // アニメーションがあるか
+    std::string rootNodeName_;              // 根のノード名（レイヤー用アニメーターへ渡す）
 
     // ─── レイヤーアニメーション（上半身だけ差し替える等の部分再生）───
     std::unique_ptr<Animator> layerAnimator_; // レイヤー用アニメーター（未使用時はnullptr）

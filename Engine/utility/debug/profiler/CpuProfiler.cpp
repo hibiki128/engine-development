@@ -1,5 +1,6 @@
 #include "CpuProfiler.h"
 #include <algorithm>
+#include <format>
 #ifdef USE_IMGUI
 #include <cstdio>
 #include <imgui.h>
@@ -308,6 +309,16 @@ void CpuProfiler::DrawImGui()
         ImGui::PopStyleColor();
     }
 #endif
+}
+
+std::string CpuProfiler::FormatSummary() const
+{
+    std::string text = std::format("wall {:.2f} ms / total {:.2f} ms\n", smoothedWallMs_, smoothedTotalMs_);
+    for (const Result &result : results_)
+    {
+        text += std::format("  {} {:.3f}\n", result.label, result.ms);
+    }
+    return text;
 }
 
 } // namespace Hagine

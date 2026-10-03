@@ -375,6 +375,45 @@ void ImGuizmoManager::DrawInspectorHeader(GizmoTarget &target)
     ImGui::PopStyleColor();
 }
 
+// ---- 項目検索 -----------------------------------------------------------
+
+void ImGuizmoManager::DrawInspectorSearchBar()
+{
+    // インスペクタにフォーカスがあるときの Ctrl+F で検索欄へ入る
+    const bool focusRequested = ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) &&
+                                ImGui::IsKeyPressed(ImGuiKey_F, false) && ImGui::GetIO().KeyCtrl;
+    if (focusRequested)
+    {
+        ImGui::SetKeyboardFocusHere();
+    }
+
+    const bool active = !inspectorFilter_.empty();
+    const float clearWidth = active ? ImGui::GetFrameHeight() + ImGui::GetStyle().ItemSpacing.x : 0.0f;
+    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - clearWidth);
+    if (active)
+    {
+        ImGui::PushStyleColor(ImGuiCol_FrameBg, DebugTheme::FrameBg(DebugTheme::kAccentYellow));
+    }
+    ImGui::InputTextWithHint("##inspectorSearch", ICON_FA_SEARCH " 見出し・タブの名前で絞る (Ctrl+F)", &inspectorFilter_,
+                             ImGuiInputTextFlags_EscapeClearsAll);
+    if (active)
+    {
+        ImGui::PopStyleColor();
+    }
+    ImGui::SetItemTooltip("例: 「マテリアル」「コライダー」「物理」\n"
+                          "一致した見出しを開いた状態で、タブをまたいで並べます（Esc で消す）");
+    if (active)
+    {
+        ImGui::SameLine();
+        ScopedButtonColors colors(DebugTheme::kButtonGhost, DebugTheme::kButtonGhostHover);
+        if (ImGui::Button(ICON_FA_TIMES "##inspectorSearchClear", ImVec2(ImGui::GetFrameHeight(), 0.0f)))
+        {
+            inspectorFilter_.clear();
+        }
+        ImGui::SetItemTooltip("検索を消す");
+    }
+}
+
 // ---- 本体 ---------------------------------------------------------------
 
 void ImGuizmoManager::DrawInspector()
@@ -415,11 +454,21 @@ void ImGuizmoManager::DrawInspector()
     }
     DrawInspectorHeader(it->second);
     ImGui::Spacing();
+    DrawInspectorSearchBar();
 
     // 詳細はスクロール領域に入れ、見出しを常に見えるところへ残す
     ImGui::BeginChild("##inspectorBody", ImVec2(0.0f, 0.0f), ImGuiChildFlags_None);
     ImGui::PushID(name.c_str());
-    it->second.ShowImGui();
+    {
+        InspectorSearch::Scope searchScope(inspectorFilter_);
+        it->second.ShowImGui();
+        if (InspectorSearch::IsActive() && InspectorSearch::MatchCount() == 0)
+        {
+            ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kTextDim);
+            ImGui::TextWrapped(ICON_FA_SEARCH " 「%s」に一致する見出し・タブがありません", inspectorFilter_.c_str());
+            ImGui::PopStyleColor();
+        }
+    }
     ImGui::PopID();
     ImGui::Spacing();
     ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kTextDim);

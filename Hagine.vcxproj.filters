@@ -354,6 +354,15 @@
     <ClCompile Include="Engine\3d\animation\ik\LookAtSolver.cpp">
       <Filter>Engine\3d\animation\ik</Filter>
     </ClCompile>
+    <ClCompile Include="Engine\3d\animation\ik\HandIkSolver.cpp">
+      <Filter>Engine\3d\animation\ik</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\3d\animation\ik\TwoBoneIk.cpp">
+      <Filter>Engine\3d\animation\ik</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\3d\animation\ik\SpringBoneSolver.cpp">
+      <Filter>Engine\3d\animation\ik</Filter>
+    </ClCompile>
     <ClCompile Include="Engine\3d\animation\ModelAnimation.cpp">
       <Filter>Engine\3d\animation</Filter>
     </ClCompile>
@@ -403,6 +412,9 @@
       <Filter>Engine\3d\line</Filter>
     </ClCompile>
     <ClCompile Include="Engine\3d\line\LineRenderer.cpp">
+      <Filter>Engine\3d\line</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\3d\line\LineRendererImGui.cpp">
       <Filter>Engine\3d\line</Filter>
     </ClCompile>
     <ClCompile Include="Engine\3d\metaball\MetaBall.cpp">
@@ -633,6 +645,9 @@
     <ClCompile Include="Engine\input\Input.cpp">
       <Filter>Engine\input</Filter>
     </ClCompile>
+    <ClCompile Include="Engine\input\InputActions.cpp">
+      <Filter>Engine\input</Filter>
+    </ClCompile>
     <ClCompile Include="Engine\input\Mouse.cpp">
       <Filter>Engine\input</Filter>
     </ClCompile>
@@ -724,6 +739,9 @@
       <Filter>Engine\utility\collider</Filter>
     </ClCompile>
     <ClCompile Include="Engine\utility\collider\CollisionManager.cpp">
+      <Filter>Engine\utility\collider</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\utility\collider\CollisionManagerImGui.cpp">
       <Filter>Engine\utility\collider</Filter>
     </ClCompile>
     <ClCompile Include="Engine\utility\collider\type\AABBCollider.cpp">
@@ -995,6 +1013,15 @@
     <ClInclude Include="Engine\3d\animation\ik\LookAtSolver.h">
       <Filter>Engine\3d\animation\ik</Filter>
     </ClInclude>
+    <ClInclude Include="Engine\3d\animation\ik\HandIkSolver.h">
+      <Filter>Engine\3d\animation\ik</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\3d\animation\ik\TwoBoneIk.h">
+      <Filter>Engine\3d\animation\ik</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\3d\animation\ik\SpringBoneSolver.h">
+      <Filter>Engine\3d\animation\ik</Filter>
+    </ClInclude>
     <ClInclude Include="Engine\3d\animation\ModelAnimation.h">
       <Filter>Engine\3d\animation</Filter>
     </ClInclude>
@@ -1050,6 +1077,9 @@
       <Filter>Engine\3d\line</Filter>
     </ClInclude>
     <ClInclude Include="Engine\3d\line\LineBatchId.h">
+      <Filter>Engine\3d\line</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\3d\line\LineCategory.h">
       <Filter>Engine\3d\line</Filter>
     </ClInclude>
     <ClInclude Include="Engine\3d\line\LineRenderer.h">
@@ -1256,6 +1286,9 @@
     <ClInclude Include="Engine\input\Input.h">
       <Filter>Engine\input</Filter>
     </ClInclude>
+    <ClInclude Include="Engine\input\InputActions.h">
+      <Filter>Engine\input</Filter>
+    </ClInclude>
     <ClInclude Include="Engine\input\Mouse.h">
       <Filter>Engine\input</Filter>
     </ClInclude>
@@ -1425,6 +1458,9 @@
       <Filter>Engine\utility\debug\imgui</Filter>
     </ClInclude>
     <ClInclude Include="Engine\utility\debug\imgui\ImGuiManagerSceneOverlayInternal.h">
+      <Filter>Engine\utility\debug\imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\utility\debug\imgui\SceneProjector.h">
       <Filter>Engine\utility\debug\imgui</Filter>
     </ClInclude>
     <ClInclude Include="Engine\utility\debug\imgui\ImGuiNotification.h">
