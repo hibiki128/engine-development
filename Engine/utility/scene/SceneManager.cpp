@@ -100,7 +100,7 @@ void SceneManager::DrawForOffScreen() {
     }
 }
 
-void SceneManager::SceneSelection(const std::string &sceneName) {
+void SceneManager::SceneSelection(const std::string &sceneName, const std::string &transitionPreset) {
 #ifdef USE_IMGUI
     if (!pTransition_->IsEnd() && pTransition_->FadeInStart()) {
         return;
@@ -110,6 +110,7 @@ void SceneManager::SceneSelection(const std::string &sceneName) {
         return; // 未登録のシーン名。今のシーンは壊さない
     }
     pTransition_->Reset();
+    pTransition_->Prepare(currentSceneName_, sceneName, transitionPreset);
     nextScene_ = std::move(selected);
     // 各種参照の注入を忘れると、シーンの Initialize が nullptr の DrawSystem を触って落ちる
     nextScene_->SetOffScreen(pOffscreen_);
@@ -122,17 +123,18 @@ void SceneManager::SceneSelection(const std::string &sceneName) {
 #endif // USE_IMGUI
 }
 
-void SceneManager::DrawTransition() {
-    if (!pTransition_->IsEnd()) {
-        pTransition_->Draw();
-    }
+void SceneManager::DrawTransition(ID3D12Resource *pTarget) {
+    // 切り替え中かどうか（とエディタのプレビュー）は遷移の側で見る
+    pTransition_->Draw(pTarget);
 }
 
-void SceneManager::NextSceneReservation(const std::string &sceneName) {
+void SceneManager::NextSceneReservation(const std::string &sceneName, const std::string &transitionPreset) {
     if (!pTransition_->IsEnd() && pTransition_->FadeInStart()) {
         return; // すでに遷移中なので次の予約はしない
     }
     pTransition_->Reset();
+    // どの演出で覆うかは「どこからどこへ」で決まるので、シーン名を書き換える前に渡す
+    pTransition_->Prepare(scene_ ? currentSceneName_ : std::string(), sceneName, transitionPreset);
     assert(nextScene_ == nullptr);
 
     currentSceneName_ = sceneName;

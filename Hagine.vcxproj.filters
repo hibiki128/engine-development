@@ -310,6 +310,15 @@
     <Filter Include="externals\imgui">
       <UniqueIdentifier>{247FD816-E10D-AD04-E487-DC143C315049}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Engine\EngineAssets\shaders\OffScreen\Fx">
+      <UniqueIdentifier>{9AED771F-C881-49FA-8B55-2C4244846171}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Engine\EngineAssets\shaders\Transition">
+      <UniqueIdentifier>{2F76470B-E6BB-482D-9E37-5570928E7664}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Engine\utility\scene\transition">
+      <UniqueIdentifier>{7F1F6015-1C84-4B21-AD9F-E92805690167}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Engine\2d\Sprite.cpp">
@@ -975,6 +984,18 @@
     <ClCompile Include="externals\imgui\ImGuizmo.cpp">
       <Filter>externals\imgui</Filter>
     </ClCompile>
+    <ClCompile Include="Engine\offscreen\effect\PostEffectFxFields.cpp">
+      <Filter>Engine\offscreen\effect</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\utility\scene\SceneTransitionImGui.cpp">
+      <Filter>Engine\utility\scene</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\utility\scene\transition\TransitionPreset.cpp">
+      <Filter>Engine\utility\scene\transition</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\utility\scene\transition\TransitionRenderer.cpp">
+      <Filter>Engine\utility\scene\transition</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Engine\2d\Sprite.h">
@@ -1605,6 +1626,18 @@
       <Filter>externals\imgui</Filter>
     </ClInclude>
     <ClInclude Include="resource.h" />
+    <ClInclude Include="Engine\offscreen\effect\PostEffectFxFields.h">
+      <Filter>Engine\offscreen\effect</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\offscreen\effect\PostEffectParamsFx.h">
+      <Filter>Engine\offscreen\effect</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\utility\scene\transition\TransitionPreset.h">
+      <Filter>Engine\utility\scene\transition</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\utility\scene\transition\TransitionRenderer.h">
+      <Filter>Engine\utility\scene\transition</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <Font Include="Engine\EngineAssets\fonts\Buildingsandundertherailwaytracksfree_ver.otf">
@@ -1885,6 +1918,147 @@
       <Filter>Engine\EngineAssets\shaders\Sprite</Filter>
     </None>
     <None Include="README.md" />
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Fx\Afterimage.CS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\OffScreen\Fx</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Fx\AnamorphicStreak.CS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\OffScreen\Fx</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Fx\Ascii.CS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\OffScreen\Fx</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Fx\Bulge.CS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\OffScreen\Fx</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Fx\ColorIsolation.CS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\OffScreen\Fx</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Fx\ColorOverlay.CS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\OffScreen\Fx</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Fx\Crt.CS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\OffScreen\Fx</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Fx\DangerVignette.CS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\OffScreen\Fx</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Fx\DirectionalBlur.CS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\OffScreen\Fx</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Fx\Dither.CS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\OffScreen\Fx</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Fx\Dizzy.CS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\OffScreen\Fx</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Fx\Emboss.CS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\OffScreen\Fx</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Fx\FrostedGlass.CS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\OffScreen\Fx</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Fx\Glitch.CS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\OffScreen\Fx</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Fx\GradientMap.CS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\OffScreen\Fx</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Fx\Halftone.CS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\OffScreen\Fx</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Fx\HeatHaze.CS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\OffScreen\Fx</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Fx\HueSaturation.CS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\OffScreen\Fx</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Fx\Invert.CS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\OffScreen\Fx</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Fx\Kaleidoscope.CS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\OffScreen\Fx</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Fx\Kuwahara.CS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\OffScreen\Fx</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Fx\LensFlare.CS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\OffScreen\Fx</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Fx\Letterbox.CS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\OffScreen\Fx</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Fx\Mirror.CS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\OffScreen\Fx</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Fx\MotionBlur.CS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\OffScreen\Fx</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Fx\NeonEdge.CS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\OffScreen\Fx</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Fx\NightVision.CS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\OffScreen\Fx</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Fx\OldFilm.CS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\OffScreen\Fx</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Fx\PostFxCommon.hlsli">
+      <Filter>Engine\EngineAssets\shaders\OffScreen\Fx</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Fx\Posterize.CS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\OffScreen\Fx</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Fx\RainLens.CS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\OffScreen\Fx</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Fx\ScreenGodRays.CS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\OffScreen\Fx</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Fx\Sepia.CS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\OffScreen\Fx</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Fx\ShapeMosaic.CS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\OffScreen\Fx</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Fx\Sharpen.CS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\OffScreen\Fx</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Fx\Sketch.CS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\OffScreen\Fx</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Fx\Spotlight.CS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\OffScreen\Fx</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Fx\Swirl.CS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\OffScreen\Fx</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Fx\Thermal.CS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\OffScreen\Fx</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Fx\TiltShift.CS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\OffScreen\Fx</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Fx\Toon.CS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\OffScreen\Fx</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Fx\Underwater.CS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\OffScreen\Fx</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Fx\Vhs.CS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\OffScreen\Fx</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Fx\Watercolor.CS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\OffScreen\Fx</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Fx\Wave.CS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\OffScreen\Fx</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Fx\WorldScan.CS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\OffScreen\Fx</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\Transition\Transition.CS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\Transition</Filter>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="Hagine.rc" />

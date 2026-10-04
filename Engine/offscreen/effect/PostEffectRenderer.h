@@ -27,6 +27,9 @@ class PostEffectRenderer
     void BlitToOffScreen(D3D12_GPU_DESCRIPTOR_HANDLE srcSrv);
 
     uint32_t GetFinalResultSrvIndex() const { return renderBuffer_.GetFinalResultSrvIndex(); }
+
+    /// @brief 最終結果（ポストエフェクト・UI・シーン遷移まで済んだ画）。合成の外では GENERIC_READ 状態
+    ID3D12Resource *GetFinalResultResource() const { return renderBuffer_.GetFinalResultResource().Get(); }
     void CopyFinalResultToBackBuffer();
 
     /// <summary>
@@ -95,10 +98,13 @@ class PostEffectRenderer
     // 先に積んだディスパッチまで書き換え後のデスクリプタを読んでしまう。
     // そのためテーブルをリング状に複数持ち、ディスパッチごとに次のテーブルへ進める。
     static constexpr uint32_t kComputeSrvTableSize = 4;   // 1テーブルあたりのSRV数（t0..t3）
-    static constexpr uint32_t kComputeSrvTableCount = 64; // リングの長さ（数フレーム分の余裕）
+    static constexpr uint32_t kComputeSrvTableCount = 192; // リングの長さ（スロット16個×2パス×数フレーム分の余裕）
     uint32_t computeSrvTableBaseIndex_ = 0;
     uint32_t computeSrvTableCursor_ = 0;
     bool computeSrvTableReady_ = false;
+
+    // いまディスパッチしているエフェクト（ComputeInput::History の差し先を引くため）
+    IPostEffectParams *pCurrentParams_ = nullptr;
 
     // 画面に出る最後のステージだけ true。DrawSystem が毎フレーム設定する
     bool applyToneMap_ = true;

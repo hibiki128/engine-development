@@ -23,7 +23,7 @@ class PostEffectChain
 {
   public:
     /// スロットの最大数（空枠として事前確保される）
-    static constexpr int kMaxSlots = 10;
+    static constexpr int kMaxSlots = 16;
 
     // -------------------------------------------------------
     //  追加・削除
@@ -117,12 +117,30 @@ class PostEffectChain
     /// @brief 名前でエフェクトの有効/無効を設定する（最初のヒット）
     bool SetEnabledByName(const std::string &name, bool enabled);
 
+    /// @brief 外したエフェクトのうち、GPU が使い終わった物を解放する。描画の頭で毎フレーム1回呼ぶ
+    void ReleaseRetired();
+
   private:
     bool IsValidIndex(int index) const { return index >= 0 && index < kMaxSlots; }
 
     /// @brief 最初の空きスロットインデックスを返す（なければ-1）
     int FindFirstFreeSlot() const;
 
+    /// @brief 外したエフェクトをすぐには捨てず、GPU が使い終わるまで預かる
+    void Retire(std::unique_ptr<IPostEffectParams> params);
+
     std::array<EffectSlot, kMaxSlots> slots_;
+
+    // 外したエフェクトの預かり場所。
+    // 前のフレームまでに積んだディスパッチがまだ定数バッファ等を読んでいるかもしれないので、
+    // 外した瞬間に解放すると「使用中のリソースを解放」になる（D3D12 の CORRUPTION エラー）。
+    // フレームの重なりより長く待ってから解放する
+    struct RetiredParams
+    {
+        std::unique_ptr<IPostEffectParams> params;
+        int framesLeft = 0;
+    };
+    std::vector<RetiredParams> retired_;
+    static constexpr int kRetireFrames = 4;
 };
 } // namespace Hagine

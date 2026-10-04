@@ -7,6 +7,8 @@
 #include "graphics/srv/SrvManager.h"
 #include "data/DataHandler.h"
 #include "graphics/pipeline/PipelineManager.h"
+#include <type/Matrix4x4.h>
+#include <type/Vector3.h>
 
 /// @brief ポストエフェクトパラメータの基底インターフェース
 /// 各エフェクトはこのインターフェースを実装し、自身のパラメータを所有する
@@ -40,6 +42,23 @@ enum class ComputeInput
     /// 環境マップ（スカイボックスのキューブマップ）。
     /// レイが何にも当たらなかった方向の色として使う
     EnvironmentCube,
+    /// エフェクト自身が持つ「前のフレームの結果」（GetHistoryResource が返す物）。
+    /// 残像のように過去の画を重ねるエフェクトで使う。持っていなければ入力画像で代用される
+    History,
+};
+
+/// <summary>
+/// ポストエフェクトへ毎フレーム渡すカメラの情報。
+/// 深度からワールド座標を戻す・前のフレームと比べる・太陽を画面へ写す、などに使う
+/// </summary>
+struct PostEffectCameraInfo
+{
+    Matrix4x4 view;                  // ビュー行列
+    Matrix4x4 projection;            // 射影行列
+    Matrix4x4 viewProjection;        // ビュー射影行列
+    Matrix4x4 inverseViewProjection; // ビュー射影行列の逆行列（NDC → ワールド）
+    Vector3 cameraPosition;          // カメラのワールド座標
+    Vector3 sunDirection;            // 平行光源が進む向き
 };
 
 class IPostEffectParams
@@ -102,5 +121,21 @@ class IPostEffectParams
                               int /*passIndex*/,
                               uint32_t /*textureWidth*/,
                               uint32_t /*textureHeight*/) {}
+
+    /// @brief カメラの情報を受け取る（毎フレーム、カメラが決まった後に呼ばれる）。
+    ///        深度からワールド座標を戻すエフェクトなどが上書きする
+    virtual void SetCameraInfo(const PostEffectCameraInfo & /*info*/) {}
+
+    /// @brief ComputeInput::History で差す「前のフレームの結果」。持たないエフェクトは nullptr
+    virtual ID3D12Resource *GetHistoryResource() const { return nullptr; }
+
+    /// @brief CS の最後のパスを書き終えた直後に呼ばれる。
+    ///        出力（GENERIC_READ 状態）を自分の History へ写すなど、結果を次のフレームへ持ち越すときに使う
+    /// @param pCommandList コマンドリスト
+    /// @param pOutput      このエフェクトが書いた出力
+    /// @param pDxCommon    バリア用
+    virtual void OnComputeFinished(ID3D12GraphicsCommandList * /*pCommandList*/,
+                                   ID3D12Resource * /*pOutput*/,
+                                   DirectXCommon * /*pDxCommon*/) {}
 };
 } // namespace Hagine

@@ -5,6 +5,7 @@
 #include "DirectXCommon.h"
 #include "collider/CollisionManager.h"
 #include "debug/profiler/CpuProfiler.h"
+#include <debug/capture/CaptureManager.h>
 #include "debug/profiler/GpuProfiler.h"
 #include "data/DataHandler.h"
 #include "bloom/BloomPass.h"
@@ -392,13 +393,20 @@ void DrawSystem::Draw(const ViewProjection &vp)
         // drawGroup が "UI" の実行時 GPU パーティクル
         ParticleCSSpawner::GetInstance()->DrawGraphics(vp, kUILayer);
 
-        // シーン遷移は最前面（UIの上）
-        pSceneManager_->DrawTransition();
-
         lastOffScreen->EndCompositePass();
+
+        // シーン遷移は最前面（UIの上）。合成し終えた画を読んで幕を重ね、同じ画へ書き戻す
+        {
+            int gpuTransition = GpuProfiler::GetInstance()->OpenGraphics(pDxCommon_->GetCommandList().Get(), "SceneTransition");
+            pSceneManager_->DrawTransition(lastOffScreen->GetFinalResultResource());
+            GpuProfiler::GetInstance()->Close(pDxCommon_->GetCommandList().Get(), gpuTransition);
+        }
 
         // ─── finalResult（フルフレーム）をバックバッファへコピー ───
         lastOffScreen->CopyFinalResultToBackBuffer();
+
+        // スクリーンショットの「ゲーム画面」は、ポストエフェクト・UI・遷移まで済んだこの画を撮る
+        CaptureManager::GetInstance()->SetGameViewResource(lastOffScreen->GetFinalResultResource());
     } // DS/Composite+Copy
 
     // Graphics スパンと描画統計を resolve（描画コマンド記録が全て済んだ後・リスト Close 前）

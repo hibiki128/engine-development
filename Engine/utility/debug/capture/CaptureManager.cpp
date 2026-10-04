@@ -223,8 +223,9 @@ void CaptureManager::CaptureOnce(const std::string &path)
     }
     else
     {
-        // オフスクリーンは描画後に読み取り状態で置かれている
-        source = pDxCommon_->GetOffScreenResource();
+        // 最終結果（ポストエフェクト・UI込み）があればそれを、無ければオフスクリーンを撮る。
+        // どちらも描画後は読み取り状態で置かれている
+        source = pGameViewResource_ ? pGameViewResource_ : pDxCommon_->GetOffScreenResource();
         state = D3D12_RESOURCE_STATE_GENERIC_READ;
     }
     if (source == nullptr)

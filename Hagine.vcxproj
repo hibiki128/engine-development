@@ -394,6 +394,10 @@
     <ClCompile Include="Engine\2d\ui\UIAnimator.cpp" />
     <ClCompile Include="Engine\2d\ui\UIAnimatorTimeline.cpp" />
     <ClCompile Include="Engine\3d\line\DrawLine3D.cpp" />
+    <ClCompile Include="Engine\offscreen\effect\PostEffectFxFields.cpp" />
+    <ClCompile Include="Engine\utility\scene\SceneTransitionImGui.cpp" />
+    <ClCompile Include="Engine\utility\scene\transition\TransitionPreset.cpp" />
+    <ClCompile Include="Engine\utility\scene\transition\TransitionRenderer.cpp" />
   </ItemGroup>
   <ItemGroup>
     <None Include=".editorconfig" />
@@ -516,6 +520,53 @@
     <None Include="Engine\EngineAssets\shaders\Raytracing\RtShadow.CS.hlsl" />
     <None Include="Engine\EngineAssets\shaders\Shadow\ShadowMapInstanced.VS.hlsl" />
     <None Include="Engine\EngineAssets\shaders\Shadow\ShadowSample.hlsli" />
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Fx\Afterimage.CS.hlsl" />
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Fx\AnamorphicStreak.CS.hlsl" />
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Fx\Ascii.CS.hlsl" />
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Fx\Bulge.CS.hlsl" />
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Fx\ColorIsolation.CS.hlsl" />
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Fx\ColorOverlay.CS.hlsl" />
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Fx\Crt.CS.hlsl" />
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Fx\DangerVignette.CS.hlsl" />
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Fx\DirectionalBlur.CS.hlsl" />
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Fx\Dither.CS.hlsl" />
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Fx\Dizzy.CS.hlsl" />
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Fx\Emboss.CS.hlsl" />
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Fx\FrostedGlass.CS.hlsl" />
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Fx\Glitch.CS.hlsl" />
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Fx\GradientMap.CS.hlsl" />
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Fx\Halftone.CS.hlsl" />
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Fx\HeatHaze.CS.hlsl" />
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Fx\HueSaturation.CS.hlsl" />
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Fx\Invert.CS.hlsl" />
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Fx\Kaleidoscope.CS.hlsl" />
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Fx\Kuwahara.CS.hlsl" />
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Fx\LensFlare.CS.hlsl" />
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Fx\Letterbox.CS.hlsl" />
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Fx\Mirror.CS.hlsl" />
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Fx\MotionBlur.CS.hlsl" />
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Fx\NeonEdge.CS.hlsl" />
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Fx\NightVision.CS.hlsl" />
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Fx\OldFilm.CS.hlsl" />
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Fx\PostFxCommon.hlsli" />
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Fx\Posterize.CS.hlsl" />
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Fx\RainLens.CS.hlsl" />
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Fx\ScreenGodRays.CS.hlsl" />
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Fx\Sepia.CS.hlsl" />
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Fx\ShapeMosaic.CS.hlsl" />
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Fx\Sharpen.CS.hlsl" />
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Fx\Sketch.CS.hlsl" />
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Fx\Spotlight.CS.hlsl" />
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Fx\Swirl.CS.hlsl" />
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Fx\Thermal.CS.hlsl" />
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Fx\TiltShift.CS.hlsl" />
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Fx\Toon.CS.hlsl" />
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Fx\Underwater.CS.hlsl" />
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Fx\Vhs.CS.hlsl" />
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Fx\Watercolor.CS.hlsl" />
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Fx\Wave.CS.hlsl" />
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Fx\WorldScan.CS.hlsl" />
+    <None Include="Engine\EngineAssets\shaders\Transition\Transition.CS.hlsl" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Engine\utility\debug\param\GameParamHub.h" />
@@ -728,6 +779,10 @@
     <ClInclude Include="Engine\3d\line\DrawLine3D.h" />
     <ClInclude Include="Engine\utility\edit\play\PlayModeManager.h" />
     <ClInclude Include="Engine\utility\graphics\pipeline\ComputeEffectPipeline.h" />
+    <ClInclude Include="Engine\offscreen\effect\PostEffectFxFields.h" />
+    <ClInclude Include="Engine\offscreen\effect\PostEffectParamsFx.h" />
+    <ClInclude Include="Engine\utility\scene\transition\TransitionPreset.h" />
+    <ClInclude Include="Engine\utility\scene\transition\TransitionRenderer.h" />
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="Engine\EngineAssets\shaders\offscreen\Bloom.PS.hlsl">

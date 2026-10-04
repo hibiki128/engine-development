@@ -50,7 +50,7 @@ bool PostEffectChain::RemoveEffect(int slotIndex)
     slot.occupied = false;
     slot.enabled = false;
     slot.name.clear();
-    slot.params.reset(); // パラメータのGPUリソースを解放
+    Retire(std::move(slot.params)); // GPU が使い終わってから解放する
 
     return true;
 }
@@ -62,8 +62,25 @@ void PostEffectChain::Clear(DirectXCommon * /*pDxCommon*/)
         slot.occupied = false;
         slot.enabled = false;
         slot.name.clear();
-        slot.params.reset();
+        Retire(std::move(slot.params));
     }
+}
+
+void PostEffectChain::Retire(std::unique_ptr<IPostEffectParams> params)
+{
+    if (params)
+    {
+        retired_.push_back({std::move(params), kRetireFrames});
+    }
+}
+
+void PostEffectChain::ReleaseRetired()
+{
+    for (RetiredParams &retired : retired_)
+    {
+        --retired.framesLeft;
+    }
+    std::erase_if(retired_, [](const RetiredParams &retired) { return retired.framesLeft <= 0; });
 }
 
 // -------------------------------------------------------

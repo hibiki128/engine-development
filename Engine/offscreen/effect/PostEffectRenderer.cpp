@@ -137,6 +137,18 @@ D3D12_GPU_DESCRIPTOR_HANDLE PostEffectRenderer::BuildComputeSrvTable(const std::
             // ポストエフェクトはシーン描画の後なので、スキンのBLASももう出来ている
             pSrvManager_->CreateSRVforTlas(slotIndex, RaytracingScene::GetInstance()->GetTlasGpuAddress());
             break;
+        case ComputeInput::History:
+        {
+            // エフェクト自身が持つ前のフレームの結果。持っていなければ入力画像で穴を埋める
+            ID3D12Resource *pHistory = pCurrentParams_ ? pCurrentParams_->GetHistoryResource() : nullptr;
+            if (!pHistory)
+            {
+                pHistory = isFirstInput ? pDxCommon_->GetOffScreenResource()
+                                        : renderBuffer_.GetPingPongResource(inputPingPong).Get();
+            }
+            pSrvManager_->CreateSRVforRenderTexture(slotIndex, pHistory, DXGI_FORMAT_UNKNOWN);
+            break;
+        }
         case ComputeInput::EnvironmentCube:
         {
             TextureManager *pTextureManager = TextureManager::GetInstance();
@@ -164,6 +176,7 @@ D3D12_GPU_DESCRIPTOR_HANDLE PostEffectRenderer::BuildComputeSrvTable(const std::
 
 void PostEffectRenderer::Draw(PostEffectChain &effectChain, float deltaTime)
 {
+    effectChain.ReleaseRetired();
     const std::vector<int> enabledIndices = effectChain.GetEnabledSlotIndices();
 
     if (enabledIndices.empty())
@@ -289,6 +302,9 @@ bool PostEffectRenderer::DispatchComputeEffect(const EffectSlot &slot,
     const UINT groupX = (width + program->threadGroupSizeX - 1) / program->threadGroupSizeX;
     const UINT groupY = (height + program->threadGroupSizeY - 1) / program->threadGroupSizeY;
 
+    // History を差すときに「どのエフェクトの」履歴かを BuildComputeSrvTable へ伝える
+    pCurrentParams_ = slot.params.get();
+
     for (int pass = 0; pass < passCount; ++pass)
     {
         const bool isLastPass = (pass == passCount - 1);
@@ -334,6 +350,10 @@ bool PostEffectRenderer::DispatchComputeEffect(const EffectSlot &slot,
         // 次のパスは今書いたスクラッチを入力にする
         readFromScratch = true;
     }
+    pCurrentParams_ = nullptr;
+
+    // 結果を次のフレームへ持ち越すエフェクト（残像など）に出力を渡す
+    slot.params->OnComputeFinished(pCommandList, renderBuffer_.GetPingPongResource(outputPingPong).Get(), pDxCommon_);
 
     return true;
 }
@@ -383,6 +403,7 @@ void PostEffectRenderer::DrawToneMapped(D3D12_GPU_DESCRIPTOR_HANDLE srcSrv)
 
 void PostEffectRenderer::DrawWithoutCopy(PostEffectChain &effectChain, float deltaTime)
 {
+    effectChain.ReleaseRetired();
     const std::vector<int> enabledIndices = effectChain.GetEnabledSlotIndices();
     if (enabledIndices.empty())
     {

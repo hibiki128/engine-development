@@ -1435,6 +1435,18 @@ void ImGuiManager::ShowDebugLineWindow() {
     ImGui::End();
 }
 
+void ImGuiManager::ShowTransitionWindow() {
+    if (!showTransitionView_)
+        return;
+
+    ImGui::SetNextWindowSize(ImVec2(900.0f, 620.0f), ImGuiCond_FirstUseEver);
+    ImGui::Begin("シーン遷移", &showTransitionView_, ImGuiWindowFlags_NoFocusOnAppearing);
+    if (SceneTransition *transition = SceneManager::GetInstance()->GetSceneTransition()) {
+        transition->DrawEditor();
+    }
+    ImGui::End();
+}
+
 void ImGuiManager::ShowInputActionWindow() {
     if (!showInputActionView_)
         return;
@@ -1748,6 +1760,7 @@ void ImGuiManager::ShowMainUI(OffScreen *pOffScreen) {
     ShowDebugCameraWindow();
     ShowDebugLineWindow();
     ShowInputActionWindow();
+    ShowTransitionWindow();
     // アセットブラウザ窓を描画
     ShowAssetBrowserWindow();
     // ゲームパラメータHub窓を描画
@@ -2361,6 +2374,7 @@ void ImGuiManager::SaveFlag() {
     data->Save("showDebugCameraView", showDebugCameraView_);
     data->Save("showDebugLineView", showDebugLineView_);
     data->Save("showInputActionView", showInputActionView_);
+    data->Save("showTransitionView", showTransitionView_);
     data->Save("debugLineCategoryMask", static_cast<int>(LineRenderer::GetInstance()->GetCategoryMask()));
     data->Save("debugLinesEnabled", LineRenderer::GetInstance()->IsAllLinesEnabled());
     data->Save("sceneLabelMode", sceneLabelMode_);
@@ -2435,6 +2449,7 @@ void ImGuiManager::LoadFlag() {
     showDebugCameraView_ = data->Load("showDebugCameraView", false);
     showDebugLineView_ = data->Load("showDebugLineView", false);
     showInputActionView_ = data->Load("showInputActionView", false);
+    showTransitionView_ = data->Load("showTransitionView", false);
     LineRenderer::GetInstance()->SetCategoryMask(static_cast<uint32_t>(
         data->Load("debugLineCategoryMask", static_cast<int>(LineRenderer::GetInstance()->GetCategoryMask()))));
     LineRenderer::GetInstance()->SetAllLinesEnabled(data->Load("debugLinesEnabled", true));

@@ -58,12 +58,18 @@ class SceneManager
     /// </summary>
     void DrawForOffScreen();
 
-    void SceneSelection(const std::string &sceneName);
+    /// <summary>
+    /// エディタからシーンを切り替える（遷移中なら何もしない）
+    /// </summary>
+    /// <param name="sceneName">切り替え先のシーン名</param>
+    /// <param name="transitionPreset">使う遷移の演出の名前（空なら「シーン遷移」窓の決まり・既定から選ぶ）</param>
+    void SceneSelection(const std::string &sceneName, const std::string &transitionPreset = "");
 
     /// <summary>
-    /// 遷移描画
+    /// 遷移の幕を描く（UI まで合成した最終結果へ重ねる）
     /// </summary>
-    void DrawTransition();
+    /// <param name="pTarget">最終結果（GENERIC_READ 状態）</param>
+    void DrawTransition(ID3D12Resource *pTarget);
 
     bool GetTransitionEnd() const { return transitionEnd_; }
 
@@ -71,7 +77,9 @@ class SceneManager
     /// <summary>
     /// 次シーン予約
     /// </summary>
-    void NextSceneReservation(const std::string &sceneName);
+    /// <param name="sceneName">切り替え先のシーン名</param>
+    /// <param name="transitionPreset">使う遷移の演出の名前（空なら「シーン遷移」窓の決まり・既定から選ぶ）</param>
+    void NextSceneReservation(const std::string &sceneName, const std::string &transitionPreset = "");
 
     /// <summary>
     /// シーン切り替え

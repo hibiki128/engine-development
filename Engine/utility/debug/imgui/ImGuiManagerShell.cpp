@@ -28,6 +28,7 @@ void ImGuiManager::BuildWindowRegistry()
     // 並び順がそのままメニューの並びになる（見出しが変わるところで区切り線が入る）
     windowRegistry_ = {
         {"scene", ICON_FA_BOOK_OPEN, "シーン設定", "シーン・オブジェクト", "シーン全体の設定（カメラ・背景など）を編集します", &showSceneView_},
+        {"transition", ICON_FA_DOOR_OPEN, "シーン遷移", "シーン・オブジェクト", "シーンを切り替えるときの演出（フェード・ワイプ・アイリス・六角形…）を作り、その場で試し、どの切り替えにどれを使うか決めます", &showTransitionView_},
         {"hierarchy", ICON_FA_PROJECT_DIAGRAM, "オブジェクトマネージャ (階層)", "シーン・オブジェクト", "シーン内オブジェクトの一覧・検索・選択・親子付けを操作します", &showHierarchyView_},
         {"selection", ICON_FA_INFO_CIRCLE, "インスペクタ", "シーン・オブジェクト", "選択中の物の詳細を編集します。複数選択ならまとめて編集。ピン留めで表示を固定できます", &showInspectorView_},
         {"cameraView", ICON_FA_VIDEO, "カメラビュー", "シーン・オブジェクト", "好きなカメラから見たシーンを別の窓に映します（窓の中の＋で最大4つまで）", SceneViewRenderer::GetInstance()->GetFirstViewOpenFlag()},
@@ -88,7 +89,7 @@ void ImGuiManager::BuildWorkspaces()
         {"エフェクト", ICON_FA_FIRE, "パーティクルとポストエフェクトを作る",
          {"particle", "particlePreview", "postEffect", "hierarchy", "selection", "gameParam"}, kPickParticle},
         {"演出", ICON_FA_FILM, "カメラワークとモーションで見せ場を作る",
-         {"timeline", "camera", "motion", "audio", "hierarchy", "selection", "inspector"}, kPickObject | kPickLight},
+         {"timeline", "camera", "motion", "audio", "hierarchy", "selection", "inspector", "transition"}, kPickObject | kPickLight},
         {"UI", ICON_FA_SQUARE, "スプライトとUIアニメーションを作る",
          {"sprites", "uiEditor", "assets"}, kPickSprite},
         {"サウンド", ICON_FA_MUSIC, "音楽を作り、鳴り方を確かめる",

@@ -95,6 +95,14 @@ void OffScreen::SetCamera(const Matrix4x4 &viewMatrix,
     cameraPosition_ = cameraPosition;
     sunDirection_ = sunDirection;
 
+    // 汎用の受け口（IPostEffectParams::SetCameraInfo）へ渡す分をまとめておく
+    cameraInfo_.view = viewMatrix;
+    cameraInfo_.projection = projectionMatrix;
+    cameraInfo_.viewProjection = viewProjection_;
+    cameraInfo_.inverseViewProjection = viewProjectionInverse_;
+    cameraInfo_.cameraPosition = cameraPosition_;
+    cameraInfo_.sunDirection = sunDirection_;
+
     const auto &slots = effectChain_.GetSlots();
     for (int i = 0; i < PostEffectChain::kMaxSlots; ++i)
     {
@@ -118,6 +126,10 @@ void OffScreen::SetCamera(const Matrix4x4 &viewMatrix,
         if (auto *p = effectChain_.GetParams<RtReflectionParams>(i))
         {
             ApplyCameraToRtReflection(p);
+        }
+        if (IPostEffectParams *p = effectChain_.GetParams(i))
+        {
+            p->SetCameraInfo(cameraInfo_);
         }
     }
 }
@@ -192,6 +204,10 @@ int OffScreen::AddEffect(ShaderMode mode, const std::string &name, int slotIndex
         {
             ApplyCameraToRtReflection(p);
         }
+        if (IPostEffectParams *p = effectChain_.GetParams(result))
+        {
+            p->SetCameraInfo(cameraInfo_);
+        }
     }
     return result;
 }
@@ -249,7 +265,52 @@ void OffScreen::Setting()
         "ブラー", "シネマティック", "ディゾルブ", "ランダム", "集中線", "ピクセル化", "ブルーム", "レトロ", "衝撃波", "白黒(二値)",
         "被写界深度(DoF)",
         "アンチエイリアス(FXAA)", "カラーグレーディング", "色収差", "フィルムグレイン", "レンズ歪み",
-        "フォグ(距離＋高さ)", "光の筋(レイマーチ)", "画面内反射(SSR)", "RT反射", "打撃インパクト"};
+        "フォグ(距離＋高さ)", "光の筋(レイマーチ)", "画面内反射(SSR)", "RT反射", "打撃インパクト",
+        "セピア",
+        "ポスタリゼーション",
+        "グラデーションマップ",
+        "反転・ソラリゼーション",
+        "色相・彩度",
+        "一色だけ残す",
+        "サーモグラフィ",
+        "暗視ゴーグル",
+        "シャープ",
+        "カラーオーバーレイ",
+        "油絵風",
+        "水彩画風",
+        "セル画風",
+        "鉛筆画風",
+        "網点",
+        "文字アート",
+        "ディザ・レトロゲーム機",
+        "レリーフ",
+        "形モザイク",
+        "渦巻き",
+        "膨らみ・へこみ",
+        "画面の揺らぎ",
+        "万華鏡",
+        "ミラー",
+        "陽炎",
+        "水中",
+        "窓の水滴",
+        "すりガラス",
+        "めまい",
+        "ミニチュア風",
+        "モーションブラー(カメラ)",
+        "方向ブラー",
+        "レンズフレア",
+        "横に伸びる光の筋",
+        "光芒(画面空間)",
+        "ネオン輪郭",
+        "ブラウン管",
+        "グリッチ",
+        "ビデオテープ(VHS)",
+        "古いフィルム",
+        "残像",
+        "黒帯(レターボックス)",
+        "スポットライト",
+        "ピンチ演出",
+        "ワールドスキャン"};
 
     // 各エフェクトが何をするかの一言説明（shaderModeItems と同じ並び＝ShaderMode順）。
     // 「効果の中身が分からない」対策として追加/選択UIに表示する。
@@ -282,6 +343,51 @@ void OffScreen::Setting()
         "床や水面に周囲が映り込む。ディファードが要る（画面外の物は映らない）",
         "レイトレーシングで映り込ませる。画面外を向いた反射でも空が正しく映る",
         "当たった瞬間の衝撃波の歪み・集中ブラー・色収差・フラッシュ・白黒の1コマ（演出側から操作する）",
+        "明るさで暗部→明部の2色に塗り直す、古い写真の色",
+        "色の段階を減らしてポスターやアニメ塗りのようにする",
+        "明るさを2〜3色のグラデーションに置き換える（デュオトーン）",
+        "ネガのように反転する／明るい所だけ反転する",
+        "色相を回す・彩度や明るさを上げ下げする。虹色に巡らせることもできる",
+        "指定した色だけ残して他を白黒にする（カラーキー）",
+        "明るさを温度に見立てて青→赤→黄の色に置き換える",
+        "暗い所を持ち上げて緑の単色に。ざらつき・走査線・覗き窓つき",
+        "輪郭をくっきりさせる（アンシャープマスク）",
+        "単色・直線・円形のグラデーションを合成モードを選んで重ねる",
+        "筆で塗ったような平らな面にする（桑原フィルタ）",
+        "にじみ・色だまり・紙の目で水彩画のようにする",
+        "影を数段に塗り分けて輪郭線を引く（トゥーン）",
+        "輪郭線と斜線（ハッチング）で鉛筆画にする",
+        "明るさを点の大きさに置き換える。漫画のトーン・カラー印刷",
+        "明るさに合った文字で描き直す（ASCIIアート）",
+        "画素を大きくして少ない色へディザで寄せる（携帯ゲーム機・PICO-8 風など）",
+        "光を斜めから当てたように浮き彫りにする（エンボス）",
+        "六角形・円・三角形・LED・ひし形のマスで塗り分ける",
+        "中心のまわりをねじる",
+        "虫眼鏡のように膨らませる／吸い込むように縮める",
+        "サイン波で横・縦・同心円に揺らす（回想・夢の表現）",
+        "扇を折り返して並べる万華鏡",
+        "画面の半分を折り返して対称にする",
+        "熱で空気が揺らぐように細かく揺らす",
+        "ゆらゆらした歪み・差し込む光の網・青い色味",
+        "止まった水滴と流れ落ちる水滴が景色を屈折させる（雨の日のガラス越し）",
+        "細かく散らしたぼかし",
+        "揺れ・二重に見える・色の濁り（毒・混乱・泥酔の表現）",
+        "ピントの帯の外をぼかして模型のように見せる（ティルトシフト）",
+        "カメラが動いた向きへぼかす。深度を使う",
+        "決めた向きへ一直線にぼかす（ダッシュ・高速移動）",
+        "明るい光の反対側に玉（ゴースト）と輪（ハロー）を写す",
+        "明るい所から横一直線に光が伸びる（アナモルフィック）",
+        "画面に写った太陽から放射状に光の筋を伸ばす。シャドウマップ不要",
+        "色の変わり目を光る線にして周りを暗くする",
+        "画面の丸み・走査線・RGBの縦じま・にじみ・ちらつき",
+        "ときどきブロック状にずれ、RGBが分かれ、色が化ける",
+        "横の揺れ・色のにじみ・乱れ帯・砂嵐",
+        "セピア・傷・ほこり・ちらつき・コマのがたつき",
+        "前のフレームを残して重ねる。光の軌跡だけ残すこともできる",
+        "映画の画面比率の帯を出す。出し具合を動かすとせり出す演出に",
+        "点のまわりだけ明るく残して外を暗くする（懐中電灯・ホラー）",
+        "画面の縁が鼓動に合わせて赤く染まる（体力が少ないとき）",
+        "地点から光の輪が地形を這って広がる（ソナー・索敵）",
     };
     static_assert(IM_ARRAYSIZE(shaderModeItems) == static_cast<int>(ShaderMode::Count),
                   "shaderModeItems は ShaderMode::Count と同数にすること");
@@ -297,17 +403,30 @@ void OffScreen::Setting()
     };
     static const EffectCategory kCategories[] = {
         {ICON_FA_PALETTE " 色・トーン", DebugTheme::kAccentYellow,
-         {ShaderMode::Gray, ShaderMode::Cinematic, ShaderMode::Monochrome, ShaderMode::ColorGrading, ShaderMode::Retro}},
+         {ShaderMode::Gray, ShaderMode::Cinematic, ShaderMode::Monochrome, ShaderMode::ColorGrading, ShaderMode::Retro,
+          ShaderMode::Sepia, ShaderMode::Posterize, ShaderMode::GradientMap, ShaderMode::Invert, ShaderMode::HueSaturation,
+          ShaderMode::ColorIsolation, ShaderMode::Thermal, ShaderMode::NightVision, ShaderMode::Sharpen, ShaderMode::ColorOverlay}},
+        {ICON_FA_PAINT_BRUSH " 絵のタッチ", DebugTheme::kAccentRed,
+         {ShaderMode::Kuwahara, ShaderMode::Watercolor, ShaderMode::Toon, ShaderMode::Sketch, ShaderMode::Halftone,
+          ShaderMode::Ascii, ShaderMode::Dither, ShaderMode::Emboss, ShaderMode::ShapeMosaic}},
         {ICON_FA_TINT " ぼかし", DebugTheme::kAccentBlue,
-         {ShaderMode::Smooth, ShaderMode::Gauss, ShaderMode::Blur, ShaderMode::DepthOfField}},
+         {ShaderMode::Smooth, ShaderMode::Gauss, ShaderMode::Blur, ShaderMode::DepthOfField, ShaderMode::TiltShift,
+          ShaderMode::MotionBlur, ShaderMode::DirectionalBlur}},
+        {ICON_FA_WATER " 歪み", DebugTheme::kAccentCyan,
+         {ShaderMode::Swirl, ShaderMode::Bulge, ShaderMode::Wave, ShaderMode::Kaleidoscope, ShaderMode::Mirror,
+          ShaderMode::HeatHaze, ShaderMode::Underwater, ShaderMode::RainLens, ShaderMode::FrostedGlass, ShaderMode::Dizzy}},
         {ICON_FA_PEN " 輪郭・アンチエイリアス", DebugTheme::kAccentCyan,
          {ShaderMode::Outline, ShaderMode::Depth, ShaderMode::Fxaa}},
         {ICON_FA_FILM " 画面の加工", DebugTheme::kAccentPurple,
-         {ShaderMode::Vignette, ShaderMode::Random, ShaderMode::FocusLine, ShaderMode::Pixelate, ShaderMode::FilmGrain, ShaderMode::Dissolve}},
+         {ShaderMode::Vignette, ShaderMode::Random, ShaderMode::FocusLine, ShaderMode::Pixelate, ShaderMode::FilmGrain, ShaderMode::Dissolve,
+          ShaderMode::Crt, ShaderMode::Glitch, ShaderMode::Vhs, ShaderMode::OldFilm, ShaderMode::Afterimage}},
         {ICON_FA_SUN " 光・レンズ", DebugTheme::kAccentOrange,
-         {ShaderMode::Bloom, ShaderMode::ChromaticAberration, ShaderMode::LensDistortion, ShaderMode::Shockwave, ShaderMode::Impact}},
+         {ShaderMode::Bloom, ShaderMode::ChromaticAberration, ShaderMode::LensDistortion, ShaderMode::Shockwave, ShaderMode::Impact,
+          ShaderMode::LensFlare, ShaderMode::AnamorphicStreak, ShaderMode::ScreenGodRays, ShaderMode::NeonEdge}},
         {ICON_FA_CLOUD " 空間・映り込み", DebugTheme::kAccentGreen,
-         {ShaderMode::HeightFog, ShaderMode::LightShaft, ShaderMode::Ssr, ShaderMode::RtReflection}},
+         {ShaderMode::HeightFog, ShaderMode::LightShaft, ShaderMode::Ssr, ShaderMode::RtReflection, ShaderMode::WorldScan}},
+        {ICON_FA_GAMEPAD " ゲーム演出", DebugTheme::kAccentRed,
+         {ShaderMode::Letterbox, ShaderMode::Spotlight, ShaderMode::DangerVignette}},
     };
     auto categoryColor = [&](ShaderMode mode) {
         for (const EffectCategory &category : kCategories)
@@ -361,6 +480,8 @@ void OffScreen::Setting()
     }
 
     // ── 追加メニュー（種類ごと・検索付き。もう入っている物は印と「外す」）──
+    // 種類が多いので、画面からはみ出さないよう高さを抑えてスクロールさせる
+    ImGui::SetNextWindowSizeConstraints(ImVec2(320.0f, 0.0f), ImVec2(FLT_MAX, ImGui::GetIO().DisplaySize.y * 0.7f));
     if (ImGui::BeginPopup("##addPostEffect"))
     {
         static std::string search;

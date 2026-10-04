@@ -74,6 +74,14 @@ class CaptureManager
     void SetSource(CaptureSource source) { source_ = static_cast<int>(source); }
 
     /// <summary>
+    /// 「ゲーム画面」として撮る画を知らせる（描画の最後に毎フレーム）。
+    /// ポストエフェクト・トーンマップ・UI・シーン遷移まで済んだ最終結果を渡す。
+    /// 渡されていなければ、ポストエフェクト前のオフスクリーンを撮る
+    /// </summary>
+    /// <param name="pResource">GENERIC_READ 状態のテクスチャ</param>
+    void SetGameViewResource(ID3D12Resource *pResource) { pGameViewResource_ = pResource; }
+
+    /// <summary>
     /// フレーム末尾の処理。撮影要求があればここで実際に読み出す。
     /// Present の直後に呼ぶこと（それ以前だと、まだ描き終わっていない絵を撮ってしまう）
     /// </summary>
@@ -126,6 +134,7 @@ class CaptureManager
 
     std::string outputDirectory_ = "Captures";
     int source_ = static_cast<int>(CaptureSource::GameView);
+    ID3D12Resource *pGameViewResource_ = nullptr; // ゲーム画面として撮る最終結果（DrawSystem が毎フレーム渡す）
     bool useJpeg_ = false;       // true なら JPEG（速いがにじむ）、false なら PNG
     int jpegQualityPercent_ = 90;
 

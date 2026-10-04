@@ -96,6 +96,12 @@ class OffScreen
     uint32_t GetFinalResultSrvIndex() const;
 
     /// <summary>
+    /// 最終結果のリソース（ポストエフェクト・UI・シーン遷移まで済んだ画）を取得
+    /// </summary>
+    /// <returns>ID3D12Resource*: 合成の外では GENERIC_READ 状態</returns>
+    ID3D12Resource *GetFinalResultResource() const { return renderer_.GetFinalResultResource(); }
+
+    /// <summary>
     /// 最終結果をバックバッファへコピー
     /// </summary>
     void CopyFinalResultToBackBuffer();
@@ -224,6 +230,7 @@ class OffScreen
     Matrix4x4 viewProjectionInverse_;   // ビュー射影行列の逆行列（深度をワールドへ戻すのに使う）
     Vector3 cameraPosition_{};          // カメラのワールド座標
     Vector3 sunDirection_ = {0.0f, -1.0f, 0.0f}; // 平行光源が進む向き
+    PostEffectCameraInfo cameraInfo_{};          // 各エフェクトへ渡すカメラの情報（SetCamera でまとめる）
 
     // セーブ/ロード結果メッセージとその表示タイマー
     std::string saveMessage_;  // 保存結果メッセージ

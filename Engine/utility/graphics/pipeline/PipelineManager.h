@@ -67,6 +67,53 @@ enum class ShaderMode {
     Ssr,           // 画面内反射（コンピュートシェーダー専用・ディファード必須）
     RtReflection,  // RT反射（コンピュートシェーダー専用・ディファード＋レイトレーシング必須）
     Impact,        // 打撃インパクト（衝撃波の歪み・集中ブラー・色収差・フラッシュ・白黒の1コマ）
+    // ここから下は OffScreen/Fx/ のコンピュートシェーダー専用（PS版は素通し）。
+    // 保存データはこの番号で持つので、足すときは必ず Count の手前へ足す
+    Sepia,            // セピア
+    Posterize,        // ポスタリゼーション
+    GradientMap,      // グラデーションマップ
+    Invert,           // 反転・ソラリゼーション
+    HueSaturation,    // 色相・彩度
+    ColorIsolation,   // 一色だけ残す
+    Thermal,          // サーモグラフィ
+    NightVision,      // 暗視ゴーグル
+    Sharpen,          // シャープ
+    ColorOverlay,     // カラーオーバーレイ
+    Kuwahara,         // 油絵風
+    Watercolor,       // 水彩画風
+    Toon,             // セル画風
+    Sketch,           // 鉛筆画風
+    Halftone,         // 網点
+    Ascii,            // 文字アート
+    Dither,           // ディザ・レトロゲーム機
+    Emboss,           // レリーフ
+    ShapeMosaic,      // 形モザイク
+    Swirl,            // 渦巻き
+    Bulge,            // 膨らみ・へこみ
+    Wave,             // 画面の揺らぎ
+    Kaleidoscope,     // 万華鏡
+    Mirror,           // ミラー
+    HeatHaze,         // 陽炎
+    Underwater,       // 水中
+    RainLens,         // 窓の水滴
+    FrostedGlass,     // すりガラス
+    Dizzy,            // めまい
+    TiltShift,        // ミニチュア風
+    MotionBlur,       // カメラのモーションブラー
+    DirectionalBlur,  // 方向ブラー
+    LensFlare,        // レンズフレア
+    AnamorphicStreak, // 横に伸びる光の筋
+    ScreenGodRays,    // 光芒（画面空間）
+    NeonEdge,         // ネオン輪郭
+    Crt,              // ブラウン管
+    Glitch,           // グリッチ
+    Vhs,              // ビデオテープ
+    OldFilm,          // 古いフィルム
+    Afterimage,       // 残像
+    Letterbox,        // 黒帯
+    Spotlight,        // スポットライト
+    DangerVignette,   // ピンチ演出
+    WorldScan,        // ワールドスキャン
     Count,
 };
 
