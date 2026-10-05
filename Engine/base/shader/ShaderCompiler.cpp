@@ -1,6 +1,7 @@
 #include "ShaderCompiler.h"
 #include "cassert"
 #include "format"
+#include <asset/AssetReport.h>
 #include <debug/log/Logger.h>
 #include <string/StringUtility.h>
 
@@ -85,8 +86,16 @@ IDxcBlob *ShaderCompiler::CompileWithReflection(const std::wstring &filePath, co
     // hlslファイルを読む
     IDxcBlobEncoding *shaderSource = nullptr;
     HRESULT hr = pDxcUtils_->LoadFile(filePath.c_str(), nullptr, &shaderSource);
-    // 読めなかったら止める
-    assert(SUCCEEDED(hr));
+    if (FAILED(hr) || !shaderSource)
+    {
+        // シェーダーが無いとパイプラインを作れず続けられないので、ここだけは止める。
+        // 起動中で画面の通知はまだ出せないため、どのファイルかをダイアログで知らせてから止める
+        AssetReport::Failed("シェーダー", ConvertString(filePath));
+        const std::wstring message = L"シェーダーが見つかりません:\n" + filePath + L"\n\nシェーダーが無いとエンジンを続けられません。";
+        MessageBoxW(nullptr, message.c_str(), L"Hagine", MB_OK | MB_ICONERROR);
+        assert(SUCCEEDED(hr));
+        return nullptr;
+    }
     // 読み込んだファイルの内容を設定する
     DxcBuffer shaderSourceBuffer;
     shaderSourceBuffer.Ptr = shaderSource->GetBufferPointer();

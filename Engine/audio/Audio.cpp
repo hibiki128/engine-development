@@ -1,5 +1,6 @@
 #include "Audio.h"
 #include "utility/debug/imgui/ImGuiNotification.h"
+#include <asset/AssetReport.h>
 #include <debug/log/Logger.h>
 #include <algorithm>
 #include <cassert>
@@ -98,25 +99,20 @@ uint32_t Audio::LoadWave(const std::string &filename)
 
     std::ifstream file;
     file.open(fullPath, std::ios_base::binary);
+    // 読めないときは止めずに UINT32_MAX を返す（Play 側は UINT32_MAX を鳴らさずに無視する）
     if (!file.is_open())
     {
-        Logger::Error("Failed to open audio file: \"" + fullPath + "\". The file was not found.");
-        assert(file.is_open());
+        AssetReport::Failed("音声ファイル", fullPath);
         return UINT32_MAX;
     }
 
     RiffHeader riff;
     file.read(reinterpret_cast<char *>(&riff), sizeof(riff));
 
-    if (strncmp(riff.chunk.id, "RIFF", 4) != 0)
+    if (strncmp(riff.chunk.id, "RIFF", 4) != 0 || strncmp(riff.type, "WAVE", 4) != 0)
     {
-        Logger::Error("Invalid audio file (missing RIFF header): \"" + fullPath + "\".");
-        assert(0);
-    }
-    if (strncmp(riff.type, "WAVE", 4) != 0)
-    {
-        Logger::Error("Invalid audio file (not WAVE format): \"" + fullPath + "\".");
-        assert(0);
+        AssetReport::Failed("音声ファイル", fullPath, "WAVE 形式ではありません (.wav だけに対応しています)");
+        return UINT32_MAX;
     }
 
     ChunkHeader chunkHeader;
@@ -126,7 +122,11 @@ uint32_t Audio::LoadWave(const std::string &filename)
     {
         if (strncmp(chunkHeader.id, "fmt ", 4) == 0)
         {
-            assert(chunkHeader.size <= sizeof(format.fmt));
+            if (chunkHeader.size > sizeof(format.fmt))
+            {
+                AssetReport::Failed("音声ファイル", fullPath, "対応していない WAVE の形式です (fmt チャンクが大きすぎます)");
+                return UINT32_MAX;
+            }
             format.chunk = chunkHeader;
             file.read(reinterpret_cast<char *>(&format.fmt), chunkHeader.size);
             break;
@@ -139,8 +139,8 @@ uint32_t Audio::LoadWave(const std::string &filename)
 
     if (strncmp(format.chunk.id, "fmt ", 4) != 0)
     {
-        Logger::Error("Invalid audio file (missing fmt chunk): \"" + fullPath + "\".");
-        assert(0);
+        AssetReport::Failed("音声ファイル", fullPath, "WAVE の fmt チャンクがありません");
+        return UINT32_MAX;
     }
 
     ChunkHeader data;
@@ -158,8 +158,8 @@ uint32_t Audio::LoadWave(const std::string &filename)
 
     if (strncmp(data.id, "data", 4) != 0)
     {
-        Logger::Error("Invalid audio file (missing data chunk): \"" + fullPath + "\".");
-        assert(0);
+        AssetReport::Failed("音声ファイル", fullPath, "WAVE の data チャンクがありません");
+        return UINT32_MAX;
     }
 
     std::vector<uint8_t> buffer(data.size);
@@ -182,6 +182,11 @@ uint32_t Audio::LoadWave(const std::string &filename)
 
 void Audio::Unload(uint32_t soundIndex)
 {
+    // 読めなかった音 (LoadWave が UINT32_MAX を返したもの) を渡されても何もしない
+    if (soundIndex >= soundDatas_.size())
+    {
+        return;
+    }
     SoundData &soundData = soundDatas_[soundIndex];
     std::string filename = soundData.name_;
     soundData.buffer.clear();
@@ -649,8 +654,12 @@ void Audio::Debug()
                 // selectedName は DebugScanWavFiles が directoryPath_ 基準で列挙した相対パスなので、
                 // LoadWave にそのまま渡せる
                 uint32_t newIdx = LoadWave(selectedName);
-                debugLoadedMap_[selectedName] = newIdx;
-                ImGuiNotification::Post("ロードしました: " + selectedName, {0.42f, 0.66f, 0.68f, 1.0f});
+                // 読めなかったときは LoadWave が知らせているので、一覧には載せない
+                if (newIdx != UINT32_MAX)
+                {
+                    debugLoadedMap_[selectedName] = newIdx;
+                    ImGuiNotification::Post("ロードしました: " + selectedName, {0.42f, 0.66f, 0.68f, 1.0f});
+                }
             }
         }
         else

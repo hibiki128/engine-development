@@ -171,6 +171,7 @@ struct ModelData
     Node rootNode{};                                          // ルートノード
     bool hasBones{};                                          // ボーン有無フラグ
     bool hasAnimations{};                                     // アニメーション有無フラグ
+    bool loadFailed{};                                        // ファイルを読めず代わりのメッシュで埋めたか
 };
 
 static const uint32_t kNumMaxInfluence = 4; // 最大影響数

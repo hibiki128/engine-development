@@ -1,6 +1,7 @@
 #include "Material.h"
 
 #include "fstream"
+#include <asset/AssetReport.h>
 #include <cstring>
 #include <graphics/srv/SrvManager.h>
 #include <graphics/texture/TextureManager.h>
@@ -114,7 +115,10 @@ MaterialData Material::LoadMaterialTemplateFile(const std::string &directoryPath
     MaterialData materialData;                          // 構築するMaterialData
     std::string line;                                   // ファイルから読んだ1行を格納するもの
     std::ifstream file(directoryPath + "/" + filename); // ファイルを開く
-    assert(file.is_open());                             // 開けなかったら止める
+    if (!file.is_open()) {
+        // 開けなくても止めない（下でテクスチャ無しの白いマテリアルになる）
+        AssetReport::Failed("マテリアル", directoryPath + "/" + filename);
+    }
     while (std::getline(file, line)) {
         std::string identifier;
         std::istringstream s(line);

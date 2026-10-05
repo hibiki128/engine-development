@@ -1,5 +1,5 @@
 #include "CsvLoad.h"
-#include <cassert>
+#include <asset/AssetReport.h>
 
 namespace Hagine {
 void CsvLoad::Finalize()
@@ -29,8 +29,12 @@ std::vector<std::vector<int>> CsvLoad::ReadCsvFile(const std::string &filePath)
     std::vector<std::vector<int>> mapChipGrid;
     std::ifstream file(filePath);
 
-    // ファイルが開けなかった場合、assert で強制停止
-    assert(file && "ファイルがありません");
+    // ファイルが開けなかった場合は知らせて、空のデータで続ける
+    if (!file)
+    {
+        AssetReport::Failed("CSV", filePath);
+        return mapChipGrid;
+    }
 
     std::string line;
     while (std::getline(file, line))
@@ -46,11 +50,10 @@ std::vector<std::vector<int>> CsvLoad::ReadCsvFile(const std::string &filePath)
                 int chipId = std::stoi(cell);
                 row.emplace_back(chipId);
             }
-            catch (const std::exception &e)
+            catch (const std::exception &)
             {
-                // 無効なデータが含まれていたら assert で停止
-                std::cerr << "Error: Invalid data in CSV (" << cell << ") -> " << e.what() << std::endl;
-                assert(false && "Invalid data in CSV file!");
+                // 無効なデータが含まれていたら知らせて、そのセルは飛ばす
+                AssetReport::Failed("CSV", filePath, "数値でないセルがあります: \"" + cell + "\"");
             }
         }
 

@@ -7,6 +7,7 @@
 #include "sstream"
 #include <algorithm>
 #include <unordered_map>
+#include <asset/AssetReport.h>
 #include <debug/log/Logger.h>
 #include <render/raytracing/RaytracingScene.h>
 #include <shadow/ShadowMap.h>
@@ -456,23 +457,29 @@ ModelData Model::LoadModelFile(const std::string &directoryPath, const std::stri
     ModelData modelData;
 
     // 拡張子に応じたisGltfフラグの設定
-    isGltf_ = false;
-    if (filename.size() >= 5 && filename.substr(filename.size() - 5) == ".gltf")
+    isGltf_ = filename.ends_with(".gltf");
+    const bool isObj = filename.ends_with(".obj");
+    const std::string filePath = directoryPath + "/" + filename;
+
+    // 代わりのメッシュとマテリアルを入れて返す（読めなくても止めずに続けるため）
+    auto makeDefault = [&modelData]() {
+        MeshData defaultMesh;
+        MaterialData defaultMaterial;
+        defaultMaterial.textureFilePath = "debug/white1x1.png";
+
+        modelData.meshes.push_back(defaultMesh);
+        modelData.materials.push_back(defaultMaterial);
+        return modelData;
+    };
+
+    if (!isGltf_ && !isObj)
     {
-        isGltf_ = true;
-    }
-    else if (filename.size() >= 4 && filename.substr(filename.size() - 4) == ".obj")
-    {
-        isGltf_ = false;
-    }
-    else
-    {
-        Logger::Error("Unsupported model format: \"" + filename + "\". Only .gltf and .obj are supported.");
-        assert(false && "Unsupported file format");
+        modelData.loadFailed = true;
+        AssetReport::Failed("モデル", filePath, "", "対応している形式は .gltf と .obj だけです");
+        return makeDefault();
     }
 
     Assimp::Importer importer;
-    std::string filePath = directoryPath + "/" + filename;
     const aiScene *scene = importer.ReadFile(filePath.c_str(), aiProcess_FlipWindingOrder | aiProcess_FlipUVs);
 
     if (scene && scene->HasAnimations())
@@ -484,27 +491,19 @@ ModelData Model::LoadModelFile(const std::string &directoryPath, const std::stri
         modelData.hasAnimations = false;
     }
 
-    // メッシュが存在しない場合
-    if (!scene || !scene->HasMeshes())
+    if (!scene)
     {
-        if (!scene)
-        {
-            // ファイルが見つからない・破損しているなど、読み込み自体に失敗したケース
-            Logger::Error("Failed to load model: \"" + filePath + "\". " + importer.GetErrorString());
-        }
-        else
-        {
-            // 読み込めたがメッシュが無いケース（デフォルトメッシュで代替する）
-            Logger::Warn("Model has no meshes: \"" + filePath + "\". Using a default mesh instead.");
-        }
-        // デフォルトのメッシュとマテリアルを作成
-        MeshData defaultMesh;
-        MaterialData defaultMaterial;
-        defaultMaterial.textureFilePath = "debug/white1x1.png";
+        // ファイルが見つからない・破損しているなど、読み込み自体に失敗したケース
+        modelData.loadFailed = true;
+        AssetReport::Failed("モデル", filePath, importer.GetErrorString(), AssetReport::SuggestOtherRoot("models", filename));
+        return makeDefault();
+    }
 
-        modelData.meshes.push_back(defaultMesh);
-        modelData.materials.push_back(defaultMaterial);
-        return modelData;
+    if (!scene->HasMeshes())
+    {
+        // 読み込めたがメッシュが無いケース（デフォルトメッシュで代替する）
+        Logger::Warn("Model has no meshes: \"" + filePath + "\". Using a default mesh instead.");
+        return makeDefault();
     }
 
     // メッシュ配列のサイズを事前に確保

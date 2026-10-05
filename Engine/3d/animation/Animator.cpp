@@ -2,6 +2,7 @@
 #include <Frame.h>
 #include <assimp/Importer.hpp>
 #include <assimp/scene.h>
+#include <asset/AssetReport.h>
 #include <cassert>
 #include <MyMath.h>
 #include <algorithm>
@@ -408,8 +409,16 @@ Animation Animator::LoadAnimationFile(const std::string &directoryPath, const st
 
     Assimp::Importer importer;
     const aiScene *scene = importer.ReadFile(filePath.c_str(), 0);
-    if (!scene || scene->mNumAnimations == 0)
+    if (!scene)
     {
+        // 止めずに空のアニメーションで続ける（動かないだけ）。モデルとして読んだ側と同じパスなら通知は1回にまとまる
+        AssetReport::Failed("アニメーション", filePath, importer.GetErrorString(),
+                            AssetReport::SuggestOtherRoot("models", filename));
+        return animation;
+    }
+    if (scene->mNumAnimations == 0)
+    {
+        // 静止モデルの gltf もここを通るので、アニメーションが無いこと自体は知らせない
         return animation;
     }
 

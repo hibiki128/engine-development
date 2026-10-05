@@ -151,6 +151,8 @@ class Model
     /// </summary>
     const ModelData &GetSharedModelData() const { return sharedSource_ ? sharedSource_->data : modelData_; }
     bool IsGltf() { return isGltf_; }
+    /// <summary>ファイルを読めず、代わりのメッシュで埋めたか（見つからない・形式違いなど）</summary>
+    bool IsLoadFailed() const { return modelData_.loadFailed; }
 
     /// <summary>
     /// モデルのローカル空間AABBを取得する（ワールド行列を掛ける前の実際の広がり）

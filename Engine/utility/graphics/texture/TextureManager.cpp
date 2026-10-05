@@ -3,6 +3,7 @@
 #include "TextureManager.h"
 #include "DirectXCommon.h"
 #include <asset/AssetPath.h>
+#include <asset/AssetReport.h>
 #include "utility/debug/imgui/ImGuiNotification.h"
 #include <debug/log/Logger.h>
 #include <string/StringUtility.h>
@@ -19,8 +20,9 @@
 namespace Hagine {
 uint32_t TextureManager::kSRVIndexTop = 1;
 
-bool TextureManager::LoadImageFile(const std::string &fullPath, DirectX::ScratchImage &outImage)
+bool TextureManager::LoadImageFile(const std::string &relPath, DirectX::ScratchImage &outImage)
 {
+    const std::string fullPath = AssetPath::Image(relPath);
     DirectX::ScratchImage image{};
     const std::wstring filePathW = StringUtility::ConvertString(fullPath);
     HRESULT hr;
@@ -38,8 +40,8 @@ bool TextureManager::LoadImageFile(const std::string &fullPath, DirectX::Scratch
     {
         char hrText[16] = {};
         snprintf(hrText, sizeof(hrText), "0x%08X", static_cast<unsigned int>(hr));
-        Logger::Error("Failed to load texture: \"" + fullPath + "\" (HRESULT=" + hrText + "). The file may be missing or its format unsupported.");
-        assert(SUCCEEDED(hr));
+        AssetReport::Failed("テクスチャ", fullPath, std::string("対応していない形式か、壊れている可能性があります (HRESULT=") + hrText + ")",
+                            AssetReport::SuggestOtherRoot("images", relPath));
         return false;
     }
 
@@ -88,12 +90,25 @@ void TextureManager::LoadTexture(const std::string &filePath)
         return;
     }
 
+    // 前に読めなかった画像は読み直さない（描画のたびに呼ばれてもファイルを開きに行かないように）。
+    // 置き直したら ReloadTexture で読み直せる
+    if (missingTextures_.contains(newFilePath))
+    {
+        return;
+    }
+
     // テクスチャ枚数上限をチェック
     assert(pSrvManager_->CanAllocate());
 
     DirectX::ScratchImage image{};
-    if (!LoadImageFile(newFilePath, image))
+    if (!LoadImageFile(filePath, image))
     {
+        // 参照された時に代わりを返せるよう、代わりのテクスチャは必ず読んでおく
+        missingTextures_.insert(newFilePath);
+        if (filePath != kFallbackTexture)
+        {
+            LoadTexture(kFallbackTexture);
+        }
         return;
     }
 
@@ -115,6 +130,8 @@ void TextureManager::LoadTexture(const std::string &filePath)
 void TextureManager::ReloadTexture(const std::string &filePath)
 {
     const std::string fullPath = AssetPath::Image(filePath);
+    // 前に読めなかった画像も、置き直されたかもしれないので読み直させる
+    missingTextures_.erase(fullPath);
 
     auto it = textureDatas_.find(fullPath);
     if (it == textureDatas_.end())
@@ -125,7 +142,7 @@ void TextureManager::ReloadTexture(const std::string &filePath)
     }
 
     DirectX::ScratchImage image{};
-    if (!LoadImageFile(fullPath, image))
+    if (!LoadImageFile(filePath, image))
     {
         return; // 読めなければ今のテクスチャを残しておく
     }
@@ -211,8 +228,8 @@ void TextureManager::LoadFontTexture(const std::string &fontFilePath, float font
     std::ifstream file(fullPath, std::ios::binary | std::ios::ate);
     if (!file.is_open())
     {
-        Logger::Error("Failed to open font file: \"" + fullPath + "\". The file was not found.");
-        assert(file.is_open());
+        // フォントが無くても止めない（文字が出ないだけ。GetFontData は nullptr を返す）
+        AssetReport::Failed("フォント", fullPath);
         return;
     }
     const std::streamsize fileSize = file.tellg();
@@ -365,45 +382,43 @@ void TextureManager::Finalize()
 uint32_t TextureManager::GetTextureIndexByFilePath(const std::string &filePath)
 {
     // 相対パスから実パス(＝マップキー)を作る。
-    std::string newFilePath = AssetPath::Image(filePath);
-
-    auto it = textureDatas_.find(newFilePath);
-    if (it != textureDatas_.end())
-    {
-        return it->second.srvIndex;
-    }
-
-    // 見つからない場合はassertでエラーにする
-    Logger::Error("Texture index not found: \"" + newFilePath + "\". The texture was never loaded (the path may be wrong).");
-    assert(0);
-    return 0;
+    return FindOrFallback(AssetPath::Image(filePath)).srvIndex;
 }
 
 D3D12_GPU_DESCRIPTOR_HANDLE TextureManager::GetSrvHandleGPU(const std::string &filePath)
 {
-    // 指定されたファイルパスが存在するかチェック
-    if (textureDatas_.find(filePath) == textureDatas_.end())
-    {
-        Logger::Error("Texture handle not found: \"" + filePath + "\". The texture was never loaded (the path may be wrong).");
-        assert(textureDatas_.find(filePath) != textureDatas_.end());
-    }
-
-    TextureData &textureData = textureDatas_[filePath];
-    return textureData.srvHandleGPU;
+    return FindOrFallback(filePath).srvHandleGPU;
 }
 
 const DirectX::TexMetadata &TextureManager::GetMetaData(const std::string &filePath)
 {
-    std::string fullPath = AssetPath::Image(filePath);
-    // 指定されたファイルパスが存在するかチェック
-    if (textureDatas_.find(fullPath) == textureDatas_.end())
+    return FindOrFallback(AssetPath::Image(filePath)).metadata;
+}
+
+const TextureManager::TextureData &TextureManager::FindOrFallback(const std::string &fullPath)
+{
+    auto it = textureDatas_.find(fullPath);
+    if (it != textureDatas_.end())
     {
-        Logger::Error("Texture metadata not found: \"" + fullPath + "\". The texture was never loaded (the path may be wrong).");
-        assert(textureDatas_.find(fullPath) != textureDatas_.end());
+        return it->second;
     }
 
-    TextureData &textureData = textureDatas_[fullPath];
-    return textureData.metadata;
+    // 読めなかった画像は LoadTexture の時点で知らせてある。
+    // それ以外は LoadTexture を呼ばずに使おうとしている（パスの書き間違いなど）ので、ここで知らせる
+    if (!missingTextures_.contains(fullPath))
+    {
+        AssetReport::Failed("テクスチャ", fullPath, "LoadTexture() で読み込まれていません (パスの書き間違いの可能性があります)");
+    }
+
+    const std::string fallbackPath = AssetPath::Image(kFallbackTexture);
+    if (!textureDatas_.contains(fallbackPath))
+    {
+        LoadTexture(kFallbackTexture);
+    }
+    // 代わりのテクスチャはエンジン同梱。これすら無いならエンジンのアセットが壊れているので、ここは止める
+    auto fallback = textureDatas_.find(fallbackPath);
+    assert(fallback != textureDatas_.end() && "代わりのテクスチャ (debug/white1x1.png) がありません");
+    return fallback->second;
 }
 
 ID3D12Resource *TextureManager::GetTextureResource(const std::string &filePath)

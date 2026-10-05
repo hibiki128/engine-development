@@ -149,6 +149,7 @@
     <ClCompile Include="Engine\base\swapchain\DXSwapChain.cpp" />
     <ClCompile Include="Engine\base\window\WinApp.cpp" />
     <ClCompile Include="Engine\utility\asset\AssetPath.cpp" />
+    <ClCompile Include="Engine\utility\asset\AssetReport.cpp" />
     <ClCompile Include="Engine\utility\edit\motion\MotionEditor.cpp" />
     <ClCompile Include="Engine\ai\behavior\BehaviorTreeNode.cpp" />
     <ClCompile Include="Engine\ai\behavior\BehaviorTreeRegistry.cpp" />
@@ -948,6 +949,7 @@
     <ClInclude Include="Engine\base\frame\FrameRateLimiter.h" />
     <ClInclude Include="Engine\base\resource\ResourceFactory.h" />
     <ClInclude Include="Engine\utility\asset\AssetPath.h" />
+    <ClInclude Include="Engine\utility\asset\AssetReport.h" />
     <ClInclude Include="Engine\base\shader\ShaderCompiler.h" />
     <ClInclude Include="Engine\base\swapchain\DXSwapChain.h" />
     <ClInclude Include="Engine\base\window\WinApp.h" />

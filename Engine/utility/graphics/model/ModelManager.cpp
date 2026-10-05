@@ -26,10 +26,14 @@ std::string ModelManager::LoadModel(const std::string &filePath)
         model->Initialize(pModelCommon_);
         model->CreateModel(AssetPath::ModelsRoot(filePath), filePath);
         model->SetSrv(pSrvManager_);
+        // 読めなかったときは Model 側が「見つかりません」を出しているので、成功の通知は出さない
+        if (!model->IsLoadFailed())
+        {
+            ImGuiNotification::Post("モデルを読み込みました: " + filePath, {0.2f, 0.8f, 0.8f, 1.0f});
+        }
 
         // モデルをmapコンテナに格納する
         models_.insert(std::make_pair(uniqueKey, std::move(model)));
-        ImGuiNotification::Post("モデルを読み込みました: " + filePath, {0.2f, 0.8f, 0.8f, 1.0f});
         return uniqueKey;
     }
 
@@ -43,8 +47,11 @@ std::string ModelManager::LoadModel(const std::string &filePath)
     model->Initialize(pModelCommon_);
     model->CreateModel(AssetPath::ModelsRoot(filePath), filePath);
     model->SetSrv(pSrvManager_);
+    if (!model->IsLoadFailed())
+    {
+        ImGuiNotification::Post("モデルを読み込みました: " + filePath, {0.2f, 0.8f, 0.8f, 1.0f});
+    }
     models_.insert(std::make_pair(filePath, std::move(model)));
-    ImGuiNotification::Post("モデルを読み込みました: " + filePath, {0.2f, 0.8f, 0.8f, 1.0f});
     return filePath;
 }
 

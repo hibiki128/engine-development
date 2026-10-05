@@ -738,6 +738,9 @@
     <ClCompile Include="Engine\utility\asset\AssetPath.cpp">
       <Filter>Engine\utility\asset</Filter>
     </ClCompile>
+    <ClCompile Include="Engine\utility\asset\AssetReport.cpp">
+      <Filter>Engine\utility\asset</Filter>
+    </ClCompile>
     <ClCompile Include="Engine\utility\browser\ShowFolder.cpp">
       <Filter>Engine\utility\browser</Filter>
     </ClCompile>
@@ -1416,6 +1419,9 @@
       <Filter>Engine\scene</Filter>
     </ClInclude>
     <ClInclude Include="Engine\utility\asset\AssetPath.h">
+      <Filter>Engine\utility\asset</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\utility\asset\AssetReport.h">
       <Filter>Engine\utility\asset</Filter>
     </ClInclude>
     <ClInclude Include="Engine\utility\browser\ShowFolder.h">

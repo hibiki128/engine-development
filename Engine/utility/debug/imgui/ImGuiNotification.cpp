@@ -36,11 +36,7 @@ void ImGuiNotification::Post(const std::string &message, const Vector4 &color, i
     // 消すのは画面へのトーストだけにしている
     if (muteDepth_ <= 0)
     {
-        notifications_.push_back(n);
-        while (notifications_.size() > kMaxToasts)
-        {
-            notifications_.erase(notifications_.begin());
-        }
+        PushToast(n);
     }
 
     // 履歴に追加（最大200件）
@@ -51,17 +47,45 @@ void ImGuiNotification::Post(const std::string &message, const Vector4 &color, i
     }
 }
 
+void ImGuiNotification::PostError(const std::string &message, const Vector4 &color, int durationFrames)
+{
+    Notification n = {message, color, durationFrames, durationFrames, CurrentTimeText()};
+    n.important = true;
+
+    // シーンの読み直し中（ミュート中）に見つからないアセットこそ知りたいので、ミュートは無視する
+    PushToast(n);
+
+    history_.push_back(n);
+    if (history_.size() > 200)
+    {
+        history_.erase(history_.begin());
+    }
+}
+
+void ImGuiNotification::PushToast(Notification n)
+{
+    notifications_.push_back(std::move(n));
+    while (notifications_.size() > kMaxToasts)
+    {
+        // 重要でないものから古い順に押し出す。起動時は「読み込みました」が大量に流れるので、
+        // 古い順に消すだけだと警告がすぐ押し流されて見えなくなる
+        auto victim = std::find_if(notifications_.begin(), notifications_.end(),
+                                   [](const Notification &toast) { return !toast.important; });
+        if (victim == notifications_.end())
+        {
+            victim = notifications_.begin();
+        }
+        notifications_.erase(victim);
+    }
+}
+
 void ImGuiNotification::PostWithAction(const std::string &message, const Vector4 &color, const std::string &actionLabel,
                                        std::function<void()> action, int durationFrames)
 {
     Notification n = {message, color, durationFrames, durationFrames, CurrentTimeText(), actionLabel, std::move(action)};
     if (muteDepth_ <= 0)
     {
-        notifications_.push_back(n);
-        while (notifications_.size() > kMaxToasts)
-        {
-            notifications_.erase(notifications_.begin());
-        }
+        PushToast(n);
     }
     // 履歴にはボタン無しで残す（後から押しても意味が変わってしまうため）
     n.actionLabel.clear();

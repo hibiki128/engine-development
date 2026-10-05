@@ -21,6 +21,7 @@ class ImGuiNotification
         std::string time; // 投稿した時刻（HH:MM:SS）。履歴に出す
         std::string actionLabel;      // カードに出すボタン（空ならボタン無し）
         std::function<void()> action; // ボタンを押したときの処理
+        bool important = false;       // 通常の通知に押し出されない（アセットが見つからない等の警告用）
     };
 
     /// @brief 通知を投稿する
@@ -40,6 +41,14 @@ class ImGuiNotification
     /// @param durationFrames 表示フレーム数（ボタンを押す時間を見て既定は約5秒）
     static void PostWithAction(const std::string &message, const Vector4 &color, const std::string &actionLabel,
                                std::function<void()> action, int durationFrames = 300);
+
+    /// @brief 見落とされると困る警告を投稿する（アセットが見つからない等）。
+    ///        起動時のように「読み込みました」が大量に流れても押し出されず、ScopedMute 中も表示する
+    /// @param message メッセージ
+    /// @param color 色
+    /// @param durationFrames 表示フレーム数（既定は約10秒）
+    static void PostError(const std::string &message, const Vector4 &color = {0.95f, 0.45f, 0.35f, 1.0f},
+                          int durationFrames = 600);
 
     /// @brief 通知を描画する（毎フレームメインUIのどこかで呼ぶ）
     static void Draw();
@@ -66,6 +75,9 @@ class ImGuiNotification
     };
 
   private:
+    /// @brief トーストを積む。上限を超えたら、重要でないものから古い順に押し出す
+    static void PushToast(Notification n);
+
     static std::vector<Notification> notifications_;
     static std::vector<Notification> history_;
     static int muteDepth_; // 0より大きい間はトーストを出さない

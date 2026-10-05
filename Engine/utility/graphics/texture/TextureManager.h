@@ -6,6 +6,7 @@
 #include "string"
 #include "unordered_map"
 #include "wrl.h"
+#include <unordered_set>
 #include <graphics/srv/SrvManager.h>
 #include <array>
 #include <memory>
@@ -201,15 +202,29 @@ class TextureManager
     };
 
     /// <summary>
-    /// 画像ファイルを読み、必要ならミップマップまで作って返す
+    /// 画像ファイルを読み、必要ならミップマップまで作って返す。
+    /// 読めなければ AssetReport で知らせて false を返す（止めない）
     /// </summary>
-    /// <param name="fullPath">実パス</param>
+    /// <param name="relPath">images ルートからの相対パス</param>
     /// <param name="outImage">読み込んだ画像（出力）</param>
     /// <returns>bool: 読み込めたら true</returns>
-    bool LoadImageFile(const std::string &fullPath, DirectX::ScratchImage &outImage);
+    bool LoadImageFile(const std::string &relPath, DirectX::ScratchImage &outImage);
+
+    /// <summary>
+    /// 実パスからテクスチャを引く。無ければ代わりのテクスチャ（kFallbackTexture）を返す。
+    /// 見つからなかった画像を描こうとしても止めずに、白で描いて続けるため
+    /// </summary>
+    /// <param name="fullPath">実パス（＝textureDatas_ のキー）</param>
+    const TextureData &FindOrFallback(const std::string &fullPath);
+
+    // 見つからない・読めないときに代わりに使うテクスチャ（images ルートからの相対パス）
+    static constexpr const char *kFallbackTexture = "debug/white1x1.png";
 
     // ファイルパスをキーとするテクスチャデータのマップ
     std::unordered_map<std::string, TextureData> textureDatas_;
+
+    // 読めなかった画像の実パス。描画のたびに読み直そうとしないように覚えておく（ReloadTexture で外す）
+    std::unordered_set<std::string> missingTextures_;
 
     // 動的テクスチャ（メモリから毎回書き換える用途）。キーで固定SRVインデックスを保持する。
     std::unordered_map<std::string, TextureData> dynamicTextures_;
