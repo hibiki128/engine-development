@@ -62,6 +62,9 @@ class BaseObject {
     bool loadObjectDataFile_ = true;
 
     std::string objectName_{};
+    // 保存・読み込みのファイル名に使う名前（Init に渡された、連番を付ける前の名前）。
+    // 同じ名前で何体作っても（enemy, enemy_0, enemy_1 …）同じ調整値を読み書きする
+    std::string dataName_{};
     std::string modelPath_{};
     std::vector<std::string> texturePaths_{};
     std::string texturePath_{};
@@ -81,6 +84,7 @@ class BaseObject {
     /// ===================================================
 
     // 初期化、更新、描画
+    // 名前が他のオブジェクトと重なったら "_0", "_1" … を付けて区別する（実際の名前は GetName で取る）
     virtual void Init(const std::string className);
     virtual void Update();
     virtual void Draw(const ViewProjection &viewProjection);
@@ -284,6 +288,8 @@ class BaseObject {
     const WorldTransform &GetTransform() { return *transform_; }
     std::string &GetName() { return objectName_; }
     const std::string &GetName() const { return objectName_; }
+    // 保存・読み込みに使う名前（連番を付ける前の名前。重複していなければ GetName と同じ）
+    const std::string &GetDataName() const { return dataName_; }
     std::string &GetModelPath() { return modelPath_; }
     bool &GetIsModelDraw() { return isModelDraw_; }
     // 範囲外を引かれても落ちないよう、足りなければ伸ばしてから返す

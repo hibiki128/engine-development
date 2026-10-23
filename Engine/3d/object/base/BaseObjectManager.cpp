@@ -49,6 +49,7 @@ void BaseObjectManager::Finalize()
         DetachRegistrations(obj, name);
     }
     objects_.clear();
+    reservedNames_.clear();
 }
 
 void BaseObjectManager::RemoveAllObjects()
@@ -118,6 +119,12 @@ void BaseObjectManager::UnregisterExternal(BaseObject *obj)
     if (!obj)
     {
         return;
+    }
+    // Init で押さえた名前を空ける（破棄時に必ずここを通る）
+    if (const auto reserved = reservedNames_.find(obj->GetName());
+        reserved != reservedNames_.end() && reserved->second == obj)
+    {
+        reservedNames_.erase(reserved);
     }
     const auto it = objects_.find(obj->GetName());
     if (it != objects_.end() && it->second != obj)
@@ -485,19 +492,38 @@ void BaseObjectManager::ResolvePendingParents()
 
 std::string BaseObjectManager::MakeUniqueObjectName(const std::string &baseName) const
 {
-    if (objects_.find(baseName) == objects_.end())
+    const auto isFree = [this](const std::string &name) {
+        return objects_.find(name) == objects_.end() && reservedNames_.find(name) == reservedNames_.end();
+    };
+    if (isFree(baseName))
     {
         return baseName;
     }
     // 同名があったら連番を振る。番号が埋まっていても空きが見つかるまで進める
-    for (int index = 1;; ++index)
+    for (int index = 0;; ++index)
     {
         const std::string candidate = baseName + "_" + std::to_string(index);
-        if (objects_.find(candidate) == objects_.end())
+        if (isFree(candidate))
         {
             return candidate;
         }
     }
+}
+
+std::string BaseObjectManager::AcquireObjectName(const std::string &baseName, const BaseObject *pOwner)
+{
+    // 同じオブジェクトを Init し直したときは、前に押さえた名前を手放してから選び直す
+    for (auto it = reservedNames_.begin(); it != reservedNames_.end(); ++it)
+    {
+        if (it->second == pOwner)
+        {
+            reservedNames_.erase(it);
+            break;
+        }
+    }
+    const std::string name = MakeUniqueObjectName(baseName);
+    reservedNames_.emplace(name, pOwner);
+    return name;
 }
 
 void BaseObjectManager::CreateObject(std::string objectName, std::string modelPath, std::string texturePath)
@@ -1753,8 +1779,8 @@ void BaseObjectManager::LoadObjectFromJson(const std::string &startPath, const s
 
     // BaseObjectのLoadFromJson機能を使用してオブジェクトを作成
     auto newObject = std::make_unique<BaseObject>();
+    // 名前は Init が重複しないよう決める（ここで上書きすると同名の物と衝突する）
     newObject->Init(objectName);
-    newObject->GetName() = objectName;
     newObject->LoadFromJson(startPath, objectName);
     if (!newObject->GetModelPath().empty())
     {
@@ -1843,8 +1869,10 @@ BaseObject *BaseObjectManager::CreateObjectFromState(const std::string &name, co
         newObject->CreatePrimitiveModel(
             static_cast<PrimitiveType>(s.value("primitiveType", static_cast<int>(PrimitiveType::Count))));
     }
+    // 名前が既に使われていれば Init で連番付きに変わるので、名前では引き直さない
+    BaseObject *pCreated = newObject.get();
     AddObject(std::move(newObject));
-    return GetObjectByName(name);
+    return pCreated;
 }
 
 #ifdef USE_IMGUI

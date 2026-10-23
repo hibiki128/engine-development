@@ -24,9 +24,10 @@ namespace Hagine {
 void BaseObject::SaveToJson() {
     // JSONデータを扱うハンドラを作成
     modelPath_ = obj3d_->GetModelFilePath();
-    objectData_ = std::make_unique<DataHandler>("ObjectDatas", objectName_);
+    // 連番を付ける前の名前で保存する（enemy_0 で調整しても enemy, enemy_1 … 全員に効く）
+    objectData_ = std::make_unique<DataHandler>("ObjectDatas", dataName_);
     objectData_->Save<std::string>("modelName", modelPath_);
-    objectData_->Save<std::string>("objectName", objectName_);
+    objectData_->Save<std::string>("objectName", dataName_);
     objectData_->Save<Vector3>("translation", transform_->translation_);
     objectData_->Save<Quaternion>("rotation", transform_->quaternionRotation_);
     objectData_->Save<Vector3>("scale", transform_->scale_);
@@ -541,7 +542,8 @@ std::unique_ptr<ColliderBase> CreateColliderOfType(ColliderType type) {
 }
 } // namespace
 
-// コライダーの設定は jsons/Collider/<オブジェクト名>_<種別>Collider_<連番>.json だけに置く。
+// コライダーの設定は jsons/Collider/<保存名(dataName_)>_<種別>Collider_<連番>.json だけに置く。
+// 同じ名前で作った物（enemy, enemy_0 …）は同じコライダー設定を共有する。
 // 以前はオブジェクトJSONにも同じ設定を書いていて、両者が食い違うとどちらが効くのか
 // 分からなくなっていたため、保存場所を個別JSONへ一本化した
 void BaseObject::SaveColliders() {
@@ -564,7 +566,7 @@ void BaseObject::SaveColliders() {
 
     // GUIで削除したコライダーのJSONを消す。
     // 残しておくと、次に読み込んだときに復活してしまう
-    for (const SavedColliderFile &file : ListSavedColliderFiles(objectName_)) {
+    for (const SavedColliderFile &file : ListSavedColliderFiles(dataName_)) {
         if (std::find(savedNames.begin(), savedNames.end(), file.name) == savedNames.end()) {
             DataHandler("Collider", file.name).DeleteJson(file.name);
         }
@@ -580,7 +582,7 @@ void BaseObject::LoadColliders() {
     }
     colliders_.clear();
 
-    const std::vector<SavedColliderFile> savedFiles = ListSavedColliderFiles(objectName_);
+    const std::vector<SavedColliderFile> savedFiles = ListSavedColliderFiles(dataName_);
     if (savedFiles.empty()) {
         // 個別JSONがまだ無いなら、旧形式で保存された内容を移し替える
         MigrateLegacyColliders();
@@ -712,7 +714,7 @@ void BaseObject::AnimaSaveToJson() {
 }
 
 void BaseObject::AnimaLoadFromJson() {
-    /* AnimaDatas_ = std::make_unique<DataHandler>("Animation", objectName_);
+    /* AnimaDatas_ = std::make_unique<DataHandler>("Animation", dataName_);
      isLoop_ = AnimaDatas_->Load<bool>("Loop", false);*/
 }
 

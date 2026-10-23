@@ -82,11 +82,16 @@ void BaseObject::DrawImGui() {
                 SaveToJson();
                 AnimaSaveToJson();
 
-                ImGuiNotification::Post(std::format("「{}」をセーブしました", objectName_),
+                // 連番付きの個体から保存しても、書き込み先は同名の全個体が読む共通ファイル
+                ImGuiNotification::Post(std::format("「{}」をセーブしました", dataName_),
                                         {0.45f, 0.68f, 0.52f, 1.0f});
             }
-            ImGui::SetItemTooltip("ゲーム側で作る物なので、シーンではなく jsons/ObjectDatas/ へ保存する\n"
-                                  "（オブジェクト設定・アニメ・全コライダーをまとめて保存）");
+            ImGui::SetItemTooltip("%s",
+                                  std::format("ゲーム側で作る物なので、シーンではなく jsons/ObjectDatas/{}.json へ保存する\n"
+                                              "（オブジェクト設定・アニメ・全コライダーをまとめて保存）\n"
+                                              "同じ名前で作った物（{} の連番付き）はすべてこの設定を読む",
+                                              dataName_, dataName_)
+                                      .c_str());
         }
 
         ImGui::EndTabItem();

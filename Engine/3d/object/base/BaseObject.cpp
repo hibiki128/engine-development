@@ -37,7 +37,10 @@ void BaseObject::Init(const std::string objectName) {
     transform_ = std::make_unique<WorldTransform>();
     obj3d_ = std::make_unique<Object3d>();
     obj3d_->Initialize();
-    objectName_ = objectName;
+    // 同名が既に居れば "_0", "_1" … を付けた名前になる（敵を何体も作るときも同じ名前で Init してよい）
+    // 保存ファイルは連番を付ける前の名前で引くので、何体作っても同じ調整値を共有する
+    objectName_ = BaseObjectManager::GetInstance()->AcquireObjectName(objectName, this);
+    dataName_ = objectName;
     /// ワールドトランスフォームの初期化
     transform_->Initialize();
     // ライティングのセット
@@ -333,7 +336,7 @@ void BaseObject::CreateModel(const std::string modelname) {
     // オブジェクト単体の保存があれば読み込む（modelPath_は上書きされない）。
     // シーンファイルから作る物はシーン側が後から中身を流し込むので読まない
     if (loadObjectDataFile_) {
-        LoadFromJson("ObjectDatas", objectName_);
+        LoadFromJson("ObjectDatas", dataName_);
     }
 
     // JSONから読み込んだカラー設定を適用
@@ -365,7 +368,7 @@ void BaseObject::CreatePrimitiveModel(const PrimitiveType &type) {
 
     // オブジェクト単体の保存があれば読み込む（シーンファイルから作る物は読まない）
     if (loadObjectDataFile_) {
-        LoadFromJson("ObjectDatas", objectName_);
+        LoadFromJson("ObjectDatas", dataName_);
     }
 
     // プリミティブモデルを作成

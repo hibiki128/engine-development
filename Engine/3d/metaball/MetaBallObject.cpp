@@ -307,8 +307,10 @@ void MetaBallObject::Deserialize(const nlohmann::json &state)
 
 void MetaBallObject::SaveMetaBallToJson()
 {
-    DataHandler data("MetaBallDatas", objectName_);
-    data.Save<std::string>("groupName", groupName_);
+    DataHandler data("MetaBallDatas", dataName_);
+    // 独立（グループ名＝自分の名前）は保存名で書く。連番付きの名前を書くと、同名の別個体が
+    // 読んだときにその1体のグループへ入ってしまう
+    data.Save<std::string>("groupName", groupName_ == objectName_ ? dataName_ : groupName_);
     data.Save<int>("elementCount", static_cast<int>(elements_.size()));
 
     for (size_t i = 0; i < elements_.size(); ++i)
@@ -340,11 +342,12 @@ void MetaBallObject::SaveMetaBallToJson()
 
 void MetaBallObject::LoadMetaBallFromJson()
 {
-    DataHandler data("MetaBallDatas", objectName_);
+    DataHandler data("MetaBallDatas", dataName_);
     const int count = data.Load<int>("elementCount", 0);
     // 保存されていればその名前で復元する（意図的にくっつけた組み合わせを維持するため）。
-    // 保存が無ければ Init と同じく自分の名前＝独立
-    SetGroupName(data.Load<std::string>("groupName", groupName_));
+    // 保存が無い・保存名のまま（＝独立）なら Init と同じく自分の名前＝独立
+    const std::string savedGroup = data.Load<std::string>("groupName", groupName_);
+    SetGroupName(savedGroup == dataName_ ? objectName_ : savedGroup);
 
     // グループ設定を戻す
     {

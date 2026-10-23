@@ -36,7 +36,8 @@ void BaseObject::LoadColliderIfSaved(ColliderBase *collider) {
 }
 
 std::string BaseObject::MakeColliderName(ColliderType type) const {
-    const std::string base = objectName_ + "_" + ColliderTypeName(type) + "Collider_";
+    // コライダー名は保存ファイル名を兼ねるので、連番を付ける前の名前を使う（同名の敵どうしで共有する）
+    const std::string base = dataName_ + "_" + ColliderTypeName(type) + "Collider_";
     for (int index = 0;; ++index) {
         std::string candidate = base + std::to_string(index);
         bool used = false;

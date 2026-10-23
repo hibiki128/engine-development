@@ -79,6 +79,17 @@ class BaseObjectManager
     void UnregisterExternal(BaseObject *pObject);
 
     /// <summary>
+    /// 重複しないオブジェクト名を決めて、そのオブジェクト用に押さえておく（BaseObject::Init から呼ぶ）。
+    /// 同名が居れば "_0", "_1" … と連番を振るので、敵を何体も作るときも同じ名前で Init してよい。
+    /// RegisterExternal する前の物の名前も押さえるので、まとめて Init してから登録しても重ならない。
+    /// 押さえた名前はオブジェクトの破棄（UnregisterExternal）で空く
+    /// </summary>
+    /// <param name="baseName">付けたい名前</param>
+    /// <param name="pOwner">名前を使うオブジェクト</param>
+    /// <returns>std::string: 実際に付ける名前</returns>
+    std::string AcquireObjectName(const std::string &baseName, const BaseObject *pOwner);
+
+    /// <summary>
     /// 全オブジェクトの更新
     /// </summary>
     void Update();
@@ -432,7 +443,7 @@ class BaseObjectManager
     void RestoreParentChildRelationshipForObject(BaseObject *pObject);
 
     /// <summary>
-    /// 登録済みの名前と衝突しないオブジェクト名を作る（衝突時は _1, _2 … と連番を振る）
+    /// 登録済み・予約済みの名前と衝突しないオブジェクト名を作る（衝突時は _0, _1 … と連番を振る）
     /// </summary>
     /// <param name="baseName">希望する名前</param>
     /// <returns>std::string: 一意なオブジェクト名</returns>
@@ -463,6 +474,8 @@ class BaseObjectManager
     std::unordered_map<std::string, std::unique_ptr<BaseObject>> ownedObjects_;
     // Draw/Update/GetObjectByName で使う統合ビュー（所有・外部両方）
     std::unordered_map<std::string, BaseObject *> objects_;
+    // Init で押さえた名前（名前 → 使っているオブジェクト）。RegisterExternal 前の物の重複も防ぐ
+    std::unordered_map<std::string, const BaseObject *> reservedNames_;
 
     // 読み込み時に親が見つからなかった親子付け（子の名前 → 親の名前）。ResolvePendingParents で付ける
     std::unordered_map<std::string, std::string> pendingParents_;

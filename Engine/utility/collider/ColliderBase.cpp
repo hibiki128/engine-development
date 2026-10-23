@@ -84,7 +84,12 @@ void ColliderBase::LoadFromJson()
         dataHandler_ = std::make_unique<DataHandler>("Collider", name_);
     }
 
-    ownerName_ = dataHandler_->Load<std::string>("objectName", ownerName_);
+    // 持ち主は実行時のオブジェクト名で決まっている。設定ファイルは同名の個体（enemy, enemy_0 …）で
+    // 共有されるので、ファイルに書かれた名前で上書きすると別の個体を指してしまう
+    if (ownerName_.empty())
+    {
+        ownerName_ = dataHandler_->Load<std::string>("objectName", ownerName_);
+    }
     isVisible_ = dataHandler_->Load<bool>("isVisible", isVisible_);
     isEnabled_ = dataHandler_->Load<bool>("isEnabled", isEnabled_);
     collideWithAll_ = dataHandler_->Load<bool>("collideWithAll", collideWithAll_);
