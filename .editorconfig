@@ -1,12 +1,12 @@
-[*.{cpp,h,hlsl,hlsli}]
+ï»¿[*.{cpp,h,hlsl,hlsli}]
 charset = utf-8
-# ƒXƒyƒ‹ƒ~ƒX‚ğintellisenseã‚Å‚ÌuƒGƒ‰[v‚Æ‚µ‚Äˆµ‚¤
+# ã‚¹ãƒšãƒ«ãƒŸã‚¹ã‚’intellisenseä¸Šã§ã®ã€Œã‚¨ãƒ©ãƒ¼ã€ã¨ã—ã¦æ‰±ã†
 spelling_error_severity = error
-# ƒ`ƒFƒbƒN‘ÎÛ‚ğu¯•Êqi•Ï”–¼‚È‚Çjv‚ÆuƒRƒƒ“ƒgv‚ÉŒÀ’è‚·‚é
+# ãƒã‚§ãƒƒã‚¯å¯¾è±¡ã‚’ã€Œè­˜åˆ¥å­ï¼ˆå¤‰æ•°åãªã©ï¼‰ã€ã¨ã€Œã‚³ãƒ¡ãƒ³ãƒˆã€ã«é™å®šã™ã‚‹
 spelling_checkable_types = identifier, comment
-# «‘‚ğ‰pŒêi•Ä‘j‚ÉŒÅ’è‚·‚é
+# è¾æ›¸ã‚’è‹±èªï¼ˆç±³å›½ï¼‰ã«å›ºå®šã™ã‚‹
 spelling_languages = en-us
-# ©•ª‚Ì«‘‚ğì‚ê‚é‚æ‚¤‚É•W€‚ÌœŠO«‘İ’è‚Í‚»‚Ì‚Ü‚Üg—p
+# è‡ªåˆ†ã®è¾æ›¸ã‚’ä½œã‚Œã‚‹ã‚ˆã†ã«æ¨™æº–ã®é™¤å¤–è¾æ›¸è¨­å®šã¯ãã®ã¾ã¾ä½¿ç”¨
 spelling_use_default_exclusion_ductionary = true
-# ©•ª‚ÌœŠO«‘‚ğw’è
+# è‡ªåˆ†ã®é™¤å¤–è¾æ›¸ã‚’æŒ‡å®š
 spelling_exclusion_path = ./exclusion.dic
