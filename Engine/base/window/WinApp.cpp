@@ -35,7 +35,7 @@ std::wstring GetWindowStatePath() {
     const std::string parent = (pos != std::string::npos && pos + assetsDir.size() == appRoot.size())
                                    ? appRoot.substr(0, pos)
                                    : appRoot;
-    const std::string relative = parent + "Captures/WindowState.ini";
+    const std::string relative = parent + "Config/WindowState.ini";
 
     // UTF-8 → wide 変換
     const int wideLength = MultiByteToWideChar(CP_UTF8, 0, relative.c_str(), -1, nullptr, 0);
