@@ -8,19 +8,72 @@ extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hwnd_, UINT ms
 
 namespace Hagine {
 
+// INIのセクション名
+constexpr const wchar_t *kSection = L"Window";
+
+// 整数値をINIに書き込む
+void WriteInit(const wchar_t *path, const wchar_t *key, int32_t value) {
+    WritePrivateProfileStringW(kSection, key, std::to_wstring(value).c_str(), path);
+}
+
+// INiから整数値を読み込む
+bool ReadInit(const wchar_t *path, const wchar_t *key, int32_t &out) {
+    wchar_t buffer[32] = {};
+    GetPrivateProfileStringW(kSection, key, L"", buffer, _countof(buffer), path);
+    if (buffer[0] == L'\0') {
+        return false;
+    }
+    out = static_cast<int32_t>(wcstol(buffer, nullptr, 10));
+    return true;
+}
+
+std::wstring GetWindowStatePath() {
+    // AppRoot() の末尾 "Assets/" を取り除いて、アプリ直下のフォルダを求める
+    const std::string &appRoot = AssetPath::AppRoot();
+    const std::string assetsDir = "Assets/";
+    const size_t pos = appRoot.rfind(assetsDir);
+    const std::string parent = (pos != std::string::npos && pos + assetsDir.size() == appRoot.size())
+                                   ? appRoot.substr(0, pos)
+                                   : appRoot;
+    const std::string relative = parent + "Captures/WindowState.ini";
+
+    // UTF-8 → wide 変換
+    const int wideLength = MultiByteToWideChar(CP_UTF8, 0, relative.c_str(), -1, nullptr, 0);
+    if (wideLength <= 0) {
+        return {};
+    }
+    std::wstring wide(static_cast<size_t>(wideLength), L'\0');
+    MultiByteToWideChar(CP_UTF8, 0, relative.c_str(), -1, wide.data(), wideLength);
+    wide.resize(static_cast<size_t>(wideLength) - 1); // 終端の NUL を除く
+
+    // カレントディレクトリ基準の絶対パスへ解決
+    wchar_t full[MAX_PATH]{};
+    const DWORD length = GetFullPathNameW(wide.c_str(), MAX_PATH, full, nullptr);
+    if (length == 0 || length >= MAX_PATH) {
+        return {};
+    }
+    return std::wstring(full, length);
+}
+
 // ウィンドウプロシージャ
-LRESULT CALLBACK WinApp::WindowProc(HWND hwnd_, UINT msg, WPARAM wparam, LPARAM lparam)
-{
+LRESULT CALLBACK WinApp::WindowProc(HWND hwnd_, UINT msg, WPARAM wparam, LPARAM lparam) {
 #ifdef USE_IMGUI
     // ImGui用ウィンドウプロシージャ呼び出し
-    if (ImGui_ImplWin32_WndProcHandler(hwnd_, msg, wparam, lparam))
-    {
+    if (ImGui_ImplWin32_WndProcHandler(hwnd_, msg, wparam, lparam)) {
         return true;
     }
 #endif // USE_IMGUI
        // メッセージに応じてゲーム固有の処理を行う
-    switch (msg)
-    {
+    switch (msg) {
+        // ウィンドウが閉じられる直前
+    case WM_CLOSE: {
+        WinApp *self = reinterpret_cast<WinApp *>(GetWindowLongPtr(hwnd_, GWLP_USERDATA));
+        if (self) {
+            self->SaveWindowState();
+        }
+        break;
+    }
+
         // ウィンドウが破棄された
     case WM_DESTROY:
         // OSに対して、アプリの終了を伝える
@@ -31,13 +84,11 @@ LRESULT CALLBACK WinApp::WindowProc(HWND hwnd_, UINT msg, WPARAM wparam, LPARAM 
     case WM_SIZE: {
         // CreateWindow 中のメッセージは GWLP_USERDATA 未設定なのでスキップ
         WinApp *self = reinterpret_cast<WinApp *>(GetWindowLongPtr(hwnd_, GWLP_USERDATA));
-        if (self && wparam != SIZE_MINIMIZED)
-        {
+        if (self && wparam != SIZE_MINIMIZED) {
             int32_t width = static_cast<int32_t>(LOWORD(lparam));
             int32_t height = static_cast<int32_t>(HIWORD(lparam));
             if (width > 0 && height > 0 &&
-                (width != self->clientWidth_ || height != self->clientHeight_))
-            {
+                (width != self->clientWidth_ || height != self->clientHeight_)) {
                 self->clientWidth_ = width;
                 self->clientHeight_ = height;
                 self->resizeRequested_ = true;
@@ -50,8 +101,7 @@ LRESULT CALLBACK WinApp::WindowProc(HWND hwnd_, UINT msg, WPARAM wparam, LPARAM 
     return DefWindowProc(hwnd_, msg, wparam, lparam);
 }
 
-void WinApp::Initialize()
-{
+void WinApp::Initialize() {
     HRESULT hr = CoInitializeEx(0, COINIT_MULTITHREADED);
 
     // ウィンドウプロシージャ
@@ -77,61 +127,56 @@ void WinApp::Initialize()
 
     // ウィンドウの生成
     hwnd_ = CreateWindow(
-        wc_.lpszClassName,                               // 利用するクラス名
-        L"4308_タイトル", // タイトルバーの文字
-        WS_OVERLAPPEDWINDOW,                             // よく見るウィンドウスタイル
-        CW_USEDEFAULT,                                   // 表示X座標
-        CW_USEDEFAULT,                                   // 表示Y座標
-        wrc.right - wrc.left,                            // ウィンドウ横幅
-        wrc.bottom - wrc.top,                            // ウィンドウ縦幅
-        nullptr,                                         // 親ウィンドウハンドル
-        nullptr,                                         // メニューハンドル
-        wc_.hInstance,                                   // インスタンスハンドル
-        nullptr);                                        // オプション
+        wc_.lpszClassName,    // 利用するクラス名
+        L"4308_タイトル",     // タイトルバーの文字
+        WS_OVERLAPPEDWINDOW,  // よく見るウィンドウスタイル
+        CW_USEDEFAULT,        // 表示X座標
+        CW_USEDEFAULT,        // 表示Y座標
+        wrc.right - wrc.left, // ウィンドウ横幅
+        wrc.bottom - wrc.top, // ウィンドウ縦幅
+        nullptr,              // 親ウィンドウハンドル
+        nullptr,              // メニューハンドル
+        wc_.hInstance,        // インスタンスハンドル
+        nullptr);             // オプション
 
     // WM_SIZE から実クライアントサイズを更新できるよう、インスタンスを関連付ける
     SetWindowLongPtr(hwnd_, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(this));
+
+    LoadWindowState();
 
     // ウィンドウを表示する
     ShowWindow(hwnd_, SW_SHOW);
 }
 
-void WinApp::Update()
-{
+void WinApp::Update() {
 }
 
-void WinApp::Finalize()
-{
+void WinApp::Finalize() {
     CoUninitialize();
     CloseWindow(hwnd_);
 }
 
-bool WinApp::ProcessMessage()
-{
+bool WinApp::ProcessMessage() {
     MSG msg{};
 
     // Windowにメッセージが来てたら最優先で処理させる
-    while (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE))
-    {
+    while (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {
         TranslateMessage(&msg);
         DispatchMessage(&msg);
     }
 
     // ウィンドウの×ボタンが押されるまでループ
-    if (msg.message == WM_QUIT)
-    {
+    if (msg.message == WM_QUIT) {
         return true;
     }
 
     return false;
 }
 
-void WinApp::ToggleFullScreen()
-{
+void WinApp::ToggleFullScreen() {
 
     // 現在のフルスクリーン状態を確認
-    if (!isFullScreen_)
-    {
+    if (!isFullScreen_) {
         // ウィンドウモードからフルスクリーンに変更
 
         // 現在のウィンドウの位置とサイズを保存
@@ -148,9 +193,7 @@ void WinApp::ToggleFullScreen()
 
         // フルスクリーンフラグを設定
         isFullScreen_ = true;
-    }
-    else
-    {
+    } else {
         // フルスクリーンからウィンドウモードに変更
 
         // ウィンドウスタイルを元に戻す
@@ -164,11 +207,9 @@ void WinApp::ToggleFullScreen()
     }
 }
 
-void WinApp::SetClientSize(int32_t width, int32_t height)
-{
+void WinApp::SetClientSize(int32_t width, int32_t height) {
     // フルスクリーン中はウィンドウサイズを直接変更しない
-    if (isFullScreen_ || hwnd_ == nullptr || width <= 0 || height <= 0)
-    {
+    if (isFullScreen_ || hwnd_ == nullptr || width <= 0 || height <= 0) {
         return;
     }
 
@@ -182,20 +223,16 @@ void WinApp::SetClientSize(int32_t width, int32_t height)
                  SWP_NOMOVE | SWP_NOZORDER | SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
 }
 
-void WinApp::SetVirtualResolution(int32_t width, int32_t height)
-{
-    if (width > 0 && height > 0)
-    {
+void WinApp::SetVirtualResolution(int32_t width, int32_t height) {
+    if (width > 0 && height > 0) {
         virtualWidth_ = width;
         virtualHeight_ = height;
     }
 }
 
 void WinApp::ComputeLetterboxRect(int32_t clientWidth, int32_t clientHeight,
-                                  float &outX, float &outY, float &outWidth, float &outHeight)
-{
-    if (clientWidth <= 0 || clientHeight <= 0)
-    {
+                                  float &outX, float &outY, float &outWidth, float &outHeight) {
+    if (clientWidth <= 0 || clientHeight <= 0) {
         outX = 0.0f;
         outY = 0.0f;
         outWidth = static_cast<float>(virtualWidth_);
@@ -206,16 +243,13 @@ void WinApp::ComputeLetterboxRect(int32_t clientWidth, int32_t clientHeight,
     const float targetAspect = static_cast<float>(virtualWidth_) / static_cast<float>(virtualHeight_);
     const float windowAspect = static_cast<float>(clientWidth) / static_cast<float>(clientHeight);
 
-    if (windowAspect > targetAspect)
-    {
+    if (windowAspect > targetAspect) {
         // ウィンドウが横長 → 左右に黒帯
         outHeight = static_cast<float>(clientHeight);
         outWidth = outHeight * targetAspect;
         outX = (static_cast<float>(clientWidth) - outWidth) * 0.5f;
         outY = 0.0f;
-    }
-    else
-    {
+    } else {
         // ウィンドウが縦長 → 上下に黒帯
         outWidth = static_cast<float>(clientWidth);
         outHeight = outWidth / targetAspect;
@@ -224,10 +258,94 @@ void WinApp::ComputeLetterboxRect(int32_t clientWidth, int32_t clientHeight,
     }
 }
 
-bool WinApp::ConsumeResize(uint32_t &width, uint32_t &height)
-{
-    if (!resizeRequested_)
-    {
+void WinApp::SaveWindowState() {
+    if (hwnd_ == nullptr) {
+        return;
+    }
+
+    // 保存先の解決に失敗した場合は何もしない
+    const std::wstring path = GetWindowStatePath();
+    if (path.empty()) {
+        return;
+    }
+
+    // フルスクリーン中は、ウィンドウモード時に保存しておいた矩形を使う
+    RECT rect = windowRect_;
+    int32_t showCmd = SW_SHOWNORMAL;
+
+    if (!isFullScreen_) {
+        // 最大化・最小化に左右されない通常時の矩形と表示状態を取得する
+        WINDOWPLACEMENT placement{};
+        placement.length = sizeof(WINDOWPLACEMENT);
+        if (!GetWindowPlacement(hwnd_, &placement)) {
+            return;
+        }
+        rect = placement.rcNormalPosition;
+        // 最小化状態は保存せず、最大化かどうかだけを記録する
+        showCmd = (placement.showCmd == SW_SHOWMAXIMIZED) ? SW_SHOWMAXIMIZED : SW_SHOWNORMAL;
+        windowRect_ = rect;
+    }
+
+    // 保存先フォルダ (Captures) が無ければ作成する
+    std::error_code ec;
+    std::filesystem::create_directories(std::filesystem::path(path).parent_path(), ec);
+
+    WriteInit(path.c_str(), L"Left", rect.left);
+    WriteInit(path.c_str(), L"Top", rect.top);
+    WriteInit(path.c_str(), L"Right", rect.right);
+    WriteInit(path.c_str(), L"Bottom", rect.bottom);
+    WriteInit(path.c_str(), L"ShowCmd", showCmd);
+    WriteInit(path.c_str(), L"IsFullScreen", isFullScreen_ ? 1 : 0);
+}
+
+void WinApp::LoadWindowState() {
+    if (hwnd_ == nullptr) {
+        return;
+    }
+
+    // 保存先が解決できない、または保存ファイルが無い場合は既定の配置のままにする
+    const std::wstring path = GetWindowStatePath();
+    if (path.empty() || GetFileAttributesW(path.c_str()) == INVALID_FILE_ATTRIBUTES) {
+        return;
+    }
+
+    int32_t left = 0, top = 0, right = 0, bottom = 0, showCmd = SW_SHOWNORMAL, isFullScreenInt = 0;
+    if (!ReadInit(path.c_str(), L"Left", left) ||
+        !ReadInit(path.c_str(), L"Top", top) ||
+        !ReadInit(path.c_str(), L"Right", right) ||
+        !ReadInit(path.c_str(), L"Bottom", bottom)) {
+        return;
+    }
+    ReadInit(path.c_str(), L"ShowCmd", showCmd);
+    ReadInit(path.c_str(), L"IsFullScreen", isFullScreenInt);
+
+    // サイズが不正な場合は無視する
+    if (right - left <= 0 || bottom - top <= 0) {
+        return;
+    }
+
+    // モニター構成の変更などで、どのモニターにも掛からない位置なら復元しない
+    RECT rect = {left, top, right, bottom};
+    if (MonitorFromRect(&rect, MONITOR_DEFAULTTONULL) == nullptr) {
+        return;
+    }
+
+    // 通常時の矩形と表示状態（通常 or 最大化）を復元する
+    WINDOWPLACEMENT placement{};
+    placement.length = sizeof(WINDOWPLACEMENT);
+    placement.rcNormalPosition = rect;
+    placement.showCmd = (showCmd == SW_SHOWMAXIMIZED) ? SW_SHOWMAXIMIZED : SW_SHOWNORMAL;
+    SetWindowPlacement(hwnd_, &placement);
+    windowRect_ = rect;
+
+    // フルスクリーンだった場合は、ウィンドウモードの配置を復元したうえで切り替える
+    if (isFullScreenInt != 0) {
+        ToggleFullScreen();
+    }
+}
+
+bool WinApp::ConsumeResize(uint32_t &width, uint32_t &height) {
+    if (!resizeRequested_) {
         return false;
     }
     resizeRequested_ = false;
@@ -236,11 +354,9 @@ bool WinApp::ConsumeResize(uint32_t &width, uint32_t &height)
     return true;
 }
 
-void WinApp::ClosedWindow()
-{
+void WinApp::ClosedWindow() {
     // ウィンドウハンドルが有効な場合のみ処理
-    if (hwnd_ != nullptr)
-    {
+    if (hwnd_ != nullptr) {
         // WM_CLOSEメッセージを送信してウィンドウを終了
         PostMessage(hwnd_, WM_CLOSE, 0, 0);
     }

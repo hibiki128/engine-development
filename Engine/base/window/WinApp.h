@@ -5,6 +5,7 @@
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hwnd_, UINT msg, WPARAM wParam, LPARAM lParam);
 #endif //  USE_IMGUI
 #include <cstdint>
+#include"Utility/Asset/AssetPath.h"
 // WindowsAPI
 namespace Hagine {
 class WinApp
@@ -45,6 +46,9 @@ class WinApp
     /// </summary>
     void ToggleFullScreen();
 
+    /// <summary>
+    /// ウィンドウを閉じる
+    /// </summary>
     void ClosedWindow();
 
     /// <summary>
@@ -82,6 +86,16 @@ class WinApp
     /// <param name="outHeight">表示矩形の高さ（出力）</param>
     static void ComputeLetterboxRect(int32_t clientWidth, int32_t clientHeight,
                                      float &outX, float &outY, float &outWidth, float &outHeight);
+
+    /// <summary>
+    /// ウィンドウの状態を保存
+    /// </summary>
+    void SaveWindowState();
+
+    /// <summary>
+    /// ウィンドウの状態をロード
+    /// </summary>
+    void LoadWindowState();
 
     /// <summary>
     /// getter
