@@ -1,6 +1,7 @@
 #pragma once
 #include "ParticleCSEmitter.h"
 #include <memory>
+#include <nlohmann/json_fwd.hpp>
 #include <string>
 #include <vector>
 
@@ -28,6 +29,10 @@ class WorldTransform;
 /// 【寿命】インスタンスはこのマネージャーが所有する。Despawn するまで生き続け、
 ///   シーン遷移時は SetPersistent(true) にしたもの以外まとめて破棄される。
 ///   破棄後のポインタは無効になるため、長く持つ場合は IsAlive() で確認すること。
+///
+/// 【シーンへの保存】「シーンに保存する」が付いたインスタンスはシーンファイルの particles に書かれ、
+///   シーンを読み込むと出し直される。エディタの「シーンに出す」で出したものは既定で付き、
+///   コードやタイムラインが Spawn したものは付かない（毎回コードが出し直すため）。
 /// </summary>
 class ParticleCSSpawner
 {
@@ -68,6 +73,31 @@ class ParticleCSSpawner
 
     /// <summary>全インスタンスを破棄する（アプリ終了時）</summary>
     void Finalize();
+
+    /// ===================================================
+    /// シーンファイル
+    /// ===================================================
+
+    /// <summary>
+    /// シーンに保存するか。エディタの「シーンに出す」で出したものは既定で true、Spawn の既定は false
+    /// </summary>
+    void SetShouldSave(ParticleCSEmitter *emitter, bool shouldSave);
+    bool GetShouldSave(const ParticleCSEmitter *emitter) const;
+
+    /// <summary>
+    /// 「シーンに保存する」が付いたインスタンスを JSON の配列にする（SceneSerializer が particles に書く）
+    /// </summary>
+    /// <returns>nlohmann::json: インスタンスの配列</returns>
+    nlohmann::json ToJson() const;
+
+    /// <summary>
+    /// シーンに保存するインスタンス（常駐以外）を消してから、ToJson の配列どおりに出し直す。
+    /// コードやタイムラインが出したもの（保存しないもの）には触れない。
+    /// 常駐のものが同じ名前で残っていれば、二重に出さずにそれを使い続ける
+    /// </summary>
+    /// <param name="list">ToJson の結果</param>
+    /// <returns>int: 出せた数（テンプレートが見つからなかったものは数えない）</returns>
+    int FromJson(const nlohmann::json &list);
 
     /// ===================================================
     /// DrawSystem から呼ばれる駆動処理
@@ -118,6 +148,7 @@ class ParticleCSSpawner
         std::unique_ptr<ParticleCSEmitter> emitter;
         std::string templateName;      // 生成元のテンプレート名
         bool persistent = false;       // シーン遷移で破棄しない
+        bool shouldSave = false;       // シーンファイルに書く（エディタで置いたもの）
         bool despawnWhenFinished = false; // 粒子が尽きたら自動破棄
         // 自動破棄を頼まれてから、生存数の判定を始めるまでの残りフレーム数。
         // 生存数は GPU からの読み戻しで1〜2フレーム遅れるため、EmitOnce() の直後に
@@ -131,6 +162,12 @@ class ParticleCSSpawner
 
     /// テンプレート名から重複しないインスタンス名を作る
     std::string MakeInstanceName(const std::string &templateName);
+
+    /// その名前のインスタンスがいるか（読み込んだ名前と連番が重ならないようにするため）
+    bool HasInstanceNamed(const std::string &name) const;
+
+    /// 消すインスタンスのオブジェクトへの親子付け（AttachmentManager のリンク）を外す
+    void DetachAttachLink(const ParticleCSEmitter *emitter);
 
     std::vector<Instance> instances_;
     int instanceCounter_ = 0;

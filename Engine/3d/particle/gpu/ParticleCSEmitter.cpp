@@ -141,15 +141,24 @@ void ParticleCSEmitter::Initialize(const std::string &name)
 
     // 種類をまたいだ親子付けの対象として登録する（オブジェクトに付けられるようにする）。
     // ギズモと同じく、量産される実行時インスタンスは登録しない。
-    if (registerGizmo_ && pEmitterMeshData_)
+    if (registerGizmo_)
     {
-        AttachTarget target;
-        target.kind = AttachKind::Particle;
-        target.name = AttachName(name_);
-        target.position = &pEmitterMeshData_->translate;
-        AttachmentManager::GetInstance()->Register(target);
-        attachRegistered_ = true;
+        RegisterAttachTarget();
     }
+}
+
+void ParticleCSEmitter::RegisterAttachTarget()
+{
+    if (attachRegistered_ || !pEmitterMeshData_)
+    {
+        return;
+    }
+    AttachTarget target;
+    target.kind = AttachKind::Particle;
+    target.name = AttachName(name_);
+    target.position = &pEmitterMeshData_->translate;
+    AttachmentManager::GetInstance()->Register(target);
+    attachRegistered_ = true;
 }
 
 void ParticleCSEmitter::Initialize(const std::string &name, const std::string &modelPath)

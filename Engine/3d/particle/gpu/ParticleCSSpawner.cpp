@@ -3,7 +3,11 @@
 #include "render/DrawGroupManager.h"
 #include <algorithm>
 #include <asset/AssetPath.h>
+#include <attachment/AttachmentManager.h>
+#include <data/DataHandler.h>
+#include <debug/log/Logger.h>
 #include <filesystem>
+#include <nlohmann/json.hpp>
 #include <utility/debug/imgui/ImGuiNotification.h>
 #ifdef USE_IMGUI
 #include <imgui.h>
@@ -50,8 +54,16 @@ void ParticleCSSpawner::Despawn(ParticleCSEmitter *emitter)
                            [emitter](const Instance &i) { return i.emitter.get() == emitter; });
     if (it != instances_.end())
     {
+        DetachAttachLink(emitter);
         instances_.erase(it);
     }
+}
+
+void ParticleCSSpawner::DetachAttachLink(const ParticleCSEmitter *emitter)
+{
+    // 消したものの親子付けが残ると、保存したファイルに相手のいないリンクが溜まり、
+    // 後で同じ名前（連番は起動ごとに 1 から）で出したものが勝手にその親へ付いてしまう
+    AttachmentManager::GetInstance()->Detach(ParticleCSEmitter::AttachName(emitter->GetName()));
 }
 
 void ParticleCSSpawner::DespawnWhenFinished(ParticleCSEmitter *emitter)
@@ -99,6 +111,109 @@ void ParticleCSSpawner::Finalize()
     instances_.clear();
 }
 
+void ParticleCSSpawner::SetShouldSave(ParticleCSEmitter *emitter, bool shouldSave)
+{
+    if (Instance *inst = Find(emitter))
+    {
+        inst->shouldSave = shouldSave;
+    }
+}
+
+bool ParticleCSSpawner::GetShouldSave(const ParticleCSEmitter *emitter) const
+{
+    const Instance *inst = Find(emitter);
+    return inst && inst->shouldSave;
+}
+
+nlohmann::json ParticleCSSpawner::ToJson() const
+{
+    nlohmann::json list = nlohmann::json::array();
+    for (const Instance &inst : instances_)
+    {
+        // 消える途中のもの（発生を止めて消す）は、読み込み直しても消えるだけなので書かない
+        if (!inst.shouldSave || inst.despawnWhenFinished)
+        {
+            continue;
+        }
+        const ParticleCSEmitter *emitter = inst.emitter.get();
+        nlohmann::json item;
+        item["template"] = inst.templateName;
+        item["name"] = emitter->GetName();
+        // 親に付いているときも、毎フレーム解決されたワールド座標が入っている。
+        // 親子付けそのものは AttachmentManager が attachments に名前で書く（ここでは書かない）。
+        // コードの SetParent による親はコードが出したもの＝保存しないものだけが使う
+        item["translate"] = emitter->GetTranslate();
+        item["scale"] = emitter->GetScale();
+        item["frequency"] = emitter->GetEmitterMesh().frequency;
+        item["billboard"] = emitter->GetBillboardEmitter();
+        item["persistent"] = inst.persistent;
+        list.push_back(std::move(item));
+    }
+    return list;
+}
+
+int ParticleCSSpawner::FromJson(const nlohmann::json &list)
+{
+    // 前に読み込んだ・エディタで置いた保存対象を消す。常駐のものはシーンをまたいで残す約束なので残す
+    instances_.erase(std::remove_if(instances_.begin(), instances_.end(),
+                                    [](const Instance &i) { return i.shouldSave && !i.persistent; }),
+                     instances_.end());
+    if (!list.is_array())
+    {
+        return 0;
+    }
+
+    int spawnedCount = 0;
+    for (const nlohmann::json &item : list)
+    {
+        if (!item.is_object())
+        {
+            continue;
+        }
+        const std::string name = item.value("name", std::string());
+        // 常駐で残っているもの（同じシーンの読み込み直し・前のシーンから持ち越したもの）は出し直さない
+        const bool keptPersistent = std::any_of(instances_.begin(), instances_.end(), [&name](const Instance &i) {
+            return i.shouldSave && i.persistent && i.emitter->GetName() == name;
+        });
+        if (!name.empty() && keptPersistent)
+        {
+            continue;
+        }
+        const std::string templateName = item.value("template", std::string());
+        ParticleCSEmitter *emitter = Spawn(templateName);
+        if (!emitter)
+        {
+            Logger::Warn("[Scene] パーティクルのテンプレートが見つからないので出せませんでした: " + templateName);
+            continue;
+        }
+        Instance &inst = instances_.back();
+        inst.shouldSave = true;
+        inst.persistent = item.value("persistent", false);
+        // 保存した名前に戻す（コードが出したものと名前が重なるときは、Spawn が付けた連番のまま）
+        if (!name.empty() && !HasInstanceNamed(name))
+        {
+            emitter->SetName(name);
+        }
+        // 名前が決まってから登録する。先に読み込まれた attachments のリンクはこの名前で効き始める
+        emitter->RegisterAttachTarget();
+        if (item.contains("translate"))
+        {
+            emitter->SetTranslate(item["translate"].get<Vector3>());
+        }
+        if (item.contains("scale"))
+        {
+            emitter->SetScale(item["scale"].get<Vector3>());
+        }
+        if (item.contains("frequency"))
+        {
+            emitter->SetFrequency(item["frequency"].get<float>());
+        }
+        emitter->SetBillboardEmitter(item.value("billboard", emitter->GetBillboardEmitter()));
+        ++spawnedCount;
+    }
+    return spawnedCount;
+}
+
 void ParticleCSSpawner::DrawCompute(const ViewProjection &vp)
 {
     // 自動破棄の回収を先に行う（今フレームぶんの無駄なディスパッチを避ける）。
@@ -114,9 +229,14 @@ void ParticleCSSpawner::DrawCompute(const ViewProjection &vp)
         }
     }
     instances_.erase(std::remove_if(instances_.begin(), instances_.end(),
-                                    [](const Instance &i) {
-                                        return i.despawnWhenFinished && i.despawnGraceFrames <= 0 &&
-                                               i.emitter->GetTotalAliveParticles() == 0;
+                                    [this](const Instance &i) {
+                                        const bool finished = i.despawnWhenFinished && i.despawnGraceFrames <= 0 &&
+                                                              i.emitter->GetTotalAliveParticles() == 0;
+                                        if (finished)
+                                        {
+                                            DetachAttachLink(i.emitter.get());
+                                        }
+                                        return finished;
                                     }),
                      instances_.end());
 
@@ -182,7 +302,19 @@ const ParticleCSSpawner::Instance *ParticleCSSpawner::Find(const ParticleCSEmitt
 
 std::string ParticleCSSpawner::MakeInstanceName(const std::string &templateName)
 {
-    return templateName + "#" + std::to_string(++instanceCounter_);
+    // シーンから読み込んだ名前（"portal#3" など）と連番が重なることがあるので、空いている番号まで進める
+    std::string name;
+    do
+    {
+        name = templateName + "#" + std::to_string(++instanceCounter_);
+    } while (HasInstanceNamed(name));
+    return name;
+}
+
+bool ParticleCSSpawner::HasInstanceNamed(const std::string &name) const
+{
+    return std::any_of(instances_.begin(), instances_.end(),
+                       [&name](const Instance &i) { return i.emitter->GetName() == name; });
 }
 
 std::vector<std::string> ParticleCSSpawner::GetTemplateNames()
@@ -255,6 +387,10 @@ void ParticleCSSpawner::DrawImGui()
             const std::string &templateName = templates[selectedTemplateIndex_];
             if (ParticleCSEmitter *spawned = Spawn(templateName))
             {
+                // エディタで置いたものはシーンの一部として保存し、オブジェクトへ親子付けできるようにする
+                // （コードの Spawn とはここが違う）
+                instances_.back().shouldSave = true;
+                spawned->RegisterAttachTarget();
                 selectedInstanceIndex_ = static_cast<int>(instances_.size()) - 1;
                 ImGuiNotification::Post("シーンに配置しました: " + spawned->GetName(),
                                         {0.4f, 0.8f, 1.0f, 1.0f});
@@ -290,6 +426,10 @@ void ParticleCSSpawner::DrawImGui()
             {
                 label += "  [常駐]";
             }
+            if (!instances_[i].shouldSave)
+            {
+                label += "  [保存しない]";
+            }
             if (ImGui::Selectable(label.c_str(), i == selectedInstanceIndex_))
             {
                 selectedInstanceIndex_ = i;
@@ -301,6 +441,10 @@ void ParticleCSSpawner::DrawImGui()
 
     if (ImGui::Button("全部消す##despawnAll"))
     {
+        for (const Instance &i : instances_)
+        {
+            DetachAttachLink(i.emitter.get());
+        }
         instances_.clear();
         selectedInstanceIndex_ = -1;
         ImGui::Unindent();
@@ -344,6 +488,26 @@ void ParticleCSSpawner::DrawImGui()
         }
     }
 
+    // オブジェクトへの親子付け（AttachmentManager。付けた組み合わせはシーンに保存される）
+    {
+        const std::string attachParent =
+            AttachmentManager::GetInstance()->GetParentName(ParticleCSEmitter::AttachName(emitter->GetName()));
+        if (!attachParent.empty())
+        {
+            ImGui::TextDisabled("親: %s", attachParent.c_str());
+        }
+        else if (inst.shouldSave)
+        {
+            ImGui::TextDisabled("親なし");
+        }
+        if (inst.shouldSave && ImGui::IsItemHovered())
+        {
+            ImGui::SetTooltip("オブジェクトへの親子付けは「階層エディター」の親子付けパネルで、\n"
+                              "子に「[パーティクル] %s」を選んで付けます",
+                              ParticleCSEmitter::AttachName(emitter->GetName()).c_str());
+        }
+    }
+
     Vector3 scale = emitter->GetScale();
     if (ImGui::DragFloat3("大きさ##spawnScale", &scale.x, 0.1f))
     {
@@ -362,6 +526,17 @@ void ParticleCSSpawner::DrawImGui()
         {
             emitter->SetBillboardEmitter(bb);
         }
+    }
+    {
+        if (ImGui::Checkbox("シーンに保存する##spawnSceneSave", &inst.shouldSave) && inst.shouldSave)
+        {
+            // 保存するものはオブジェクトへ親子付けできるようにする（付けた組み合わせも一緒に保存される）
+            emitter->RegisterAttachTarget();
+        }
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("オンだとシーンを保存したときに一緒に書き、読み込むと出し直します。\n"
+                              "オブジェクトへの親子付けも一緒に保存されます。\n"
+                              "コードやタイムラインが出したものは既定でオフです");
     }
     {
         bool persistent = inst.persistent;

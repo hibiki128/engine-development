@@ -271,6 +271,13 @@ class ParticleCSEmitter
     /// </summary>
     void SetRegisterGizmo(bool enable) { registerGizmo_ = enable; }
 
+    /// <summary>
+    /// 親子付け（AttachmentManager）の対象として今の名前で登録する。登録済みなら何もしない。
+    /// Initialize は registerGizmo_ が false のとき登録しないので、シーンに置いて保存する実行時インスタンスは
+    /// 名前を決めた後にこれを呼ぶ（テンプレートと同じ名前で登録して奪わないように、名前が確定してから）
+    /// </summary>
+    void RegisterAttachTarget();
+
     void SetStartColor(Vector4 color)
     {
         for (auto &group : particleGroups_)

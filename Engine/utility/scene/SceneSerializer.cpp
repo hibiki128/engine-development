@@ -13,6 +13,7 @@
 #include <light/LightGroup.h>
 #include <nlohmann/json.hpp>
 #include <object/base/BaseObjectManager.h>
+#include <particle/gpu/ParticleCSSpawner.h>
 #include <utility/debug/imgui/ImGuiNotification.h>
 #ifdef USE_IMGUI
 #include <edit/undo/UndoRedoManager.h>
@@ -210,7 +211,9 @@ bool SceneSerializer::Save(const std::string &sceneName)
     document["objects"] = BaseObjectManager::GetInstance()->SerializeSceneObjects();
     document["lights"] = LightGroup::GetInstance()->ToJson();
     document["attachments"] = AttachmentManager::GetInstance()->ToJson();
+    document["particles"] = ParticleCSSpawner::GetInstance()->ToJson();
     const size_t objectCount = document["objects"].size();
+    const size_t particleCount = document["particles"].size();
 
     std::string text;
     try
@@ -234,8 +237,11 @@ bool SceneSerializer::Save(const std::string &sceneName)
         return false;
     }
 
-    Logger::Info("[Scene] 保存しました: " + filePath + " (オブジェクト " + std::to_string(objectCount) + " 個)");
-    ImGuiNotification::Post(std::format("シーン「{}」を保存しました（オブジェクト {} 個）", name, objectCount), kSuccessColor);
+    Logger::Info("[Scene] 保存しました: " + filePath + " (オブジェクト " + std::to_string(objectCount) +
+                 " 個・パーティクル " + std::to_string(particleCount) + " 個)");
+    ImGuiNotification::Post(
+        std::format("シーン「{}」を保存しました（オブジェクト {} 個・パーティクル {} 個）", name, objectCount, particleCount),
+        kSuccessColor);
     return true;
 }
 
@@ -288,6 +294,7 @@ bool SceneSerializer::LoadInternal(const std::string &sceneName, bool notify)
     }
 
     int createdCount = 0;
+    int particleCount = 0;
     {
         // 1体ごとの「追加しました」は人が押した操作ではないので止める（最後にまとめて1回知らせる）
         ImGuiNotification::ScopedMute mute;
@@ -302,12 +309,17 @@ bool SceneSerializer::LoadInternal(const std::string &sceneName, bool notify)
             // リンクは名前で解決されるので、相手（光源・パーティクル）がこの後で作られても構わない
             AttachmentManager::GetInstance()->FromJson((*document)["attachments"]);
         }
+        // パーティクルはオブジェクトと同じくシーンの物なので、書いていない（古い）ファイルでも
+        // 前に置いた保存対象は消してから出し直す
+        particleCount = ParticleCSSpawner::GetInstance()->FromJson(document->value("particles", json::array()));
     }
 
-    Logger::Info("[Scene] 読み込みました: " + filePath + " (オブジェクト " + std::to_string(createdCount) + " 個)");
+    Logger::Info("[Scene] 読み込みました: " + filePath + " (オブジェクト " + std::to_string(createdCount) +
+                 " 個・パーティクル " + std::to_string(particleCount) + " 個)");
     if (notify)
     {
-        ImGuiNotification::Post(std::format("シーン「{}」を読み込みました（オブジェクト {} 個）", name, createdCount),
+        ImGuiNotification::Post(std::format("シーン「{}」を読み込みました（オブジェクト {} 個・パーティクル {} 個）", name,
+                                            createdCount, particleCount),
                                 kSuccessColor);
     }
     return true;
