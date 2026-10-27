@@ -1,4 +1,5 @@
 #pragma once
+#include <asset/FileChangeWatcher.h>
 #include <string>
 
 namespace Hagine {
@@ -8,7 +9,8 @@ class DirectXCommon;
 /// HLSL を保存したら、その場でパイプラインを作り直す仕組み。
 ///
 /// これまでシェーダーを1行直すたびに再起動が必要で、絵作りの試行回数がそこで削られていた。
-/// shaders/ 配下の更新時刻を定期的に見て、変わっていたら作り直す。
+/// shaders/ 配下の書き換えを OS から知らせてもらい（FileChangeWatcher）、
+/// 知らせが来たときだけ更新時刻を見比べて、変わっていたら作り直す。
 ///
 /// **書きかけのHLSLを保存しても落ちないこと** を最優先にしてある:
 /// パイプラインを捨てる前に、変更されたシェーダーが実際にコンパイルを通るか確かめ、
@@ -36,7 +38,12 @@ class ShaderHotReload
     void Initialize(DirectXCommon *pDxCommon);
 
     /// <summary>
-    /// 毎フレーム呼ぶ。一定間隔で更新時刻を見て、変わっていれば作り直す
+    /// 終了処理（見張りスレッドを畳む）
+    /// </summary>
+    void Finalize();
+
+    /// <summary>
+    /// 毎フレーム呼ぶ。書き換えの知らせが来ていれば更新時刻を見て、変わっていれば作り直す
     /// </summary>
     void Update();
 
@@ -111,6 +118,7 @@ class ShaderHotReload
     bool lastReloadSucceeded_ = true; // 直近の作り直しが成功したか
     std::string lastMessage_;         // 直近の結果メッセージ
     int reloadCount_ = 0;             // 作り直した回数（動いていることの確認用）
-    float pollTimer_ = 0.0f;          // 次に更新時刻を見るまでの残り時間
+    float pollTimer_ = 0.0f;          // 次に更新時刻を見るまでの残り時間（見張りが使えないときだけ使う）
+    FileChangeWatcher watcher_;       // shaders/ の書き換えの見張り
 };
 } // namespace Hagine

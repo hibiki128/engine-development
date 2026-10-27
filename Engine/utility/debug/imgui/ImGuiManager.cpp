@@ -1,4 +1,9 @@
 #include "ImGuiManager.h"
+#include <utility/scene/SceneTransition.h>
+#include <particle/ParticleEditor.h>
+#include <particle/gpu/ParticleCSEditor.h>
+#include <light/LightGroup.h>
+#include <camera/debug/DebugCamera.h>
 #ifdef USE_IMGUI
 #include "2d/text/TextRenderer.h"
 #include "2d/ui/UIAnimator.h"

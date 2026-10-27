@@ -5,6 +5,7 @@
 #include "wrl.h"
 #include <Asset/AssetPath.h>
 #include <DirectXCommon.h>
+#include <nlohmann/json.hpp>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -24,6 +25,16 @@ enum class BlendMode {
     // スクリーン
     Screen,
 };
+
+inline void to_json(nlohmann::json &j, const BlendMode &mode)
+{
+    j = static_cast<int>(mode);
+}
+
+inline void from_json(const nlohmann::json &j, BlendMode &mode)
+{
+    mode = static_cast<BlendMode>(j.get<int>());
+}
 
 // ポストエフェクトのチェーン内で使うレンダーターゲットのフォーマット。
 // リニア空間のFP16にしている理由:

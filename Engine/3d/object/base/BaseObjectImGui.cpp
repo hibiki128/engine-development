@@ -3,6 +3,7 @@
 #include "BaseObjectManager.h"
 #include "browser/ShowFolder.h"
 #include "collider/CollisionManager.h"
+#include "physics/PhysicsWorld.h"
 #include "debug/profiler/CpuProfiler.h"
 #include "frame/Frame.h"
 #include "light/ToonSettings.h"
@@ -20,6 +21,7 @@
 #include <graphics/texture/TextureManager.h>
 #include <imgui_internal.h>
 #include <implot.h>
+#include <cmath>
 #endif // DEBUG
 
 // インスペクタUI本体（メインタブ・オブジェクト設定・スケールイージング・各種セレクタ）。
@@ -163,45 +165,66 @@ void BaseObject::DebugObject() {
                 if (SmallResetButton("[R]##rpos"))
                     transform_->translation_ = {};
 
-                // -- Rotation (delta) --
+                // -- Rotation（オイラー角・度） --
                 ImGui::TableNextRow();
                 ImGui::TableNextColumn();
                 ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kAccentCyan);
                 ImGui::AlignTextToFramePadding();
-                ImGui::TextUnformatted("回転(差分)");
+                ImGui::TextUnformatted("回転");
                 ImGui::PopStyleColor();
                 ImGui::TableNextColumn();
-                static Vector3 deltaRot{};
+                // 外部で回転が変わったときのみ表示値を同期
+                {
+                    const Quaternion current = transform_->GetRotationQuaternion();
+                    if (std::abs(Quaternion::FromEulerDegrees(editorRotationDegrees_).Dot(current)) < 0.99999f) {
+                        editorRotationDegrees_ = current.ToEulerDegrees();
+                    }
+                }
+                auto applyEditorRotation = [this]() {
+                    transform_->SetRotationQuaternion(Quaternion::FromEulerDegrees(editorRotationDegrees_));
+                    transform_->UpdateMatrix();
+                };
                 ImGui::SetNextItemWidth(-1);
                 ImGui::PushStyleColor(ImGuiCol_FrameBg, {0.42f, 0.66f, 0.68f, 0.12f});
-                if (ImGui::DragFloat3("##lrot", &deltaRot.x, 0.1f, -10.f, 10.f, "%.1fdeg")) {
-                    float r = std::numbers::pi_v<float> / 180.f;
-                    Quaternion cur = transform_->GetRotationQuaternion();
-                    Quaternion dx = Quaternion::FromAxisAngle({1, 0, 0}, deltaRot.x * r);
-                    Quaternion dy = Quaternion::FromAxisAngle({0, 1, 0}, deltaRot.y * r);
-                    Quaternion dz = Quaternion::FromAxisAngle({0, 0, 1}, deltaRot.z * r);
-                    transform_->SetRotationQuaternion((cur * (dy * dx * dz)).Normalize());
-                    transform_->UpdateMatrix();
-                    deltaRot = {};
+                if (ImGui::DragFloat3("##lrot", &editorRotationDegrees_.x, 0.5f, -360.0f, 360.0f, "%.1f°")) {
+                    applyEditorRotation();
                 }
                 ImGui::PopStyleColor();
-                // 右クリック: 今の向き（オイラー角・度）のコピー・貼り付け
+                ImGui::SetItemTooltip("ダブルクリック / Ctrl+クリックで数値入力（例: 90）");
                 {
-                    const float toDeg = 180.0f / std::numbers::pi_v<float>;
-                    Vector3 euler = transform_->GetRotationEuler();
-                    float degrees[3] = {euler.x * toDeg, euler.y * toDeg, euler.z * toDeg};
                     static const float kZero[3] = {0.0f, 0.0f, 0.0f};
-                    if (FloatNContextMenu("##lrotctx", degrees, 3, kZero)) {
-                        transform_->SetRotationEuler({degrees[0] / toDeg, degrees[1] / toDeg, degrees[2] / toDeg});
-                        transform_->UpdateMatrix();
+                    if (FloatNContextMenu("##lrotctx", &editorRotationDegrees_.x, 3, kZero)) {
+                        applyEditorRotation();
                     }
                 }
                 ImGui::TableNextColumn();
                 if (SmallResetButton("[R]##rrot")) {
-                    transform_->SetRotationQuaternion(Quaternion::IdentityQuaternion());
-                    transform_->UpdateMatrix();
-                    deltaRot = {};
+                    editorRotationDegrees_ = {0.0f, 0.0f, 0.0f};
+                    applyEditorRotation();
                 }
+
+                // -- 90°回転（ローカル軸） --
+                ImGui::TableNextRow();
+                ImGui::TableNextColumn();
+                ImGui::TableNextColumn();
+                {
+                    static const char *kAxisLabels[3] = {"X", "Y", "Z"};
+                    for (int axis = 0; axis < 3; ++axis) {
+                        for (float sign : {1.0f, -1.0f}) {
+                            const std::string label = std::string(kAxisLabels[axis]) + (sign > 0.0f ? "+90" : "-90") + "##rot90" + std::to_string(axis) + (sign > 0.0f ? "p" : "m");
+                            if (axis != 0 || sign < 0.0f) {
+                                ImGui::SameLine(0.0f, 3.0f);
+                            }
+                            if (ImGui::SmallButton(label.c_str())) {
+                                Vector3 degrees = {0.0f, 0.0f, 0.0f};
+                                (&degrees.x)[axis] = 90.0f * sign;
+                                RotateDegrees(degrees);
+                                transform_->UpdateMatrix();
+                            }
+                        }
+                    }
+                }
+                ImGui::TableNextColumn();
 
                 // -- Scale --
                 ImGui::TableNextRow();
@@ -227,16 +250,6 @@ void BaseObject::DebugObject() {
                 ImGui::EndTable();
             }
 
-            // 現在のオイラー角（参考）
-            {
-                Vector3 e = transform_->GetRotationEuler();
-                float d = 180.f / std::numbers::pi_v<float>;
-                ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kTextDim);
-                ImGui::Text(" Current Rot  X:%.1f  Y:%.1f  Z:%.1f (deg)",
-                            e.x * d, e.y * d, e.z * d);
-                ImGui::PopStyleColor();
-            }
-
             ImGui::Spacing();
 
             // ---- World (read-only) ----
@@ -245,7 +258,6 @@ void BaseObject::DebugObject() {
             Vector3 wPos = GetWorldPosition();
             Quaternion wRot = GetWorldRotation();
             Vector3 wScale = GetWorldScale();
-            float toDeg = 180.f / std::numbers::pi_v<float>;
 
             // ReadOnlyRow を使って ## が画面に出ないようにする
             // InputFloat3 の ID は ## 始まりで非表示
@@ -266,8 +278,8 @@ void BaseObject::DebugObject() {
             };
 
             WorldVec3Row("位置", "##wpos", wPos.x, wPos.y, wPos.z);
-            WorldVec3Row("Rotation", "##wrot",
-                         wRot.x * toDeg, wRot.y * toDeg, wRot.z * toDeg);
+            const Vector3 wRotDegrees = wRot.ToEulerDegrees();
+            WorldVec3Row("回転(度)", "##wrot", wRotDegrees.x, wRotDegrees.y, wRotDegrees.z);
             WorldVec3Row("スケール", "##wscl", wScale.x, wScale.y, wScale.z);
 
             ImGui::Spacing();
@@ -801,17 +813,31 @@ void BaseObject::DebugObject() {
                 SetResolveCollision(true);
                 rigidBody_.enabled = true;
                 rigidBody_.useGravity = true;
+                rigidBody_.enableRotation = false;
                 rigidBody_.restitution = 0.5f;
                 rigidBody_.velocity = {0.0f, 0.0f, 0.0f};
+                rigidBody_.angularVelocity = {0.0f, 0.0f, 0.0f};
                 ImGuiNotification::Post("プリセット: 跳ねる物（重力＋押し出し＋反発）", {0.45f, 0.68f, 0.52f, 1.0f});
             }
             ImGui::SetItemTooltip("重力で落下し、地面に当たって跳ね返る動的オブジェクト");
+            ImGui::SameLine();
+            if (AccentButton("転がる物##presetRigid", DebugTheme::kAccentGreen, 0.0f)) {
+                SetResolveCollision(true);
+                rigidBody_.enabled = true;
+                rigidBody_.useGravity = true;
+                rigidBody_.enableRotation = true;
+                rigidBody_.velocity = {0.0f, 0.0f, 0.0f};
+                rigidBody_.angularVelocity = {0.0f, 0.0f, 0.0f};
+                ImGuiNotification::Post("プリセット: 転がる物（剛体シミュレーション）", {0.45f, 0.68f, 0.52f, 1.0f});
+            }
+            ImGui::SetItemTooltip("回転・摩擦・慣性つきの剛体（OBB / 球 / AABB コライダーから質量分布を算出）");
             ImGui::SameLine();
             if (AccentButton("静的な地面##presetStatic", DebugTheme::kAccentBlue, 0.0f)) {
                 SetResolveCollision(false);
                 rigidBody_.enabled = false;
                 rigidBody_.useGravity = false;
                 rigidBody_.velocity = {0.0f, 0.0f, 0.0f};
+                rigidBody_.angularVelocity = {0.0f, 0.0f, 0.0f};
                 ImGuiNotification::Post("プリセット: 静的な地面（動かない受け止め側）", {0.42f, 0.66f, 0.68f, 1.0f});
             }
             ImGui::SetItemTooltip("動かない床・壁。相手を受け止める側はこちら（押し出しはOFF）");
@@ -833,10 +859,11 @@ void BaseObject::DebugObject() {
             AccentCheckbox("リジッドボディとして扱う##rbenable", &rigidBody_.enabled, DebugTheme::kAccentGreen);
             ImGui::SetItemTooltip("重力で落下し速度を持つ。押し出しと併用すると坂を滑り落ちる");
 
-            // リジッドボディOFFのときは物理パラメータを淡色＝無効表示にする
             ImGui::BeginDisabled(!rigidBody_.enabled);
 
             AccentCheckbox("重力を受ける##rbgrav", &rigidBody_.useGravity, DebugTheme::kAccentBlue);
+            AccentCheckbox("剛体シミュレーション##rbrot", &rigidBody_.enableRotation, DebugTheme::kAccentBlue);
+            ImGui::SetItemTooltip("PhysicsWorld で回転・摩擦・慣性つきで解く。動く床に乗ると一緒に運ばれる\n親を持たないオブジェクトのみ有効");
 
             ImGui::DragFloat("質量##rbmass", &rigidBody_.mass, 0.05f, 0.01f, 1000.0f, "%.2f");
             ImGui::SetItemTooltip("外力 F=ma に効く。大きいほど力で動きにくい");
@@ -846,15 +873,31 @@ void BaseObject::DebugObject() {
             ImGui::DragFloat("反発係数##rbrest", &rigidBody_.restitution, 0.01f, 0.0f, 1.0f, "%.2f");
             ImGui::SetItemTooltip("0=跳ねない / 1=完全反発。押し出しONのとき跳ね返りに効く");
             ImGui::DragFloat("摩擦##rbfric", &rigidBody_.friction, 0.01f, 0.0f, 1.0f, "%.2f");
-            ImGui::SetItemTooltip("接触面に沿う速度の減衰。坂の滑り方に効く");
+            ImGui::SetItemTooltip("剛体: クーロン摩擦係数（接触相手と相乗平均。tanθ がこれを超える坂で滑走）\nそれ以外: 接線速度の毎フレーム減衰率");
+            ImGui::BeginDisabled(!rigidBody_.enableRotation);
+            ImGui::DragFloat("回転の減衰##rbangdamp", &rigidBody_.angularDamping, 0.005f, 0.0f, 10.0f, "%.3f");
+            ImGui::EndDisabled();
 
             ImGui::Spacing();
             Vector3 v = rigidBody_.velocity;
             ReadOnlyRow("速度", "%.2f, %.2f, %.2f", v.x, v.y, v.z);
-            if (NeutralButton("速度をリセット##rbresetv"))
+            Vector3 w = rigidBody_.angularVelocity;
+            ReadOnlyRow("角速度", "%.2f, %.2f, %.2f", w.x, w.y, w.z);
+            if (rigidBody_.enableRotation) {
+                ReadOnlyRow("状態", "%s", PhysicsWorld::GetInstance()->IsSleeping(this) ? "スリープ中" : "動作中");
+            }
+            if (NeutralButton("速度をリセット##rbresetv")) {
                 rigidBody_.velocity = {0.0f, 0.0f, 0.0f};
+                rigidBody_.angularVelocity = {0.0f, 0.0f, 0.0f};
+            }
 
             ImGui::EndDisabled();
+
+            // ---- 物理ワールド全体の設定 ----
+            if (ImGui::TreeNode("物理ワールド設定（全体共通）##pwsettings")) {
+                PhysicsWorld::GetInstance()->DrawSettingsImGui();
+                ImGui::TreePop();
+            }
 
             ImGui::Unindent(6.0f);
             ImGui::Spacing();

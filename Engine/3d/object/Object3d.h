@@ -14,6 +14,7 @@
 #include <model/material/Material.h>
 #include <model/Model.h>
 #include <transform/ObjColor.h>
+#include <transform/WorldTransform.h>
 
 namespace Hagine {
 class LightGroup; // 使うのはポインタだけ（LightGroup.h は 100 本以上の .cpp に広がっていた）

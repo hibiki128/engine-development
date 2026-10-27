@@ -1,6 +1,6 @@
 #pragma once
-#include "DirectXCommon.h"
 #include "Easing.h"
+#include "WinApp.h"
 #include "d3d12.h"
 #include "numbers"
 #include "type/Matrix4x4.h"
@@ -12,6 +12,7 @@
 /// ビュープロジェクション用定数バッファ
 /// </summary>
 namespace Hagine {
+class DirectXCommon;
 struct ConstBufferDataViewProjection
 {
     Matrix4x4 view;       // ビュー行列

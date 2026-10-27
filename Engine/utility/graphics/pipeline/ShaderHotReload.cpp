@@ -19,8 +19,12 @@
 namespace Hagine {
 namespace {
 
-/// 更新時刻を見にいく間隔（秒）。毎フレーム走査すると数十ファイル分のstatで無駄に重い
+/// 見張りが使えないときに、更新時刻を見にいく間隔（秒）。毎フレーム走査すると数十ファイル分のstatで無駄に重い
 constexpr float kPollIntervalSeconds = 0.5f;
+
+/// 書き換えの知らせが来てから、作り直すまで待つ秒数。
+/// エディタの保存は「一時ファイルに書いて差し替える」などで知らせが数回続くので、落ち着いてから1回だけ作り直す
+constexpr double kChangeQuietSeconds = 0.15;
 
 /// 相対パス → 最後に見た更新時刻
 std::unordered_map<std::string, std::filesystem::file_time_type> &TimestampTable()
@@ -72,10 +76,23 @@ void ShaderHotReload::Initialize(DirectXCommon *pDxCommon)
 {
     pDxCommon_ = pDxCommon;
 
+#ifdef USE_IMGUI
+    // 基準を取るより先に見張り始める。基準を取っている最中に保存されても取りこぼさないため
+    if (!watcher_.Start({AssetPath::Shader("")}, {".hlsl", ".hlsli"}))
+    {
+        Logger::Warn("シェーダーフォルダを見張れませんでした。一定間隔の走査で代わりにします");
+    }
+#endif
+
     // 起動時の更新時刻を基準にする。ここで拾った変更は「起動前のもの」なので作り直さない
     CollectChanges(nullptr, nullptr);
     lastMessage_ = "まだ作り直していません";
     lastReloadSucceeded_ = true;
+}
+
+void ShaderHotReload::Finalize()
+{
+    watcher_.Stop();
 }
 
 void ShaderHotReload::Update()
@@ -86,12 +103,24 @@ void ShaderHotReload::Update()
         return;
     }
 
-    pollTimer_ -= Frame::UnscaledDeltaTime();
-    if (pollTimer_ > 0.0f)
+    if (watcher_.IsWatching())
     {
-        return;
+        // ふだんはこちら。知らせが来ていなければフラグを見るだけで終わる
+        if (!watcher_.ConsumeChanges(kChangeQuietSeconds))
+        {
+            return;
+        }
     }
-    pollTimer_ = kPollIntervalSeconds;
+    else
+    {
+        // 見張りが使えないときだけ、一定間隔で走査する
+        pollTimer_ -= Frame::UnscaledDeltaTime();
+        if (pollTimer_ > 0.0f)
+        {
+            return;
+        }
+        pollTimer_ = kPollIntervalSeconds;
+    }
 
     bool changedAnyInclude = false;
     std::string changedShaders;
@@ -163,8 +192,9 @@ bool ShaderHotReload::RunReload(bool verifyAll, const std::string &changedShader
             {
                 continue;
             }
-            const std::filesystem::path rel = std::filesystem::relative(entry.path(), root, ec);
-            if (ec)
+            // relative() は内部で絶対パスへ直すために OS へ何度も問い合わせるので、文字列だけで求める
+            const std::filesystem::path rel = entry.path().lexically_relative(root);
+            if (rel.empty())
             {
                 continue;
             }
@@ -278,14 +308,16 @@ bool ShaderHotReload::CollectChanges(bool *outChangedAnyInclude, std::string *ou
             continue;
         }
 
-        const std::filesystem::path rel = std::filesystem::relative(path, root, ec);
-        if (ec)
+        // relative() は内部で絶対パスへ直すために OS へ何度も問い合わせるので、文字列だけで求める
+        const std::filesystem::path rel = path.lexically_relative(root);
+        if (rel.empty())
         {
             continue;
         }
         const std::string key = NormalizeSeparators(rel.string());
 
-        const auto writeTime = std::filesystem::last_write_time(path, ec);
+        // 走査したときに取れている更新時刻を使う（ファイルを1本ずつ開き直さない）
+        const auto writeTime = entry.last_write_time(ec);
         if (ec)
         {
             continue;

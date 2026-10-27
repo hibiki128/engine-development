@@ -1,4 +1,5 @@
 #include "Material.h"
+#include "graphics/pipeline/PipelineManager.h"
 
 #include "fstream"
 #include <asset/AssetReport.h>

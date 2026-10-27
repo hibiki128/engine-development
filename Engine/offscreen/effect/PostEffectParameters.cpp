@@ -1,4 +1,5 @@
 #include "PostEffectParameters.h"
+#include "MyMath.h"
 #include <graphics/pipeline/PipelineManager.h>
 #include <graphics/srv/SrvManager.h>
 #include <graphics/texture/TextureManager.h>

@@ -15,7 +15,7 @@ namespace Hagine {
 ///   - particles   : 「シーンへの配置」で置いた GPU パーティクル（ParticleCSSpawner で「シーンに保存する」が付いた物）
 ///
 /// 保存されるのは BaseObjectManager が所有するオブジェクトのうち「シーンに保存する」が付いた物だけ。
-/// ゲーム側がコードで作るオブジェクト（RegisterExternal した物）は毎回コードが作り直すので書かない。
+/// Register で登録したゲーム側のオブジェクトは対象外。
 ///
 /// シーンが始まるとき（SceneManager がシーンの Initialize を呼ぶ直前）に、
 /// そのシーン名のファイルがあれば自動で読み込む。Release でも同じように読み込まれる。

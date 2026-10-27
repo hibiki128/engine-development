@@ -1,4 +1,5 @@
 #include "OffScreen.h"
+#include "MyMath.h"
 #include "DirectXCommon.h"
 #include <Frame.h>
 #include <render/ToneMapSettings.h>

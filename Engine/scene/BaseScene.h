@@ -1,38 +1,30 @@
 #pragma once
-#include "Audio.h"
-#include "camera/CameraManager.h"
-#include "camera/debug/DebugCamera.h"
-#include "camera/projection/ViewProjection.h"
-#include "Input.h"
-#include "light/LightGroup.h"
-#include "object/base/BaseObject.h"
-#include "object/base/BaseObjectManager.h"
-#include "object/Object3dCommon.h"
-#include "particle/gpu/ParticleCSEditor.h"
-#include "particle/ParticleCommon.h"
-#include "particle/ParticleEditor.h"
-#include "particle/ParticleEmitter.h"
-#include "Sprite.h"
-#include "SpriteCommon.h"
-#include "SpriteManager.h"
-#include "transform/WorldTransform.h"
-#include "line/LineRenderer.h"
-#ifdef USE_IMGUI
-#include <imgui.h>
-#include "utility/debug/imgui/SettingsPanel.h"
-#endif // USE_IMGUI
-#include <OffScreen.h>
-#include "SpriteManager.h"
-#include "object/base/BaseObjectManager.h"
-#include "render/DrawSystem.h"
+#include <memory>
+#include <string>
 
 namespace Hagine {
+class Audio;
+class BaseObjectManager;
+class Camera;
+class CameraManager;
+class DebugCamera;
+class DrawSystem;
+class Input;
+class LightGroup;
+class OffScreen;
+class ParticleCSEditor;
+class ParticleEditor;
 class SceneManager;
+class SettingsPanel;
+class SpriteManager;
+class ViewProjection;
+class WinApp;
 
 class BaseScene
 {
   public:
-    virtual ~BaseScene() = default;
+    BaseScene();
+    virtual ~BaseScene();
 
     /// <summary>
     /// 初期化
@@ -140,12 +132,12 @@ class BaseScene
     /// </summary>
     /// <param name="name">カメラ名</param>
     /// <returns>Camera*: 追加したカメラ（所有は CameraManager）</returns>
-    Camera *AddCamera(const std::string &name) { return pCameraManager_->Create(name); }
+    Camera *AddCamera(const std::string &name);
 
     /// <summary>名前でカメラを取得する</summary>
     /// <param name="name">カメラ名</param>
     /// <returns>Camera*: 見つからなければ nullptr</returns>
-    Camera *GetCamera(const std::string &name) { return pCameraManager_->Find(name); }
+    Camera *GetCamera(const std::string &name);
 
   protected:
     // シーンマネージャ

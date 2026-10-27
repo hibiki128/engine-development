@@ -1,6 +1,4 @@
 #pragma once
-#include "camera/projection/ViewProjection.h"
-#include "data/DataHandler.h"
 #include "MyMath.h"
 #include "type/Quaternion.h"
 #include "type/Vector3.h"

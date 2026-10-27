@@ -1,6 +1,8 @@
 #define NOMINMAX
 #ifdef USE_IMGUI
 #include "ImGuizmoManager.h"
+#include <Input.h>
+#include <object/base/BaseObject.h>
 #include "ImGuiNotification.h"
 #include "Input.h"
 #include "Sprite.h"

@@ -1,14 +1,13 @@
 #pragma once
 #include "iostream"
 #include "type/Vector4.h"
-#include <asset/AssetPath.h>
-#include <debug/log/Logger.h>
-#include <primitive/PrimitiveModel.h>
 #include <cstdint>
 #include <nlohmann/json.hpp>
 #include <filesystem>
 #include <fstream>
 #include <memory>
+#include <type/Matrix4x4.h>
+#include <type/Quaternion.h>
 #include <type/Vector2.h>
 #include <type/Vector3.h>
 
@@ -27,59 +26,16 @@ class DataHandler
     /// private variables
     /// ===================================================
 
-    std::string basePath_ = AssetPath::JsonRoot(); // 固定の基準パス（jsons ルート）
-    std::string folderPath_ = "";                  // インスタンスごとのフォルダパス
-    std::string fileName_ = "data.json";           // インスタンスごとのファイル名
-    json cachedJson_;                              // メモリ上にキャッシュしたJSONデータ
-    bool isDirty_ = false;                         // Saveによる変更がある場合にファイル書き出しが必要かを示すフラグ
+    std::string basePath_;               // 固定の基準パス（jsons ルート）
+    std::string folderPath_ = "";        // インスタンスごとのフォルダパス
+    std::string fileName_ = "data.json"; // インスタンスごとのファイル名
+    json cachedJson_;                    // メモリ上にキャッシュしたJSONデータ
+    bool isDirty_ = false;               // Saveによる変更がある場合にファイル書き出しが必要かを示すフラグ
 
     /// <summary>
     /// ファイルからJSONを読み込んでキャッシュに格納する
     /// </summary>
-    void LoadFromFile()
-    {
-        std::string filePath = folderPath_ + "/" + fileName_;
-        std::ifstream inFile(filePath);
-        if (!inFile.is_open())
-        {
-            return;
-        }
-
-        try
-        {
-            inFile >> cachedJson_;
-        }
-        catch (const json::exception &e)
-        {
-            // ファイルは開けたが中身が壊れている（JSONとして不正な）ケース。
-            //
-            // ここで何もせずに帰ると cachedJson_ が空のまま残り、以降の Save で
-            // 積んだぶんだけを Flush が丸ごと上書きしてしまう。つまり
-            // 「1文字壊れていただけのファイル」が、次の保存で中身ごと消える。
-            // そうならないよう、壊れたファイルは .broken.json へ退避してから
-            // 空の状態でやり直す（退避したほうを直せば手で戻せる）。
-            inFile.close();
-            cachedJson_ = json::object();
-
-            std::error_code error{};
-            const std::string backupPath = filePath + ".broken";
-            fs::remove(backupPath, error);
-            fs::rename(filePath, backupPath, error);
-            Logger::Error("Failed to parse JSON: \"" + filePath + "\". " + e.what() +
-                          (error ? " (退避に失敗)"
-                                 : " 壊れたファイルは \"" + backupPath + "\" へ退避した"));
-            return;
-        }
-
-        inFile.close();
-
-        // 読めたが中身がオブジェクトでない（null や配列）場合も、Save/Load が期待する形と違う。
-        // そのまま使うと Save で例外になるので、空のオブジェクトから始める
-        if (!cachedJson_.is_object())
-        {
-            cachedJson_ = json::object();
-        }
-    }
+    void LoadFromFile();
 
   public:
     /// ===================================================
@@ -90,21 +46,7 @@ class DataHandler
     /// キャッシュ内容をファイルに書き出す
     /// </summary>
     /// <returns>bool: 書き出しに成功（または変更なし）なら true</returns>
-    bool Flush()
-    {
-        if (!isDirty_)
-            return true;
-        std::string filePath = folderPath_ + "/" + fileName_;
-        std::ofstream outFile(filePath);
-        if (outFile.is_open())
-        {
-            outFile << cachedJson_.dump(4);
-            outFile.close();
-            isDirty_ = false;
-            return true;
-        }
-        return false;
-    }
+    bool Flush();
     /// <summary>
     /// コンストラクタ
     /// </summary>
@@ -115,7 +57,7 @@ class DataHandler
     /// <summary>
     /// デストラクタ（未書き出しの変更をファイルに反映）
     /// </summary>
-    ~DataHandler() { Flush(); }
+    ~DataHandler();
 
     /// <summary>
     /// キャッシュに書き込み、ダーティフラグを立てる
@@ -138,46 +80,18 @@ class DataHandler
     /// 指定キーをキャッシュから削除する（次回Flushでファイルへ反映）
     /// </summary>
     /// <param name="key">削除するキー</param>
-    void Remove(const std::string &key)
-    {
-        if (cachedJson_.is_object() && cachedJson_.contains(key))
-        {
-            cachedJson_.erase(key);
-            isDirty_ = true;
-        }
-    }
+    void Remove(const std::string &key);
 
     /// <summary>
     /// 指定した接頭辞で始まるキーをまとめて削除する（次回Flushでファイルへ反映）
     /// </summary>
     /// <param name="prefix">削除するキーの接頭辞</param>
-    void RemoveByPrefix(const std::string &prefix)
-    {
-        if (!cachedJson_.is_object())
-        {
-            return;
-        }
-        for (auto it = cachedJson_.begin(); it != cachedJson_.end();)
-        {
-            if (it.key().rfind(prefix, 0) == 0)
-            {
-                it = cachedJson_.erase(it);
-                isDirty_ = true;
-            }
-            else
-            {
-                ++it;
-            }
-        }
-    }
+    void RemoveByPrefix(const std::string &prefix);
 
     /// <summary>
     /// 指定キーが存在するか
     /// </summary>
-    bool Contains(const std::string &key) const
-    {
-        return cachedJson_.is_object() && cachedJson_.contains(key);
-    }
+    bool Contains(const std::string &key) const;
 
     /// <summary>
     /// JSONファイルの存在確認
@@ -280,28 +194,6 @@ inline void from_json(const json &j, Matrix4x4 &matrix)
     }
 }
 
-// JSON変換の定義 (PrimitiveType)
-inline void to_json(json &j, const PrimitiveType &type)
-{
-    j = static_cast<int>(type);
-}
-
-inline void from_json(const json &j, PrimitiveType &type)
-{
-    type = static_cast<PrimitiveType>(j.get<int>());
-}
-
-// JSON変換の定義 (BlendMode)
-inline void to_json(json &j, const BlendMode &mode)
-{
-    j = static_cast<int>(mode);
-}
-
-inline void from_json(const json &j, BlendMode &mode)
-{
-    mode = static_cast<BlendMode>(j.get<int>());
-}
-
 // キャッシュに書き込み、ダーティフラグを立てる
 template <typename T>
 void DataHandler::Save(const std::string &key, const T &value)
@@ -327,4 +219,25 @@ T DataHandler::Load(const std::string &key, const T &defaultValue)
     }
     return defaultValue;
 }
+
+// 実体化は DataHandler.cpp
+extern template void DataHandler::Save<int>(const std::string &, const int &);
+extern template void DataHandler::Save<uint32_t>(const std::string &, const uint32_t &);
+extern template void DataHandler::Save<float>(const std::string &, const float &);
+extern template void DataHandler::Save<std::string>(const std::string &, const std::string &);
+extern template void DataHandler::Save<Vector2>(const std::string &, const Vector2 &);
+extern template void DataHandler::Save<Vector3>(const std::string &, const Vector3 &);
+extern template void DataHandler::Save<Vector4>(const std::string &, const Vector4 &);
+extern template void DataHandler::Save<Quaternion>(const std::string &, const Quaternion &);
+extern template void DataHandler::Save<Matrix4x4>(const std::string &, const Matrix4x4 &);
+
+extern template int DataHandler::Load<int>(const std::string &, const int &);
+extern template uint32_t DataHandler::Load<uint32_t>(const std::string &, const uint32_t &);
+extern template float DataHandler::Load<float>(const std::string &, const float &);
+extern template std::string DataHandler::Load<std::string>(const std::string &, const std::string &);
+extern template Vector2 DataHandler::Load<Vector2>(const std::string &, const Vector2 &);
+extern template Vector3 DataHandler::Load<Vector3>(const std::string &, const Vector3 &);
+extern template Vector4 DataHandler::Load<Vector4>(const std::string &, const Vector4 &);
+extern template Quaternion DataHandler::Load<Quaternion>(const std::string &, const Quaternion &);
+extern template Matrix4x4 DataHandler::Load<Matrix4x4>(const std::string &, const Matrix4x4 &);
 } // namespace Hagine

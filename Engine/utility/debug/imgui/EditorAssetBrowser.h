@@ -1,5 +1,6 @@
 #pragma once
 #ifdef USE_IMGUI
+#include <asset/FileChangeWatcher.h>
 #include <audio/AudioTypes.h>
 #include <cstdint>
 #include <deque>
@@ -60,11 +61,16 @@ class EditorAssetBrowser
 
     /// <summary>
     /// 画像ファイルの書き換えを見張り、変わったものをその場で読み直す（ホットリロード）。
-    /// 窓が閉じていても効くよう毎フレーム呼ぶ（実際に調べるのは1秒に1回）
+    /// 窓が閉じていても効くよう毎フレーム呼ぶ（実際に調べるのは OS から書き換えの知らせが来たときだけ）
     /// </summary>
     void PollFileChanges();
 
   private:
+    /// <summary>
+    /// 一覧の画像・モデルの更新日時を見比べ、変わっていたら読み直す。初めて見たファイルは控えるだけ
+    /// </summary>
+    void CheckFileChanges();
+
     /// <summary>今どこを見ているか</summary>
     enum class Location
     {
@@ -125,7 +131,8 @@ class EditorAssetBrowser
     bool autoReloadTextures_ = true;
     std::map<std::string, int64_t> imageWriteTimes_; // 画像の相対パス → 最後に見た更新日時
     std::map<std::string, int64_t> modelWriteTimes_; // モデルの相対パス → 最後に見た更新日時（本体・.bin・.mtl の新しい方）
-    double lastPollTime_ = 0.0;
+    double lastPollTime_ = 0.0;                      // 見張りが使えないときに最後に調べた時刻
+    FileChangeWatcher watcher_;                      // images / models の書き換えの見張り
 
     std::string pendingDeletePrefab_;
     bool openDeleteModal_ = false;

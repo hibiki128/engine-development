@@ -1,4 +1,6 @@
 #include "ImGuiManager.h"
+#include <object/base/BaseObject.h>
+#include <camera/debug/DebugCamera.h>
 #ifdef USE_IMGUI
 // シーンビューの上に重ねる操作部品。
 //   ・左上: ツールバー（移動/回転/拡縮・座標系・スナップと刻み・グリッド・デバッグカメラと速さ）

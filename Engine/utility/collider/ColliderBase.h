@@ -1,5 +1,4 @@
 #pragma once
-#include "camera/projection/ViewProjection.h"
 #include "collider/ColliderTagManager.h"
 #include "data/DataHandler.h"
 #include "MyMath.h"
@@ -10,6 +9,7 @@
 #include <string>
 
 namespace Hagine {
+class ViewProjection;
 
 /// <summary>
 /// コライダーの形状種別

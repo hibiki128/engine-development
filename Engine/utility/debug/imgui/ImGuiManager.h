@@ -1,5 +1,6 @@
 #pragma once
 #include "Asset/AssetPath.h"
+#include "line/LineBatchId.h"
 #include "DirectXCommon.h"
 #include "SpriteManager.h"
 #include "WinApp.h"

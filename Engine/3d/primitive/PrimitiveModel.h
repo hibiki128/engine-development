@@ -1,5 +1,6 @@
 #pragma once
 #include "model/ModelStructs.h"
+#include <nlohmann/json.hpp>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -24,6 +25,16 @@ enum class PrimitiveType
     Rock, // 球をノイズででこぼこにした岩。シードを変えると別の形になる
     Count,
 };
+
+inline void to_json(nlohmann::json &j, const PrimitiveType &type)
+{
+    j = static_cast<int>(type);
+}
+
+inline void from_json(const nlohmann::json &j, PrimitiveType &type)
+{
+    type = static_cast<PrimitiveType>(j.get<int>());
+}
 
 /// <summary>
 /// 円形プリミティブ（Ring/Sphere/Cylinder/Cone）の生成パラメータ。

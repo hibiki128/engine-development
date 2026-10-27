@@ -1,4 +1,5 @@
 #include "BaseObjectManager.h"
+#include "object/base/BaseObject.h"
 #include <attachment/AttachmentManager.h>
 #include <functional>
 #include <metaball/MetaBallGroupManager.h>
@@ -21,8 +22,11 @@
 #include <graphics/model/ModelManager.h>
 #include "render/DrawGroupManager.h"
 #include <render/raytracing/RaytracingScene.h>
+#include "frame/Frame.h"
+#include "physics/PhysicsWorld.h"
 
 #ifdef USE_IMGUI
+#include <edit/play/PlayModeManager.h>
 #include <edit/undo/ImGuiUndoTracker.h>
 namespace {
 // UI の編集ジェスチャを Undo 履歴へ積むトラッカー。シングルトンなので1つでよい。
@@ -31,6 +35,16 @@ Hagine::ImGuiUndoTracker g_undoTracker;
 } // namespace
 #endif // USE_IMGUI
 namespace Hagine {
+BaseObjectManager::BaseObjectManager() = default;
+
+BaseObjectManager::~BaseObjectManager() = default;
+
+BaseObjectManager *BaseObjectManager::GetInstance()
+{
+    static BaseObjectManager instance;
+    return &instance;
+}
+
 #ifdef USE_IMGUI
 void BaseObjectManager::SkipUndoGesture()
 {
@@ -54,13 +68,7 @@ void BaseObjectManager::Finalize()
 
 void BaseObjectManager::RemoveAllObjects()
 {
-    // 消すのは「このマネージャが所有しているオブジェクト」だけ。
-    // RegisterExternal で登録された、シーンが所有するゲームエンティティ（Player 等）まで
-    // 消してしまうと更新・描画の対象から外れてしまう。
-    //
-    // 以前はここで objects_ を丸ごと clear し、さらに ImGuizmoManager::DeleteTarget()
-    // （＝全操作対象を消す）を呼んでいたため、「オブジェクト全削除」やシーン読み込みのたびに
-    // スプライト・ライト・パーティクルのギズモ登録まで巻き添えで消えていた。
+    // 所有オブジェクトのみ削除（Register で登録した外部オブジェクトは対象外）
     std::vector<std::string> ownedNames;
     ownedNames.reserve(ownedObjects_.size());
     for (const auto &[name, owned] : ownedObjects_)
@@ -68,7 +76,7 @@ void BaseObjectManager::RemoveAllObjects()
         ownedNames.push_back(name);
     }
 
-    // RemoveObject が親子関係の解除・各マネージャからの登録解除まで面倒を見る
+    // 親子関係の解除・各マネージャからの登録解除を含む
     for (const std::string &name : ownedNames)
     {
         RemoveObject(name);
@@ -77,8 +85,6 @@ void BaseObjectManager::RemoveAllObjects()
 
 void BaseObjectManager::RemoveObjectByName(const std::string &name)
 {
-    // 削除処理の本体は RemoveObject に一本化する
-    // （以前は親子関係の解除を行わない別実装になっていて、解放済みの親を掴んだ子が残っていた）
     if (objects_.find(name) == objects_.end())
     {
         return;
@@ -87,21 +93,19 @@ void BaseObjectManager::RemoveObjectByName(const std::string &name)
     ImGuiNotification::Post("オブジェクトを削除しました: " + name, {0.9f, 0.7f, 0.2f, 1.0f});
 }
 
-void BaseObjectManager::RegisterExternal(BaseObject *obj)
+void BaseObjectManager::Register(BaseObject *obj)
 {
     const std::string &name = obj->GetName();
     if (const auto it = objects_.find(name); it != objects_.end() && it->second != obj)
     {
-        // 名前が同じだと後から来た方は登録されず、更新も描画もされない。
-        // シーンファイルに同名の物を保存していると起きるので、気づけるように知らせる
+        // 同名の登録済みオブジェクトあり
         Logger::Warn("[BaseObjectManager] \"" + name + "\" は既に登録されているので登録できません。名前を変えてください");
         return;
     }
 #ifdef USE_IMGUI
     ImGuizmoManager::GetInstance()->AddTarget(name, obj);
 #endif
-    // 種類をまたいだ親子付け（光源やパーティクルを付ける）の対象として登録する。
-    // ギズモと違い Release でも要るので USE_IMGUI では囲まない。
+    // 種類をまたいだ親子付けの対象として登録（Release でも使用）
     {
         AttachTarget target;
         target.kind = AttachKind::Object;
@@ -114,13 +118,13 @@ void BaseObjectManager::RegisterExternal(BaseObject *obj)
     ImGuiNotification::Post("オブジェクトを追加しました: " + name, {0.4f, 0.8f, 1.0f, 1.0f});
 }
 
-void BaseObjectManager::UnregisterExternal(BaseObject *obj)
+void BaseObjectManager::Unregister(BaseObject *obj)
 {
     if (!obj)
     {
         return;
     }
-    // Init で押さえた名前を空ける（破棄時に必ずここを通る）
+    // Init で予約した名前を解放
     if (const auto reserved = reservedNames_.find(obj->GetName());
         reserved != reservedNames_.end() && reserved->second == obj)
     {
@@ -129,8 +133,7 @@ void BaseObjectManager::UnregisterExternal(BaseObject *obj)
     const auto it = objects_.find(obj->GetName());
     if (it != objects_.end() && it->second != obj)
     {
-        // 同名の別オブジェクトが登録されている（こちらは RegisterExternal で断られた物）。
-        // 名前で消すと相手の登録まで消えてしまうので、自分のポインタで持たれている物だけ外す
+        // 同名の別オブジェクトが登録済み。自身のポインタの登録のみ解除
         MotionEditor::GetInstance()->Unregister(obj);
         return;
     }
@@ -141,8 +144,7 @@ void BaseObjectManager::UnregisterExternal(BaseObject *obj)
     }
 }
 
-// 破棄・登録解除の直前に、他マネージャが持つこのオブジェクトへの参照を全て落とす。
-// これを忘れると解放済みポインタが編集UI側に残り、次にそれを触った時に落ちる。
+// 他マネージャが持つ参照を解除
 void BaseObjectManager::DetachRegistrations(BaseObject *obj, const std::string &name)
 {
 #ifdef USE_IMGUI
@@ -155,12 +157,12 @@ void BaseObjectManager::DetachRegistrations(BaseObject *obj, const std::string &
     }
 }
 
-void BaseObjectManager::AddObject(std::unique_ptr<BaseObject> baseObject)
+void BaseObjectManager::AddOwnedObject(std::unique_ptr<BaseObject> baseObject)
 {
     auto *ptr = baseObject.get();
     const std::string &name = baseObject->GetName();
     ownedObjects_.emplace(name, std::move(baseObject));
-    RegisterExternal(ptr);
+    Register(ptr);
 }
 
 void BaseObjectManager::RequestDuplicate(const std::string &sourceName)
@@ -215,6 +217,24 @@ void BaseObjectManager::Update()
     {
         obj->UpdateHierarchy();
         obj->UpdateWorldTransformHierarchy();
+    }
+
+    // 剛体シミュレーション（停止条件は UpdatePhysics と同一）
+    {
+        HAGINE_CPU_PROFILE("Update/Objects/PhysicsWorld");
+#ifdef USE_IMGUI
+        const bool updateGameWorld = PlayModeManager::GetInstance()->ShouldUpdateGame();
+#else
+        const bool updateGameWorld = true;
+#endif // USE_IMGUI
+        if (updateGameWorld)
+        {
+            PhysicsWorld::GetInstance()->Step(objects_, Frame::DeltaTime());
+        }
+        else
+        {
+            PhysicsWorld::GetInstance()->MarkDiscontinuity();
+        }
     }
 
     // 足IK（接地）はワールド行列が確定してから解く。
@@ -544,7 +564,7 @@ void BaseObjectManager::CreateObject(std::string objectName, std::string modelPa
     // 原点に出すと毎回カメラを原点まで戻す羽目になるので、今見ている場所の前に出す
     newObject->GetLocalPosition() = ImGuizmoManager::GetInstance()->GetSpawnPosition();
 #endif // USE_IMGUI
-    this->AddObject(std::move(newObject));
+    this->AddOwnedObject(std::move(newObject));
     ImGuiNotification::Post("オブジェクトを作成しました: " + objectName, {0.2f, 0.8f, 0.2f, 1.0f});
 }
 
@@ -565,7 +585,7 @@ BaseObject *BaseObjectManager::CreateObjectFromModel(const std::string &modelPat
     newObject->CreateModel(modelPath);
     newObject->GetLocalPosition() = position;
 
-    this->AddObject(std::move(newObject));
+    this->AddOwnedObject(std::move(newObject));
     ImGuiNotification::Post("オブジェクトを配置しました: " + name, {0.2f, 0.8f, 0.2f, 1.0f});
     return GetObjectByName(name);
 }
@@ -584,7 +604,7 @@ BaseObject *BaseObjectManager::CreatePrimitiveObject(PrimitiveType type, const s
     newObject->GetLocalPosition() = ImGuizmoManager::GetInstance()->GetSpawnPosition();
 #endif // USE_IMGUI
 
-    this->AddObject(std::move(newObject));
+    this->AddOwnedObject(std::move(newObject));
     return GetObjectByName(name);
 }
 
@@ -600,7 +620,7 @@ BaseObject *BaseObjectManager::CreateMetaBallObject(const std::string &baseName)
     newObject->GetLocalPosition() = ImGuizmoManager::GetInstance()->GetSpawnPosition();
 #endif // USE_IMGUI
 
-    this->AddObject(std::move(newObject));
+    this->AddOwnedObject(std::move(newObject));
     return GetObjectByName(name);
 }
 
@@ -657,7 +677,7 @@ BaseObject *BaseObjectManager::CloneObject(BaseObject *pSource, const Vector3 &o
     newObject->GetWorldTransform()->UpdateMatrix();
 
     BaseObject *result = newObject.get();
-    this->AddObject(std::move(newObject));
+    this->AddOwnedObject(std::move(newObject));
     return result;
 }
 
@@ -1794,7 +1814,7 @@ void BaseObjectManager::LoadObjectFromJson(const std::string &startPath, const s
     // 親子関係の復元
     RestoreParentChildRelationshipForObject(newObject.get());
 
-    this->AddObject(std::move(newObject));
+    this->AddOwnedObject(std::move(newObject));
     ImGuiNotification::Post("オブジェクトを読み込みました: " + objectName, {0.2f, 0.8f, 0.8f, 1.0f});
     Logger::Info("Object loaded: " + objectName + " (" + fullPath + ")");
 }
@@ -1871,7 +1891,7 @@ BaseObject *BaseObjectManager::CreateObjectFromState(const std::string &name, co
     }
     // 名前が既に使われていれば Init で連番付きに変わるので、名前では引き直さない
     BaseObject *pCreated = newObject.get();
-    AddObject(std::move(newObject));
+    AddOwnedObject(std::move(newObject));
     return pCreated;
 }
 

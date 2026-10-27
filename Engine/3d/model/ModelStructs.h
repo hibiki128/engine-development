@@ -1,9 +1,7 @@
 #pragma once
-#include "graphics/pipeline/PipelineManager.h"
-#include "transform/WorldTransform.h"
 #include "array"
+#include "MyMath.h"
 #include "wrl.h"
-#include <transform/WorldTransform.h>
 #include <d3d12.h>
 #include <list>
 #include <map>

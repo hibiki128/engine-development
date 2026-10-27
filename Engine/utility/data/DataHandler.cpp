@@ -1,12 +1,109 @@
 #include "DataHandler.h"
+#include <asset/AssetPath.h>
+#include <debug/log/Logger.h>
+#include <graphics/pipeline/PipelineManager.h>
+#include <primitive/PrimitiveModel.h>
 
 namespace Hagine {
 DataHandler::DataHandler(const std::string &folder, const std::string &file)
 {
+    basePath_ = AssetPath::JsonRoot();
     folderPath_ = basePath_ + "/" + folder;
     fileName_ = file + ".json";
     fs::create_directories(folderPath_); // フォルダを作成
     LoadFromFile();                      // コンストラクタで一度だけファイルを読み込む
+}
+
+DataHandler::~DataHandler()
+{
+    Flush();
+}
+
+void DataHandler::LoadFromFile()
+{
+    std::string filePath = folderPath_ + "/" + fileName_;
+    std::ifstream inFile(filePath);
+    if (!inFile.is_open())
+    {
+        return;
+    }
+
+    try
+    {
+        inFile >> cachedJson_;
+    }
+    catch (const json::exception &e)
+    {
+        // 壊れたファイルを .broken へ退避して空から開始
+        inFile.close();
+        cachedJson_ = json::object();
+
+        std::error_code error{};
+        const std::string backupPath = filePath + ".broken";
+        fs::remove(backupPath, error);
+        fs::rename(filePath, backupPath, error);
+        Logger::Error("Failed to parse JSON: \"" + filePath + "\". " + e.what() +
+                      (error ? " (退避に失敗)" : " 壊れたファイルは \"" + backupPath + "\" へ退避した"));
+        return;
+    }
+
+    inFile.close();
+
+    // オブジェクト以外は空のオブジェクトで置き換え
+    if (!cachedJson_.is_object())
+    {
+        cachedJson_ = json::object();
+    }
+}
+
+bool DataHandler::Flush()
+{
+    if (!isDirty_)
+        return true;
+    std::string filePath = folderPath_ + "/" + fileName_;
+    std::ofstream outFile(filePath);
+    if (outFile.is_open())
+    {
+        outFile << cachedJson_.dump(4);
+        outFile.close();
+        isDirty_ = false;
+        return true;
+    }
+    return false;
+}
+
+void DataHandler::Remove(const std::string &key)
+{
+    if (cachedJson_.is_object() && cachedJson_.contains(key))
+    {
+        cachedJson_.erase(key);
+        isDirty_ = true;
+    }
+}
+
+void DataHandler::RemoveByPrefix(const std::string &prefix)
+{
+    if (!cachedJson_.is_object())
+    {
+        return;
+    }
+    for (auto it = cachedJson_.begin(); it != cachedJson_.end();)
+    {
+        if (it.key().rfind(prefix, 0) == 0)
+        {
+            it = cachedJson_.erase(it);
+            isDirty_ = true;
+        }
+        else
+        {
+            ++it;
+        }
+    }
+}
+
+bool DataHandler::Contains(const std::string &key) const
+{
+    return cachedJson_.is_object() && cachedJson_.contains(key);
 }
 
 void DataHandler::DeleteJson(const std::string &jsonName)

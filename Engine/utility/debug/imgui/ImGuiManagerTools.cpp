@@ -1,4 +1,5 @@
 #include "ImGuiManager.h"
+#include <data/DataHandler.h>
 #ifdef USE_IMGUI
 // エディタの補助ツール窓。
 //   ・Undo 履歴: これまでの操作を並べ、行を押すとその時点まで一気に戻す／進める

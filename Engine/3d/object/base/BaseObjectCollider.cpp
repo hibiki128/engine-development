@@ -11,6 +11,8 @@
 #include "scene/SceneManager.h"
 #include "utility/debug/imgui/DebugUIHelper.h"
 #include "utility/debug/imgui/ImGuiNotification.h"
+#include <algorithm>
+#include <cmath>
 #ifdef USE_IMGUI
 #include "utility/debug/imgui/AssetDragDrop.h"
 #include <asset/AssetPath.h>
@@ -20,12 +22,10 @@
 #include <implot.h>
 #endif // DEBUG
 
-// コライダーの追加と簡易物理（押し戻し・重力）。
+// コライダーの追加と簡易物理（押し戻し・重力）。剛体シミュレーションは PhysicsWorld
 namespace Hagine {
-// コライダー生成時、保存フォルダ(jsons/Collider)に同名のJSONがあれば
-// その設定（サイズ・オフセット・表示/判定・タグ・マスク）を読み込む。
-// 無ければ何もしない（コードの既定値のまま）。
-// CollisionManager への登録より前に呼ぶことで、保存されたタグで正しく登録される
+
+// 保存済みのコライダー設定を読み込み（CollisionManager への登録前に呼ぶ）
 void BaseObject::LoadColliderIfSaved(ColliderBase *collider) {
     if (!collider)
         return;
@@ -36,7 +36,7 @@ void BaseObject::LoadColliderIfSaved(ColliderBase *collider) {
 }
 
 std::string BaseObject::MakeColliderName(ColliderType type) const {
-    // コライダー名は保存ファイル名を兼ねるので、連番を付ける前の名前を使う（同名の敵どうしで共有する）
+    // 連番前の名前を基準に、同名オブジェクト間で保存ファイルを共有
     const std::string base = dataName_ + "_" + ColliderTypeName(type) + "Collider_";
     for (int index = 0;; ++index) {
         std::string candidate = base + std::to_string(index);
@@ -65,7 +65,7 @@ SphereCollider *BaseObject::AddSphereCollider(const std::string &name) {
 
     SphereCollider *raw = collider.get();
     colliders_.push_back(std::move(collider));
-    LoadColliderIfSaved(raw); // 保存済み設定があれば反映（登録より前）
+    LoadColliderIfSaved(raw);
     CollisionManager::GetInstance()->Register(raw);
 
     if (resolveCollision_) {
@@ -86,7 +86,7 @@ AABBCollider *BaseObject::AddAABBCollider(const std::string &name) {
 
     AABBCollider *raw = collider.get();
     colliders_.push_back(std::move(collider));
-    LoadColliderIfSaved(raw); // 保存済み設定があれば反映（登録より前）
+    LoadColliderIfSaved(raw);
     CollisionManager::GetInstance()->Register(raw);
 
     if (resolveCollision_) {
@@ -107,7 +107,7 @@ OBBCollider *BaseObject::AddOBBCollider(const std::string &name) {
 
     OBBCollider *raw = collider.get();
     colliders_.push_back(std::move(collider));
-    LoadColliderIfSaved(raw); // 保存済み設定があれば反映（登録より前）
+    LoadColliderIfSaved(raw);
     CollisionManager::GetInstance()->Register(raw);
 
     if (resolveCollision_) {
@@ -128,7 +128,7 @@ CylinderCollider *BaseObject::AddCylinderCollider(const std::string &name) {
 
     CylinderCollider *raw = collider.get();
     colliders_.push_back(std::move(collider));
-    LoadColliderIfSaved(raw); // 保存済み設定があれば反映（登録より前）
+    LoadColliderIfSaved(raw);
     CollisionManager::GetInstance()->Register(raw);
 
     if (resolveCollision_) {
@@ -144,12 +144,11 @@ MeshCollider *BaseObject::AddMeshCollider(const std::string &name) {
     collider->SetName(colliderName);
     collider->SetOwnerName(objectName_);
 
-    // 位置・回転に加え、スケールを含むワールド行列も取得できるよう配線する
     collider->SetPositionGetter([this]() { return this->GetWorldPosition(); });
     collider->SetRotationGetter([this]() { return this->GetWorldRotation(); });
     collider->SetMatrixGetter([this]() { return this->GetWorldMatrix(); });
 
-    // 自身のモデル形状（ローカル空間の頂点）から三角形群とBVHを構築する
+    // モデル形状から三角形群とBVHを構築
     if (obj3d_) {
         collider->SetSourceModelPath(modelPath_);
         collider->BuildFromModel(obj3d_->GetModel());
@@ -157,10 +156,9 @@ MeshCollider *BaseObject::AddMeshCollider(const std::string &name) {
 
     MeshCollider *raw = collider.get();
     colliders_.push_back(std::move(collider));
-    LoadColliderIfSaved(raw); // 保存済み設定があれば反映（登録より前）
+    LoadColliderIfSaved(raw);
     CollisionManager::GetInstance()->Register(raw);
 
-    // 押し出しが有効なら、追加したコライダーにも押し出しコールバックを仕込む
     if (resolveCollision_) {
         raw->SetOnCollision([this, raw](ColliderBase *other) {
             this->ResolveCollisionWith(raw, other);
@@ -176,7 +174,7 @@ nlohmann::json BaseObject::CaptureColliderState() const {
             continue;
         }
         nlohmann::json entry = collider->CaptureState();
-        // 誰なのかは名前で突き合わせる（添字だと途中で消した瞬間に総入れ替えになる）
+        // 名前で突き合わせ
         entry["name"] = collider->GetName();
         list.push_back(std::move(entry));
     }
@@ -188,9 +186,7 @@ void BaseObject::RestoreColliderState(const nlohmann::json &state) {
         return;
     }
 
-    // スナップショットに載っていないコライダーを消す。
-    // colliders_ は unique_ptr 所有なので、erase で ~ColliderBase が走り
-    // CollisionManager からも自動で外れる（delete は呼ばない）
+    // スナップショットに無いコライダーを削除（デストラクタで CollisionManager から登録解除）
     for (size_t i = colliders_.size(); i-- > 0;) {
         const ColliderBase *collider = colliders_[i].get();
         bool keep = false;
@@ -220,7 +216,7 @@ void BaseObject::RestoreColliderState(const nlohmann::json &state) {
                 continue;
             }
             if (colliders_[i]->GetType() != type) {
-                // 同じ名前で形状だけ違う（種別を変えた後の Undo）。作り直すしかない
+                // 形状種別の変更は作り直し
                 colliders_.erase(colliders_.begin() + i);
                 break;
             }
@@ -229,7 +225,6 @@ void BaseObject::RestoreColliderState(const nlohmann::json &state) {
         }
 
         if (!collider) {
-            // Add 系は名前・所有者・座標取得関数・CollisionManager への登録まで面倒を見てくれる
             switch (type) {
             case ColliderType::Sphere:
                 collider = AddSphereCollider(colliderName);
@@ -256,38 +251,50 @@ void BaseObject::RestoreColliderState(const nlohmann::json &state) {
 }
 
 void BaseObject::UpdatePhysics(float deltaTime) {
+    // 剛体シミュレーション対象は PhysicsWorld が積分
+    if (rigidBody_.enabled && rigidBody_.enableRotation) {
+        return;
+    }
     if (!rigidBody_.enabled || deltaTime <= 0.0f || !transform_) {
         return;
     }
 
-    // 重力（加速度）を速度へ積分
+    // 1ステップの上限（30fps 相当）
+    constexpr float kMaxPhysicsDeltaTime = 1.0f / 30.0f;
+    if (deltaTime > kMaxPhysicsDeltaTime) {
+        deltaTime = kMaxPhysicsDeltaTime;
+    }
+
+    // 重力
     if (rigidBody_.useGravity) {
         rigidBody_.velocity += rigidBody_.gravity * deltaTime;
     }
 
-    // 外力を加速度（a = F / m）として速度へ積分
+    // 外力（a = F / m）と撃力
     if (rigidBody_.mass > 1e-4f) {
         rigidBody_.velocity += (accumulatedForce_ / rigidBody_.mass) * deltaTime;
+        rigidBody_.velocity += accumulatedImpulse_ / rigidBody_.mass;
     }
     accumulatedForce_ = {0.0f, 0.0f, 0.0f};
+    accumulatedTorque_ = {0.0f, 0.0f, 0.0f};
+    accumulatedImpulse_ = {0.0f, 0.0f, 0.0f};
+    accumulatedAngularImpulse_ = {0.0f, 0.0f, 0.0f};
+    rigidBody_.angularVelocity = {0.0f, 0.0f, 0.0f};
 
-    // 速度の減衰（空気抵抗）
-    float damp = 1.0f - rigidBody_.linearDamping * deltaTime;
-    if (damp < 0.0f) {
-        damp = 0.0f;
-    }
+    // 速度の減衰
+    const float damp = (std::max)(1.0f - rigidBody_.linearDamping * deltaTime, 0.0f);
     rigidBody_.velocity *= damp;
 
-    // 速度を位置へ積分（ローカル座標。物理は親なしルートオブジェクト向け）
+    // 位置の積分（親なしのルートオブジェクト前提）
     transform_->translation_ += rigidBody_.velocity * deltaTime;
 }
 
 void BaseObject::ResolveCollisionWith(ColliderBase *self, ColliderBase *other) {
-    if (!resolveCollision_ || !transform_) {
+    // 剛体シミュレーション対象は PhysicsWorld が接触を解決
+    if (!resolveCollision_ || !transform_ || (rigidBody_.enabled && rigidBody_.enableRotation)) {
         return;
     }
 
-    // self を other から押し出す MTV を統一APIで取得する
     Vector3 mtv;
     if (!CollisionManager::GetInstance()->ComputeDepenetration(self, other, mtv)) {
         return;
@@ -296,33 +303,26 @@ void BaseObject::ResolveCollisionWith(ColliderBase *self, ColliderBase *other) {
         return;
     }
 
-    // めり込み解消（押し出し）
+    // 押し出し
     transform_->translation_ += mtv;
 
-    // 押し出した結果を即座にワールド行列とコライダーへ反映する。
-    // CollisionManager は1フレーム中に同じ組み合わせを複数回判定する（A対B と B対A）ので、
-    // ここで位置を更新しておかないと、2回目も同じめり込み量を見て二重に押してしまう。
-    // 描画も押し出し後の位置になるので、着地フレームの見た目のズレも消える。
+    // 同フレーム内の後続判定用に行列とコライダーを即時更新
     transform_->UpdateMatrix();
     if (self) {
         self->UpdateWorldTransform();
     }
 
-    // リジッドボディなら、接触面に沿うよう速度を補正する
+    // 接触面に沿う速度へ補正
     if (rigidBody_.enabled) {
         Vector3 n = mtv.Normalize();
         float vn = rigidBody_.velocity.Dot(n);
         if (vn < 0.0f) {
-            // 接地して静止したいだけの接触で跳ね返さないよう、
-            // 衝突速度が十分小さいときは反発を切る（restingContact）。
-            // これが無いと反発係数 > 0 のオブジェクトが床の上で永久に細かく跳ね続ける。
-            // しきい値は重力が数フレームで得る速度（9.8 * 1/60 ≒ 0.16）より少し上に取る
+            // 低速の接触は反発なし
             constexpr float kRestingSpeed = 0.5f;
             const float restitution = (-vn < kRestingSpeed) ? 0.0f : rigidBody_.restitution;
-            // 法線方向の侵入成分を除去（反発係数で跳ね返り）
             rigidBody_.velocity -= n * (vn * (1.0f + restitution));
         }
-        // 接線方向に摩擦をかける（坂を滑り落ちる挙動になる）
+        // 接線方向の摩擦
         Vector3 vTangent = rigidBody_.velocity - n * rigidBody_.velocity.Dot(n);
         rigidBody_.velocity -= vTangent * rigidBody_.friction;
     }
@@ -363,9 +363,11 @@ void BaseObject::SavePhysics() {
     }
     objectData_->Save<bool>("rb_enabled", rigidBody_.enabled);
     objectData_->Save<bool>("rb_useGravity", rigidBody_.useGravity);
+    objectData_->Save<bool>("rb_enableRotation", rigidBody_.enableRotation);
     objectData_->Save<float>("rb_mass", rigidBody_.mass);
     objectData_->Save<Vector3>("rb_gravity", rigidBody_.gravity);
     objectData_->Save<float>("rb_linearDamping", rigidBody_.linearDamping);
+    objectData_->Save<float>("rb_angularDamping", rigidBody_.angularDamping);
     objectData_->Save<float>("rb_restitution", rigidBody_.restitution);
     objectData_->Save<float>("rb_friction", rigidBody_.friction);
     objectData_->Save<bool>("resolveCollision", resolveCollision_);
@@ -377,13 +379,16 @@ void BaseObject::LoadPhysics() {
     }
     rigidBody_.enabled = objectData_->Load<bool>("rb_enabled", false);
     rigidBody_.useGravity = objectData_->Load<bool>("rb_useGravity", true);
+    rigidBody_.enableRotation = objectData_->Load<bool>("rb_enableRotation", false);
     rigidBody_.mass = objectData_->Load<float>("rb_mass", 1.0f);
     rigidBody_.gravity = objectData_->Load<Vector3>("rb_gravity", {0.0f, -9.8f, 0.0f});
     rigidBody_.linearDamping = objectData_->Load<float>("rb_linearDamping", 0.05f);
+    rigidBody_.angularDamping = objectData_->Load<float>("rb_angularDamping", 0.05f);
     rigidBody_.restitution = objectData_->Load<float>("rb_restitution", 0.0f);
     rigidBody_.friction = objectData_->Load<float>("rb_friction", 0.3f);
     resolveCollision_ = objectData_->Load<bool>("resolveCollision", false);
-    rigidBody_.velocity = {0.0f, 0.0f, 0.0f}; // 速度はランタイム状態なのでリセット
+    rigidBody_.velocity = {0.0f, 0.0f, 0.0f};
+    rigidBody_.angularVelocity = {0.0f, 0.0f, 0.0f};
 }
 
 // ===================================================
@@ -391,7 +396,7 @@ void BaseObject::LoadPhysics() {
 // ===================================================
 
 FootIkSolver *BaseObject::AcquireFootIk() {
-    // スキンの入っていないモデルには脚が無いので持たせない
+    // スキンモデルのみ
     if (!obj3d_ || !obj3d_->GetHaveAnimation()) {
         return nullptr;
     }
@@ -417,23 +422,19 @@ void BaseObject::SolveFootIk() {
     }
 
 #ifdef USE_IMGUI
-    // 一時停止中は足を動かさない。ゲーム世界が止まっているのに接地だけ追従すると、
-    // コマ送りでポーズを見たいときに絵が変わってしまう
+    // 一時停止中は更新しない
     if (!PlayModeManager::GetInstance()->ShouldUpdateGame()) {
         return;
     }
 #endif // USE_IMGUI
 
-    // 自分の体のコライダーは接地の相手ではない。名前は改名で変わりうるので毎回入れ直す
+    // 自身のコライダーを接地対象から除外
     footIk_->GetSettings().ignoreOwnerName = objectName_;
 
-    // 地面を探すレイはワールド空間なので、描画に使うのと同じ行列で解く。
-    // transform_ の行列をそのまま使うと、描画オフセットを掛けているキャラだけ
-    // 足が地面から浮く（レイトレの加速構造で踏んだのと同じ話）
+    // 描画と同じワールド行列で解く
     footIk_->Solve(pBone->GetSkeletonRef(), GetRenderWorldMatrix(), Frame::DeltaTime());
 
-    // ポーズを書き換えたので、シェーダーへ渡すパレットを作り直す。
-    // GPUスキニングの実行は描画フェーズなので、ここで間に合う
+    // スキンパレットの再構築
     pSkin->Update(pBone->GetSkeletonRef());
 }
 
@@ -455,7 +456,7 @@ LookAtSolver *BaseObject::EnableLookAtByDefault() {
     const bool existed = (lookAt_ != nullptr);
     LookAtSolver *pSolver = AcquireLookAt();
     if (!pSolver || existed) {
-        return pSolver; // 保存済み（または既に設定済み）の設定をそのまま使う
+        return pSolver;
     }
     ModelAnimation *pAnimation = obj3d_->GetCurrentModelAnimation();
     Bone *pBone = pAnimation ? pAnimation->GetBone() : nullptr;
@@ -493,16 +494,15 @@ void BaseObject::SolveLookAt() {
 
     float deltaTime = Frame::DeltaTime();
 #ifdef USE_IMGUI
-    // 一時停止中は首の向きを進めない（止めた絵のまま見られるように。ポーズ自体は毎フレーム掛ける）
+    // 一時停止中は時間を止める
     if (!PlayModeManager::GetInstance()->ShouldUpdateGame()) {
         deltaTime = 0.0f;
     }
 #endif // USE_IMGUI
 
-    // 体の正面（ワールド）。キャラは 回転 × (+Z) を正面として作ってある
+    // 体の正面（回転 × +Z）
     const Vector3 face = TransformNormal(kWorldForward, QuaternionToMatrix4x4(transform_->quaternionRotation_));
     if (lookAt_->Solve(pBone->GetSkeletonRef(), GetRenderWorldMatrix(), face, deltaTime)) {
-        // ポーズを書き換えたので、シェーダーへ渡すパレットを作り直す
         pSkin->Update(pBone->GetSkeletonRef());
     }
 }
@@ -528,17 +528,14 @@ void BaseObject::LoadLookAt() {
 // ===================================================
 
 ColliderBase *BaseObject::AddColliderForEditor(ColliderType type) {
-    // 既定の衝突マスクはゲーム側が ColliderTagManager に設定したものを使う
-    // （エンジンが "Player" 等のゲーム固有タグを直接知らないようにするため）
+    // 既定の衝突マスクは ColliderTagManager の設定を使用
     auto makeDefault = [](ColliderBase *c) {
         c->SetTag("Environment");
         for (const std::string &mask : ColliderTagManager::GetInstance()->GetDefaultCollisionMasks()) {
             c->AddCollisionMask(mask);
         }
     };
-    // AddXxxCollider は保存済みJSON(jsons/Collider)があればそれを読み込んで返す。
-    // そこへ既定値を被せると、保存しておいたサイズやタグが消えてしまうので、
-    // 既定値を入れるのは「保存済み設定が無かったとき」だけにする
+    // 保存済み設定が無いときのみ既定値を適用
     auto isFresh = [](const ColliderBase *c) { return !DataHandler("Collider", c->GetName()).Exists(); };
 
     switch (type) {
@@ -572,12 +569,11 @@ ColliderBase *BaseObject::AddColliderForEditor(ColliderType type) {
             makeDefault(c);
             c->SetRadius(2.0f);
             c->SetHeight(4.0f);
-            c->SetInward(false); // 障害物として外側に押し出す
+            c->SetInward(false); // 外側へ押し出す障害物
         }
         return c;
     }
     case ColliderType::Mesh: {
-        // 自身のモデル形状から三角形メッシュコライダーを生成する
         auto *c = AddMeshCollider();
         makeDefault(c);
         return c;
@@ -587,8 +583,7 @@ ColliderBase *BaseObject::AddColliderForEditor(ColliderType type) {
 }
 
 bool BaseObject::RemoveCollider(const ColliderBase *pCollider) {
-    // colliders_ は unique_ptr 所有。erase で ~ColliderBase が走り
-    // CollisionManager から自動的に Unregister される（delete は呼ばない）
+    // erase でデストラクタが走り CollisionManager から登録解除
     auto it = std::find_if(colliders_.begin(), colliders_.end(),
                            [pCollider](const std::unique_ptr<ColliderBase> &c) { return c.get() == pCollider; });
     if (it == colliders_.end()) {
@@ -599,7 +594,7 @@ bool BaseObject::RemoveCollider(const ColliderBase *pCollider) {
 }
 
 // ===================================================
-// 手のIK（手首を目標へ伸ばす）
+// 手のIK
 // ===================================================
 
 HandIkSolver *BaseObject::AcquireHandIk() {
@@ -640,14 +635,13 @@ void BaseObject::SolveHandIk() {
 
     float deltaTime = Frame::DeltaTime();
 #ifdef USE_IMGUI
-    // 一時停止中は効きの出入りを進めない（ポーズ自体は毎フレーム掛ける）
+    // 一時停止中は時間を止める
     if (!PlayModeManager::GetInstance()->ShouldUpdateGame()) {
         deltaTime = 0.0f;
     }
 #endif // USE_IMGUI
 
     if (handIk_->Solve(pBone->GetSkeletonRef(), GetRenderWorldMatrix(), deltaTime)) {
-        // ポーズを書き換えたので、シェーダーへ渡すパレットを作り直す
         pSkin->Update(pBone->GetSkeletonRef());
     }
 }
@@ -704,14 +698,13 @@ void BaseObject::SolveSpringBone() {
 
     float deltaTime = Frame::DeltaTime();
 #ifdef USE_IMGUI
-    // 一時停止中は揺れを進めない（止めた絵のまま見られるように。今の揺れの形は毎フレーム掛ける）
+    // 一時停止中は時間を止める
     if (!PlayModeManager::GetInstance()->ShouldUpdateGame()) {
         deltaTime = 0.0f;
     }
 #endif // USE_IMGUI
 
     if (springBone_->Solve(pBone->GetSkeletonRef(), GetRenderWorldMatrix(), deltaTime)) {
-        // ポーズを書き換えたので、シェーダーへ渡すパレットを作り直す
         pSkin->Update(pBone->GetSkeletonRef());
     }
 }
@@ -756,7 +749,7 @@ void BaseObject::SaveAnimStateMachine() {
     if (!objectData_) {
         return;
     }
-    // 外したときも空文字で上書きしておく（読み込み時に前の名前が復活しないように）
+    // 解除時も空文字で上書き
     if (animStateMachine_ || objectData_->Contains("animStateMachine")) {
         objectData_->Save<std::string>("animStateMachine", animStateMachine_ ? animStateMachine_->GetAssetName() : std::string());
     }
@@ -774,7 +767,6 @@ void BaseObject::SaveFootIk() {
         return;
     }
     if (!footIk_) {
-        // 一度も使っていないなら何も書かない（既存のJSONを無駄に太らせない）
         return;
     }
     objectData_->Save<nlohmann::json>("footIk", footIk_->ToJson());
@@ -807,7 +799,7 @@ bool BaseObject::ReloadModel() {
         return false;
     }
 
-    // テクスチャの差し替えはマテリアルごと残っている。マテリアルが増えた分だけ、保存用の一覧をモデルの物で埋める
+    // 増えたマテリアル分のテクスチャパスをモデルから補完
     const size_t materialCount = obj3d_->GetMaterialCount();
     if (texturePaths_.size() < materialCount) {
         const std::vector<std::string> modelTextures = obj3d_->GetAllTexturePath();
@@ -816,7 +808,7 @@ bool BaseObject::ReloadModel() {
         }
     }
 
-    // このモデルから作ったメッシュコライダーは新しい形で作り直す
+    // メッシュコライダーの再構築
     for (const std::unique_ptr<ColliderBase> &collider : colliders_) {
         if (collider && collider->GetType() == ColliderType::Mesh) {
             auto *pMesh = static_cast<MeshCollider *>(collider.get());
@@ -826,7 +818,7 @@ bool BaseObject::ReloadModel() {
         }
     }
 
-    // 骨の数が変わったら、IK・揺れ物が覚えている骨の番号は当てにならないので名前から拾い直す
+    // 骨数が変わったら各ソルバの骨を名前から再検出
     const size_t jointsAfter = jointCount();
     if (jointsAfter != jointsBefore && jointsAfter > 0) {
         const Skeleton &skeleton = obj3d_->GetCurrentModelAnimation()->GetBone()->GetSkeletonRef();

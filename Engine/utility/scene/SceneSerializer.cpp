@@ -1,4 +1,5 @@
 #include "SceneSerializer.h"
+#include <object/base/BaseObject.h>
 #include "SceneManager.h"
 #include <SpriteManager.h>
 #include <2d/ui/UIAnimator.h>

@@ -137,13 +137,15 @@ nlohmann::json BaseObject::Serialize() const {
         state["materials"] = std::move(materials);
     }
 
-    // 速度はランタイム状態なので保存しない
+    // 速度・角速度はランタイム状態のため対象外
     json &physics = state["physics"];
     physics["rigidBody"] = rigidBody_.enabled;
     physics["useGravity"] = rigidBody_.useGravity;
+    physics["enableRotation"] = rigidBody_.enableRotation;
     physics["mass"] = rigidBody_.mass;
     physics["gravity"] = rigidBody_.gravity;
     physics["linearDamping"] = rigidBody_.linearDamping;
+    physics["angularDamping"] = rigidBody_.angularDamping;
     physics["restitution"] = rigidBody_.restitution;
     physics["friction"] = rigidBody_.friction;
     physics["resolveCollision"] = resolveCollision_;
@@ -238,12 +240,15 @@ void BaseObject::Deserialize(const json &state) {
     if (const auto physics = state.find("physics"); physics != state.end() && physics->is_object()) {
         rigidBody_.enabled = physics->value("rigidBody", rigidBody_.enabled);
         rigidBody_.useGravity = physics->value("useGravity", rigidBody_.useGravity);
+        rigidBody_.enableRotation = physics->value("enableRotation", rigidBody_.enableRotation);
         rigidBody_.mass = physics->value("mass", rigidBody_.mass);
         rigidBody_.gravity = physics->value("gravity", rigidBody_.gravity);
         rigidBody_.linearDamping = physics->value("linearDamping", rigidBody_.linearDamping);
+        rigidBody_.angularDamping = physics->value("angularDamping", rigidBody_.angularDamping);
         rigidBody_.restitution = physics->value("restitution", rigidBody_.restitution);
         rigidBody_.friction = physics->value("friction", rigidBody_.friction);
         rigidBody_.velocity = {0.0f, 0.0f, 0.0f};
+        rigidBody_.angularVelocity = {0.0f, 0.0f, 0.0f};
         resolveCollision = physics->value("resolveCollision", resolveCollision);
     }
 

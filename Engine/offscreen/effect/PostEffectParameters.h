@@ -1,5 +1,6 @@
 #pragma once
 #include "data/DataHandler.h"
+#include "graphics/pipeline/PipelineManager.h"
 #include <memory>
 #include "graphics/srv/SrvManager.h"
 

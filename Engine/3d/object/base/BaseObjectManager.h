@@ -1,9 +1,14 @@
 #pragma once
-#include "object/base/BaseObject.h"
+#include "type/Vector3.h"
 #include "unordered_map"
-#ifdef USE_IMGUI
-#endif // USE_IMGUI
+#include <memory>
+#include <nlohmann/json.hpp>
+#include <string>
+#include <vector>
 namespace Hagine {
+class BaseObject;
+class ViewProjection;
+enum class PrimitiveType;
 
 /// <summary>
 /// シーン上の全BaseObjectを一元管理するシングルトン
@@ -12,6 +17,8 @@ namespace Hagine {
 /// </summary>
 class BaseObjectManager
 {
+    friend class LevelData;
+
   private:
     /// ===================================================
     /// private method
@@ -20,12 +27,12 @@ class BaseObjectManager
     /// <summary>
     /// コンストラクタ
     /// </summary>
-    BaseObjectManager() = default;
+    BaseObjectManager();
 
     /// <summary>
     /// デストラクタ
     /// </summary>
-    ~BaseObjectManager() = default;
+    ~BaseObjectManager();
     BaseObjectManager(BaseObjectManager &) = delete;
     BaseObjectManager &operator=(BaseObjectManager &) = delete;
 
@@ -38,11 +45,7 @@ class BaseObjectManager
     /// インスタンスを取得
     /// </summary>
     /// <returns>BaseObjectManager*: シングルトンインスタンス</returns>
-    static BaseObjectManager *GetInstance()
-    {
-        static BaseObjectManager instance;
-        return &instance;
-    }
+    static BaseObjectManager *GetInstance();
 
     /// <summary>
     /// 終了処理
@@ -61,28 +64,19 @@ class BaseObjectManager
     void RemoveObjectByName(const std::string &name);
 
     /// <summary>
-    /// 所有権を渡してオブジェクトを追加（LoadAll/CreateObject 用）
-    /// </summary>
-    /// <param name="baseObject">追加するオブジェクト</param>
-    void AddObject(std::unique_ptr<BaseObject> baseObject);
-
-    /// <summary>
-    /// 非所有でオブジェクトを登録（シーンが unique_ptr を保持したまま登録する）
+    /// オブジェクトを非所有で登録（所有権は呼び出し側が保持）
     /// </summary>
     /// <param name="pObject">登録するオブジェクト</param>
-    void RegisterExternal(BaseObject *pObject);
+    void Register(BaseObject *pObject);
 
     /// <summary>
-    /// 非所有登録したオブジェクトを登録解除
+    /// オブジェクトの登録を解除（BaseObject のデストラクタから呼び出し）
     /// </summary>
     /// <param name="pObject">解除するオブジェクト</param>
-    void UnregisterExternal(BaseObject *pObject);
+    void Unregister(BaseObject *pObject);
 
     /// <summary>
-    /// 重複しないオブジェクト名を決めて、そのオブジェクト用に押さえておく（BaseObject::Init から呼ぶ）。
-    /// 同名が居れば "_0", "_1" … と連番を振るので、敵を何体も作るときも同じ名前で Init してよい。
-    /// RegisterExternal する前の物の名前も押さえるので、まとめて Init してから登録しても重ならない。
-    /// 押さえた名前はオブジェクトの破棄（UnregisterExternal）で空く
+    /// 重複しない名前（同名があれば "_0", "_1" … を付与）を決めて予約（BaseObject::Init から呼び出し）
     /// </summary>
     /// <param name="baseName">付けたい名前</param>
     /// <param name="pOwner">名前を使うオブジェクト</param>
@@ -116,7 +110,7 @@ class BaseObjectManager
 
     /// <summary>
     /// このマネージャが所有しているオブジェクトか（エディタで置いた物・シーンファイルから作った物）。
-    /// RegisterExternal で登録された、ゲーム側がコードで作るオブジェクトは false
+    /// Register で登録したゲーム側のオブジェクトは false
     /// </summary>
     bool IsOwned(const BaseObject *pObject) const;
 
@@ -458,6 +452,12 @@ class BaseObjectManager
     void DetachRegistrations(BaseObject *pObject, const std::string &name);
 
     /// <summary>
+    /// 所有権を受け取ってオブジェクトを登録（シーン読み込み・エディタ生成用）
+    /// </summary>
+    /// <param name="baseObject">登録するオブジェクト</param>
+    void AddOwnedObject(std::unique_ptr<BaseObject> baseObject);
+
+    /// <summary>
     /// オブジェクトを生成して追加
     /// </summary>
     /// <param name="objectName">オブジェクト名</param>
@@ -474,7 +474,7 @@ class BaseObjectManager
     std::unordered_map<std::string, std::unique_ptr<BaseObject>> ownedObjects_;
     // Draw/Update/GetObjectByName で使う統合ビュー（所有・外部両方）
     std::unordered_map<std::string, BaseObject *> objects_;
-    // Init で押さえた名前（名前 → 使っているオブジェクト）。RegisterExternal 前の物の重複も防ぐ
+    // Init で予約した名前（名前 → 使用オブジェクト）
     std::unordered_map<std::string, const BaseObject *> reservedNames_;
 
     // 読み込み時に親が見つからなかった親子付け（子の名前 → 親の名前）。ResolvePendingParents で付ける

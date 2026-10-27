@@ -115,6 +115,15 @@ std::string SettingsPath()
 void EditorAssetBrowser::Initialize()
 {
     LoadSettings();
+
+    // 画像とモデルの書き換えを OS から知らせてもらう。走査より先に始めて、その間の保存も取りこぼさない
+    std::vector<std::string> watchRoots = AssetPath::ImageScanRoots();
+    for (const std::string &root : AssetPath::ModelScanRoots())
+    {
+        watchRoots.push_back(root);
+    }
+    watcher_.Start(watchRoots, {".png", ".jpg", ".jpeg", ".obj", ".gltf", ".glb", ".fbx", ".bin", ".mtl"});
+
     Scan();
 }
 
@@ -219,6 +228,13 @@ void EditorAssetBrowser::Scan()
         currentFolder_.clear();
     }
     scanned_ = true;
+
+    // 新しく見つかったファイルの更新日時をここで控えておく。
+    // 書き換えの知らせが来るまで調べないので、控えが無いままだと最初の1回の書き換えを見逃す
+    if (autoReloadTextures_)
+    {
+        CheckFileChanges();
+    }
 }
 
 void EditorAssetBrowser::LoadSettings()
@@ -421,14 +437,30 @@ void EditorAssetBrowser::PollFileChanges()
     {
         return;
     }
-    // ファイルの更新日時を見るだけだが、数百枚を毎フレーム調べる必要は無いので1秒おき
-    const double now = ImGui::GetTime();
-    if (now - lastPollTime_ < 1.0)
+    if (watcher_.IsWatching())
     {
-        return;
+        // ふだんはこちら。書き換えの知らせが来ていなければフラグを見るだけで終わる。
+        // 保存は知らせが数回続くので、落ち着いてから1回だけ調べる
+        if (!watcher_.ConsumeChanges(0.15))
+        {
+            return;
+        }
     }
-    lastPollTime_ = now;
+    else
+    {
+        // 見張りが使えないときだけ、1秒おきに全部の更新日時を調べる
+        const double now = ImGui::GetTime();
+        if (now - lastPollTime_ < 1.0)
+        {
+            return;
+        }
+        lastPollTime_ = now;
+    }
+    CheckFileChanges();
+}
 
+void EditorAssetBrowser::CheckFileChanges()
+{
     std::vector<std::string> reloaded;
     std::vector<std::string> reloadedModels;
     int reloadedObjects = 0;

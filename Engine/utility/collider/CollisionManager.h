@@ -29,6 +29,29 @@ struct RaycastHit
 };
 
 /// <summary>
+/// 接触点1つ分の位置とめり込み量
+/// </summary>
+struct ContactPoint
+{
+    Vector3 position{}; //!< 接触点（ワールド空間）
+    float depth = 0.0f; //!< 法線方向のめり込み量
+    uint32_t feature = 0; //!< 接触の特徴番号（フレーム間の対応付け用）
+};
+
+/// <summary>
+/// 2コライダー間の接触法線と接触点群
+/// </summary>
+struct ContactManifold
+{
+    static constexpr int kMaxPoints = 8;
+
+    Vector3 normal{};                 //!< a を b から押し出す向きの単位法線
+    float depth = 0.0f;               //!< 最大めり込み量
+    ContactPoint points[kMaxPoints]{}; //!< 接触点
+    int pointCount = 0;               //!< 有効な接触点の数
+};
+
+/// <summary>
 /// 全コライダーの登録・更新・衝突判定を統括するシングルトン
 /// タグごとにグループ化し、衝突マスクに基づいてペアの判定を行う
 /// </summary>
@@ -141,6 +164,15 @@ class CollisionManager
     /// <param name="outMTV">a に加算するとめり込みが解消される MTV</param>
     /// <returns>bool: めり込みがあれば true</returns>
     bool ComputeDepenetration(ColliderBase *a, ColliderBase *b, Vector3 &outMTV);
+
+    /// <summary>
+    /// a を b から押し出す法線と、a 側の接触点群を求める
+    /// </summary>
+    /// <param name="a">押し出される側のコライダー</param>
+    /// <param name="b">押し出す基準となるコライダー</param>
+    /// <param name="outManifold">接触情報</param>
+    /// <returns>bool: めり込みがあれば true</returns>
+    bool ComputeContactManifold(ColliderBase *a, ColliderBase *b, ContactManifold &outManifold);
 
     /// <summary>
     /// OBBと円柱の衝突判定

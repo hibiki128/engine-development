@@ -1,4 +1,11 @@
 #include "SceneManager.h"
+#include <particle/gpu/ParticleCSGroupManager.h>
+#include <object/base/BaseObjectManager.h>
+#include <object/base/BaseObject.h>
+#include <camera/debug/DebugCamera.h>
+#include <render/DrawSystem.h>
+#include <OffScreen.h>
+#include "SceneTransition.h"
 #include "SceneSerializer.h"
 #include <DirectXCommon.h>
 #include <SpriteManager.h>

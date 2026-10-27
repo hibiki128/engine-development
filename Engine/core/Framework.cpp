@@ -1,4 +1,6 @@
 #include "Framework.h"
+#include <light/LightGroup.h>
+#include <camera/debug/DebugCamera.h>
 #include "utility/debug/imgui/ImGuiNotification.h"
 #include "utility/scene/SceneRegistry.h"
 #include "utility/scene/SceneSerializer.h"
@@ -304,6 +306,8 @@ void Framework::Finalize() {
     pSceneManager_->Finalize();
     sceneTransition_->Finalize();
     winApp_->Finalize();
+    // シェーダーフォルダの見張りスレッドを、作り直し先のパイプラインより先に畳む
+    ShaderHotReload::GetInstance()->Finalize();
     pPipeLineManager_->Finalize();
     pComputePipelineManager_->Finalize();
     ComputeEffectPipeline::GetInstance()->Finalize();

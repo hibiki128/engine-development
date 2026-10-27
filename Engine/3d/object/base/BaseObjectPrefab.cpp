@@ -1,4 +1,5 @@
 #include "BaseObjectManager.h"
+#include <object/base/BaseObject.h>
 #ifdef USE_IMGUI
 #include "debug/imgui/ImGuizmoManager.h"
 #include <asset/AssetPath.h>

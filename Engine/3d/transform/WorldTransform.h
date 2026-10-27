@@ -1,5 +1,4 @@
 #pragma once
-#include "DirectXCommon.h"
 #include "type/Quaternion.h"
 #include "d3d12.h"
 #include "MyMath.h"
@@ -7,6 +6,7 @@
 
 // 定数バッファ用データ構造体
 namespace Hagine {
+class DirectXCommon;
 struct ConstBufferDataWorldTransform
 {
     Matrix4x4 matWorld; // ローカル → ワールド変換行列

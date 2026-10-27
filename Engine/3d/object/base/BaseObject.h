@@ -24,6 +24,8 @@
 namespace Hagine {
 class SkyBox;
 class BaseObject {
+    friend class PhysicsWorld;
+
   public:
     /// ===================================================
     /// public variables
@@ -313,6 +315,24 @@ class BaseObject {
     Vector3 &GetLocalPosition() { return transform_->translation_; }
     Quaternion &GetLocalRotation() { return transform_->quaternionRotation_; }
     Vector3 &GetLocalScale() { return transform_->scale_; }
+
+    /// <summary>
+    /// ローカル回転をオイラー角（度, XYZ）で設定
+    /// </summary>
+    void SetRotationDegrees(const Vector3 &degrees) { transform_->SetRotationQuaternion(Quaternion::FromEulerDegrees(degrees)); }
+
+    /// <summary>
+    /// ローカル回転をオイラー角（度, XYZ）で取得
+    /// </summary>
+    Vector3 GetRotationDegrees() const { return transform_->GetRotationQuaternion().ToEulerDegrees(); }
+
+    /// <summary>
+    /// ローカル軸まわりに指定角度（度）だけ回転
+    /// </summary>
+    void RotateDegrees(const Vector3 &degrees) {
+        transform_->SetRotationQuaternion(transform_->GetRotationQuaternion() * Quaternion::FromEulerDegrees(degrees));
+    }
+
     Vector3 GetWorldPosition();
     Quaternion GetWorldRotation();
     Vector3 GetWorldScale();
@@ -429,32 +449,60 @@ class BaseObject {
     /// リジッドボディの物理パラメータ
     /// </summary>
     struct RigidBodyParams {
-        bool enabled = false;                  // リジッドボディとして物理挙動させるか
-        bool useGravity = true;                // 重力を適用するか
-        float mass = 1.0f;                     // 質量（外力 F=ma に使用）
-        Vector3 gravity = {0.0f, -9.8f, 0.0f}; // 重力加速度
-        float linearDamping = 0.05f;           // 速度の減衰（空気抵抗）
-        float restitution = 0.0f;              // 反発係数（0=跳ねない, 1=完全反発）
-        float friction = 0.3f;                 // 接触摩擦（接線速度の減衰, 坂の滑り方に影響）
-        Vector3 velocity = {0.0f, 0.0f, 0.0f}; // 速度（ランタイム状態。保存しない）
+        bool enabled = false;                         // 物理挙動の有効フラグ
+        bool useGravity = true;                       // 重力の適用フラグ
+        bool enableRotation = false;                  // PhysicsWorld による剛体シミュレーションの有効フラグ
+        float mass = 1.0f;                            // 質量
+        Vector3 gravity = {0.0f, -9.8f, 0.0f};        // 重力加速度
+        float linearDamping = 0.05f;                  // 速度の減衰率（毎秒）
+        float angularDamping = 0.05f;                 // 角速度の減衰率（毎秒）
+        float restitution = 0.0f;                     // 反発係数（0=跳ねない, 1=完全反発）
+        float friction = 0.3f;                        // 摩擦係数（剛体シミュレーション時はクーロン摩擦）
+        Vector3 velocity = {0.0f, 0.0f, 0.0f};        // 重心速度（ランタイム状態）
+        Vector3 angularVelocity = {0.0f, 0.0f, 0.0f}; // 角速度 rad/s（ワールド空間, ランタイム状態）
     };
 
-    /// <summary>重力・速度を積分して位置を更新する（Update から毎フレーム呼ばれる）</summary>
+    /// <summary>
+    /// 重力・外力・速度を積分して位置を更新（剛体シミュレーション対象は PhysicsWorld が処理）
+    /// </summary>
     /// <param name="deltaTime">前フレームからの経過秒</param>
     void UpdatePhysics(float deltaTime);
 
-    /// <summary>外力を加える（次の UpdatePhysics で a=F/m として速度に反映）</summary>
+    /// <summary>
+    /// 次の物理ステップで加える外力（重心に作用）を加算
+    /// </summary>
     void AddForce(const Vector3 &force) { accumulatedForce_ += force; }
 
-    /// <summary>リジッドボディ（物理挙動）の有効/無効を設定</summary>
+    /// <summary>
+    /// 次の物理ステップで加える外力をワールド座標の作用点つきで加算（剛体シミュレーション対象のみ回転に作用）
+    /// </summary>
+    void AddForceAtPosition(const Vector3 &force, const Vector3 &worldPoint) {
+        accumulatedForce_ += force;
+        accumulatedTorque_ += (worldPoint - GetWorldPosition()).Cross(force);
+    }
+
+    /// <summary>
+    /// 次の物理ステップで加えるトルク（ワールド空間）を加算
+    /// </summary>
+    void AddTorque(const Vector3 &torque) { accumulatedTorque_ += torque; }
+
+    /// <summary>
+    /// 撃力をワールド座標の作用点つきで加算（次の物理ステップで速度・角速度へ即時反映、剛体シミュレーション対象のみ）
+    /// </summary>
+    void AddImpulseAtPosition(const Vector3 &impulse, const Vector3 &worldPoint) {
+        accumulatedImpulse_ += impulse;
+        accumulatedAngularImpulse_ += (worldPoint - GetWorldPosition()).Cross(impulse);
+    }
+
+    /// <summary>
+    /// リジッドボディの有効/無効を設定
+    /// </summary>
     void SetRigidBody(bool enable) { rigidBody_.enabled = enable; }
     bool IsRigidBody() const { return rigidBody_.enabled; }
     RigidBodyParams &GetRigidBody() { return rigidBody_; }
 
     /// <summary>
-    /// 衝突時の押し出し（めり込み解消）の有効/無効を設定する。
-    /// 有効化すると、このオブジェクトの各コライダーの OnCollision に押し出し処理を仕込む。
-    /// ※ 独自の衝突コールバックを持つオブジェクト（Player 等）では使わないこと（上書きされる）。
+    /// 衝突時の押し出しの有効/無効を設定（各コライダーの OnCollision を上書き）
     /// </summary>
     void SetResolveCollision(bool enable);
     bool IsResolveCollision() const { return resolveCollision_; }
@@ -599,15 +647,29 @@ class BaseObject {
     void ShowBlendModeCombo(BlendMode &currentMode);
 
     // --- 物理 ---
-    /// <summary>衝突相手に対して押し出し（＋リジッドボディなら速度補正）を適用する</summary>
+    /// <summary>
+    /// 衝突相手からの押し出しと速度補正
+    /// </summary>
     void ResolveCollisionWith(ColliderBase *self, ColliderBase *pOther);
-    /// <summary>全コライダーの OnCollision に押し出しコールバックを仕込む</summary>
+
+    /// <summary>
+    /// 全コライダーの OnCollision に押し出し処理を設定
+    /// </summary>
     void InstallResolveCallbacks();
-    /// <summary>全コライダーの OnCollision をクリアする</summary>
+
+    /// <summary>
+    /// 全コライダーの OnCollision を解除
+    /// </summary>
     void ClearResolveCallbacks();
-    /// <summary>物理パラメータを objectData_ へ保存</summary>
+
+    /// <summary>
+    /// 物理パラメータを objectData_ へ保存
+    /// </summary>
     void SavePhysics();
-    /// <summary>物理パラメータを objectData_ から読み込み</summary>
+
+    /// <summary>
+    /// 物理パラメータを objectData_ から読み込み
+    /// </summary>
     void LoadPhysics();
 
     // --- 足IK ---
@@ -637,9 +699,14 @@ class BaseObject {
     std::vector<std::unique_ptr<ColliderBase>> colliders_;
 
     // --- 物理（リジッドボディ）状態 ---
-    RigidBodyParams rigidBody_;                     // 物理パラメータ
-    Vector3 accumulatedForce_ = {0.0f, 0.0f, 0.0f}; // 1フレーム分の外力
-    bool resolveCollision_ = false;                 // 衝突時に押し出すか
+    RigidBodyParams rigidBody_;                              // 物理パラメータ
+    Vector3 accumulatedForce_ = {0.0f, 0.0f, 0.0f};          // 1フレーム分の外力（重心に作用）
+    Vector3 accumulatedTorque_ = {0.0f, 0.0f, 0.0f};         // 1フレーム分のトルク（原点まわり）
+    Vector3 accumulatedImpulse_ = {0.0f, 0.0f, 0.0f};        // 次ステップで加える撃力
+    Vector3 accumulatedAngularImpulse_ = {0.0f, 0.0f, 0.0f}; // 次ステップで加える角撃力（原点まわり）
+    bool resolveCollision_ = false;                          // 衝突時に押し出すか
+
+    Vector3 editorRotationDegrees_ = {0.0f, 0.0f, 0.0f}; // インスペクタ表示用の回転（度）
 
     // --- 足IK ---
     // 使うオブジェクトだけが持つ（スキンモデル以外では生成しない）

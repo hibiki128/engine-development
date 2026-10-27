@@ -3,7 +3,6 @@
 #include "cmath"
 #include "type/Matrix4x4.h"
 #include "type/Vector4.h"
-#include <camera/projection/ViewProjection.h>
 #include <type/Quaternion.h>
 #include <type/Vector3.h>
 

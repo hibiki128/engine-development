@@ -1441,6 +1441,96 @@ bool CollisionManager::ComputeDepenetration(ColliderBase *a, ColliderBase *b, Ve
     return false; // 未対応ペア
 }
 
+bool CollisionManager::ComputeContactManifold(ColliderBase *a, ColliderBase *b, ContactManifold &outManifold)
+{
+    Vector3 mtv;
+    if (!ComputeDepenetration(a, b, mtv))
+    {
+        return false;
+    }
+    const float depth = mtv.Length();
+    if (depth < 1e-6f)
+    {
+        return false;
+    }
+
+    outManifold.normal = mtv / depth;
+    outManifold.depth = depth;
+    outManifold.pointCount = 0;
+    const Vector3 &normal = outManifold.normal;
+
+    auto addPoint = [&outManifold](const Vector3 &position, float pointDepth, uint32_t feature = 0) {
+        if (outManifold.pointCount < ContactManifold::kMaxPoints)
+        {
+            outManifold.points[outManifold.pointCount++] = {position, (std::max)(pointDepth, 0.0f), feature};
+        }
+    };
+
+    // 接触面付近の頂点を接触点として採用
+    constexpr float kContactTolerance = 0.01f;
+    auto addCorners = [&](const Vector3 (&corners)[8]) {
+        float minProjection = FLT_MAX;
+        for (const Vector3 &corner : corners)
+        {
+            minProjection = (std::min)(minProjection, corner.Dot(normal));
+        }
+        const float surface = minProjection + depth;
+        for (uint32_t i = 0; i < 8; ++i)
+        {
+            const Vector3 &corner = corners[i];
+            const float pointDepth = surface - corner.Dot(normal);
+            if (pointDepth > -kContactTolerance)
+            {
+                addPoint(corner, pointDepth, i);
+            }
+        }
+    };
+
+    switch (a->GetType())
+    {
+    case ColliderType::OBB:
+    {
+        const OBB obb = static_cast<OBBCollider *>(a)->GetOBB();
+        const Vector3 axisX = obb.orientations[0] * obb.size.x;
+        const Vector3 axisY = obb.orientations[1] * obb.size.y;
+        const Vector3 axisZ = obb.orientations[2] * obb.size.z;
+        Vector3 corners[8];
+        for (int i = 0; i < 8; ++i)
+        {
+            corners[i] = obb.scaleCenterRotated +
+                         axisX * ((i & 1) ? 1.0f : -1.0f) +
+                         axisY * ((i & 2) ? 1.0f : -1.0f) +
+                         axisZ * ((i & 4) ? 1.0f : -1.0f);
+        }
+        addCorners(corners);
+        break;
+    }
+    case ColliderType::AABB:
+    {
+        const AABB box = static_cast<AABBCollider *>(a)->GetAABB();
+        Vector3 corners[8];
+        for (int i = 0; i < 8; ++i)
+        {
+            corners[i] = {(i & 1) ? box.max.x : box.min.x,
+                          (i & 2) ? box.max.y : box.min.y,
+                          (i & 4) ? box.max.z : box.min.z};
+        }
+        addCorners(corners);
+        break;
+    }
+    case ColliderType::Sphere:
+    {
+        const Sphere sphere = static_cast<SphereCollider *>(a)->GetSphere();
+        addPoint(sphere.center - normal * sphere.radius, depth);
+        break;
+    }
+    default:
+        addPoint(a->GetCenterPosition(), depth);
+        break;
+    }
+    return outManifold.pointCount > 0;
+}
+
 bool CollisionManager::IsCollision(const Sphere &s1, const Sphere &s2)
 {
     Vector3 diff = s2.center - s1.center;

@@ -1,4 +1,5 @@
 #include "ImGuiManager.h"
+#include <object/base/BaseObject.h>
 #ifdef USE_IMGUI
 // エディタの「枠組み」部分。個々の窓の中身ではなく、窓を探す・切り替える・状態を見るための部品をまとめる。
 //   ・ウィンドウ一覧（メニュー・コマンドパレット・ワークスペースが共通で使う）

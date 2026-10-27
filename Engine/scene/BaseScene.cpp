@@ -1,6 +1,37 @@
 #include "BaseScene.h"
+#include "Audio.h"
+#include "camera/CameraManager.h"
+#include "camera/debug/DebugCamera.h"
+#include "camera/projection/ViewProjection.h"
+#include "Input.h"
+#include "light/LightGroup.h"
+#include "object/base/BaseObject.h"
+#include "object/base/BaseObjectManager.h"
+#include "particle/gpu/ParticleCSEditor.h"
+#include "particle/ParticleEditor.h"
+#include "SpriteManager.h"
+#ifdef USE_IMGUI
+#include <imgui.h>
+#include "utility/debug/imgui/SettingsPanel.h"
+#endif // USE_IMGUI
+#include <OffScreen.h>
+#include "render/DrawSystem.h"
 
 namespace Hagine {
+BaseScene::BaseScene() = default;
+
+BaseScene::~BaseScene() = default;
+
+Camera *BaseScene::AddCamera(const std::string &name)
+{
+    return pCameraManager_->Create(name);
+}
+
+Camera *BaseScene::GetCamera(const std::string &name)
+{
+    return pCameraManager_->Find(name);
+}
+
 void BaseScene::Initialize()
 {
     pAudio_ = Audio::GetInstance();

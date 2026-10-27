@@ -1,6 +1,8 @@
 #define NOMINMAX
 #ifdef USE_IMGUI
 #include "ImGuizmoManager.h"
+#include <Input.h>
+#include <object/base/BaseObject.h>
 #include "ImGuiNotification.h"
 #include "Input.h"
 #include "Sprite.h"
@@ -323,7 +325,7 @@ std::string ImGuizmoManager::CloneObject(BaseObject *pSource, const Vector3 &off
     // BaseObject 以外のターゲットとも名前がぶつかり得るので、マネージャ任せにはしない
     const std::string uniqueName = GenerateUniqueName(pSource->GetName());
 
-    // AddObject → RegisterExternal 内でギズモへの登録も行われる
+    // ギズモへの登録は Register 内で実施
     BaseObject *created = BaseObjectManager::GetInstance()->CloneObject(pSource, offset, uniqueName);
     if (!created)
         return {};

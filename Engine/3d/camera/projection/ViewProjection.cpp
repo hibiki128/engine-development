@@ -1,5 +1,6 @@
 #define NOMINMAX
 #include "ViewProjection.h"
+#include "DirectXCommon.h"
 #include "data/DataHandler.h"
 #include "utility/debug/imgui/DebugUIHelper.h"
 #include "utility/debug/imgui/ImGuiNotification.h"

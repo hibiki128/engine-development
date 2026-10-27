@@ -217,6 +217,9 @@
     <Filter Include="Engine\utility\collider">
       <UniqueIdentifier>{D2EF5A7B-2C1E-987B-32E7-534AD0B88EE5}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Engine\utility\physics">
+      <UniqueIdentifier>{6B1F3C2E-8A47-4D5B-9E2F-3C7A1D9B4E60}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Engine\utility\collider\type">
       <UniqueIdentifier>{379B2A99-FC39-6A2B-4008-90813C82384B}</UniqueIdentifier>
     </Filter>
@@ -738,6 +741,9 @@
     <ClCompile Include="Engine\utility\asset\AssetPath.cpp">
       <Filter>Engine\utility\asset</Filter>
     </ClCompile>
+    <ClCompile Include="Engine\utility\asset\FileChangeWatcher.cpp">
+      <Filter>Engine\utility\asset</Filter>
+    </ClCompile>
     <ClCompile Include="Engine\utility\asset\AssetReport.cpp">
       <Filter>Engine\utility\asset</Filter>
     </ClCompile>
@@ -755,6 +761,9 @@
     </ClCompile>
     <ClCompile Include="Engine\utility\collider\CollisionManagerImGui.cpp">
       <Filter>Engine\utility\collider</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\utility\physics\PhysicsWorld.cpp">
+      <Filter>Engine\utility\physics</Filter>
     </ClCompile>
     <ClCompile Include="Engine\utility\collider\type\AABBCollider.cpp">
       <Filter>Engine\utility\collider\type</Filter>
@@ -1310,6 +1319,9 @@
     <ClInclude Include="Engine\input\Input.h">
       <Filter>Engine\input</Filter>
     </ClInclude>
+    <ClInclude Include="Engine\input\Ray.h">
+      <Filter>Engine\input</Filter>
+    </ClInclude>
     <ClInclude Include="Engine\input\InputActions.h">
       <Filter>Engine\input</Filter>
     </ClInclude>
@@ -1421,6 +1433,9 @@
     <ClInclude Include="Engine\utility\asset\AssetPath.h">
       <Filter>Engine\utility\asset</Filter>
     </ClInclude>
+    <ClInclude Include="Engine\utility\asset\FileChangeWatcher.h">
+      <Filter>Engine\utility\asset</Filter>
+    </ClInclude>
     <ClInclude Include="Engine\utility\asset\AssetReport.h">
       <Filter>Engine\utility\asset</Filter>
     </ClInclude>
@@ -1435,6 +1450,9 @@
     </ClInclude>
     <ClInclude Include="Engine\utility\collider\CollisionManager.h">
       <Filter>Engine\utility\collider</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\utility\physics\PhysicsWorld.h">
+      <Filter>Engine\utility\physics</Filter>
     </ClInclude>
     <ClInclude Include="Engine\utility\collider\type\AABBCollider.h">
       <Filter>Engine\utility\collider\type</Filter>

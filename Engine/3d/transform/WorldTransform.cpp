@@ -1,4 +1,5 @@
 #include "WorldTransform.h"
+#include "DirectXCommon.h"
 
 namespace Hagine {
 WorldTransform::WorldTransform()

@@ -1,13 +1,13 @@
 #pragma once
 #include "SceneRegistry.h"
-#include "SceneTransition.h"
-#include <OffScreen.h>
-#include <render/DrawSystem.h>
 #include <functional>
 #include <memory>
 #include <string>
 
 namespace Hagine {
+class DrawSystem;
+class OffScreen;
+class SceneTransition;
 class BaseScene;
 class SceneManager
 {

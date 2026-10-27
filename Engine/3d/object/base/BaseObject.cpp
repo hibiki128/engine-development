@@ -25,11 +25,8 @@
 namespace Hagine {
 
 BaseObject::~BaseObject() {
-    // 非所有(RegisterExternal)でマネージャに登録されている場合、所有者(シーン等)が
-    // 先に破棄されると BaseObjectManager::objects_ にダングリングポインタが残り、
-    // アプリ終了時の RemoveAllObjects() でアクセス違反になる。破棄時に必ず自身を
-    // 登録解除して防ぐ。未登録・所有オブジェクトでも erase は no-op なので安全
-    BaseObjectManager::GetInstance()->UnregisterExternal(this);
+    // マネージャからの登録解除（未登録でも可）
+    BaseObjectManager::GetInstance()->Unregister(this);
     colliders_.clear();
 }
 
@@ -65,12 +62,7 @@ void BaseObject::Update() {
     }
     SetBlendMode(blendMode_);
 
-    // リジッドボディの物理を更新（重力・速度積分）。
-    // 衝突解消（押し出し）はこの後の CollisionManager::Update のコールバックで行う。
-    //
-    // 一時停止・停止中は積分しない。CollisionManager::Update は止まるのに重力だけ
-    // 積分され続けると、押し戻す相手がいないままプレイヤーが床をすり抜けて落ちていく
-    // （＝物理と衝突解消は必ず同じ条件で止める）。
+    // 物理の積分（衝突解消は CollisionManager::Update のコールバック。停止条件は衝突解消と同一）
 #ifdef USE_IMGUI
     const bool updateGameWorld = PlayModeManager::GetInstance()->ShouldUpdateGame();
 #else

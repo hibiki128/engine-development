@@ -3,9 +3,12 @@
 
 #include "imgui.h"
 #include "ImGuizmo.h"
-#include <Input.h>
-#include <object/base/BaseObject.h>
-#include <transform/WorldTransform.h>
+#include "MyMath.h"
+#include "type/Matrix4x4.h"
+#include "type/Vector2.h"
+#include "type/Vector3.h"
+#include "type/Vector4.h"
+#include <input/Ray.h>
 #include <algorithm>
 #include <cmath>
 #include <functional>
@@ -14,7 +17,11 @@
 #include <vector>
 
 namespace Hagine {
+class BaseObject;
+class Input;
+enum class PrimitiveType;
 class Sprite;
+class WorldTransform;
 class SceneProjector;
 
 /// <summary>

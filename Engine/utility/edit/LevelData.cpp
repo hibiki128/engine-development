@@ -65,7 +65,7 @@ void LevelData::CreateObjects()
                 createdObjects_[objectData.name] = baseObject.get();
 
                 // BaseObjectManagerに追加
-                manager->AddObject(std::move(baseObject));
+                manager->AddOwnedObject(std::move(baseObject));
             }
         }
     }
@@ -279,7 +279,7 @@ void LevelData::SetupParentChild(BaseObject *parent, const std::vector<ObjectDat
                 createdObjects_[childData.name] = childObject.get();
 
                 // BaseObjectManagerに追加
-                BaseObjectManager::GetInstance()->AddObject(std::move(childObject));
+                BaseObjectManager::GetInstance()->AddOwnedObject(std::move(childObject));
 
                 // 再帰的に孫オブジェクトも処理
                 if (!childData.children.empty())
