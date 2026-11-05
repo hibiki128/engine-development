@@ -18,6 +18,7 @@ void DebugCamera::Initialize()
     // デバッグ専用のカメラを1台登録しておく。有効化されたときだけこのカメラへ切り替える。
     CameraManager *cameraManager = CameraManager::GetInstance();
     pCamera_ = cameraManager->Create("デバッグカメラ");
+    pCamera_->SetShouldSave(false);
     pPreviousCamera_ = nullptr;
     wasActive_ = false;
 

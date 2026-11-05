@@ -21,6 +21,9 @@ namespace Hagine {
 /// アクティブカメラ（ブレンド中はその補間結果）は SceneManager が毎フレーム
 /// シーンの ViewProjection へ流し込むので、ゲーム側で行列をコピーする必要はない。
 /// カメラを1つも作っていないシーンは従来どおり自前の ViewProjection がそのまま使われる。
+///
+/// エディタで保存したカメラはシーンファイルに入り、シーン開始時（シーンの Initialize より前）に生成される。
+/// コードからは Find(名前) でポインタを取得して扱う。
 /// </summary>
 class CameraManager
 {
@@ -118,6 +121,16 @@ class CameraManager
     /// </summary>
     void DrawImGui();
 
+    /// <summary>
+    /// 保存対象のカメラと使用中のカメラ名を JSON にまとめる（シーンファイル用）
+    /// </summary>
+    nlohmann::json ToJson() const;
+
+    /// <summary>
+    /// ToJson の結果からカメラを生成・復元し、保存時に使用中だったカメラへ切り替える
+    /// </summary>
+    void FromJson(const nlohmann::json &state);
+
     /// ===================================================
     /// Getter
     /// ===================================================
@@ -162,6 +175,11 @@ class CameraManager
     /// </summary>
     void RefreshOutput();
 
+    /// <summary>
+    /// アクティブカメラを差し替え、保存対象なら使用中のカメラ名として控える
+    /// </summary>
+    void AssignActive(Camera *pCamera);
+
   private:
     /// ===================================================
     /// private variables
@@ -187,5 +205,6 @@ class CameraManager
     std::unique_ptr<Camera> blendFromSnapshot_;
 
     std::string selectedName_; // ImGui で選択中のカメラ名
+    std::string savedActiveName_; // シーンファイルに書く使用中のカメラ名（保存しないカメラは除く）
 };
 } // namespace Hagine

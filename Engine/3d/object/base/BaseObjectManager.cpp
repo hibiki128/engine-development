@@ -674,10 +674,16 @@ BaseObject *BaseObjectManager::CloneObject(BaseObject *pSource, const Vector3 &o
     newObject->SetShouldSave(pSource->GetShouldSave());
 
     newObject->GetLocalPosition() += offset;
-    newObject->GetWorldTransform()->UpdateMatrix();
 
     BaseObject *result = newObject.get();
     this->AddOwnedObject(std::move(newObject));
+
+    // 複製元と同じ親の下に置く（ローカル座標は複製元と同じ基準）
+    if (BaseObject *parent = pSource->GetParent())
+    {
+        SetParentChild(result->GetName(), parent->GetName());
+    }
+    result->GetWorldTransform()->UpdateMatrix();
     return result;
 }
 
@@ -1962,6 +1968,20 @@ nlohmann::json BaseObjectManager::CaptureObjectState(BaseObject *obj) const
     // コライダーが残り、消したコライダーが戻らない
     s["colliders"] = obj->CaptureColliderState();
 
+    // 物理（キーはシーンファイルと同じ。速度・角速度はランタイム状態のため対象外）
+    const BaseObject::RigidBodyParams &rigidBody = obj->GetRigidBody();
+    json &physics = s["physics"];
+    physics["rigidBody"] = rigidBody.enabled;
+    physics["useGravity"] = rigidBody.useGravity;
+    physics["enableRotation"] = rigidBody.enableRotation;
+    physics["mass"] = rigidBody.mass;
+    physics["gravity"] = rigidBody.gravity;
+    physics["linearDamping"] = rigidBody.linearDamping;
+    physics["angularDamping"] = rigidBody.angularDamping;
+    physics["restitution"] = rigidBody.restitution;
+    physics["friction"] = rigidBody.friction;
+    physics["resolveCollision"] = obj->IsResolveCollision();
+
     // メタボールはモデルファイルを持たないので、modelPath だけでは作り直せない。
     // 要素リストとグループ名まで残しておく（削除の Undo・貼り付けの Redo に必要）
     if (const MetaBallObject *metaBall = dynamic_cast<const MetaBallObject *>(obj))
@@ -2085,6 +2105,26 @@ void BaseObjectManager::ApplyObjectState(BaseObject *obj, const nlohmann::json &
     if (s.contains("colliders"))
     {
         obj->RestoreColliderState(s["colliders"]);
+    }
+
+    // 物理。押し出しはコライダーが揃ってから切り替える
+    if (const auto physics = s.find("physics"); physics != s.end() && physics->is_object())
+    {
+        BaseObject::RigidBodyParams &rigidBody = obj->GetRigidBody();
+        rigidBody.enabled = physics->value("rigidBody", rigidBody.enabled);
+        rigidBody.useGravity = physics->value("useGravity", rigidBody.useGravity);
+        rigidBody.enableRotation = physics->value("enableRotation", rigidBody.enableRotation);
+        rigidBody.mass = physics->value("mass", rigidBody.mass);
+        rigidBody.gravity = physics->value("gravity", rigidBody.gravity);
+        rigidBody.linearDamping = physics->value("linearDamping", rigidBody.linearDamping);
+        rigidBody.angularDamping = physics->value("angularDamping", rigidBody.angularDamping);
+        rigidBody.restitution = physics->value("restitution", rigidBody.restitution);
+        rigidBody.friction = physics->value("friction", rigidBody.friction);
+        const bool resolveCollision = physics->value("resolveCollision", obj->IsResolveCollision());
+        if (resolveCollision != obj->IsResolveCollision())
+        {
+            obj->SetResolveCollision(resolveCollision);
+        }
     }
 }
 

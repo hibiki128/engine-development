@@ -171,40 +171,26 @@ void BaseObject::Draw(const ViewProjection &viewProjection) {
 }
 
 void BaseObject::CopyPropertiesFrom(const BaseObject &source) {
-    // 複製してもプレハブとのつながりは保つ（複製した物からも反映・置き直しができる）
-    prefabSource_ = source.prefabSource_;
+    // シーンファイルへ保存する項目（トランスフォーム・見た目・マテリアル・物理・IK・揺れ物など）を写す。
+    // 派生クラス固有の項目は派生側の CopyPropertiesFrom で写すため、基底の Serialize / Deserialize に限る
+    nlohmann::json state = source.BaseObject::Serialize();
+    // コライダーは名前を振り直して別途写す
+    state.erase("colliders");
+    BaseObject::Deserialize(state);
 
-    // トランスフォーム
-    transform_->translation_ = source.transform_->translation_;
-    transform_->quaternionRotation_ = source.transform_->quaternionRotation_;
-    transform_->scale_ = source.transform_->scale_;
-    transform_->UpdateMatrix();
-
-    // 見た目のフラグ
-    isLighting_ = source.isLighting_;
-    cameraFadeEnabled_ = source.cameraFadeEnabled_;
-    isModelDraw_ = source.isModelDraw_;
-    isWireframe_ = source.isWireframe_;
-    isRainbow_ = source.isRainbow_;
+    // シーンファイルに含まれない描画設定
     reflect_ = source.reflect_;
-    skeletonDraw_ = source.skeletonDraw_;
     offSet_ = source.offSet_;
 
-    // マテリアル（テクスチャ・色）。複製先のマテリアル数に収まる範囲だけ写す
-    const size_t materialCount =
-        (std::min)(obj3d_->GetMaterialCount(), source.obj3d_->GetMaterialCount());
-    for (size_t i = 0; i < materialCount; ++i)
-    {
-        const std::string texture = source.obj3d_->GetTextureFilePath(static_cast<uint32_t>(i));
-        if (!texture.empty()) {
-            SetTexture(texture, static_cast<uint32_t>(i));
+    // コライダー（形状・タグ・衝突マスク）。名前は複製先の命名で振り直す
+    for (const std::unique_ptr<ColliderBase> &sourceCollider : source.colliders_) {
+        if (!sourceCollider) {
+            continue;
         }
-        obj3d_->SetColor(source.obj3d_->GetColor(static_cast<int>(i)), static_cast<int>(i));
+        if (ColliderBase *collider = AddColliderForEditor(sourceCollider->GetType())) {
+            collider->RestoreState(sourceCollider->CaptureState());
+        }
     }
-
-    // 物理
-    rigidBody_ = source.rigidBody_;
-    resolveCollision_ = source.resolveCollision_;
 }
 
 void BaseObject::UpdateWorldTransformHierarchy() {

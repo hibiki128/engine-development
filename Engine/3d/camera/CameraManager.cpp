@@ -2,9 +2,11 @@
 #include "CameraManager.h"
 #include "frame/Frame.h"
 #include <algorithm>
+#include <nlohmann/json.hpp>
 #ifdef USE_IMGUI
 #include <imgui.h>
 #include "utility/debug/imgui/DebugUIHelper.h"
+#include "utility/scene/SceneSerializer.h"
 #include <icon/IconsFontAwesome5.h>
 #endif // USE_IMGUI
 
@@ -41,7 +43,7 @@ Camera *CameraManager::Create(const std::string &name)
     // 最初の1台は自動でアクティブにする（1台しか使わないシーンは切り替え操作が要らない）
     if (!pActiveCamera_)
     {
-        pActiveCamera_ = pCamera;
+        AssignActive(pCamera);
         selectedName_ = name;
         RefreshOutput(); // 生成直後に描画されても正しい行列になるようにしておく
     }
@@ -78,7 +80,7 @@ void CameraManager::Remove(const std::string &name)
     // アクティブが消えたら残っているどれかを繋ぎで有効にする
     if (!pActiveCamera_ && !cameras_.empty())
     {
-        pActiveCamera_ = cameras_.begin()->second.get();
+        AssignActive(cameras_.begin()->second.get());
         selectedName_ = cameras_.begin()->first;
     }
 }
@@ -93,6 +95,7 @@ void CameraManager::Clear()
     blendTime_ = 0.0f;
     blendDuration_ = 0.0f;
     selectedName_.clear();
+    savedActiveName_.clear();
 }
 
 void CameraManager::SetActive(const std::string &name)
@@ -106,7 +109,7 @@ void CameraManager::SetActive(Camera *pCamera)
     {
         return;
     }
-    pActiveCamera_ = pCamera;
+    AssignActive(pCamera);
     selectedName_ = pCamera->GetName();
     // 切り替え途中だった補間は破棄する（即切り替えが優先）
     blending_ = false;
@@ -180,7 +183,7 @@ void CameraManager::Update()
             blending_ = false;
             pBlendFromCamera_ = nullptr;
             pBlendToCamera_ = nullptr;
-            pActiveCamera_ = pTo;
+            AssignActive(pTo);
         }
         else
         {
@@ -222,6 +225,66 @@ const ViewProjection *CameraManager::GetActiveViewProjection() const
     return nullptr;
 }
 
+void CameraManager::AssignActive(Camera *pCamera)
+{
+    pActiveCamera_ = pCamera;
+    if (pCamera && pCamera->GetShouldSave())
+    {
+        savedActiveName_ = pCamera->GetName();
+    }
+}
+
+nlohmann::json CameraManager::ToJson() const
+{
+    nlohmann::json list = nlohmann::json::array();
+    bool hasActive = false;
+    for (const std::string &name : GetCameraNames())
+    {
+        const Camera *pCamera = cameras_.at(name).get();
+        if (!pCamera->GetShouldSave())
+        {
+            continue;
+        }
+        nlohmann::json entry = pCamera->ToJson();
+        entry["name"] = name;
+        list.push_back(std::move(entry));
+        hasActive |= (name == savedActiveName_);
+    }
+
+    nlohmann::json state = nlohmann::json::object();
+    state["active"] = hasActive ? savedActiveName_ : std::string();
+    state["list"] = std::move(list);
+    return state;
+}
+
+void CameraManager::FromJson(const nlohmann::json &state)
+{
+    if (!state.is_object())
+    {
+        return;
+    }
+
+    if (const auto list = state.find("list"); list != state.end() && list->is_array())
+    {
+        for (const nlohmann::json &entry : *list)
+        {
+            const std::string name = entry.value("name", std::string());
+            if (name.empty())
+            {
+                continue;
+            }
+            Create(name)->FromJson(entry);
+        }
+    }
+
+    // 保存しないカメラ（デバッグカメラ）の使用中は切り替えない
+    Camera *pActive = Find(state.value("active", std::string()));
+    if (pActive && (!pActiveCamera_ || pActiveCamera_->GetShouldSave()))
+    {
+        SetActive(pActive);
+    }
+}
+
 std::vector<std::string> CameraManager::GetCameraNames() const
 {
     std::vector<std::string> names;
@@ -237,7 +300,7 @@ std::vector<std::string> CameraManager::GetCameraNames() const
 void CameraManager::DrawImGui()
 {
 #ifdef USE_IMGUI
-    // 新規追加（ここで作って位置を決めて保存 → コードからは Find(名前)->Load() で呼び出せる）
+    // 新規追加（保存するとシーンファイルに入り、シーン開始時に生成される。コードからは Find(名前) で取得）
     static std::string newCameraName;
     ImGui::SetNextItemWidth(-90.0f);
     ImGui::InputTextWithHint("##cameranewname", "新しいカメラの名前", &newCameraName);
@@ -290,7 +353,11 @@ void CameraManager::DrawImGui()
                 BlendTo(name, 1.0f);
             ImGui::Separator();
             if (ImGui::MenuItem(ICON_FA_SAVE " 保存"))
+            {
                 Find(name)->Save();
+                SceneSerializer::GetInstance()->SaveCameras(SceneSerializer::CurrentSceneName());
+            }
+            ImGui::SetItemTooltip("このカメラを保存し、今のシーンのカメラ構成（使用中のカメラを含む）もシーンファイルへ書く");
             if (ImGui::MenuItem(ICON_FA_UPLOAD " 読み込み"))
                 Find(name)->Load();
             ImGui::Separator();

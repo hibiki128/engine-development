@@ -5,6 +5,7 @@
 #include <2d/ui/UIAnimator.h>
 #include <asset/AssetPath.h>
 #include <attachment/AttachmentManager.h>
+#include <camera/CameraManager.h>
 #include <chrono>
 #include <ctime>
 #include <debug/log/Logger.h>
@@ -213,6 +214,7 @@ bool SceneSerializer::Save(const std::string &sceneName)
     document["lights"] = LightGroup::GetInstance()->ToJson();
     document["attachments"] = AttachmentManager::GetInstance()->ToJson();
     document["particles"] = ParticleCSSpawner::GetInstance()->ToJson();
+    document["cameras"] = CameraManager::GetInstance()->ToJson();
     const size_t objectCount = document["objects"].size();
     const size_t particleCount = document["particles"].size();
 
@@ -243,6 +245,65 @@ bool SceneSerializer::Save(const std::string &sceneName)
     ImGuiNotification::Post(
         std::format("シーン「{}」を保存しました（オブジェクト {} 個・パーティクル {} 個）", name, objectCount, particleCount),
         kSuccessColor);
+    return true;
+}
+
+bool SceneSerializer::SaveCameras(const std::string &sceneName)
+{
+    const std::string name = SanitizeSceneName(sceneName);
+    if (name.empty())
+    {
+        Logger::Error("[Scene] シーン名が空なのでカメラを保存できません");
+        ImGuiNotification::Post("シーン名が空なのでカメラを保存できません", kErrorColor);
+        return false;
+    }
+
+    // 既存のファイルはカメラ以外をそのまま残す
+    const std::string filePath = FilePath(name);
+    json document = json::object();
+    std::string error;
+    if (Exists(name))
+    {
+        std::optional<json> existing = ReadJsonFile(ToPath(filePath), error);
+        if (!existing)
+        {
+            Logger::Error("[Scene] カメラの保存に失敗しました: " + filePath + " " + error);
+            ImGuiNotification::Post("カメラを保存できませんでした: " + error, kErrorColor);
+            return false;
+        }
+        document = std::move(*existing);
+    }
+    else
+    {
+        document["format"] = kFormatName;
+        document["version"] = kVersion;
+        document["scene"] = name;
+        document["objects"] = json::array();
+    }
+    document["cameras"] = CameraManager::GetInstance()->ToJson();
+
+    std::string text;
+    try
+    {
+        text = document.dump(4);
+    }
+    catch (const json::exception &e)
+    {
+        Logger::Error(std::string("[Scene] JSON にできませんでした: ") + e.what());
+        ImGuiNotification::Post("カメラを保存できませんでした（ログを確認してください）", kErrorColor);
+        return false;
+    }
+
+    if (!WriteFileAtomically(ToPath(filePath), text, error))
+    {
+        Logger::Error("[Scene] カメラの保存に失敗しました: " + filePath + " " + error);
+        ImGuiNotification::Post("カメラを保存できませんでした: " + error, kErrorColor);
+        return false;
+    }
+
+    const size_t cameraCount = document["cameras"]["list"].size();
+    Logger::Info("[Scene] カメラを保存しました: " + filePath + " (カメラ " + std::to_string(cameraCount) + " 台)");
+    ImGuiNotification::Post(std::format("シーン「{}」にカメラを保存しました（{} 台）", name, cameraCount), kSuccessColor);
     return true;
 }
 
@@ -313,6 +374,10 @@ bool SceneSerializer::LoadInternal(const std::string &sceneName, bool notify)
         // パーティクルはオブジェクトと同じくシーンの物なので、書いていない（古い）ファイルでも
         // 前に置いた保存対象は消してから出し直す
         particleCount = ParticleCSSpawner::GetInstance()->FromJson(document->value("particles", json::array()));
+        if (document->contains("cameras"))
+        {
+            CameraManager::GetInstance()->FromJson((*document)["cameras"]);
+        }
     }
 
     Logger::Info("[Scene] 読み込みました: " + filePath + " (オブジェクト " + std::to_string(createdCount) +

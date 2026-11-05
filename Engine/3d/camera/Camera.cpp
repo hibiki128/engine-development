@@ -299,6 +299,35 @@ void Camera::Load(const std::string &jsonName)
     ApplyToViewProjection();
 }
 
+nlohmann::json Camera::ToJson() const
+{
+    json state = json::object();
+    state["translation"] = position_;
+    state["eulerRotation"] = rotation_;
+    state["quaternionRotation"] = quaternion_;
+    state["isUseQuaternion"] = useQuaternion_;
+    state["fov"] = viewProjection_.fovAngleY_;
+    state["nearZ"] = viewProjection_.nearZ_;
+    state["farZ"] = viewProjection_.farZ_;
+    return state;
+}
+
+void Camera::FromJson(const nlohmann::json &state)
+{
+    if (!state.is_object())
+    {
+        return;
+    }
+    position_ = state.value("translation", position_);
+    rotation_ = state.value("eulerRotation", rotation_);
+    quaternion_ = state.value("quaternionRotation", quaternion_);
+    useQuaternion_ = state.value("isUseQuaternion", useQuaternion_);
+    viewProjection_.fovAngleY_ = state.value("fov", viewProjection_.fovAngleY_);
+    viewProjection_.nearZ_ = state.value("nearZ", viewProjection_.nearZ_);
+    viewProjection_.farZ_ = state.value("farZ", viewProjection_.farZ_);
+    ApplyToViewProjection();
+}
+
 void Camera::EaseToSaved(const std::string &jsonName, float duration, EasingType easing)
 {
     // 保存済みの位置・向きを目標にしてイージング移動する（旧 ViewProjection::EaseCameraMove 相当）

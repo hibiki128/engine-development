@@ -3,6 +3,7 @@
 #include "math/Easing.h"
 #include "type/Quaternion.h"
 #include "type/Vector3.h"
+#include <nlohmann/json_fwd.hpp>
 #include <string>
 #include <vector>
 
@@ -238,6 +239,16 @@ class Camera
     /// <param name="easing">補間のしかた</param>
     void EaseToSaved(const std::string &jsonName, float duration, EasingType easing = EasingType::InOutSine);
 
+    /// <summary>
+    /// 位置・向き・レンズを JSON にまとめる（キーは Save と同じ）
+    /// </summary>
+    nlohmann::json ToJson() const;
+
+    /// <summary>
+    /// ToJson の結果から位置・向き・レンズを戻す
+    /// </summary>
+    void FromJson(const nlohmann::json &state);
+
     /// ===================================================
     /// Getter / Setter
     /// ===================================================
@@ -248,6 +259,12 @@ class Camera
 
     const std::string &GetName() const { return name_; }
     void SetName(const std::string &name) { name_ = name; }
+
+    /// <summary>
+    /// シーンファイルへ保存するかを設定
+    /// </summary>
+    void SetShouldSave(bool shouldSave) { shouldSave_ = shouldSave; }
+    bool GetShouldSave() const { return shouldSave_; }
 
   private:
     /// ===================================================
@@ -271,6 +288,7 @@ class Camera
     /// ===================================================
 
     std::string name_ = "Camera";
+    bool shouldSave_ = true; // シーンファイルへ保存するか
 
     // 描画系へ渡す本体（行列と定数バッファはこの中で管理される）
     ViewProjection viewProjection_;

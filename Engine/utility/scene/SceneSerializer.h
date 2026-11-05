@@ -13,6 +13,7 @@ namespace Hagine {
 ///   - lights      : 平行光源・点光源・スポットライト（毎フレーム積み直す動的ライトは含めない）
 ///   - attachments : 光源・パーティクルをオブジェクトに付けた親子付け
 ///   - particles   : 「シーンへの配置」で置いた GPU パーティクル（ParticleCSSpawner で「シーンに保存する」が付いた物）
+///   - cameras     : CameraManager のカメラ（デバッグカメラを除く）と使用中のカメラ名
 ///
 /// 保存されるのは BaseObjectManager が所有するオブジェクトのうち「シーンに保存する」が付いた物だけ。
 /// Register で登録したゲーム側のオブジェクトは対象外。
@@ -43,6 +44,13 @@ class SceneSerializer
     /// <param name="sceneName">シーン名（ファイル名に使えない文字は _ に置き換える）</param>
     /// <returns>bool: 書き出せたら true</returns>
     bool Save(const std::string &sceneName);
+
+    /// <summary>
+    /// シーンファイルのカメラだけを今の内容で書き換える（ファイルが無ければカメラだけのファイルを作る）
+    /// </summary>
+    /// <param name="sceneName">シーン名</param>
+    /// <returns>bool: 書き出せたら true</returns>
+    bool SaveCameras(const std::string &sceneName);
 
     /// <summary>
     /// シーンファイルを読み込み、今の所有オブジェクトを置き換える（ゲーム側のオブジェクトには触れない）
