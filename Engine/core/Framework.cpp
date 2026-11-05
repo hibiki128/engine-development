@@ -22,6 +22,7 @@
 #include <render/SceneViewRenderer.h>
 #include <render/ToneMapSettings.h>
 #include <render/bloom/BloomPass.h>
+#include <render/volumetric/VolumetricFogPass.h>
 #include <render/raytracing/RaytracingScene.h>
 #include <render/raytracing/RtAoPass.h>
 #include <render/raytracing/RtShadowPass.h>
@@ -248,6 +249,8 @@ void Framework::Initialize() {
     RtAoPass::GetInstance()->Initialize(pDxCommon_, pSrvManager_);
     // ブルーム（ミップ列）。シーンのカラーターゲットを読むので DirectXCommon の後
     BloomPass::GetInstance()->Initialize();
+    // ボリュメトリックフォグ。シャドウマップ・光源・シーンのカラーターゲットを読む
+    VolumetricFogPass::GetInstance()->Initialize();
     ///------------------------------
 
     ///-------ParticleEditor-------
@@ -332,6 +335,7 @@ void Framework::Finalize() {
     pLineRenderer_->Finalize();
     SsaoRenderer::GetInstance()->Finalize();
     BloomPass::GetInstance()->Finalize();
+    VolumetricFogPass::GetInstance()->Finalize();
     // 加速構造はGPUメモリを掴んだままなので、SRVマネージャーより先に畳む
     RtAoPass::GetInstance()->Finalize();
     RtShadowPass::GetInstance()->Finalize();

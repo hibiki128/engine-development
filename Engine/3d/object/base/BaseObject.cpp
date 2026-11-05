@@ -211,8 +211,17 @@ void BaseObject::UpdateWorldTransformHierarchy() {
 }
 
 void BaseObject::UpdateHierarchy() {
-    // 自分自身の処理
-    Update();
+#ifdef USE_IMGUI
+    const bool updateGameWorld = PlayModeManager::GetInstance()->ShouldUpdateGame();
+#else
+    const bool updateGameWorld = true;
+#endif // USE_IMGUI
+    // 一時停止・停止中は派生クラスのゲーム処理を呼ばず、基底の処理だけ行う
+    if (updateGameWorld) {
+        Update();
+    } else {
+        BaseObject::Update();
+    }
 
     // 子リストをイテレート
     for (auto it = children_.begin(); it != children_.end();) {

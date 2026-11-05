@@ -9,6 +9,7 @@
 #include "debug/profiler/GpuProfiler.h"
 #include "data/DataHandler.h"
 #include "bloom/BloomPass.h"
+#include "volumetric/VolumetricFogPass.h"
 #include "deferred/DeferredRenderer.h"
 #include "light/LightGroup.h"
 #include "object/Object3d.h"
@@ -313,6 +314,15 @@ void DrawSystem::Draw(const ViewProjection &vp)
             // 不透明を描き終えた今が一番正しい深度で、粒子を描く前でないと意味が無い
             pDxCommon_->CaptureDepthForRead();
 
+            // ボリュメトリックフォグ。不透明物の深度が揃った後、パーティクルとブルームの前に掛ける。
+            // 重ねるステージには掛けない
+            if (stageIdx == 0)
+            {
+                int gpuFog = GpuProfiler::GetInstance()->OpenGraphics(pDxCommon_->GetCommandList().Get(), "VolumetricFog");
+                VolumetricFogPass::GetInstance()->Render(vp, pDxCommon_->GetOffScreenResource());
+                GpuProfiler::GetInstance()->Close(pDxCommon_->GetCommandList().Get(), gpuFog);
+            }
+
             // 「パーティクルだけを光らせる」ために、粒子を描く直前のシーンを控える。
             // 描画後との差がパーティクルの寄与そのものになる（無効時は何もしない）
             BloomPass::GetInstance()->CaptureBeforeParticles(pDxCommon_->GetOffScreenResource());
@@ -531,6 +541,10 @@ void DrawSystem::UpdateImGui(bool *open)
             SectionHeader("[ ブルーム ]", DebugTheme::kAccentOrange);
             DimText("明るい所をにじませて光らせる。粒子の発光もここで効く");
             BloomPass::GetInstance()->DrawImGui();
+            ImGui::Spacing();
+            SectionHeader("[ ボリュメトリックフォグ ]", DebugTheme::kAccentBlue);
+            DimText("空気中の霧が光を散らす。平行光源の光の筋、街灯やスポットライトのまわりの光");
+            VolumetricFogPass::GetInstance()->DrawImGui();
             ImGui::Spacing();
             DimText("色味・ぼかし・白黒などは「ポストエフェクト」窓で調整します");
             ImGui::EndTabItem();

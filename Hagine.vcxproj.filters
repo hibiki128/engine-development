@@ -193,6 +193,9 @@
     <Filter Include="Engine\render\bloom">
       <UniqueIdentifier>{EB705720-E200-FAB7-9534-BF4871D77C18}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Engine\render\volumetric">
+      <UniqueIdentifier>{6E2F3A1C-8B4D-4E7F-9A15-3C2D7B9E4F60}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Engine\render\deferred">
       <UniqueIdentifier>{DCCD2B60-B4F0-1726-8716-4D44771C0FD8}</UniqueIdentifier>
     </Filter>
@@ -704,6 +707,9 @@
     </ClCompile>
     <ClCompile Include="Engine\render\bloom\BloomPass.cpp">
       <Filter>Engine\render\bloom</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\render\volumetric\VolumetricFogPass.cpp">
+      <Filter>Engine\render\volumetric</Filter>
     </ClCompile>
     <ClCompile Include="Engine\render\CameraFade.cpp">
       <Filter>Engine\render</Filter>
@@ -1391,6 +1397,9 @@
     <ClInclude Include="Engine\render\bloom\BloomPass.h">
       <Filter>Engine\render\bloom</Filter>
     </ClInclude>
+    <ClInclude Include="Engine\render\volumetric\VolumetricFogPass.h">
+      <Filter>Engine\render\volumetric</Filter>
+    </ClInclude>
     <ClInclude Include="Engine\render\CameraFade.h">
       <Filter>Engine\render</Filter>
     </ClInclude>
@@ -1822,6 +1831,21 @@
       <Filter>Engine\EngineAssets\shaders\OffScreen</Filter>
     </None>
     <None Include="Engine\EngineAssets\shaders\OffScreen\BloomUpsample.CS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\OffScreen</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\OffScreen\VolumetricFogApply.CS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\OffScreen</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\OffScreen\VolumetricFogInject.CS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\OffScreen</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\OffScreen\VolumetricFogInject.hlsli">
+      <Filter>Engine\EngineAssets\shaders\OffScreen</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\OffScreen\VolumetricFogInjectRt.CS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\OffScreen</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\OffScreen\VolumetricFogIntegrate.CS.hlsl">
       <Filter>Engine\EngineAssets\shaders\OffScreen</Filter>
     </None>
     <None Include="Engine\EngineAssets\shaders\OffScreen\ChromaticAberration.PS.hlsl">

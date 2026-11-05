@@ -228,8 +228,9 @@ void DirectXCommon::CreateOffscreenSRV()
     offScreenSrvHandleCPU_ = SrvManager::GetInstance()->GetCPUDescriptorHandle(offScreenSrvIndex_);
     offScreenSrvHandleGPU_ = SrvManager::GetInstance()->GetGPUDescriptorHandle(offScreenSrvIndex_);
 
-    // ブルームの合成がシーンへ直接足し込むための UAV（+1規約で確保する）
-    offScreenUavIndex_ = SrvManager::GetInstance()->Allocate() + 1;
+    // ブルームの合成・ボリュメトリックフォグがシーンへ直接書き込むための UAV。
+    // 前後の SRV（オフスクリーン・深度）と同じく Allocate() の番号へそのまま書く（+1 すると深度の SRV と重なる）
+    offScreenUavIndex_ = SrvManager::GetInstance()->Allocate();
     SrvManager::GetInstance()->CreateUAVforTexture2D(offScreenUavIndex_, offScreenResource_.Get(),
                                                      kSceneColorFormat);
 }

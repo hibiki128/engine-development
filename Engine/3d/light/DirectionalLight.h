@@ -52,6 +52,11 @@ class DirectionalLight
     Vector4 GetColor() const;
 
     /// <summary>
+    /// 光の強さ
+    /// </summary>
+    float GetIntensity() const { return pData_ ? pData_->intensity : 0.0f; }
+
+    /// <summary>
     /// 有効かどうか
     /// </summary>
     bool IsEnabled() const { return enabled_; }

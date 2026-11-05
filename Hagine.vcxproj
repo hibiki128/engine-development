@@ -274,6 +274,7 @@
     <ClCompile Include="Engine\utility\graphics\pipeline\ShaderHotReload.cpp" />
     <ClCompile Include="Engine\render\ToneMapSettings.cpp" />
     <ClCompile Include="Engine\render\bloom\BloomPass.cpp" />
+    <ClCompile Include="Engine\render\volumetric\VolumetricFogPass.cpp" />
     <ClCompile Include="Engine\render\ssao\SsaoRenderer.cpp" />
     <ClCompile Include="Engine\utility\debug\capture\CaptureManager.cpp" />
     <ClCompile Include="Engine\utility\debug\console\DebugConsole.cpp" />
@@ -603,6 +604,31 @@
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
     </None>
     <None Include="Engine\EngineAssets\shaders\OffScreen\BloomUpsample.CS.hlsl">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Develop|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\OffScreen\VolumetricFogApply.CS.hlsl">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Develop|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\OffScreen\VolumetricFogInject.CS.hlsl">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Develop|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\OffScreen\VolumetricFogInject.hlsli">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Develop|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\OffScreen\VolumetricFogInjectRt.CS.hlsl">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Develop|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\OffScreen\VolumetricFogIntegrate.CS.hlsl">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Develop|x64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
@@ -1074,6 +1100,7 @@
     <ClInclude Include="Engine\utility\graphics\pipeline\ShaderHotReload.h" />
     <ClInclude Include="Engine\render\ToneMapSettings.h" />
     <ClInclude Include="Engine\render\bloom\BloomPass.h" />
+    <ClInclude Include="Engine\render\volumetric\VolumetricFogPass.h" />
     <ClInclude Include="Engine\render\ssao\SsaoRenderer.h" />
     <ClInclude Include="Engine\utility\debug\capture\CaptureManager.h" />
     <ClInclude Include="Engine\utility\debug\console\DebugConsole.h" />

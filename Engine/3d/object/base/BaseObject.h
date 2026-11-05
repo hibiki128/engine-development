@@ -88,6 +88,7 @@ class BaseObject {
     // 初期化、更新、描画
     // 名前が他のオブジェクトと重なったら "_0", "_1" … を付けて区別する（実際の名前は GetName で取る）
     virtual void Init(const std::string className);
+    // エディタの一時停止・停止中は呼ばれず、代わりに基底の BaseObject::Update だけが呼ばれる（UpdateHierarchy が切り替える）
     virtual void Update();
     virtual void Draw(const ViewProjection &viewProjection);
     void UpdateWorldTransformHierarchy();
