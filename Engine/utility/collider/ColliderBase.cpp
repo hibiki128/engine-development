@@ -2,6 +2,7 @@
 #include "collider/CollisionManager.h"
 #include <algorithm>
 #include <vector>
+#include"object/Base/BaseObjectManager.h"
 #ifdef USE_IMGUI
 #include "utility/debug/imgui/DebugUIHelper.h"
 #endif // USE_IMGUI
@@ -47,8 +48,11 @@ void ColliderBase::ApplyLoadedTag(const std::string &tag)
     }
 }
 
-void ColliderBase::SaveToJson()
-{
+BaseObject *ColliderBase::GetOwner() const {
+    return BaseObjectManager::GetInstance()->GetObjectByName(ownerName_);
+}
+
+void ColliderBase::SaveToJson() {
     if (!dataHandler_)
     {
         dataHandler_ = std::make_unique<DataHandler>("Collider", name_);

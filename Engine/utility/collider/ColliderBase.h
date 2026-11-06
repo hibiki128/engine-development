@@ -10,6 +10,7 @@
 
 namespace Hagine {
 class ViewProjection;
+class BaseObject;
 
 /// <summary>
 /// コライダーの形状種別
@@ -264,6 +265,12 @@ class ColliderBase
     /// </summary>
     /// <returns>const std::string&: オブジェクト名</returns>
     const std::string &GetOwnerName() const { return ownerName_; }
+
+    /// <summary>
+    /// このコライダーを持つオブジェクトを取得
+    /// </summary>
+    /// <returns></returns>
+    BaseObject *GetOwner()const;
 
     /// <summary>
     /// 線の色（設定値。保存される）を設定
