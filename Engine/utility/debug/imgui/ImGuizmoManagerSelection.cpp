@@ -83,6 +83,55 @@ int ImGuizmoManager::GetOverlapCount() const
     return static_cast<int>(overlapCandidates_.size());
 }
 
+// ---- 登録名の付け替え ---------------------------------------------------
+
+void ImGuizmoManager::RenameTarget(const std::string &oldName, const std::string &newName)
+{
+    if (oldName == newName || transformMap_.find(newName) != transformMap_.end())
+    {
+        return;
+    }
+    auto node = transformMap_.extract(oldName);
+    if (node.empty())
+    {
+        return;
+    }
+    node.key() = newName;
+    node.mapped().name = newName;
+    transformMap_.insert(std::move(node));
+
+    const auto rename = [&oldName, &newName](std::string &name) {
+        if (name == oldName)
+        {
+            name = newName;
+        }
+    };
+    if (selectedNames_.erase(oldName) > 0)
+    {
+        selectedNames_.insert(newName);
+    }
+    for (std::string &name : copiedNames_)
+    {
+        rename(name);
+    }
+    for (std::string &name : inspectorHistory_)
+    {
+        rename(name);
+    }
+    for (auto &[name, distance] : overlapCandidates_)
+    {
+        rename(name);
+    }
+    rename(pinnedName_);
+    rename(hoveredName_);
+    rename(browserLastSelection_);
+    rename(browserRangeAnchor_);
+    rename(browserHoveredName_);
+    rename(prefabDialogRoot_);
+
+    UpdateFilteredNames();
+}
+
 // ---- HandleMouseSelection ---------------------------------------------
 
 // マウスクリック時のレイキャストによる選択判定

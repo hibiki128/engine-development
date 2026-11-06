@@ -206,6 +206,44 @@ class BaseObjectManager
     void RequestDuplicate(const std::string &sourceName);
 
     /// <summary>
+    /// 名前を変更できるオブジェクトか（エディタで置いた物・シーンファイルから作った物だけ true）
+    /// </summary>
+    bool CanRename(const BaseObject *pObject) const { return IsOwned(pObject); }
+
+    /// <summary>
+    /// 所有オブジェクトの名前を変更し、名前で引いている登録（ギズモ・親子付け・コライダー・タイムラインなど）も付け替える
+    /// </summary>
+    /// <param name="oldName">今の名前</param>
+    /// <param name="desiredName">付けたい名前（前後の空白を除き、使われていれば連番を付ける）</param>
+    /// <returns>std::string: 実際に付いた名前（変更できなければ空）</returns>
+    std::string RenameObject(const std::string &oldName, const std::string &desiredName);
+
+    /// <summary>
+    /// 名前の変更を次の Update まで遅らせて予約し、適用時に Undo 履歴へ積む（UI からはこちらを使う）
+    /// </summary>
+    /// <param name="oldName">今の名前</param>
+    /// <param name="desiredName">付けたい名前</param>
+    void RequestRename(const std::string &oldName, const std::string &desiredName);
+
+#ifdef USE_IMGUI
+    /// <summary>
+    /// 名前の変更欄を開く（context が同じ DrawRenameField の位置に入力欄が出る）
+    /// </summary>
+    /// <param name="name">変更するオブジェクト名</param>
+    /// <param name="context">入力欄を出す場所の識別名（"hierarchy" など）</param>
+    void BeginRename(const std::string &name, const std::string &context);
+
+    /// <summary>
+    /// 名前の変更欄を描画し、Enter かフォーカスが外れたら確定・Esc で取り消す
+    /// </summary>
+    /// <param name="name">この位置に表示しているオブジェクト名</param>
+    /// <param name="context">入力欄を出す場所の識別名</param>
+    /// <param name="width">入力欄の幅</param>
+    /// <returns>bool: この位置で変更中なら true（呼び出し側は名前の表示を省く）</returns>
+    bool DrawRenameField(const std::string &name, const std::string &context, float width);
+#endif // USE_IMGUI
+
+    /// <summary>
     /// オブジェクト生成モーダルを開く
     /// </summary>
     void OpenObjectCreationModal();
@@ -488,6 +526,17 @@ class BaseObjectManager
     bool showObjectCreationModal_ = false; // オブジェクト生成モーダル表示フラグ
     // 次の Update で複製するオブジェクト名（UI から予約される）
     std::vector<std::string> pendingDuplicates_{};
+    // 次の Update で適用する名前の変更（今の名前, 付けたい名前）
+    std::vector<std::pair<std::string, std::string>> pendingRenames_{};
+
+    // 名前の変更欄の状態
+    std::string renameTarget_;        // 変更中のオブジェクト名（空なら変更していない）
+    std::string renameContext_;       // 入力欄を出す場所
+    std::string renameBuffer_;        // 入力中の名前
+    bool renameFocusPending_ = false; // 次に描く入力欄へフォーカスを移すか
+    bool renameActivated_ = false;    // 入力欄が一度でも入力状態になったか
+    int renameWaitFrames_ = 0;        // 入力状態になるのを待ったフレーム数
+    int renameLastFrame_ = -1;        // 入力欄を最後に描いた ImGui フレーム
     bool showObjectLoadModal_ = false;     // オブジェクト読み込みモーダル表示フラグ
     std::string selectedJsonPath_;         // 選択中のJsonパス
 #ifdef USE_IMGUI

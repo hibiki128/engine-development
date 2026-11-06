@@ -132,6 +132,12 @@ class MotionEditor
     void Unregister(Hagine::BaseObject *pObject);
 
     /// <summary>
+    /// 登録済みオブジェクトの名前が変わったとき、モーションの登録名を付け替える
+    /// </summary>
+    /// <param name="pObject">名前が変わったオブジェクト</param>
+    void RenameTarget(Hagine::BaseObject *pObject);
+
+    /// <summary>
     /// 更新処理
     /// </summary>
     /// <param name="deltaTime">フレームの経過時間</param>

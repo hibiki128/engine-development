@@ -38,7 +38,7 @@ struct MetaBallElement
     /// <summary>
     /// 楕円体を評価するための「単位空間へ写す基底」。
     /// point との差 d を (d·ux, d·uy, d·uz) に写すと、半径 1 の球として距離を測れる。
-    /// MetaBallObject::AppendWorldElements がオブジェクトの回転・スケールを
+    /// MetaBallSource::AppendWorldElements がオブジェクトの回転・スケールを
     /// 焼き込んで書き込む中間データなので、手で設定する必要はない（保存もされない）。
     /// isEllipsoid が false のときは参照されず、従来どおり radius で評価される。
     /// </summary>

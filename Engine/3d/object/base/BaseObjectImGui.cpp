@@ -7,6 +7,7 @@
 #include "debug/profiler/CpuProfiler.h"
 #include "frame/Frame.h"
 #include "light/ToonSettings.h"
+#include "metaball/MetaBallSource.h"
 #include "model/material/Material.h"
 #include "object/Object3dInstancing.h"
 #include "scene/SceneManager.h"
@@ -351,9 +352,17 @@ void BaseObject::DebugObject() {
     }
 
     // ====================================================
-    // 派生クラス固有のタブ（メタボールなど）
+    // メタボール・派生クラス固有のタブ
     // 基本の隣に固定で出すことで、そのオブジェクト固有の設定を見つけやすくする
     // ====================================================
+    if (metaBall_) {
+        if (InspectorSearch::BeginTab("メタボール")) {
+            if (InspectorSearch::ShowLooseContent()) {
+                metaBall_->DrawImGui();
+            }
+            InspectorSearch::EndTab();
+        }
+    }
     if (const char *extensionName = GetImGuiExtensionName()) {
         if (InspectorSearch::BeginTab(extensionName)) {
             if (InspectorSearch::ShowLooseContent()) {
@@ -434,7 +443,7 @@ void BaseObject::DebugObject() {
         if (!HasInspectorMaterial()) {
             if (InspectorSearch::ShowLooseContent()) {
                 ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kTextDim);
-                const char *extensionName = GetImGuiExtensionName();
+                const char *extensionName = metaBall_ ? "メタボール" : GetImGuiExtensionName();
                 ImGui::TextWrapped("マテリアルは「%s」タブで設定します", extensionName ? extensionName : "専用");
                 ImGui::PopStyleColor();
                 ImGui::Spacing();

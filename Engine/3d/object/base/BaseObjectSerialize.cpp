@@ -5,6 +5,7 @@
 #include "collider/CollisionManager.h"
 #include "debug/profiler/CpuProfiler.h"
 #include "frame/Frame.h"
+#include "metaball/MetaBallSource.h"
 #include "model/material/Material.h"
 #include "object/Object3dInstancing.h"
 #include "scene/SceneManager.h"
@@ -22,8 +23,8 @@
 // オブジェクト・マテリアル・コライダー・アニメーションの保存／読み込み（JSON）。
 namespace Hagine {
 void BaseObject::SaveToJson() {
-    // JSONデータを扱うハンドラを作成
-    modelPath_ = obj3d_->GetModelFilePath();
+    // JSONデータを扱うハンドラを作成。メタボールの動的モデルにはファイルパスが無いので目印を書く
+    modelPath_ = metaBall_ ? std::string(kMetaBallModelTag) : obj3d_->GetModelFilePath();
     // 連番を付ける前の名前で保存する（enemy_0 で調整しても enemy, enemy_1 … 全員に効く）
     objectData_ = std::make_unique<DataHandler>("ObjectDatas", dataName_);
     objectData_->Save<std::string>("modelName", modelPath_);
@@ -72,6 +73,11 @@ void BaseObject::SaveToJson() {
 
     // コライダー情報を保存
     SaveColliders();
+
+    // メタボールの要素とグループ設定を保存
+    if (metaBall_) {
+        metaBall_->SaveToFile(dataName_);
+    }
     objectData_->Flush();
 }
 
@@ -169,6 +175,12 @@ nlohmann::json BaseObject::Serialize() const {
     }
     if (animStateMachine_) {
         state["animStateMachine"] = animStateMachine_->GetAssetName();
+    }
+    // メタボールはメッシュではなく要素リストとグループ設定を書く（modelPath は読み込み側が種類を見分ける目印）
+    if (metaBall_) {
+        state["modelPath"] = kMetaBallModelTag;
+        state["isPrimitive"] = false;
+        state["metaBall"] = metaBall_->Serialize();
     }
     return state;
 }
@@ -283,6 +295,11 @@ void BaseObject::Deserialize(const json &state) {
     }
     if (const auto stateMachine = state.find("animStateMachine"); stateMachine != state.end() && stateMachine->is_string()) {
         SetAnimationStateMachine(stateMachine->get<std::string>());
+    }
+    if (metaBall_) {
+        if (const auto metaBall = state.find("metaBall"); metaBall != state.end()) {
+            metaBall_->Deserialize(*metaBall);
+        }
     }
 }
 

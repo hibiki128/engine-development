@@ -23,6 +23,7 @@
 
 namespace Hagine {
 class SkyBox;
+class MetaBallSource;
 class BaseObject {
     friend class PhysicsWorld;
 
@@ -33,6 +34,7 @@ class BaseObject {
 
     std::unique_ptr<DataHandler> objectData_{};
     std::unique_ptr<DataHandler> AnimaDatas_{};
+    BaseObject();
     virtual ~BaseObject();
 
   protected:
@@ -87,7 +89,7 @@ class BaseObject {
 
     // 初期化、更新、描画
     // 名前が他のオブジェクトと重なったら "_0", "_1" … を付けて区別する（実際の名前は GetName で取る）
-    virtual void Init(const std::string className);
+    virtual void Init(const std::string objectName);
     // エディタの一時停止・停止中は呼ばれず、代わりに基底の BaseObject::Update だけが呼ばれる（UpdateHierarchy が切り替える）
     virtual void Update();
     virtual void Draw(const ViewProjection &viewProjection);
@@ -96,6 +98,23 @@ class BaseObject {
 
     virtual void CreateModel(const std::string modelname);
     virtual void CreatePrimitiveModel(const PrimitiveType &type);
+
+    /// <summary>
+    /// メタボールとして作り、自分のモデルは描かずに同じグループのメタボールと融合した表面として描かれるようにする
+    /// </summary>
+    /// <param name="groupName">融合するグループ名（空なら名前なしの物すべてとくっつく）</param>
+    void CreateMetaBallModel(const std::string &groupName = "");
+
+    /// <summary>
+    /// メタボールとして作られているか
+    /// </summary>
+    bool IsMetaBall() const { return metaBall_ != nullptr; }
+
+    /// <summary>
+    /// メタボールの要素・グループの操作（メタボールでなければ nullptr。使う側は metaball/MetaBallSource.h を include）
+    /// </summary>
+    MetaBallSource *GetMetaBall() { return metaBall_.get(); }
+    const MetaBallSource *GetMetaBall() const { return metaBall_.get(); }
 
     /// <summary>
     /// モデルのファイルが書き換わったときに読み直す（BaseObjectManager::ReloadModelFile から呼ぶ）。
@@ -118,18 +137,16 @@ class BaseObject {
     /// <summary>
     /// 独自セクションを出すタブの名前。nullptr を返すとタブ自体が出ない。
     /// DrawImGuiExtension() を実装する派生クラスはこれも返すこと
-    /// （例：メタボールなら "メタボール"）。専用タブになるので、
+    /// （例: "プレイヤー"）。専用タブになるので、
     /// DrawImGuiExtension() の側で折りたたみヘッダーを作る必要はない。
     /// </summary>
     /// <returns>const char*: タブ名（不要なら nullptr）</returns>
     virtual const char *GetImGuiExtensionName() const { return nullptr; }
 
     /// <summary>
-    /// インスペクタの「見た目」タブに素のマテリアル欄を出すか。
-    /// メタボールのように obj3d_ を選択用のダミーとしてしか持たないオブジェクトは
-    /// false を返す（触っても何も変わらない欄を出さないため）。
+    /// インスペクタの「見た目」タブに素のマテリアル欄を出すか（メタボールは obj3d_ が選択用のダミーなので出さない）
     /// </summary>
-    virtual bool HasInspectorMaterial() const { return true; }
+    virtual bool HasInspectorMaterial() const { return metaBall_ == nullptr; }
 
     /// <summary>
     /// 複製元の設定をこのオブジェクトへ写す。
@@ -293,6 +310,12 @@ class BaseObject {
     const std::string &GetName() const { return objectName_; }
     // 保存・読み込みに使う名前（連番を付ける前の名前。重複していなければ GetName と同じ）
     const std::string &GetDataName() const { return dataName_; }
+
+    /// <summary>
+    /// 名前を付け替え、コライダー・子・ステートマシンが持つこのオブジェクトの名前も合わせる（BaseObjectManager::RenameObject から呼び出し）
+    /// </summary>
+    /// <param name="newName">新しい名前（一意であること）</param>
+    void ApplyRename(const std::string &newName);
     std::string &GetModelPath() { return modelPath_; }
     bool &GetIsModelDraw() { return isModelDraw_; }
     // 範囲外を引かれても落ちないよう、足りなければ伸ばしてから返す
@@ -403,10 +426,10 @@ class BaseObject {
     void SetIsModelDraw(bool isModelDraw) { isModelDraw_ = isModelDraw; }
 
     /// <summary>
-    /// レイトレーシングの加速構造へ積むか。既定はモデルを描いているときだけ。
-    /// 自分は描かずに別の形で見せるもの（メタボール等）は必要に応じて上書きする
+    /// レイトレーシングの加速構造へ積むか。既定はモデルを描いているときとメタボールのとき。
+    /// 自分は描かずに別の形で見せるものは必要に応じて上書きする
     /// </summary>
-    virtual bool IsRaytracingVisible() const { return isModelDraw_; }
+    virtual bool IsRaytracingVisible() const { return isModelDraw_ || metaBall_ != nullptr; }
     void SetOffset(const Vector3 &offset) { offSet_ = offset; }
 
     /// <summary>
@@ -724,6 +747,9 @@ class BaseObject {
 
     // --- アニメーションのステートマシン ---（付けたオブジェクトだけが持つ）
     std::unique_ptr<AnimationStateMachineRunner> animStateMachine_;
+
+    // --- メタボール ---（CreateMetaBallModel で作った物だけが持つ）
+    std::unique_ptr<MetaBallSource> metaBall_;
 
     // スケールにイージングを適用してモーションを確認するためのデバッグ用状態
     struct ScaleEaseState {

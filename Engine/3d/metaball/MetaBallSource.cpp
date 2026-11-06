@@ -1,8 +1,10 @@
 #define NOMINMAX
-#include "MetaBallObject.h"
+#include "MetaBallSource.h"
 #include "MetaBallGroupManager.h"
 #include "MyMath.h"
 #include "browser/ShowFolder.h"
+#include "data/DataHandler.h"
+#include "object/base/BaseObject.h"
 #include "utility/debug/imgui/DebugUIHelper.h"
 #include <algorithm>
 #include <cmath>
@@ -11,46 +13,83 @@
 #endif // USE_IMGUI
 
 namespace Hagine {
+namespace {
 
-MetaBallObject::~MetaBallObject()
+/// <summary>要素 1 個を JSON にする</summary>
+nlohmann::json ElementToJson(const MetaBallElement &e)
 {
-    MetaBallGroupManager::GetInstance()->Unregister(this);
+    nlohmann::json element;
+    element["position"] = e.position;
+    element["shape"] = static_cast<int>(e.shape);
+    element["radius"] = e.radius;
+    element["stiffness"] = e.stiffness;
+    element["negative"] = e.negative;
+    element["axis"] = e.axis;
+    element["enabled"] = e.enabled;
+    element["radiusScale"] = e.radiusScale;
+    return element;
 }
 
-void MetaBallObject::Init(const std::string objectName)
+/// <summary>JSON から要素 1 個を戻す</summary>
+MetaBallElement ElementFromJson(const nlohmann::json &element)
 {
-    BaseObject::Init(objectName);
+    MetaBallElement e{};
+    e.position = element.value("position", Vector3{0.0f, 0.0f, 0.0f});
+    e.shape = static_cast<MetaBallShape>(element.value("shape", 0));
+    e.radius = element.value("radius", 1.0f);
+    e.stiffness = element.value("stiffness", 1.0f);
+    e.negative = element.value("negative", false);
+    e.axis = element.value("axis", Vector3{0.0f, 0.0f, 0.0f});
+    e.enabled = element.value("enabled", true);
+    e.radiusScale = element.value("radiusScale", Vector3{1.0f, 1.0f, 1.0f});
+    return e;
+}
 
-    // このオブジェクト自身はメッシュを描かない。融合した表面はグループが描く。
-    // ただし選択やギズモのために Object3d は要るので、空の動的モデルを持たせておく
-    obj3d_->CreateDynamicModel("debug/uvChecker.png");
-    isModelDraw_ = false;
-    modelPath_ = kMetaBallModelTag;
+} // namespace
 
-    // 既定のグループは「自分の名前」。オブジェクト名は一意なので、
-    // 作ったメタボールは既定で独立し、テクスチャや太さを個別に設定できる。
-    // （以前は全員が共通グループに入っていたので、1つ変えると全部変わっていた）
-    // くっつけたいときはインスペクタで同じグループ名を入れる。
-    groupName_ = objectName.empty() ? kMetaBallDefaultGroup : objectName;
-
-    // 弾として 1 個ずつ飛ばす使い方を想定して、既定は球 1 個だけ
-    elements_.clear();
+MetaBallSource::MetaBallSource(BaseObject *pOwner, const std::string &groupName, bool loadSavedData)
+    : pOwner_(pOwner), loadSavedData_(loadSavedData)
+{
+    // 既定は球 1 個
     MetaBallElement ball{};
     ball.position = {0.0f, 0.0f, 0.0f};
     ball.radius = 1.0f;
     ball.stiffness = 1.0f;
     elements_.push_back(ball);
-    selectedElement_ = 0;
 
-    MetaBallGroupManager::GetInstance()->Register(this);
+    groupName_ = groupName.empty() ? kMetaBallDefaultGroup : groupName;
+    MetaBallGroupManager *manager = MetaBallGroupManager::GetInstance();
+    const bool firstMember = manager->GetMemberCount(groupName_) == 0;
+    manager->Register(this);
+
+    if (loadSavedData_)
+    {
+        if (pOwner_)
+        {
+            LoadElements(pOwner_->GetDataName());
+        }
+        // グループ設定はメンバーで共有するので、最初の1体のときだけ読む
+        if (firstMember)
+        {
+            LoadGroupSettings();
+        }
+    }
 }
 
-void MetaBallObject::AppendWorldElements(std::vector<MetaBallElement> &out) const
+MetaBallSource::~MetaBallSource()
 {
-    const Matrix4x4 world = transform_->matWorld_;
+    MetaBallGroupManager::GetInstance()->Unregister(this);
+}
 
-    // ワールド行列の基底（＝回転 × スケール）を取り出す。
-    // 各軸の長さがそのままその軸のスケールになる
+void MetaBallSource::AppendWorldElements(std::vector<MetaBallElement> &out) const
+{
+    if (!pOwner_ || !pOwner_->GetWorldTransform())
+    {
+        return;
+    }
+    const Matrix4x4 world = pOwner_->GetWorldTransform()->matWorld_;
+
+    // ワールド行列の基底（回転 × スケール）。各軸の長さがその軸のスケール
     const Vector3 basisX{world.m[0][0], world.m[0][1], world.m[0][2]};
     const Vector3 basisY{world.m[1][0], world.m[1][1], world.m[1][2]};
     const Vector3 basisZ{world.m[2][0], world.m[2][1], world.m[2][2]};
@@ -81,8 +120,7 @@ void MetaBallObject::AppendWorldElements(std::vector<MetaBallElement> &out) cons
         const float ry = (std::max)(local.radius * local.radiusScale.y * scaleY, 1e-6f);
         const float rz = (std::max)(local.radius * local.radiusScale.z * scaleZ, 1e-6f);
 
-        // 3 軸が揃っていれば従来どおりの真球として扱う（評価が速い経路に乗る）。
-        // カプセルはチューブ半径が 1 つしかないので、常に代表半径で扱う
+        // 3 軸が揃っていれば真球として扱う（評価が速い経路）。カプセルは常に代表半径
         const float maxR = (std::max)({rx, ry, rz});
         const float minR = (std::min)({rx, ry, rz});
         const bool uniform = (maxR - minR) <= maxR * 1e-4f;
@@ -94,8 +132,7 @@ void MetaBallObject::AppendWorldElements(std::vector<MetaBallElement> &out) cons
         }
         else
         {
-            // 単位空間へ写す基底を焼き込む。u_i = (正規化した軸) / その軸の半径 なので、
-            // 差分ベクトルとの内積がそのまま「半径何個ぶん離れているか」になる
+            // 単位空間へ写す基底を焼き込む（差分との内積が「半径何個ぶん離れているか」になる）
             world_.radius = maxR; // AABB 見積もりや UI 表示用の代表値
             world_.unitAxisX = (basisX / scaleX) / rx;
             world_.unitAxisY = (basisY / scaleY) / ry;
@@ -106,13 +143,40 @@ void MetaBallObject::AppendWorldElements(std::vector<MetaBallElement> &out) cons
     }
 }
 
-size_t MetaBallObject::AddElement(const MetaBallElement &element)
+void MetaBallSource::CopyFrom(const MetaBallSource &source)
+{
+    elements_ = source.elements_;
+    selectedElement_ = source.selectedElement_;
+
+    // 名前なしは複製も名前なしのまま（同じく全員とくっつく）
+    if (source.IsUngrouped())
+    {
+        SetGroupName(kMetaBallDefaultGroup);
+        return;
+    }
+
+    // 名前付きのグループは写さず、見た目の設定だけ写した独立した物にする
+    if (groupName_ == source.groupName_)
+    {
+        return;
+    }
+    MetaBallGroupManager *manager = MetaBallGroupManager::GetInstance();
+    manager->GetSettings(groupName_) = manager->GetSettings(source.groupName_);
+    manager->ApplyMaterial(groupName_);
+    manager->MarkDirty(groupName_);
+}
+
+// ============================================================
+//  要素の操作
+// ============================================================
+
+size_t MetaBallSource::AddElement(const MetaBallElement &element)
 {
     elements_.push_back(element);
     return elements_.size() - 1;
 }
 
-size_t MetaBallObject::AddBall(const Vector3 &localPosition, float radius)
+size_t MetaBallSource::AddBall(const Vector3 &localPosition, float radius)
 {
     MetaBallElement element{};
     element.position = localPosition;
@@ -121,7 +185,7 @@ size_t MetaBallObject::AddBall(const Vector3 &localPosition, float radius)
     return AddElement(element);
 }
 
-void MetaBallObject::RemoveElement(size_t index)
+void MetaBallSource::RemoveElement(size_t index)
 {
     if (index >= elements_.size())
     {
@@ -134,24 +198,13 @@ void MetaBallObject::RemoveElement(size_t index)
     }
 }
 
-void MetaBallObject::ClearElements()
+void MetaBallSource::ClearElements()
 {
     elements_.clear();
     selectedElement_ = 0;
 }
 
-void MetaBallObject::SetGroupName(const std::string &groupName)
-{
-    if (groupName_ == groupName)
-    {
-        return;
-    }
-    const std::string oldName = groupName_;
-    groupName_ = groupName.empty() ? kMetaBallDefaultGroup : groupName;
-    MetaBallGroupManager::GetInstance()->Rebind(this, oldName);
-}
-
-void MetaBallObject::SetRadius(float radius)
+void MetaBallSource::SetRadius(float radius)
 {
     for (MetaBallElement &e : elements_)
     {
@@ -159,29 +212,7 @@ void MetaBallObject::SetRadius(float radius)
     }
 }
 
-void MetaBallObject::CopyPropertiesFrom(const BaseObject &source)
-{
-    BaseObject::CopyPropertiesFrom(source);
-
-    const MetaBallObject *other = dynamic_cast<const MetaBallObject *>(&source);
-    if (!other)
-    {
-        return;
-    }
-    elements_ = other->elements_;
-    selectedElement_ = other->selectedElement_;
-
-    // グループ名は写さない。写すと複製した瞬間に元とくっついてしまい、
-    // テクスチャや太さも共有されて片方だけ変えられなくなる。
-    // 代わりに見た目の設定値だけをコピーして、独立したそっくりさんにする。
-    // （わざとくっつけたいときはインスペクタで同じグループ名を入れる）
-    MetaBallGroupManager *manager = MetaBallGroupManager::GetInstance();
-    manager->GetSettings(groupName_) = manager->GetSettings(other->groupName_);
-    manager->ApplyMaterial(groupName_);
-    manager->MarkDirty(groupName_);
-}
-
-void MetaBallObject::SetStiffness(float stiffness)
+void MetaBallSource::SetStiffness(float stiffness)
 {
     for (MetaBallElement &e : elements_)
     {
@@ -189,7 +220,7 @@ void MetaBallObject::SetStiffness(float stiffness)
     }
 }
 
-void MetaBallObject::SetRadiusScale(const Vector3 &radiusScale)
+void MetaBallSource::SetRadiusScale(const Vector3 &radiusScale)
 {
     // 0 や負の倍率は密度が発散するので下限で止める
     const Vector3 clamped{(std::max)(radiusScale.x, 0.01f),
@@ -202,49 +233,47 @@ void MetaBallObject::SetRadiusScale(const Vector3 &radiusScale)
 }
 
 // ============================================================
-//  シリアライズ（メッシュではなく要素リストを保存する）
+//  グループ
 // ============================================================
 
-void MetaBallObject::SaveToJson()
+void MetaBallSource::SetGroupName(const std::string &groupName)
 {
-    BaseObject::SaveToJson();
-    // 基底は modelName を Object3d から取り直す。動的モデルにはファイルパスが無く
-    // 空になってしまうので、読み込み側が種類を判別できるよう目印で上書きする
-    modelPath_ = kMetaBallModelTag;
-    objectData_->Save<std::string>("modelName", modelPath_);
-    SaveMetaBallToJson();
+    const std::string next = groupName.empty() ? kMetaBallDefaultGroup : groupName;
+    if (groupName_ == next)
+    {
+        return;
+    }
+    MetaBallGroupManager *manager = MetaBallGroupManager::GetInstance();
+    const bool firstMember = manager->GetMemberCount(next) == 0;
+    const std::string oldName = groupName_;
+    groupName_ = next;
+    manager->Rebind(this, oldName);
+
+    if (loadSavedData_ && firstMember)
+    {
+        LoadGroupSettings();
+    }
 }
 
-nlohmann::json MetaBallObject::Serialize() const
-{
-    nlohmann::json state = BaseObject::Serialize();
-    // 動的モデルにはファイルパスが無いので、読み込み側が種類を判別できるよう目印を入れる
-    state["modelPath"] = kMetaBallModelTag;
-    state["isPrimitive"] = false;
+// ============================================================
+//  保存・読み込み
+// ============================================================
 
-    nlohmann::json &metaBall = state["metaBall"];
-    metaBall["group"] = groupName_;
+nlohmann::json MetaBallSource::Serialize() const
+{
+    nlohmann::json state = nlohmann::json::object();
+    state["group"] = groupName_;
 
     nlohmann::json elements = nlohmann::json::array();
     for (const MetaBallElement &e : elements_)
     {
-        nlohmann::json element;
-        element["position"] = e.position;
-        element["shape"] = static_cast<int>(e.shape);
-        element["radius"] = e.radius;
-        element["stiffness"] = e.stiffness;
-        element["negative"] = e.negative;
-        element["axis"] = e.axis;
-        element["enabled"] = e.enabled;
-        element["radiusScale"] = e.radiusScale;
-        elements.push_back(std::move(element));
+        elements.push_back(ElementToJson(e));
     }
-    metaBall["elements"] = std::move(elements);
+    state["elements"] = std::move(elements);
 
-    // グループ設定はメンバー全員で共有するが、シーンファイルが1つで完結するよう各メンバーに持たせる。
-    // 同じグループのメンバーは同じ値を持つので、読み込みでどれが最後に効いても結果は変わらない
+    // グループ設定はメンバー全員で共有するが、シーンファイルが1つで完結するよう各メンバーに持たせる
     const MetaBallGroupSettings &settings = MetaBallGroupManager::GetInstance()->GetSettings(groupName_);
-    nlohmann::json &group = metaBall["groupSettings"];
+    nlohmann::json &group = state["groupSettings"];
     group["voxelSize"] = settings.voxelSize;
     group["threshold"] = settings.threshold;
     group["uvScale"] = settings.uvScale;
@@ -256,19 +285,16 @@ nlohmann::json MetaBallObject::Serialize() const
     return state;
 }
 
-void MetaBallObject::Deserialize(const nlohmann::json &state)
+void MetaBallSource::Deserialize(const nlohmann::json &state)
 {
-    BaseObject::Deserialize(state);
-
-    const auto metaBall = state.find("metaBall");
-    if (metaBall == state.end() || !metaBall->is_object())
+    if (!state.is_object())
     {
         return;
     }
 
-    SetGroupName(metaBall->value("group", groupName_));
+    SetGroupName(state.value("group", groupName_));
 
-    if (const auto group = metaBall->find("groupSettings"); group != metaBall->end() && group->is_object())
+    if (const auto group = state.find("groupSettings"); group != state.end() && group->is_object())
     {
         MetaBallGroupManager *manager = MetaBallGroupManager::GetInstance();
         MetaBallGroupSettings &settings = manager->GetSettings(groupName_);
@@ -284,35 +310,22 @@ void MetaBallObject::Deserialize(const nlohmann::json &state)
         manager->MarkDirty(groupName_);
     }
 
-    if (const auto elements = metaBall->find("elements"); elements != metaBall->end() && elements->is_array())
+    if (const auto elements = state.find("elements"); elements != state.end() && elements->is_array())
     {
         elements_.clear();
         elements_.reserve(elements->size());
         for (const nlohmann::json &element : *elements)
         {
-            MetaBallElement e{};
-            e.position = element.value("position", Vector3{0.0f, 0.0f, 0.0f});
-            e.shape = static_cast<MetaBallShape>(element.value("shape", 0));
-            e.radius = element.value("radius", 1.0f);
-            e.stiffness = element.value("stiffness", 1.0f);
-            e.negative = element.value("negative", false);
-            e.axis = element.value("axis", Vector3{0.0f, 0.0f, 0.0f});
-            e.enabled = element.value("enabled", true);
-            e.radiusScale = element.value("radiusScale", Vector3{1.0f, 1.0f, 1.0f});
-            elements_.push_back(e);
+            elements_.push_back(ElementFromJson(element));
         }
         selectedElement_ = 0;
     }
 }
 
-void MetaBallObject::SaveMetaBallToJson()
+void MetaBallSource::SaveToFile(const std::string &dataName) const
 {
-    DataHandler data("MetaBallDatas", dataName_);
-    // 独立（グループ名＝自分の名前）は保存名で書く。連番付きの名前を書くと、同名の別個体が
-    // 読んだときにその1体のグループへ入ってしまう
-    data.Save<std::string>("groupName", groupName_ == objectName_ ? dataName_ : groupName_);
+    DataHandler data("MetaBallDatas", dataName);
     data.Save<int>("elementCount", static_cast<int>(elements_.size()));
-
     for (size_t i = 0; i < elements_.size(); ++i)
     {
         const std::string prefix = "element" + std::to_string(i) + "_";
@@ -340,32 +353,14 @@ void MetaBallObject::SaveMetaBallToJson()
     groupData.Save<bool>("enabled", settings.enabled);
 }
 
-void MetaBallObject::LoadMetaBallFromJson()
+void MetaBallSource::LoadElements(const std::string &dataName)
 {
-    DataHandler data("MetaBallDatas", dataName_);
-    const int count = data.Load<int>("elementCount", 0);
-    // 保存されていればその名前で復元する（意図的にくっつけた組み合わせを維持するため）。
-    // 保存が無い・保存名のまま（＝独立）なら Init と同じく自分の名前＝独立
-    const std::string savedGroup = data.Load<std::string>("groupName", groupName_);
-    SetGroupName(savedGroup == dataName_ ? objectName_ : savedGroup);
-
-    // グループ設定を戻す
+    DataHandler data("MetaBallDatas", dataName);
+    if (!data.Exists())
     {
-        MetaBallGroupSettings &settings = MetaBallGroupManager::GetInstance()->GetSettings(groupName_);
-        DataHandler groupData("MetaBallGroups", groupName_);
-        settings.voxelSize = groupData.Load<float>("voxelSize", settings.voxelSize);
-        settings.threshold = groupData.Load<float>("threshold", settings.threshold);
-        settings.uvScale = groupData.Load<float>("uvScale", settings.uvScale);
-        settings.texturePath = groupData.Load<std::string>("texturePath", settings.texturePath);
-        settings.color = groupData.Load<Vector4>("color", settings.color);
-        settings.blendMode = static_cast<BlendMode>(
-            groupData.Load<int>("blendMode", static_cast<int>(settings.blendMode)));
-        settings.lighting = groupData.Load<bool>("lighting", settings.lighting);
-        settings.enabled = groupData.Load<bool>("enabled", settings.enabled);
-        MetaBallGroupManager::GetInstance()->ApplyMaterial(groupName_);
-        MetaBallGroupManager::GetInstance()->MarkDirty(groupName_);
+        return;
     }
-
+    const int count = data.Load<int>("elementCount", 0);
     if (count <= 0)
     {
         return;
@@ -390,19 +385,45 @@ void MetaBallObject::LoadMetaBallFromJson()
     selectedElement_ = 0;
 }
 
+void MetaBallSource::LoadGroupSettings()
+{
+    DataHandler groupData("MetaBallGroups", groupName_);
+    if (!groupData.Exists())
+    {
+        return;
+    }
+    MetaBallGroupManager *manager = MetaBallGroupManager::GetInstance();
+    MetaBallGroupSettings &settings = manager->GetSettings(groupName_);
+    settings.voxelSize = groupData.Load<float>("voxelSize", settings.voxelSize);
+    settings.threshold = groupData.Load<float>("threshold", settings.threshold);
+    settings.uvScale = groupData.Load<float>("uvScale", settings.uvScale);
+    settings.texturePath = groupData.Load<std::string>("texturePath", settings.texturePath);
+    settings.color = groupData.Load<Vector4>("color", settings.color);
+    settings.blendMode = static_cast<BlendMode>(groupData.Load<int>("blendMode", static_cast<int>(settings.blendMode)));
+    settings.lighting = groupData.Load<bool>("lighting", settings.lighting);
+    settings.enabled = groupData.Load<bool>("enabled", settings.enabled);
+    manager->ApplyMaterial(groupName_);
+    manager->MarkDirty(groupName_);
+}
+
 // ============================================================
 //  インスペクタ UI
 // ============================================================
 
-void MetaBallObject::DrawImGuiExtension()
+void MetaBallSource::DrawImGui()
 {
 #ifdef USE_IMGUI
+    if (!pOwner_)
+    {
+        return;
+    }
     // インスペクタ側で「メタボール」タブとして枠が付くので、ここでは中身だけ描く
     ImGui::Indent(6.0f);
 
     MetaBallGroupManager *manager = MetaBallGroupManager::GetInstance();
+    WorldTransform *transform = pOwner_->GetWorldTransform();
 
-    // ---- 大きさ（一番よく触るので最初に置く）-----------------------------
+    // ---- 大きさ -----------------------------------------------------------
     SectionHeader("[ 大きさ ]", DebugTheme::kAccentPurple);
 
     float radius = elements_.empty() ? 1.0f : elements_[0].radius;
@@ -431,17 +452,15 @@ void MetaBallObject::DrawImGuiExtension()
     ImGui::SameLine();
     if (NeutralButton("トランスフォームのスケールを取り込む##mbbake"))
     {
-        // 見た目そのままで、伸びをスケールから要素側へ移し替える。
-        // コライダーなど他の機能はスケールを見るので、
-        // 形だけ変えたいときはスケールを 1 に戻しておきたい
-        const Vector3 s = transform_->scale_;
+        // 見た目はそのままで、伸びをスケールから要素側へ移す
+        const Vector3 s = transform->scale_;
         SetRadiusScale({shape.x * s.x, shape.y * s.y, shape.z * s.z});
-        transform_->scale_ = {1.0f, 1.0f, 1.0f};
+        transform->scale_ = {1.0f, 1.0f, 1.0f};
     }
     ImGui::SetItemTooltip("トランスフォームのスケールを要素の軸倍率へ移して、スケールを 1 に戻す");
 
     ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kTextDim);
-    const Vector3 &objScale = transform_->scale_;
+    const Vector3 &objScale = transform->scale_;
     ImGui::TextWrapped("スケール込みの実効半径: X %.2f / Y %.2f / Z %.2f",
                        radius * shape.x * objScale.x,
                        radius * shape.y * objScale.y,
@@ -455,44 +474,58 @@ void MetaBallObject::DrawImGuiExtension()
     const size_t memberCount = manager->GetMemberCount(groupName_);
     ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kTextDim);
     ImGui::TextWrapped("同じグループ名のメタボール同士だけが融合し、下のマテリアルも共有します。\n"
-                       "既定ではオブジェクト名がそのままグループ名なので、作ったものは独立しています。");
+                       "グループ名が空欄（名前なし）の物は、名前なしの物すべてと融合します。");
     ImGui::PopStyleColor();
 
-    std::string groupBuffer = groupName_;
-    if (ImGui::InputText("グループ名", &groupBuffer,
-                         ImGuiInputTextFlags_EnterReturnsTrue))
+    std::string groupBuffer = IsUngrouped() ? std::string() : groupName_;
+    if (ImGui::InputTextWithHint("グループ名", "名前なし（名前なしの物すべてとくっつく）", &groupBuffer,
+                                 ImGuiInputTextFlags_EnterReturnsTrue))
     {
         SetGroupName(groupBuffer);
     }
     ImGui::SetItemTooltip("Enter で確定。くっつけたい相手と同じ名前にする。\n"
                           "名前を分けると別々の塊になり、マテリアルも別々になります");
-    if (memberCount > 1)
+    if (IsUngrouped())
     {
-        ImGui::TextColored(DebugTheme::kAccentOrange,
-                           "このグループには %d 個います（マテリアルは全員で共有）",
+        ImGui::TextColored(DebugTheme::kAccentOrange, "名前なし（名前なしの %d 個と融合）", static_cast<int>(memberCount));
+    }
+    else if (memberCount > 1)
+    {
+        ImGui::TextColored(DebugTheme::kAccentOrange, "このグループには %d 個います（マテリアルは全員で共有）",
                            static_cast<int>(memberCount));
-        ImGui::SameLine();
-        if (NeutralButton("独立させる##mbdetach"))
-        {
-            SetGroupName(objectName_);
-        }
-        ImGui::SetItemTooltip("グループ名を自分のオブジェクト名に戻して、単独の塊にする");
     }
     else
     {
         ImGui::TextColored(DebugTheme::kTextDim, "独立（このグループはこのオブジェクトだけ）");
     }
+    if (IsUngrouped() || memberCount > 1)
+    {
+        if (NeutralButton("独立させる##mbdetach"))
+        {
+            SetGroupName(pOwner_->GetName());
+        }
+        ImGui::SetItemTooltip("グループ名を自分のオブジェクト名にして、単独の塊にする");
+    }
+    if (!IsUngrouped())
+    {
+        if (memberCount > 1)
+        {
+            ImGui::SameLine();
+        }
+        if (NeutralButton("名前なしにする##mbungroup"))
+        {
+            SetGroupName(std::string());
+        }
+        ImGui::SetItemTooltip("グループ名を外して、名前なしの物すべてとくっつくようにする");
+    }
 
     ImGui::Spacing();
 
     // ---- マテリアル -----------------------------------------------------
-    // 融合した表面はグループが 1 枚のメッシュとして描くので、マテリアルもグループ単位。
-    // BaseObject のマテリアル欄はこのオブジェクトの空モデル向けで効かないため、
-    // インスペクタ側ではそちらを隠して（HasInspectorMaterial）ここに集約している
+    // 融合した表面はグループが 1 枚のメッシュとして描くので、マテリアルもグループ単位
     SectionHeader("[ マテリアル ]", DebugTheme::kAccentPurple);
 
     // グループ名がこのフレームで変わった可能性があるので、ここで取り直す
-    // （先に取っておくと、名前を変えた直後の1フレームだけ旧グループへ書いてしまう）
     MetaBallGroupSettings &settings = manager->GetSettings(groupName_);
 
     bool settingsChanged = false;
@@ -641,10 +674,10 @@ void MetaBallObject::DrawImGuiExtension()
             ImGui::DragFloat("影響半径", &e.radius, 0.01f, 0.01f, 100.0f);
             ImGui::DragFloat("強さ", &e.stiffness, 0.01f, 0.01f, 10.0f);
 
-            int shape = static_cast<int>(e.shape);
-            if (ImGui::Combo("形状", &shape, "球\0カプセル\0"))
+            int shapeIndex = static_cast<int>(e.shape);
+            if (ImGui::Combo("形状", &shapeIndex, "球\0カプセル\0"))
             {
-                e.shape = static_cast<MetaBallShape>(shape);
+                e.shape = static_cast<MetaBallShape>(shapeIndex);
             }
             if (e.shape == MetaBallShape::Capsule)
             {

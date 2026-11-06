@@ -10,7 +10,6 @@
 #include <icon/IconsFontAwesome5.h>
 #include <imgui.h>
 #include <imgui_internal.h>
-#include <metaball/MetaBallObject.h>
 #include <numbers>
 #include <object/base/BaseObjectManager.h>
 #include <transform/WorldTransform.h>
@@ -50,7 +49,7 @@ const char *TargetIcon(const GizmoTarget &target)
     if (target.type == GizmoTarget::Type::BaseObject && target.baseObject)
     {
         BaseObject *obj = target.baseObject;
-        if (dynamic_cast<MetaBallObject *>(obj))
+        if (obj->IsMetaBall())
         {
             return ICON_FA_CIRCLE;
         }
@@ -84,7 +83,7 @@ const char *CategoryLabel(const GizmoTarget &target)
     if (target.type == GizmoTarget::Type::BaseObject && target.baseObject)
     {
         BaseObject *obj = target.baseObject;
-        if (dynamic_cast<MetaBallObject *>(obj))
+        if (obj->IsMetaBall())
         {
             return "メタボール";
         }
@@ -170,6 +169,11 @@ float MixedAxisDrag(const char *id, float average, bool mixed, float speed, cons
 
 // ---- 見出し -------------------------------------------------------------
 
+namespace {
+// 名前変更欄を出す場所
+constexpr const char *kRenameContextInspector = "inspector";
+} // namespace
+
 void ImGuizmoManager::DrawInspectorHeader(GizmoTarget &target)
 {
     const ImVec4 accent = CategoryAccent(target.category);
@@ -204,16 +208,37 @@ void ImGuizmoManager::DrawInspectorHeader(GizmoTarget &target)
     ImGui::TextUnformatted(TargetIcon(target));
     ImGui::PopStyleColor();
     ImGui::SameLine();
+    BaseObjectManager *objectManager = BaseObjectManager::GetInstance();
+    const bool canRename = obj && objectManager->CanRename(obj);
+    if (canRename && ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) && !ImGui::GetIO().WantTextInput &&
+        ImGui::IsKeyPressed(ImGuiKey_F2, false))
+    {
+        objectManager->BeginRename(target.name, kRenameContextInspector);
+    }
     {
         // 名前が長いときは右のボタンに食い込まないよう切り詰める
-        const float nameWidth = ImGui::GetContentRegionAvail().x - buttonsWidth - spacing;
-        const ImVec2 textPos = ImGui::GetCursorScreenPos();
-        const float textOffsetY = (ImGui::GetFrameHeight() - ImGui::GetTextLineHeight()) * 0.5f;
-        ImGui::Dummy(ImVec2((std::max)(nameWidth, 10.0f), ImGui::GetFrameHeight()));
-        ImGui::RenderTextEllipsis(ImGui::GetWindowDrawList(), ImVec2(textPos.x, textPos.y + textOffsetY),
-                                  ImVec2(textPos.x + (std::max)(nameWidth, 10.0f), textPos.y + ImGui::GetFrameHeight()),
-                                  textPos.x + (std::max)(nameWidth, 10.0f), target.name.c_str(), nullptr, nullptr);
-        ImGui::SetItemTooltip("%s", target.name.c_str());
+        const float nameWidth = (std::max)(ImGui::GetContentRegionAvail().x - buttonsWidth - spacing, 10.0f);
+        if (!canRename || !objectManager->DrawRenameField(target.name, kRenameContextInspector, nameWidth))
+        {
+            const ImVec2 textPos = ImGui::GetCursorScreenPos();
+            const float textOffsetY = (ImGui::GetFrameHeight() - ImGui::GetTextLineHeight()) * 0.5f;
+            ImGui::Dummy(ImVec2(nameWidth, ImGui::GetFrameHeight()));
+            ImGui::RenderTextEllipsis(ImGui::GetWindowDrawList(), ImVec2(textPos.x, textPos.y + textOffsetY),
+                                      ImVec2(textPos.x + nameWidth, textPos.y + ImGui::GetFrameHeight()),
+                                      textPos.x + nameWidth, target.name.c_str(), nullptr, nullptr);
+            if (canRename)
+            {
+                ImGui::SetItemTooltip("%s\nダブルクリックで名前を変更 (F2)", target.name.c_str());
+                if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
+                {
+                    objectManager->BeginRename(target.name, kRenameContextInspector);
+                }
+            }
+            else
+            {
+                ImGui::SetItemTooltip("%s", target.name.c_str());
+            }
+        }
     }
 
     ImGui::SameLine(ImGui::GetContentRegionMax().x - buttonsWidth);
@@ -274,6 +299,10 @@ void ImGuizmoManager::DrawInspectorHeader(GizmoTarget &target)
             }
             ImGui::Separator();
             DrawPrefabLinkMenuItems(obj);
+        }
+        if (canRename && ImGui::MenuItem(ICON_FA_PEN " 名前を変更", "F2"))
+        {
+            objectManager->BeginRename(target.name, kRenameContextInspector);
         }
         if (ImGui::MenuItem(ICON_FA_COPY " 名前をコピー"))
         {

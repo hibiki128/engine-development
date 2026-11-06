@@ -1,6 +1,6 @@
 #define NOMINMAX
 #include "MetaBallGroupManager.h"
-#include "MetaBallObject.h"
+#include "MetaBallSource.h"
 #include "graphics/model/ModelManager.h"
 #include <algorithm>
 #include <cstring>
@@ -94,7 +94,7 @@ MetaBallGroupManager::Group &MetaBallGroupManager::GetOrCreateGroup(const std::s
     return groups_.emplace(groupName, std::move(group)).first->second;
 }
 
-void MetaBallGroupManager::Register(MetaBallObject *object)
+void MetaBallGroupManager::Register(MetaBallSource *object)
 {
     if (!object)
     {
@@ -108,7 +108,7 @@ void MetaBallGroupManager::Register(MetaBallObject *object)
     }
 }
 
-void MetaBallGroupManager::Unregister(MetaBallObject *object)
+void MetaBallGroupManager::Unregister(MetaBallSource *object)
 {
     if (!object)
     {
@@ -126,7 +126,7 @@ void MetaBallGroupManager::Unregister(MetaBallObject *object)
     }
 }
 
-void MetaBallGroupManager::Rebind(MetaBallObject *object, const std::string &oldGroupName)
+void MetaBallGroupManager::Rebind(MetaBallSource *object, const std::string &oldGroupName)
 {
     if (!object)
     {
@@ -173,7 +173,7 @@ void MetaBallGroupManager::Update()
     {
         // ---- 全メンバーの要素をワールド空間で集める ----------------------
         scratch_.clear();
-        for (MetaBallObject *object : group.members)
+        for (MetaBallSource *object : group.members)
         {
             if (object)
             {

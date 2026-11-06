@@ -3,7 +3,7 @@
 #include <attachment/AttachmentManager.h>
 #include <functional>
 #include <metaball/MetaBallGroupManager.h>
-#include <metaball/MetaBallObject.h>
+#include <metaball/MetaBallSource.h>
 #include <asset/AssetPath.h>
 #include <utility/debug/imgui/ImGuiNotification.h>
 #ifdef USE_IMGUI
@@ -12,6 +12,7 @@
 #include "utility/debug/imgui/DebugUIHelper.h"
 #endif // USE_IMGUI
 #include "edit/motion/MotionEditor.h"
+#include "edit/timeline/TimelineManager.h"
 #include "object/Object3dInstancing.h"
 #include <debug/log/Logger.h>
 #include <icon/IconsFontAwesome5.h>
@@ -24,6 +25,8 @@
 #include <render/raytracing/RaytracingScene.h>
 #include "frame/Frame.h"
 #include "physics/PhysicsWorld.h"
+#include <format>
+#include <string_view>
 
 #ifdef USE_IMGUI
 #include <edit/play/PlayModeManager.h>
@@ -34,6 +37,60 @@ namespace {
 Hagine::ImGuiUndoTracker g_undoTracker;
 } // namespace
 #endif // USE_IMGUI
+
+namespace {
+// 名前変更欄を出す場所
+constexpr const char *kRenameContextHierarchy = "hierarchy";
+
+/// <summary>前後の空白（全角を含む）を除き、ファイル名に使えない文字と ImGui の "##" を _ に置き換える</summary>
+std::string SanitizeObjectName(const std::string &name)
+{
+    constexpr std::string_view kFullWidthSpace = "\xE3\x80\x80";
+    std::string_view view = name;
+    for (bool trimmed = true; trimmed && !view.empty();)
+    {
+        trimmed = false;
+        if (view.front() == ' ' || view.front() == '\t')
+        {
+            view.remove_prefix(1);
+            trimmed = true;
+        }
+        else if (view.starts_with(kFullWidthSpace))
+        {
+            view.remove_prefix(kFullWidthSpace.size());
+            trimmed = true;
+        }
+        if (view.empty())
+        {
+            break;
+        }
+        if (view.back() == ' ' || view.back() == '\t')
+        {
+            view.remove_suffix(1);
+            trimmed = true;
+        }
+        else if (view.ends_with(kFullWidthSpace))
+        {
+            view.remove_suffix(kFullWidthSpace.size());
+            trimmed = true;
+        }
+    }
+
+    constexpr std::string_view kForbidden = "\\/:*?\"<>|";
+    std::string result(view);
+    for (size_t i = 0; i < result.size(); ++i)
+    {
+        const unsigned char c = static_cast<unsigned char>(result[i]);
+        const bool forbidden = c < 0x20 || kForbidden.find(static_cast<char>(c)) != std::string_view::npos;
+        const bool imguiId = c == '#' && i + 1 < result.size() && result[i + 1] == '#';
+        if (forbidden || imguiId)
+        {
+            result[i] = '_';
+        }
+    }
+    return result;
+}
+} // namespace
 namespace Hagine {
 BaseObjectManager::BaseObjectManager() = default;
 
@@ -213,6 +270,52 @@ void BaseObjectManager::Update()
 #endif // USE_IMGUI
     }
 
+    // UI から予約された名前の変更
+    if (!pendingRenames_.empty())
+    {
+        std::vector<std::pair<std::string, std::string>> requests;
+        requests.swap(pendingRenames_);
+        for (const auto &request : requests)
+        {
+            const std::string oldName = request.first;
+            const std::string desiredName = SanitizeObjectName(request.second);
+            const std::string newName = RenameObject(oldName, request.second);
+            if (newName.empty())
+            {
+                ImGuiNotification::Post(desiredName.empty() ? std::string("名前が空なので変更しませんでした")
+                                                             : "名前を変更できませんでした: " + oldName,
+                                        {0.82f, 0.58f, 0.36f, 1.0f});
+                continue;
+            }
+            if (newName == oldName)
+            {
+                if (desiredName != oldName)
+                {
+                    ImGuiNotification::Post(std::format("「{}」は使われているので変更しませんでした", desiredName),
+                                            {0.82f, 0.58f, 0.36f, 1.0f});
+                }
+                continue;
+            }
+            if (newName != desiredName)
+            {
+                ImGuiNotification::Post(std::format("「{}」は使われているので「{}」にしました", desiredName, newName),
+                                        {0.82f, 0.58f, 0.36f, 1.0f});
+            }
+            else
+            {
+                ImGuiNotification::Post(std::format("名前を変更しました: {} → {}", oldName, newName), {0.45f, 0.68f, 0.52f, 1.0f});
+            }
+#ifdef USE_IMGUI
+            UndoRedoManager::GetInstance()->Push(std::make_unique<LambdaCommand>(
+                "名前の変更",
+                [oldName, newName] { BaseObjectManager::GetInstance()->RenameObject(newName, oldName); },
+                [oldName, newName] { BaseObjectManager::GetInstance()->RenameObject(oldName, newName); }));
+            // 入力欄の編集ジェスチャとして同じ変更が積まれないようにする
+            g_undoTracker.SkipCurrentGesture();
+#endif // USE_IMGUI
+        }
+    }
+
     for (auto &[name, obj] : objects_)
     {
         obj->UpdateHierarchy();
@@ -304,7 +407,7 @@ void BaseObjectManager::Draw(const ViewProjection &viewProjection)
     instancing->Flush(viewProjection);
 
     // 融合したメタボールの表面はグループ単位で 1 回だけ描く。
-    // 個々の MetaBallObject は isModelDraw_ = false なので二重には出ない。
+    // メタボールのオブジェクトは isModelDraw_ = false なので二重には出ない。
     // （カメラビュー窓では描かない。メタボールの定数バッファはメインの1組しか無い）
     if (!RenderView::IsExtra())
     {
@@ -612,9 +715,11 @@ BaseObject *BaseObjectManager::CreateMetaBallObject(const std::string &baseName)
 {
     const std::string name = MakeUniqueObjectName(baseName);
 
-    // MetaBallObject::Init が動的モデルの生成と初期要素の配置まで済ませる
-    std::unique_ptr<MetaBallObject> newObject = std::make_unique<MetaBallObject>();
+    // エディタで置く物は既定で独立させる（グループ名＝自分の名前）
+    std::unique_ptr<BaseObject> newObject = std::make_unique<BaseObject>();
+    newObject->SetLoadObjectDataFile(false);
     newObject->Init(name);
+    newObject->CreateMetaBallModel(name);
 #ifdef USE_IMGUI
     // 原点ではなく今見ている場所の前に出す
     newObject->GetLocalPosition() = ImGuizmoManager::GetInstance()->GetSpawnPosition();
@@ -637,9 +742,8 @@ BaseObject *BaseObjectManager::CloneObject(BaseObject *pSource, const Vector3 &o
     const std::string name =
         MakeUniqueObjectName(desiredName.empty() ? pSource->GetName() : desiredName);
 
-    // 元と同じ種類で作り直す。メタボールは Init が動的モデルの生成と
-    // グループへの登録まで面倒を見るので、モデルを作り直してはいけない
-    const bool isMetaBall = (dynamic_cast<MetaBallObject *>(pSource) != nullptr);
+    // 元と同じ種類で作り直す（モデル・プリミティブ・メタボール）
+    const bool isMetaBall = pSource->IsMetaBall();
     // type_ が Count 以外ならプリミティブとして作られたオブジェクト
     const bool isPrimitive = (pSource->GetPrimitiveType() != PrimitiveType::Count);
     if (!isMetaBall && !isPrimitive && pSource->GetModelPath().empty())
@@ -648,14 +752,17 @@ BaseObject *BaseObjectManager::CloneObject(BaseObject *pSource, const Vector3 &o
         return nullptr;
     }
 
-    std::unique_ptr<BaseObject> newObject =
-        isMetaBall ? std::unique_ptr<BaseObject>(std::make_unique<MetaBallObject>())
-                   : std::make_unique<BaseObject>();
+    std::unique_ptr<BaseObject> newObject = std::make_unique<BaseObject>();
     newObject->SetPrimitive(isPrimitive);
     newObject->SetLoadObjectDataFile(false);
     newObject->Init(name);
 
-    if (!isMetaBall)
+    if (isMetaBall)
+    {
+        // グループは CopyPropertiesFrom が複製元に合わせて決める
+        newObject->CreateMetaBallModel(name);
+    }
+    else
     {
         // モデル or プリミティブを同じもので作る
         const std::string &modelPath = pSource->GetModelPath();
@@ -669,7 +776,7 @@ BaseObject *BaseObjectManager::CloneObject(BaseObject *pSource, const Vector3 &o
         }
     }
 
-    // 種類ごとの中身を写す（メタボールは要素リストとグループ名も含む）
+    // 種類ごとの中身を写す（メタボールは要素リストとグループの扱いも含む）
     newObject->CopyPropertiesFrom(*pSource);
     newObject->SetShouldSave(pSource->GetShouldSave());
 
@@ -1044,6 +1151,7 @@ void BaseObjectManager::ShowParentChildHierarchy()
         ImGui::SetItemTooltip("クリック: 選択 / Ctrl+クリック: 選択に追加・解除 / Shift+クリック: 範囲選択\n"
                               "↑↓: 選択を1行ずつ動かす（Shift で範囲を広げる）\n"
                               "ダブルクリック: 選択してカメラを寄せる\n"
+                              "F2: 名前を変更（右クリックメニューからも）\n"
                               "目のアイコン: 表示・非表示の切り替え\n"
                               "右クリック: 親子付け・複製・削除など\n"
                               "ドラッグして別の行に重ねると親子付け（余白へ落とすと解除）");
@@ -1099,6 +1207,16 @@ void BaseObjectManager::ShowParentChildHierarchy()
                     gizmo->SelectOnly(nextName);
                     g_hierarchyAnchor = nextName;
                 }
+            }
+        }
+
+        // F2 で選択中の物の名前を変更
+        if (ImGui::IsWindowFocused() && !ImGui::GetIO().WantTextInput && ImGui::IsKeyPressed(ImGuiKey_F2, false))
+        {
+            const auto &selected = ImGuizmoManager::GetInstance()->GetSelectedNames();
+            if (selected.size() == 1)
+            {
+                BeginRename(*selected.begin(), kRenameContextHierarchy);
             }
         }
 
@@ -1248,7 +1366,7 @@ void BaseObjectManager::ShowObjectHierarchy(BaseObject *obj, int depth)
 
     // 種類のアイコン（プリミティブ / メタボール / アニメーション付き / モデル）
     const char *typeIcon = ICON_FA_SHAPES;
-    if (dynamic_cast<MetaBallObject *>(obj))
+    if (obj->IsMetaBall())
     {
         typeIcon = ICON_FA_CIRCLE;
     }
@@ -1271,8 +1389,11 @@ void BaseObjectManager::ShowObjectHierarchy(BaseObject *obj, int depth)
     {
         ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
     }
+    // 名前を変えても開閉状態が残るよう、ID は名前ではなく実体から作る
+    const bool renaming = (renameTarget_ == name && renameContext_ == kRenameContextHierarchy);
+    const float rowStartX = ImGui::GetCursorScreenPos().x;
     ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(ImGui::GetStyle().FramePadding.x, 2.0f));
-    bool nodeOpen = ImGui::TreeNodeEx(name.c_str(), flags, "%s  %s", typeIcon, name.c_str());
+    bool nodeOpen = ImGui::TreeNodeEx(static_cast<const void *>(obj), flags, "%s  %s", typeIcon, renaming ? "" : name.c_str());
     ImGui::PopStyleVar();
     if (!isVisible)
     {
@@ -1377,6 +1498,14 @@ void BaseObjectManager::ShowObjectHierarchy(BaseObject *obj, int depth)
             gizmo->DrawPrefabLinkMenuItems(obj);
             ImGui::EndMenu();
         }
+        if (ImGui::MenuItem(ICON_FA_PEN " 名前を変更", "F2", false, isOwned))
+        {
+            BeginRename(name, kRenameContextHierarchy);
+        }
+        if (!isOwned)
+        {
+            ImGui::SetItemTooltip("コードで名前を付けている物なので変更できません");
+        }
         if (ImGui::MenuItem(ICON_FA_COPY " 名前をコピー"))
         {
             ImGui::SetClipboardText(name.c_str());
@@ -1441,6 +1570,21 @@ void BaseObjectManager::ShowObjectHierarchy(BaseObject *obj, int depth)
         }
 
         ImGui::EndPopup();
+    }
+
+    // 名前の変更欄（アイコンの後ろ、右端の2つのボタンの手前まで）
+    if (renaming)
+    {
+        const ImGuiStyle &style = ImGui::GetStyle();
+        const float rowY = ImGui::GetItemRectMin().y;
+        const float fieldX = rowStartX + ImGui::GetTreeNodeToLabelSpacing() + ImGui::CalcTextSize(typeIcon).x + style.ItemSpacing.x;
+        const float fieldRight = ImGui::GetWindowPos().x + ImGui::GetContentRegionMax().x -
+                                 ImGui::GetFrameHeight() * 2.0f - style.ItemSpacing.x * 2.0f;
+        ImGui::SameLine();
+        ImGui::SetCursorScreenPos(ImVec2(fieldX, rowY));
+        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(style.FramePadding.x, 2.0f));
+        DrawRenameField(name, kRenameContextHierarchy, fieldRight - fieldX);
+        ImGui::PopStyleVar();
     }
 
     // 右端の保存アイコン（シーンに保存する・しないの切り替え）。目のアイコンの左に重ねて置く
@@ -1513,6 +1657,192 @@ void BaseObjectManager::ShowObjectHierarchy(BaseObject *obj, int depth)
     }
 #endif // USE_IMGUI
 }
+
+// -------------------------------------------------------
+// 名前の変更
+// -------------------------------------------------------
+
+std::string BaseObjectManager::RenameObject(const std::string &oldName, const std::string &desiredName)
+{
+    const auto ownedIt = ownedObjects_.find(oldName);
+    if (ownedIt == ownedObjects_.end())
+    {
+        return std::string();
+    }
+    BaseObject *obj = ownedIt->second.get();
+
+    const std::string baseName = SanitizeObjectName(desiredName);
+    if (baseName.empty())
+    {
+        return std::string();
+    }
+
+    // 光源・パーティクルなど、ギズモと親子付けの登録名とも重ならない名前にする
+    const auto isFree = [this, &oldName](const std::string &name) {
+        if (name == oldName)
+        {
+            return true;
+        }
+        if (objects_.contains(name) || reservedNames_.contains(name) ||
+            AttachmentManager::GetInstance()->FindTarget(name))
+        {
+            return false;
+        }
+#ifdef USE_IMGUI
+        if (ImGuizmoManager::GetInstance()->HasTarget(name))
+        {
+            return false;
+        }
+#endif // USE_IMGUI
+        return true;
+    };
+    std::string newName = baseName;
+    for (int index = 0; !isFree(newName); ++index)
+    {
+        newName = baseName + "_" + std::to_string(index);
+    }
+    if (newName == oldName)
+    {
+        return oldName;
+    }
+
+    // 管理表のキーを付け替え
+    auto ownedNode = ownedObjects_.extract(ownedIt);
+    ownedNode.key() = newName;
+    ownedObjects_.insert(std::move(ownedNode));
+    if (auto node = objects_.extract(oldName); !node.empty())
+    {
+        node.key() = newName;
+        objects_.insert(std::move(node));
+    }
+    if (const auto reserved = reservedNames_.find(oldName); reserved != reservedNames_.end() && reserved->second == obj)
+    {
+        reservedNames_.erase(reserved);
+        reservedNames_.emplace(newName, obj);
+    }
+    if (auto node = pendingParents_.extract(oldName); !node.empty())
+    {
+        node.key() = newName;
+        pendingParents_.insert(std::move(node));
+    }
+    for (auto &[childName, parentName] : pendingParents_)
+    {
+        if (parentName == oldName)
+        {
+            parentName = newName;
+        }
+    }
+    for (std::string &name : pendingDuplicates_)
+    {
+        if (name == oldName)
+        {
+            name = newName;
+        }
+    }
+
+    obj->ApplyRename(newName);
+
+    // 名前で引いている他マネージャの登録
+    AttachmentManager::GetInstance()->RenameTarget(oldName, newName);
+    MotionEditor::GetInstance()->RenameTarget(obj);
+    for (TimelineTrack &track : TimelineManager::GetInstance()->GetSequence().GetTracks())
+    {
+        if (track.type != static_cast<int>(TimelineTrackType::Camera) && track.targetName == oldName)
+        {
+            track.targetName = newName;
+        }
+    }
+
+#ifdef USE_IMGUI
+    ImGuizmoManager::GetInstance()->RenameTarget(oldName, newName);
+    if (g_hierarchyAnchor == oldName)
+    {
+        g_hierarchyAnchor = newName;
+    }
+    for (std::string &name : g_hierarchyVisibleOrder)
+    {
+        if (name == oldName)
+        {
+            name = newName;
+        }
+    }
+    if (renameTarget_ == oldName)
+    {
+        renameTarget_.clear();
+    }
+#endif // USE_IMGUI
+    return newName;
+}
+
+void BaseObjectManager::RequestRename(const std::string &oldName, const std::string &desiredName)
+{
+    pendingRenames_.emplace_back(oldName, desiredName);
+}
+
+#ifdef USE_IMGUI
+void BaseObjectManager::BeginRename(const std::string &name, const std::string &context)
+{
+    if (!CanRename(GetObjectByName(name)))
+    {
+        ImGuiNotification::Post("ゲーム側がコードで作る物は名前を変更できません: " + name, {0.82f, 0.58f, 0.36f, 1.0f});
+        return;
+    }
+    renameTarget_ = name;
+    renameContext_ = context;
+    renameBuffer_ = name;
+    renameFocusPending_ = true;
+    renameActivated_ = false;
+    renameWaitFrames_ = 0;
+    renameLastFrame_ = ImGui::GetFrameCount();
+}
+
+bool BaseObjectManager::DrawRenameField(const std::string &name, const std::string &context, float width)
+{
+    if (renameTarget_.empty() || renameTarget_ != name || renameContext_ != context)
+    {
+        return false;
+    }
+    // 入力欄が描かれていなかった（ツリーを畳んだ・別の物を表示した）ら取り消し
+    const int frame = ImGui::GetFrameCount();
+    if (frame - renameLastFrame_ > 1)
+    {
+        renameTarget_.clear();
+        return false;
+    }
+    renameLastFrame_ = frame;
+
+    ImGui::PushID("##objectRename");
+    if (renameFocusPending_)
+    {
+        ImGui::SetKeyboardFocusHere();
+        renameFocusPending_ = false;
+    }
+    ImGui::SetNextItemWidth((std::max)(width, 40.0f));
+    const bool entered = ImGui::InputText("##name", &renameBuffer_,
+                                          ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_AutoSelectAll);
+    const bool active = ImGui::IsItemActive();
+    const bool deactivated = ImGui::IsItemDeactivated();
+    ImGui::SetItemTooltip("Enter で確定 / Esc で取り消し");
+    ImGui::PopID();
+
+    if (active)
+    {
+        renameActivated_ = true;
+    }
+    const bool escaped = ImGui::IsKeyPressed(ImGuiKey_Escape, false);
+    if (entered || (deactivated && !escaped))
+    {
+        RequestRename(renameTarget_, renameBuffer_);
+        renameTarget_.clear();
+    }
+    else if (deactivated || (!renameActivated_ && ++renameWaitFrames_ > 3))
+    {
+        // Esc で抜けた・入力状態にならなかったときは取り消し
+        renameTarget_.clear();
+    }
+    return true;
+}
+#endif // USE_IMGUI
 
 void BaseObjectManager::SetParentChild(const std::string &childName, const std::string &parentName)
 {
@@ -1875,15 +2205,14 @@ BaseObject *BaseObjectManager::CreateObjectFromState(const std::string &name, co
         return nullptr; // モデルもプリミティブも無い場合は再生成できない
     }
 
-    std::unique_ptr<BaseObject> newObject =
-        isMetaBall ? std::unique_ptr<BaseObject>(std::make_unique<MetaBallObject>())
-                   : std::make_unique<BaseObject>();
+    std::unique_ptr<BaseObject> newObject = std::make_unique<BaseObject>();
     // 中身は呼び出し側が状態JSONから流し込む。同名の「オブジェクト単体の保存」を拾って混ぜない
     newObject->SetLoadObjectDataFile(false);
     newObject->Init(name);
     if (isMetaBall)
     {
-        // MetaBallObject::Init が動的モデルの生成とグループ登録まで済ませている
+        // グループ名は Deserialize で保存値に戻る
+        newObject->CreateMetaBallModel(newObject->GetName());
     }
     else if (!modelPath.empty())
     {
@@ -1984,7 +2313,7 @@ nlohmann::json BaseObjectManager::CaptureObjectState(BaseObject *obj) const
 
     // メタボールはモデルファイルを持たないので、modelPath だけでは作り直せない。
     // 要素リストとグループ名まで残しておく（削除の Undo・貼り付けの Redo に必要）
-    if (const MetaBallObject *metaBall = dynamic_cast<const MetaBallObject *>(obj))
+    if (const MetaBallSource *metaBall = obj->GetMetaBall())
     {
         json elements = json::array();
         for (const MetaBallElement &element : metaBall->GetElements())
@@ -2015,7 +2344,7 @@ void BaseObjectManager::ApplyObjectState(BaseObject *obj, const nlohmann::json &
     }
 
     // メタボールの要素リストとグループ名を戻す
-    if (MetaBallObject *metaBall = dynamic_cast<MetaBallObject *>(obj))
+    if (MetaBallSource *metaBall = obj->GetMetaBall())
     {
         if (s.contains("metaBallGroup"))
         {

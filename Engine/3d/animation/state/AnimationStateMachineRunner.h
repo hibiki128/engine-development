@@ -65,6 +65,7 @@ class AnimationStateMachineRunner
     float GetLastTransitionAge() const { return lastTransitionAge_; }
     const std::string &GetAssetName() const { return assetName_; }
     const std::string &GetOwnerName() const { return ownerName_; }
+    void SetOwnerName(const std::string &ownerName) { ownerName_ = ownerName; }
     const std::shared_ptr<AnimationStateMachineAsset> &GetAsset() const { return asset_; }
     AnimationController &GetController() { return controller_; }
 

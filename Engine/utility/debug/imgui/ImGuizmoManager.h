@@ -786,6 +786,13 @@ class ImGuizmoManager
         }
     }
 
+    /// <summary>
+    /// 登録名を付け替え、選択・ピン留め・履歴など名前で持っている状態も合わせる
+    /// </summary>
+    /// <param name="oldName">変更前の名前</param>
+    /// <param name="newName">変更後の名前（未登録であること）</param>
+    void RenameTarget(const std::string &oldName, const std::string &newName);
+
   private:
     void ShowSelectedObjectImGui();
     // インスペクタの見出し（アイコン・名前・種類・親・表示/フォーカス/ピン留め/メニュー）

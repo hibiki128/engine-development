@@ -5,6 +5,7 @@
 #include "collider/CollisionManager.h"
 #include "debug/profiler/CpuProfiler.h"
 #include "frame/Frame.h"
+#include "metaball/MetaBallSource.h"
 #include "model/material/Material.h"
 #include "object/Object3dInstancing.h"
 #include "render/CameraFade.h"
@@ -12,6 +13,7 @@
 #include "scene/SceneManager.h"
 #include "utility/debug/imgui/DebugUIHelper.h"
 #include "utility/debug/imgui/ImGuiNotification.h"
+#include <algorithm>
 #ifdef USE_IMGUI
 #include "utility/debug/imgui/AssetDragDrop.h"
 #include <asset/AssetPath.h>
@@ -23,6 +25,8 @@
 
 // BaseObject の本体（生成・更新・描画・親子関係・トランスフォーム）。保存/UI/コライダーは BaseObjectXxx.cpp に分けてある。
 namespace Hagine {
+
+BaseObject::BaseObject() = default;
 
 BaseObject::~BaseObject() {
     // マネージャからの登録解除（未登録でも可）
@@ -174,13 +178,18 @@ void BaseObject::CopyPropertiesFrom(const BaseObject &source) {
     // シーンファイルへ保存する項目（トランスフォーム・見た目・マテリアル・物理・IK・揺れ物など）を写す。
     // 派生クラス固有の項目は派生側の CopyPropertiesFrom で写すため、基底の Serialize / Deserialize に限る
     nlohmann::json state = source.BaseObject::Serialize();
-    // コライダーは名前を振り直して別途写す
+    // コライダーは名前を振り直し、メタボールはグループを分けて別途写す
     state.erase("colliders");
+    state.erase("metaBall");
     BaseObject::Deserialize(state);
 
     // シーンファイルに含まれない描画設定
     reflect_ = source.reflect_;
     offSet_ = source.offSet_;
+
+    if (metaBall_ && source.metaBall_) {
+        metaBall_->CopyFrom(*source.metaBall_);
+    }
 
     // コライダー（形状・タグ・衝突マスク）。名前は複製先の命名で振り直す
     for (const std::unique_ptr<ColliderBase> &sourceCollider : source.colliders_) {
@@ -306,6 +315,11 @@ BaseObject *BaseObject::GetChildByName(const std::string &name) {
 }
 
 void BaseObject::CreateModel(const std::string modelname) {
+    // メタボールから作り直すときは融合グループから外す
+    if (metaBall_) {
+        metaBall_.reset();
+        isModelDraw_ = true;
+    }
     modelPath_ = modelname;
     isPrimitive_ = false;
 
@@ -345,6 +359,11 @@ void BaseObject::CreateModel(const std::string modelname) {
 }
 
 void BaseObject::CreatePrimitiveModel(const PrimitiveType &type) {
+    // メタボールから作り直すときは融合グループから外す
+    if (metaBall_) {
+        metaBall_.reset();
+        isModelDraw_ = true;
+    }
     modelPath_ = ""; // プリミティブの場合は空文字列
     isPrimitive_ = true;
     type_ = type;
@@ -369,6 +388,30 @@ void BaseObject::CreatePrimitiveModel(const PrimitiveType &type) {
     LoadMaterials();
 
     AnimaLoadFromJson();
+}
+
+void BaseObject::CreateMetaBallModel(const std::string &groupName) {
+    if (metaBall_) {
+        metaBall_->SetGroupName(groupName);
+        return;
+    }
+
+    // 自分のメッシュは描かず、融合した表面はグループが描く。選択とギズモ用に空の動的モデルを持つ
+    modelPath_ = kMetaBallModelTag;
+    isPrimitive_ = false;
+    type_ = PrimitiveType::Count;
+    obj3d_->CreateDynamicModel("debug/uvChecker.png");
+
+    // オブジェクト単体の保存があれば読み込む（シーンファイルから作る物は読まない）
+    if (loadObjectDataFile_) {
+        LoadFromJson("ObjectDatas", dataName_);
+        modelPath_ = kMetaBallModelTag;
+        isPrimitive_ = false;
+    }
+
+    // 要素・グループ設定の保存もオブジェクト単体の保存と同じ条件で読む
+    metaBall_ = std::make_unique<MetaBallSource>(this, groupName, loadObjectDataFile_);
+    isModelDraw_ = false;
 }
 
 void BaseObject::SaveParentChildRelationship() {
@@ -411,6 +454,41 @@ void BaseObject::LoadParentChildRelationship() {
 
 std::string BaseObject::GetParentName() const {
     return pParent_ ? parentName_ : "";
+}
+
+void BaseObject::ApplyRename(const std::string &newName) {
+    const std::string oldColliderPrefix = dataName_ + "_";
+    objectName_ = newName;
+    dataName_ = newName;
+
+    for (auto &collider : colliders_) {
+        if (!collider) {
+            continue;
+        }
+        collider->SetOwnerName(newName);
+
+        // 既定名（<旧名>_<種別>Collider_<連番>）は新しい名前へ付け替え
+        const std::string &colliderName = collider->GetName();
+        if (colliderName.rfind(oldColliderPrefix, 0) != 0) {
+            continue;
+        }
+        const std::string renamed = newName + "_" + colliderName.substr(oldColliderPrefix.size());
+        const bool taken = std::any_of(colliders_.begin(), colliders_.end(), [&renamed](const auto &other) {
+            return other && other->GetName() == renamed;
+        });
+        if (!taken) {
+            collider->SetName(renamed);
+        }
+    }
+
+    for (BaseObject *pChild : children_) {
+        if (pChild) {
+            pChild->parentName_ = newName;
+        }
+    }
+    if (animStateMachine_) {
+        animStateMachine_->SetOwnerName(newName);
+    }
 }
 
 std::vector<std::string> BaseObject::GetChildrenNames() const {

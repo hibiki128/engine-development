@@ -159,6 +159,36 @@ void MotionEditor::Unregister(BaseObject *pObject)
     attackEndIntervals_.erase(pObject);
 }
 
+void MotionEditor::RenameTarget(BaseObject *pObject)
+{
+    if (!pObject)
+        return;
+
+    const std::string &newName = pObject->GetName();
+    if (motions_.find(newName) != motions_.end())
+    {
+        return;
+    }
+
+    // 実体で引いて登録名を付け替え
+    for (auto it = motions_.begin(); it != motions_.end(); ++it)
+    {
+        if (it->second.pTarget != pObject)
+        {
+            continue;
+        }
+        if (selectedName_ == it->first)
+        {
+            selectedName_ = newName;
+        }
+        auto node = motions_.extract(it);
+        node.key() = newName;
+        node.mapped().objectName = newName;
+        motions_.insert(std::move(node));
+        return;
+    }
+}
+
 void MotionEditor::CleanupFinishedTemporaryMotions()
 {
     auto it = motions_.begin();

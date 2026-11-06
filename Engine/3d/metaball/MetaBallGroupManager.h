@@ -9,7 +9,7 @@
 #include <vector>
 
 namespace Hagine {
-class MetaBallObject;
+class MetaBallSource;
 
 /// <summary>
 /// グループ 1 つ分の生成設定。グループに属する全オブジェクトで共有される。
@@ -31,9 +31,9 @@ struct MetaBallGroupSettings
 /// <summary>
 /// メタボールの「場」をグループ単位で持ち、融合した表面を 1 つのメッシュとして描く。
 ///
-/// MetaBallObject は自分ではメッシュを持たず、ワールド空間の要素をこのマネージャに
-/// 提供する「発生源」として振る舞う。同じグループ名のオブジェクト同士は密度が
-/// 足し合わされるので、近づけると自然にくっつく。
+/// MetaBallSource（BaseObject::CreateMetaBallModel で付く部品）は自分ではメッシュを持たず、
+/// ワールド空間の要素をこのマネージャに提供する「発生源」として振る舞う。
+/// 同じグループ名のオブジェクト同士は密度が足し合わされるので、近づけると自然にくっつく。
 /// 弾のように 1 個ずつのオブジェクトとして扱いたい用途を想定している。
 ///
 /// 離れた要素は別々のかたまりとして切られる（MetaBallBuilder::BuildClustered）ので、
@@ -59,15 +59,15 @@ class MetaBallGroupManager
     void Finalize();
 
     /// <summary>オブジェクトをグループに登録する</summary>
-    void Register(MetaBallObject *object);
+    void Register(MetaBallSource *object);
 
     /// <summary>オブジェクトの登録を解除する</summary>
-    void Unregister(MetaBallObject *object);
+    void Unregister(MetaBallSource *object);
 
     /// <summary>
     /// グループ名が変わったときに呼ぶ（登録し直す）
     /// </summary>
-    void Rebind(MetaBallObject *object, const std::string &oldGroupName);
+    void Rebind(MetaBallSource *object, const std::string &oldGroupName);
 
     /// <summary>
     /// 全グループの要素を集め直し、変化していればメッシュを作り直す。
@@ -105,7 +105,7 @@ class MetaBallGroupManager
     struct Group
     {
         MetaBallGroupSettings settings{};        // 生成設定
-        std::vector<MetaBallObject *> members{}; // 寄与するオブジェクト
+        std::vector<MetaBallSource *> members{}; // 寄与するメタボール
         std::unique_ptr<Object3d> obj3d{};       // 融合結果を描くためのモデル
         std::unique_ptr<WorldTransform> transform{}; // 単位行列（メッシュがワールド空間なので）
         MetaBallBuildStats stats{};              // 直近の生成結果
