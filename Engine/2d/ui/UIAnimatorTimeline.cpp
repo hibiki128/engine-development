@@ -47,22 +47,39 @@ const char *ChannelShortName(UIChannel channel)
     const int index = static_cast<int>(channel);
     return (index >= 0 && index < static_cast<int>(UIChannel::Count)) ? kNames[index] : "?";
 }
+
+/// <summary>往復・揺れの形を帯の上に線で描く</summary>
+void DrawBarShape(ImDrawList *drawList, const UITween &tween, const ImVec2 &barMin, const ImVec2 &barMax)
+{
+    const float width = barMax.x - barMin.x;
+    if (width < 6.0f)
+        return;
+    const bool shake = tween.mode == UITweenMode::Shake;
+    const float low = shake ? -1.0f : 0.0f;
+    const float top = barMin.y + 1.0f;
+    const float bottom = barMax.y - 1.0f;
+    const int samples = std::clamp(static_cast<int>(width * 0.5f), 8, 128);
+    ImVec2 previous{};
+    for (int s = 0; s <= samples; ++s)
+    {
+        const float progress = static_cast<float>(s) / static_cast<float>(samples);
+        const float ratio = std::clamp(tween.Ratio(progress), low, 1.0f);
+        const ImVec2 point(barMin.x + width * progress, bottom - (bottom - top) * ((ratio - low) / (1.0f - low)));
+        if (s > 0)
+            drawList->AddLine(previous, point, IM_COL32(255, 255, 255, 170), 1.2f);
+        previous = point;
+    }
+}
 } // namespace
 
 float UIAnimator::ClipLength(const UIClip &clip) const
 {
-    float length = kMinClipLength;
-    for (const UITween &tween : clip.tweens)
-        length = std::max(length, tween.delay + std::max(0.0f, tween.duration));
-    return length;
+    return std::max(kMinClipLength, clip.Length());
 }
 
 float UIAnimator::ClipTime(const UIClip &clip) const
 {
-    float time = 0.0f;
-    for (const UITween &tween : clip.tweens)
-        time = std::max(time, tween.elapsed_);
-    return std::min(time, ClipLength(clip));
+    return std::min(clip.time_, ClipLength(clip));
 }
 
 void UIAnimator::CapturePreviewSnapshot(const UIClip &clip)
@@ -96,21 +113,7 @@ void UIAnimator::RestorePreviewSnapshot()
 
 void UIAnimator::PreviewClipAt(UIClip &clip, float time)
 {
-    for (UITween &tween : clip.tweens)
-    {
-        if (tween.targetName.empty())
-            continue;
-        const float t = time - tween.delay;
-        float value = tween.resolvedStart_;
-        if (t >= 0.0f)
-        {
-            if (tween.duration <= 0.0f)
-                value = tween.endValue;
-            else
-                value = ApplyEasing(tween.easing, tween.resolvedStart_, tween.endValue, std::clamp(t, 0.0f, tween.duration), tween.duration);
-        }
-        ApplyChannel(tween.targetKind, tween.targetName, tween.channel, value);
-    }
+    ApplyClipAt(clip, time, 0.0f);
     ApplyGroups();
 }
 
@@ -195,6 +198,8 @@ bool UIAnimator::DrawClipTimeline(UIClip &clip)
         const ImVec2 barMin(x0, rowTop + 3.0f);
         const ImVec2 barMax(x1, rowTop + kTimelineRowHeight - 3.0f);
         drawList->AddRectFilled(barMin, barMax, ChannelColor(tween.channel), 3.0f);
+        if (tween.mode != UITweenMode::Once)
+            DrawBarShape(drawList, tween, barMin, barMax);
         if (i == selectedTween_)
             drawList->AddRect(barMin, barMax, IM_COL32(255, 255, 255, 220), 3.0f, 0, 1.5f);
 

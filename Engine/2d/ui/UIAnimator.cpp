@@ -1,6 +1,7 @@
 #include "UIAnimator.h"
 #include "SpriteManager.h"
 #include <algorithm>
+#include <cmath>
 #include <data/DataHandler.h>
 #ifdef USE_IMGUI
 #include <imgui.h>
@@ -39,6 +40,14 @@ constexpr int kChannelCount = static_cast<int>(UIChannel::Count);
 
 // UITargetKind の並びに対応する表示名
 const char *kKindNames[] = {"スプライト", "グループ"};
+
+// UITweenMode の並びに対応する表示名と説明（Count は含めない）
+const char *kModeNames[] = {"片道", "往復", "揺れ"};
+const char *kModeTooltips[] = {
+    "開始の値から目標の値へ動いて止まる",
+    "折り返しの値まで行って開始の値へ戻る",
+    "開始の値を中心に揺れて、最後は中心へ戻る"};
+constexpr int kModeCount = static_cast<int>(UITweenMode::Count);
 } // namespace
 #endif // USE_IMGUI
 
@@ -140,15 +149,11 @@ void UIAnimator::Update(float deltaTime)
         if (!clip.playing_)
             continue;
 
-        bool allFinished = true;
-        for (auto &tween : clip.tweens)
-        {
-            UpdateTween(tween, deltaTime);
-            if (!tween.finished_)
-                allFinished = false;
-        }
+        const float previousTime = clip.time_;
+        clip.time_ += deltaTime;
+        ApplyClipAt(clip, clip.time_, previousTime);
 
-        if (allFinished)
+        if (clip.time_ >= clip.Length())
         {
             if (clip.loop)
                 RewindClip(clip);
@@ -161,50 +166,148 @@ void UIAnimator::Update(float deltaTime)
     ApplyGroups();
 }
 
+namespace {
+/// <summary>同じ対象の同じ値を動かすトゥイーンか</summary>
+bool IsSameTarget(const UITween &a, const UITween &b)
+{
+    return a.targetKind == b.targetKind && a.channel == b.channel && a.targetName == b.targetName;
+}
+} // namespace
+
 void UIAnimator::RewindClip(UIClip &clip)
 {
-    for (auto &tween : clip.tweens)
+    clip.time_ = 0.0f;
+
+    // 始まる順（同時なら一覧の順）に初期値を決める
+    std::vector<int> order(clip.tweens.size());
+    for (int i = 0; i < static_cast<int>(order.size()); ++i)
+        order[i] = i;
+    std::stable_sort(order.begin(), order.end(),
+                     [&clip](int a, int b) { return clip.tweens[a].delay < clip.tweens[b].delay; });
+
+    for (size_t k = 0; k < order.size(); ++k)
     {
-        tween.elapsed_ = 0.0f;
-        tween.finished_ = false;
-        tween.resolvedStart_ = tween.fromCurrent
-                                   ? GetChannelValue(tween.targetKind, tween.targetName, tween.channel)
-                                   : tween.startValue;
+        UITween &tween = clip.tweens[order[k]];
+        if (!tween.fromCurrent)
+        {
+            tween.resolvedStart_ = tween.startValue;
+            continue;
+        }
+        // 今の値から: 直前に同じ値を動かしていたトゥイーンの、始まる時刻での値
+        const UITween *previous = nullptr;
+        for (size_t m = k; m-- > 0;)
+        {
+            if (IsSameTarget(clip.tweens[order[m]], tween))
+            {
+                previous = &clip.tweens[order[m]];
+                break;
+            }
+        }
+        tween.resolvedStart_ = previous ? previous->Evaluate(tween.delay - previous->delay)
+                                        : GetChannelValue(tween.targetKind, tween.targetName, tween.channel);
     }
 }
 
-void UIAnimator::UpdateTween(UITween &tween, float deltaTime)
+void UIAnimator::ApplyClipAt(const UIClip &clip, float time, float previousTime)
 {
-    if (tween.finished_)
-        return;
-
-    tween.elapsed_ += deltaTime;
-    const float t = tween.elapsed_ - tween.delay;
-
-    // 遅延中は初期値を当てておく（開始前のちらつき防止）
-    if (t < 0.0f)
+    const int count = static_cast<int>(clip.tweens.size());
+    for (int i = 0; i < count; ++i)
     {
-        ApplyChannel(tween.targetKind, tween.targetName, tween.channel, tween.resolvedStart_);
-        return;
-    }
+        const UITween &head = clip.tweens[i];
+        if (head.targetName.empty())
+            continue;
 
-    float value;
-    if (tween.duration <= 0.0f)
-    {
-        // 秒数0は即時到達
-        value = tween.endValue;
-        tween.finished_ = true;
-    }
-    else
-    {
-        // ApplyEasing は total を超えると外挿するため、必ず [0,duration] にクランプしてから渡す
-        const float clampedT = std::clamp(t, 0.0f, tween.duration);
-        value = ApplyEasing(tween.easing, tween.resolvedStart_, tween.endValue, clampedT, tween.duration);
-        if (t >= tween.duration)
-            tween.finished_ = true;
-    }
+        // 同じ対象・同じ値は最初に出てくるトゥイーンでまとめて扱う
+        bool handled = false;
+        for (int j = 0; j < i && !handled; ++j)
+            handled = IsSameTarget(clip.tweens[j], head);
+        if (handled)
+            continue;
 
-    ApplyChannel(tween.targetKind, tween.targetName, tween.channel, value);
+        // 始まっている中で最後に始まった物が担当、どれもまだなら最初に始まる物
+        const UITween *active = nullptr;
+        const UITween *waiting = nullptr;
+        for (int j = i; j < count; ++j)
+        {
+            const UITween &tween = clip.tweens[j];
+            if (!IsSameTarget(tween, head))
+                continue;
+            if (tween.delay <= time)
+            {
+                if (!active || tween.delay >= active->delay)
+                    active = &tween;
+            }
+            else if (!waiting || tween.delay < waiting->delay)
+            {
+                waiting = &tween;
+            }
+        }
+
+        if (active)
+        {
+            // 終わって止まった値は書き込まない
+            if (previousTime <= active->EndTime())
+                ApplyChannel(head.targetKind, head.targetName, head.channel, active->Evaluate(time - active->delay));
+        }
+        else if (waiting)
+        {
+            // 始まるまでは初期値で待つ
+            ApplyChannel(head.targetKind, head.targetName, head.channel, waiting->resolvedStart_);
+        }
+    }
+}
+
+float UIClip::Length() const
+{
+    float length = 0.0f;
+    for (const UITween &tween : tweens)
+        length = std::max(length, tween.EndTime());
+    return length;
+}
+
+float UITween::EndTime() const
+{
+    return delay + std::max(0.0f, duration);
+}
+
+float UITween::Ratio(float progress) const
+{
+    progress = std::clamp(progress, 0.0f, 1.0f);
+    switch (mode)
+    {
+    case UITweenMode::PingPong:
+    {
+        // 往復の回数ぶん 0→1→0 を繰り返す
+        float bounce = 0.0f;
+        if (progress < 1.0f)
+        {
+            const float phase = progress * static_cast<float>(std::max(1, pingPongCount));
+            const float local = phase - std::floor(phase);
+            bounce = (local < 0.5f) ? local * 2.0f : (1.0f - local) * 2.0f;
+        }
+        return ApplyEasing(easing, 0.0f, 1.0f, bounce, kEasingProgressMax);
+    }
+    case UITweenMode::Shake:
+    {
+        constexpr float kTwoPi = 6.28318530718f;
+        const float wave = std::sin(progress * kTwoPi * static_cast<float>(std::max(1, shakeCount)));
+        const float fade = (1.0f - progress) * (1.0f - progress);
+        const float envelope = 1.0f + (fade - 1.0f) * std::clamp(shakeDamping, 0.0f, 1.0f);
+        return wave * envelope;
+    }
+    case UITweenMode::Once:
+    default:
+        return ApplyEasing(easing, 0.0f, 1.0f, progress, kEasingProgressMax);
+    }
+}
+
+float UITween::Evaluate(float time) const
+{
+    // 秒数0は即時に終わりの値
+    const float progress = (duration > 0.0f) ? time / duration : 1.0f;
+    if (mode == UITweenMode::Shake)
+        return resolvedStart_ + shakeAmplitude * Ratio(progress);
+    return resolvedStart_ + (endValue - resolvedStart_) * Ratio(progress);
 }
 
 // ===================================================
@@ -439,6 +542,11 @@ nlohmann::json UIAnimator::ToJson() const
             tj["duration"] = t.duration;
             tj["delay"] = t.delay;
             tj["easing"] = static_cast<int>(t.easing);
+            tj["mode"] = static_cast<int>(t.mode);
+            tj["pingPongCount"] = t.pingPongCount;
+            tj["shakeAmplitude"] = t.shakeAmplitude;
+            tj["shakeCount"] = t.shakeCount;
+            tj["shakeDamping"] = t.shakeDamping;
             tweens.push_back(tj);
         }
         cj["tweens"] = tweens;
@@ -506,6 +614,11 @@ void UIAnimator::Load()
                     t.duration = tj.value("duration", 0.5f);
                     t.delay = tj.value("delay", 0.0f);
                     t.easing = static_cast<EasingType>(tj.value("easing", 0));
+                    t.mode = static_cast<UITweenMode>(std::clamp(tj.value("mode", 0), 0, static_cast<int>(UITweenMode::Count) - 1));
+                    t.pingPongCount = std::max(1, tj.value("pingPongCount", 1));
+                    t.shakeAmplitude = tj.value("shakeAmplitude", 0.0f);
+                    t.shakeCount = std::max(1, tj.value("shakeCount", 4));
+                    t.shakeDamping = std::clamp(tj.value("shakeDamping", 1.0f), 0.0f, 1.0f);
                     c.tweens.push_back(t);
                 }
             }
@@ -553,6 +666,25 @@ ChannelDisplay GetChannelDisplay(UIChannel channel)
     }
 }
 
+/// <summary>揺れに切り替えたときの振れ幅の初期値</summary>
+float DefaultShakeAmplitude(UIChannel channel)
+{
+    switch (channel)
+    {
+    case UIChannel::PositionX:
+    case UIChannel::PositionY:
+        return 10.0f;
+    case UIChannel::RotationZ:
+        return 10.0f / kRadToDeg;
+    case UIChannel::Alpha:
+        return 0.2f;
+    case UIChannel::ScaleX:
+    case UIChannel::ScaleY:
+    default:
+        return 0.1f;
+    }
+}
+
 /// <summary>チャンネルの単位で値を文字にする（一覧の要約用）</summary>
 std::string FormatChannelValue(UIChannel channel, float value)
 {
@@ -560,6 +692,25 @@ std::string FormatChannelValue(UIChannel channel, float value)
     char buffer[64]{};
     std::snprintf(buffer, sizeof(buffer), display.format, value * display.scale);
     return buffer;
+}
+
+/// <summary>トゥイーンの動きを文字にする（一覧の要約用）</summary>
+std::string FormatTweenMotion(const UITween &tween)
+{
+    const std::string start = tween.fromCurrent ? std::string("今の値") : FormatChannelValue(tween.channel, tween.startValue);
+    switch (tween.mode)
+    {
+    case UITweenMode::PingPong:
+    {
+        const std::string count = (tween.pingPongCount > 1) ? std::format(" ×{}", tween.pingPongCount) : std::string();
+        return std::format("{} → {} → 戻る{}", start, FormatChannelValue(tween.channel, tween.endValue), count);
+    }
+    case UITweenMode::Shake:
+        return std::format("{} ±{} で {} 回揺れる", start, FormatChannelValue(tween.channel, std::abs(tween.shakeAmplitude)), tween.shakeCount);
+    case UITweenMode::Once:
+    default:
+        return std::format("{} → {}", start, FormatChannelValue(tween.channel, tween.endValue));
+    }
 }
 
 /// <summary>チャンネルの単位で値を編集する欄</summary>
@@ -588,23 +739,24 @@ void RowLabel(const char *label)
     ImGui::SetNextItemWidth(-FLT_MIN);
 }
 
-/// <summary>イージングの形を小さなグラフで描く（横が時間、縦が進み具合）</summary>
-void EasingCurve(const char *id, EasingType easing, const ImVec2 &size)
+/// <summary>トゥイーンの形を小さなグラフで描く（横が時間、縦が進み具合）</summary>
+void TweenCurve(const char *id, const UITween &tween, const ImVec2 &size)
 {
     const ImVec2 min = ImGui::GetCursorScreenPos();
     ImGui::InvisibleButton(id, size);
     ImDrawList *drawList = ImGui::GetWindowDrawList();
     drawList->AddRectFilled(min, ImVec2(min.x + size.x, min.y + size.y), ImGui::GetColorU32(ImGuiCol_FrameBg), 3.0f);
 
-    // Back や Elastic は 0〜1 をはみ出すので、はみ出した分も入るよう縦の範囲を広げる
-    constexpr int kSamples = 48;
+    // Back・Elastic のはみ出しも収まる縦の範囲
+    const bool shake = tween.mode == UITweenMode::Shake;
+    constexpr int kSamples = 96;
     float values[kSamples + 1];
-    float low = 0.0f;
+    float low = shake ? -1.0f : 0.0f;
     float high = 1.0f;
     for (int i = 0; i <= kSamples; ++i)
     {
         const float t = static_cast<float>(i) / kSamples;
-        values[i] = ApplyEasing(easing, 0.0f, 1.0f, t, 1.0f);
+        values[i] = tween.Ratio(t);
         low = std::min(low, values[i]);
         high = std::max(high, values[i]);
     }
@@ -614,8 +766,9 @@ void EasingCurve(const char *id, EasingType easing, const ImVec2 &size)
         const float y = min.y + size.y - padding - (size.y - padding * 2.0f) * ((values[i] - low) / (high - low));
         return ImVec2(x, y);
     };
-    // 0 と 1 の目安線
-    for (float guide : {0.0f, 1.0f})
+    // 目安線（揺れは中心、それ以外は 0 と 1）
+    const std::vector<float> guides = shake ? std::vector<float>{0.0f} : std::vector<float>{0.0f, 1.0f};
+    for (float guide : guides)
     {
         const float y = min.y + size.y - padding - (size.y - padding * 2.0f) * ((guide - low) / (high - low));
         drawList->AddLine(ImVec2(min.x + padding, y), ImVec2(min.x + size.x - padding, y), ImGui::GetColorU32(ImGuiCol_TextDisabled, 0.4f));
@@ -1197,12 +1350,11 @@ void UIAnimator::DrawClipTab()
         {
             const UITween &tween = clip.tweens[i];
             ImGui::PushID(i);
-            const std::string start = tween.fromCurrent ? std::string("今の値") : FormatChannelValue(tween.channel, tween.startValue);
             const std::string summary = std::format(
-                "{}. {}  {}   {} → {}   {:.2f}〜{:.2f} 秒", i + 1,
+                "{}. {}  {}   {}   {:.2f}〜{:.2f} 秒", i + 1,
                 tween.targetName.empty() ? "(対象なし)" : tween.targetName.c_str(),
-                kChannelNames[std::clamp(static_cast<int>(tween.channel), 0, kChannelCount - 1)], start,
-                FormatChannelValue(tween.channel, tween.endValue), tween.delay, tween.delay + tween.duration);
+                kChannelNames[std::clamp(static_cast<int>(tween.channel), 0, kChannelCount - 1)],
+                FormatTweenMotion(tween), tween.delay, tween.delay + tween.duration);
             if (tween.targetName.empty())
                 ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kAccentOrange);
             if (ImGui::Selectable(summary.c_str(), selectedTween_ == i))
@@ -1245,6 +1397,11 @@ void UIAnimator::DrawClipTab()
                 tween.easing = previous.easing;
                 tween.delay = previous.delay;
                 tween.duration = previous.duration;
+                tween.mode = previous.mode;
+                tween.pingPongCount = previous.pingPongCount;
+                tween.shakeAmplitude = previous.shakeAmplitude;
+                tween.shakeCount = previous.shakeCount;
+                tween.shakeDamping = previous.shakeDamping;
             }
             const std::string target = SuggestTweenTarget(clip);
             if (!PickedSpriteNames().empty())
@@ -1368,13 +1525,30 @@ void UIAnimator::DrawTweenEditor(UITween &tween)
         tween.channel = static_cast<UIChannel>(channel);
     }
 
+    // ---- 動き方 ----
+    RowLabel("動き方");
+    for (int i = 0; i < kModeCount; ++i)
+    {
+        if (i > 0)
+            ImGui::SameLine();
+        if (ImGui::RadioButton(kModeNames[i], static_cast<int>(tween.mode) == i))
+        {
+            tween.mode = static_cast<UITweenMode>(i);
+            if (tween.mode == UITweenMode::Shake && tween.shakeAmplitude == 0.0f)
+                tween.shakeAmplitude = DefaultShakeAmplitude(tween.channel);
+        }
+        ImGui::SetItemTooltip("%s", kModeTooltips[i]);
+    }
+    const bool shake = tween.mode == UITweenMode::Shake;
+    const bool pingPong = tween.mode == UITweenMode::PingPong;
+
     // ---- 開始・目標（チャンネルの単位で見せる。「今の値」で対象の今の値を取り込める）----
     const bool hasTarget = !tween.targetName.empty();
     const float captureWidth = ImGui::CalcTextSize("今の値").x + ImGui::GetStyle().FramePadding.x * 2.0f;
 
-    RowLabel("開始");
+    RowLabel(shake ? "中心" : "開始");
     ImGui::Checkbox("今の値から##fromCurrent", &tween.fromCurrent);
-    ImGui::SetItemTooltip("再生した瞬間の値から動かす（途中から再生しても飛ばない）");
+    ImGui::SetItemTooltip("動き始める時点の値から動かす（同じ値を前に動かすトゥイーンがあればその続きから、無ければ再生した瞬間の値から）");
     if (!tween.fromCurrent)
     {
         ImGui::SameLine();
@@ -1388,15 +1562,24 @@ void UIAnimator::DrawTweenEditor(UITween &tween)
         ImGui::SetItemTooltip("対象の今の値を開始値にする（シーンで置いてから取り込むと楽）");
     }
 
-    RowLabel("目標");
-    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - captureWidth - spacing);
-    ChannelValueField("##end", tween.channel, tween.endValue);
-    ImGui::SameLine();
-    ImGui::BeginDisabled(!hasTarget);
-    if (ImGui::Button("今の値##captureEnd"))
-        tween.endValue = GetChannelValue(tween.targetKind, tween.targetName, tween.channel);
-    ImGui::EndDisabled();
-    ImGui::SetItemTooltip("対象の今の値を目標値にする（シーンで動かしてから取り込むと楽）");
+    if (shake)
+    {
+        RowLabel("振れ幅");
+        ChannelValueField("##amplitude", tween.channel, tween.shakeAmplitude);
+        ImGui::SetItemTooltip("中心から一番離れる量（マイナスで逆向きから揺れ始める）");
+    }
+    else
+    {
+        RowLabel(pingPong ? "折り返し" : "目標");
+        ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - captureWidth - spacing);
+        ChannelValueField("##end", tween.channel, tween.endValue);
+        ImGui::SameLine();
+        ImGui::BeginDisabled(!hasTarget);
+        if (ImGui::Button("今の値##captureEnd"))
+            tween.endValue = GetChannelValue(tween.targetKind, tween.targetName, tween.channel);
+        ImGui::EndDisabled();
+        ImGui::SetItemTooltip("対象の今の値を目標値にする（シーンで動かしてから取り込むと楽）");
+    }
 
     // ---- 時間 ----
     RowLabel("時間");
@@ -1407,15 +1590,39 @@ void UIAnimator::DrawTweenEditor(UITween &tween)
     ImGui::SameLine();
     ImGui::SetNextItemWidth(-FLT_MIN);
     ImGui::DragFloat("##duration", &tween.duration, 0.01f, 0.0f, 60.0f, "長さ %.2f 秒", ImGuiSliderFlags_AlwaysClamp);
-    ImGui::SetItemTooltip("動いている秒数（0 で一瞬で目標値）");
+    ImGui::SetItemTooltip(tween.mode == UITweenMode::Once ? "動いている秒数（0 で一瞬で目標値）" : "戻ってくるまで全体の秒数");
+
+    const ImVec2 curveSize(72.0f, ImGui::GetFrameHeight());
+    if (pingPong)
+    {
+        RowLabel("回数");
+        ImGui::DragInt("##pingPongCount", &tween.pingPongCount, 0.1f, 1, 100, "%d 往復", ImGuiSliderFlags_AlwaysClamp);
+        ImGui::SetItemTooltip("長さの秒数の間に往復する回数");
+    }
+    if (shake)
+    {
+        RowLabel("回数");
+        ImGui::DragInt("##shakeCount", &tween.shakeCount, 0.1f, 1, 200, "%d 回揺れる", ImGuiSliderFlags_AlwaysClamp);
+        ImGui::SetItemTooltip("長さの秒数の間に揺れる回数（多いほど細かく速い揺れ）");
+
+        // ---- 減衰（形をグラフで見せる）----
+        RowLabel("減衰");
+        ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - curveSize.x - spacing);
+        ImGui::SliderFloat("##shakeDamping", &tween.shakeDamping, 0.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp);
+        ImGui::SetItemTooltip("0: 最後まで同じ幅で揺れる / 1: だんだん小さくなって止まる");
+        ImGui::SameLine();
+        TweenCurve("##curve", tween, curveSize);
+        ImGui::SetItemTooltip("横が時間、縦が中心からのずれ");
+        return;
+    }
 
     // ---- イージング（形をグラフで見せる）----
     RowLabel("イージング");
-    const ImVec2 curveSize(72.0f, ImGui::GetFrameHeight());
     ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - curveSize.x - spacing);
     int easing = static_cast<int>(tween.easing);
     if (ImGui::BeginCombo("##easing", kEasingNames[std::clamp(easing, 0, kEasingCount - 1)], ImGuiComboFlags_HeightLarge))
     {
+        UITween option = tween;
         for (int i = 0; i < kEasingCount; ++i)
         {
             ImGui::PushID(i);
@@ -1424,15 +1631,16 @@ void UIAnimator::DrawTweenEditor(UITween &tween)
             {
                 tween.easing = static_cast<EasingType>(i);
             }
-            // 候補を選ぶ前に形が分かるよう、横に小さく描いておく
+            // 候補ごとの形
             ImGui::SameLine();
-            EasingCurve("##option", static_cast<EasingType>(i), ImVec2(curveSize.x, ImGui::GetTextLineHeight()));
+            option.easing = static_cast<EasingType>(i);
+            TweenCurve("##option", option, ImVec2(curveSize.x, ImGui::GetTextLineHeight()));
             ImGui::PopID();
         }
         ImGui::EndCombo();
     }
     ImGui::SameLine();
-    EasingCurve("##curve", tween.easing, curveSize);
+    TweenCurve("##curve", tween, curveSize);
     ImGui::SetItemTooltip("横が時間、縦が進み具合。線が 0〜1 の枠をはみ出す所は行き過ぎて戻る動き");
 }
 #endif // USE_IMGUI

@@ -31,6 +31,17 @@ enum class UIChannel
 };
 
 /// <summary>
+/// トゥイーンの動き方
+/// </summary>
+enum class UITweenMode
+{
+    Once,     // 初期値→目標値
+    PingPong, // 初期値→目標値→初期値の往復
+    Shake,    // 初期値を中心に揺らす
+    Count,    // 種類数（配列サイズ用・実際の動き方ではない）
+};
+
+/// <summary>
 /// 1本のトゥイーン。対象の1プロパティを 初期値→目標値 へイージング補間する。
 /// </summary>
 struct UITween
@@ -38,17 +49,36 @@ struct UITween
     UITargetKind targetKind = UITargetKind::Sprite; // 対象種別
     std::string targetName;                         // 対象スプライト名／グループ名
     UIChannel channel = UIChannel::PositionX;       // 動かすプロパティ
-    bool fromCurrent = false;                       // 再生時点の現在値を初期値にする
+    UITweenMode mode = UITweenMode::Once;           // 動き方
+    bool fromCurrent = false;                       // 動き始める時点の値を初期値にする
     float startValue = 0.0f;                        // 初期値（fromCurrent=falseのとき使用）
-    float endValue = 0.0f;                          // 目標値
-    float duration = 0.5f;                          // 補間にかける秒数
+    float endValue = 0.0f;                          // 目標値（往復では折り返す値）
+    float duration = 0.5f;                          // 補間にかける秒数（往復・揺れは全体の秒数）
     float delay = 0.0f;                             // 再生開始からの遅延秒数
     EasingType easing = EasingType::Linear;         // イージング種別
+    int pingPongCount = 1;                          // 往復の回数
+    float shakeAmplitude = 0.0f;                    // 揺れの振れ幅（チャンネルの単位）
+    int shakeCount = 4;                             // 揺れの回数
+    float shakeDamping = 1.0f;                      // 揺れの減衰（0で一定・1で最後に止まる）
 
     // ---- 実行時状態（保存しない） ----
-    float elapsed_ = 0.0f;       // 遅延込みの経過時間
     float resolvedStart_ = 0.0f; // 実際に使う初期値（fromCurrent解決後）
-    bool finished_ = false;      // 補間完了フラグ
+
+    /// <summary>
+    /// 遅延と秒数を足した、動き終わる時刻を求める
+    /// </summary>
+    float EndTime() const;
+
+    /// <summary>
+    /// 進み具合 0〜1 に対する補間率を求める
+    /// （初期値が 0・目標値が 1、揺れは振れ幅が ±1）
+    /// </summary>
+    float Ratio(float progress) const;
+
+    /// <summary>
+    /// 動き始めてからの秒数に対する値を求める
+    /// </summary>
+    float Evaluate(float time) const;
 };
 
 /// <summary>
@@ -62,6 +92,12 @@ struct UIClip
 
     // ---- 実行時状態 ----
     bool playing_ = false; // 再生中フラグ
+    float time_ = 0.0f;    // 再生開始からの経過時間
+
+    /// <summary>
+    /// いちばん遅く動き終わるトゥイーンの時刻を、クリップの長さとして求める
+    /// </summary>
+    float Length() const;
 };
 
 /// <summary>
@@ -164,8 +200,8 @@ class UIAnimator
     void EnsureLoaded();
     /// クリップの再生状態を先頭にリセットし、fromCurrentの初期値を解決する
     void RewindClip(UIClip &clip);
-    /// 1本のトゥイーンを進めて対象へ反映する
-    void UpdateTween(UITween &tween, float deltaTime);
+    /// 指定の時刻の値をクリップの対象へ反映する（previousTime より前に終わった物は書き込まない）
+    void ApplyClipAt(const UIClip &clip, float time, float previousTime);
     /// チャンネルの現在値を取得（fromCurrent用）
     float GetChannelValue(UITargetKind kind, const std::string &target, UIChannel ch);
     /// チャンネルへ値を適用する

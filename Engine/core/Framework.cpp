@@ -1,6 +1,4 @@
 #include "Framework.h"
-#include <light/LightGroup.h>
-#include <camera/debug/DebugCamera.h>
 #include "utility/debug/imgui/ImGuiNotification.h"
 #include "utility/scene/SceneRegistry.h"
 #include "utility/scene/SceneSerializer.h"
@@ -8,12 +6,14 @@
 #include <Frame.h>
 #include <attachment/AttachmentManager.h>
 #include <camera/CameraManager.h>
+#include <camera/debug/DebugCamera.h>
 #include <debug/log/Logger.h>
 #include <debug/profiler/CpuProfiler.h>
 #include <debug/profiler/GpuProfiler.h>
 #include <graphics/pipeline/ShaderHotReload.h>
 #include <input/InputActions.h>
 #include <iterator>
+#include <light/LightGroup.h>
 #include <light/ToonSettings.h>
 #include <metaball/MetaBallGroupManager.h>
 #include <object/Object3dInstancing.h>
@@ -22,11 +22,11 @@
 #include <render/SceneViewRenderer.h>
 #include <render/ToneMapSettings.h>
 #include <render/bloom/BloomPass.h>
-#include <render/volumetric/VolumetricFogPass.h>
 #include <render/raytracing/RaytracingScene.h>
 #include <render/raytracing/RtAoPass.h>
 #include <render/raytracing/RtShadowPass.h>
 #include <render/ssao/SsaoRenderer.h>
+#include <render/volumetric/VolumetricFogPass.h>
 #include <shadow/ShadowMap.h>
 #ifdef USE_IMGUI
 #include <edit/undo/UndoRedoManager.h>
@@ -658,6 +658,7 @@ void Framework::LoadResource() {
     // UIの文字はここで焼いた高さのピクセル数でそのまま画像化される（アトラスは自動で広がる）。
     // 画面に出す最大の文字より大きく取っておけば、拡大してもぼやけない
     pTextureManager_->LoadFontTexture("NotoSansJP-Medium.ttf", 256);
+    pTextureManager_->LoadFontTexture("Buildingsandundertherailwaytracksfree_ver.otf", 256);
 
     ImGuiNotification::Post("全ての基本リソースを読み込みました", {0.2f, 0.8f, 0.2f, 1.0f});
     Logger::Info("All base resources loaded.");
