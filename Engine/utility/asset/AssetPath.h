@@ -34,10 +34,12 @@ const std::string &EngineRoot();
 const std::string &AppRoot();
 
 /// <summary>相対パスがエンジン側 (debug 配下) かどうかを判定する。</summary>
-/// <param name="rel">images / models ルートからの相対パス</param>
+/// <param name="rel">images / models ルートからの相対パス（モデルと同じフォルダのテクスチャは "../models/debug/..." もエンジン側）</param>
 inline bool IsEngineRelative(const std::string &rel)
 {
-    return rel.rfind("debug/", 0) == 0 || rel.rfind("debug\\", 0) == 0 || rel == "debug";
+    const size_t start = rel.rfind("../models/", 0) == 0 ? std::string("../models/").size() : 0;
+    return rel.compare(start, 6, "debug/") == 0 || rel.compare(start, 6, "debug\\") == 0 ||
+           rel.compare(start, std::string::npos, "debug") == 0;
 }
 
 // --- fonts / shaders (エンジン専用) --------------------------------------
@@ -56,7 +58,8 @@ inline std::string ImagesRoot(const std::string &rel)
     return (IsEngineRelative(rel) ? EngineRoot() : AppRoot()) + "images/";
 }
 
-/// <summary>テクスチャの実パス (＝TextureManager のマップキー)。rel は images ルートからの相対パス。</summary>
+/// <summary>テクスチャの実パス (＝TextureManager のマップキー)。rel は images ルートからの相対パス
+/// （モデルと同じフォルダに置いたテクスチャは "../models/フォルダ/名前.png"）。</summary>
 inline std::string Image(const std::string &rel) { return ImagesRoot(rel) + rel; }
 
 // --- models (debug=エンジン / その他=アプリ) -----------------------------

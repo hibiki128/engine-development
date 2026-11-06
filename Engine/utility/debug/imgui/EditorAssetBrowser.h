@@ -110,6 +110,8 @@ class EditorAssetBrowser
     bool PassSearch(const Entry &entry) const;
 
     std::vector<Entry> entries_;
+    // モデルと同じフォルダに置いたテクスチャ（一覧には出さずホットリロードだけ。relPath は "../models/..."）
+    std::vector<Entry> modelTextures_;
     // 種類ごとのフォルダ → 子フォルダ（フルパス、名前順）
     std::map<std::string, std::vector<std::string>> folderChildren_[static_cast<int>(Kind::Count)];
     int countByKind_[static_cast<int>(Kind::Count)] = {};

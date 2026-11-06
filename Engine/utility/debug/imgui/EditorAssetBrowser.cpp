@@ -181,6 +181,35 @@ void EditorAssetBrowser::Scan()
     {
         scanRoot(Kind::Model, root, {".obj", ".gltf", ".glb", ".fbx"});
     }
+
+    // モデルと同じフォルダに置いたテクスチャ（一覧には出さずホットリロードだけ）
+    modelTextures_.clear();
+    for (const std::string &root : AssetPath::ModelScanRoots())
+    {
+        std::error_code ec;
+        if (!fs::exists(root, ec))
+        {
+            continue;
+        }
+        for (auto it = fs::recursive_directory_iterator(root, ec); !ec && it != fs::recursive_directory_iterator(); it.increment(ec))
+        {
+            const std::string extension = LowerExtension(it->path());
+            if (!it->is_regular_file(ec) || (extension != ".png" && extension != ".jpg" && extension != ".jpeg"))
+            {
+                continue;
+            }
+            // images ルートから見たパス（Model がマテリアルに入れるパスと同じ形）
+            const std::u8string relative = fs::relative(it->path(), root, ec).generic_u8string();
+            const std::u8string fileName = it->path().filename().u8string();
+            Entry entry;
+            entry.kind = Kind::Image;
+            entry.relPath = "../models/" + std::string(relative.begin(), relative.end());
+            entry.fullPath = it->path().generic_string();
+            entry.name = std::string(fileName.begin(), fileName.end());
+            modelTextures_.push_back(std::move(entry));
+        }
+    }
+
     scanRoot(Kind::Prefab, AssetPath::Json("Prefab"), {".json"});
     scanRoot(Kind::Sound, AssetPath::SoundRoot(), {".wav"});
     {
@@ -464,6 +493,34 @@ void EditorAssetBrowser::CheckFileChanges()
     std::vector<std::string> reloaded;
     std::vector<std::string> reloadedModels;
     int reloadedObjects = 0;
+
+    // 画像の更新日時を見比べ、変わっていたら読み直す
+    const auto checkImage = [this, &reloaded](const Entry &entry) {
+        std::error_code ec;
+        const auto writeTime = fs::last_write_time(entry.fullPath, ec);
+        if (ec)
+        {
+            return;
+        }
+        const int64_t stamp = static_cast<int64_t>(writeTime.time_since_epoch().count());
+        auto [it, inserted] = imageWriteTimes_.try_emplace(entry.relPath, stamp);
+        if (inserted)
+        {
+            return; // 初めて見たファイルは基準にするだけ
+        }
+        if (it->second != stamp)
+        {
+            it->second = stamp;
+            // SRV の番号は据え置きで中身だけ差し替わるので、使っているスプライト・マテリアルもそのまま新しい絵になる
+            TextureManager::GetInstance()->ReloadTexture(entry.relPath);
+            reloaded.push_back(entry.name);
+        }
+    };
+
+    for (const Entry &entry : modelTextures_)
+    {
+        checkImage(entry);
+    }
     for (const Entry &entry : entries_)
     {
         if (entry.kind == Kind::Model)
@@ -498,28 +555,9 @@ void EditorAssetBrowser::CheckFileChanges()
             }
             continue;
         }
-        if (entry.kind != Kind::Image)
+        if (entry.kind == Kind::Image)
         {
-            continue;
-        }
-        std::error_code ec;
-        const auto writeTime = fs::last_write_time(entry.fullPath, ec);
-        if (ec)
-        {
-            continue;
-        }
-        const int64_t stamp = static_cast<int64_t>(writeTime.time_since_epoch().count());
-        auto [it, inserted] = imageWriteTimes_.try_emplace(entry.relPath, stamp);
-        if (inserted)
-        {
-            continue; // 初めて見たファイルは基準にするだけ
-        }
-        if (it->second != stamp)
-        {
-            it->second = stamp;
-            // SRV の番号は据え置きで中身だけ差し替わるので、使っているスプライト・マテリアルもそのまま新しい絵になる
-            TextureManager::GetInstance()->ReloadTexture(entry.relPath);
-            reloaded.push_back(entry.name);
+            checkImage(entry);
         }
     }
     if (reloaded.size() == 1)

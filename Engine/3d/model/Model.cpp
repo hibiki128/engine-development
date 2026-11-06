@@ -12,8 +12,132 @@
 #include <render/raytracing/RaytracingScene.h>
 #include <shadow/ShadowMap.h>
 #include <skybox/SkyBox.h>
+#include <asset/AssetPath.h>
+#include <filesystem>
 
 namespace Hagine {
+namespace {
+
+/// <summary>UTF-8 の文字列から path を作る（日本語のフォルダ名でも化けない）</summary>
+std::filesystem::path Utf8Path(const std::string &utf8)
+{
+    return std::filesystem::path(std::u8string(utf8.begin(), utf8.end()));
+}
+
+/// <summary>path を "/" 区切りの UTF-8 文字列にする</summary>
+std::string Utf8String(const std::filesystem::path &path)
+{
+    const std::u8string utf8 = path.generic_u8string();
+    return std::string(utf8.begin(), utf8.end());
+}
+
+/// <summary>"%20" のような URI のエスケープを戻す（glTF の uri は空白や日本語がエスケープされる）</summary>
+std::string DecodePercent(const std::string &text)
+{
+    const auto hexValue = [](char c) -> int {
+        if (c >= '0' && c <= '9')
+            return c - '0';
+        if (c >= 'a' && c <= 'f')
+            return c - 'a' + 10;
+        if (c >= 'A' && c <= 'F')
+            return c - 'A' + 10;
+        return -1;
+    };
+    std::string result;
+    result.reserve(text.size());
+    for (size_t i = 0; i < text.size(); ++i)
+    {
+        if (text[i] == '%' && i + 2 < text.size())
+        {
+            const int high = hexValue(text[i + 1]);
+            const int low = hexValue(text[i + 2]);
+            if (high >= 0 && low >= 0)
+            {
+                result += static_cast<char>(high * 16 + low);
+                i += 2;
+                continue;
+            }
+        }
+        result += text[i];
+    }
+    return result;
+}
+
+/// <summary>
+/// モデルに書かれたテクスチャのパスを images ルートからの相対パスにする。
+/// モデルと同じフォルダ基準で見つかれば "../models/..."、見つからなければ images ルート基準として扱う
+/// </summary>
+/// <param name="modelsRoot">models ルート（ModelsRoot の結果）</param>
+/// <param name="modelFile">models ルートからのモデルの相対パス</param>
+/// <param name="rawPath">モデルに書かれたテクスチャのパス</param>
+/// <returns>std::string: TextureManager に渡すパス</returns>
+std::string ResolveModelTexturePath(const std::string &modelsRoot, const std::string &modelFile, const std::string &rawPath)
+{
+    std::string raw = rawPath;
+    std::replace(raw.begin(), raw.end(), '\\', '/');
+    if (raw.empty())
+    {
+        return "debug/white1x1.png";
+    }
+    // glb などに埋め込まれたテクスチャ（"*0" のような名前）は読めない
+    if (raw.front() == '*')
+    {
+        Logger::Warn("[Model] \"" + modelFile + "\" のテクスチャはモデルに埋め込まれていて読めません。"
+                     "テクスチャを別ファイルで書き出してください（glTF なら「glTF Separate」）");
+        return "debug/white1x1.png";
+    }
+
+    std::vector<std::string> names = {raw};
+    if (const std::string decoded = DecodePercent(raw); decoded != raw)
+    {
+        names.push_back(decoded);
+    }
+
+    // モデルと同じフォルダ基準（書かれたとおり → ファイル名だけ）
+    const std::filesystem::path root = Utf8Path(modelsRoot);
+    const std::filesystem::path modelDir = Utf8Path(modelFile).parent_path();
+    for (const std::string &name : names)
+    {
+        const std::filesystem::path texture = Utf8Path(name);
+        std::vector<std::filesystem::path> candidates;
+        if (texture.is_relative())
+        {
+            candidates.push_back((modelDir / texture).lexically_normal());
+        }
+        candidates.push_back((modelDir / texture.filename()).lexically_normal());
+
+        for (const std::filesystem::path &candidate : candidates)
+        {
+            std::error_code ec;
+            if (!std::filesystem::is_regular_file(root / candidate, ec))
+            {
+                continue;
+            }
+            // images ルートから見たパスにする（images の中を指していればその相対パス）
+            std::string relative = Utf8String((std::filesystem::path("../models") / candidate).lexically_normal());
+            if (relative.starts_with("../images/"))
+            {
+                relative.erase(0, std::string("../images/").size());
+            }
+            return relative;
+        }
+    }
+
+    // images ルート基準で書かれた物
+    for (const std::string &name : names)
+    {
+        std::error_code ec;
+        if (std::filesystem::is_regular_file(Utf8Path(AssetPath::Image(name)), ec))
+        {
+            return name;
+        }
+    }
+    // 見つからない（読み込み時に TextureManager が知らせる）
+    return raw;
+}
+
+} // namespace
+
 void Model::Initialize(ModelCommon *modelCommon)
 {
     pModelCommon_ = modelCommon;
@@ -615,12 +739,12 @@ ModelData Model::LoadModelFile(const std::string &directoryPath, const std::stri
         aiMaterial *material = scene->mMaterials[materialIndex];
         MaterialData &currentMaterial = modelData.materials[materialIndex];
 
-        // ディフューズテクスチャの取得
+        // ディフューズテクスチャの取得（モデルと同じフォルダ基準で探す）
         if (material->GetTextureCount(aiTextureType_DIFFUSE) != 0)
         {
             aiString textureFilePath;
             material->GetTexture(aiTextureType_DIFFUSE, 0, &textureFilePath);
-            currentMaterial.textureFilePath = textureFilePath.C_Str();
+            currentMaterial.textureFilePath = ResolveModelTexturePath(directoryPath, filename, textureFilePath.C_Str());
         }
         else
         {
