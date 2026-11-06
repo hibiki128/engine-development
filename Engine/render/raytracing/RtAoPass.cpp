@@ -43,7 +43,7 @@ void RtAoPass::Initialize(DirectXCommon *pDxCommon, SrvManager *pSrvManager)
 
     if (!pDxCommon_->IsRaytracingSupported())
     {
-        Logger::Log("RtAoPass: レイトレーシング非対応のため無効です\n");
+        Logger::Log("RtAoPass: Disabled because ray tracing is not supported.\n");
         return;
     }
 
@@ -63,11 +63,11 @@ void RtAoPass::Initialize(DirectXCommon *pDxCommon, SrvManager *pSrvManager)
                     inputTableIndex_ != UINT32_MAX && blurTableIndex_ != UINT32_MAX);
     if (initialized_)
     {
-        Logger::Log("RtAoPass: 初期化しました\n");
+        Logger::Log("RtAoPass: Initialization completed.\n");
     }
     else
     {
-        Logger::Error("RtAoPass: 初期化に失敗しました。RTの遮蔽は無効になります。");
+        Logger::Error("RtAoPass: Failed to initialize. Ray-traced ambient occlusion will be disabled.");
     }
 }
 
@@ -91,7 +91,7 @@ uint32_t RtAoPass::AllocateContiguousTable(uint32_t count)
     }
     if (!contiguous)
     {
-        Logger::Error("RtAoPass: ディスクリプタを連続で確保できませんでした。");
+        Logger::Error("RtAoPass: Failed to allocate contiguous descriptors. Ray-traced ambient occlusion will be disabled.");
         return UINT32_MAX;
     }
     return firstAllocated + 1;
@@ -128,7 +128,7 @@ void RtAoPass::CreateResources(uint32_t width, uint32_t height)
                                                                clearValue, /*allowUAV=*/true);
     if (!rawResource_ || !blurredResource_)
     {
-        Logger::Error("RtAoPass: 遮蔽テクスチャを作成できませんでした。");
+        Logger::Error("RtAoPass: Failed to create ambient occlusion textures.");
         return;
     }
 

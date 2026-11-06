@@ -29,7 +29,7 @@ void RtShadowPass::Initialize(DirectXCommon *pDxCommon, SrvManager *pSrvManager)
 
     if (!pDxCommon_->IsRaytracingSupported())
     {
-        Logger::Log("RtShadowPass: レイトレーシング非対応のため無効です\n");
+        Logger::Log("RtShadowPass: Disabled because ray tracing is not supported.\n");
         return;
     }
 
@@ -61,14 +61,14 @@ void RtShadowPass::Initialize(DirectXCommon *pDxCommon, SrvManager *pSrvManager)
         }
         else
         {
-            Logger::Error("RtShadowPass: ディスクリプタを連続で確保できませんでした。RT影は無効になります。");
+            Logger::Error("RtShadowPass: Failed to allocate contiguous descriptors. Ray-traced shadows will be disabled.");
         }
     }
 
     initialized_ = (maskResource_ != nullptr && inputTableIndex_ != UINT32_MAX);
     if (initialized_)
     {
-        Logger::Log("RtShadowPass: 初期化しました\n");
+        Logger::Log("RtShadowPass: Initialization completed.\n");
     }
 }
 
@@ -98,7 +98,7 @@ void RtShadowPass::CreateResources(uint32_t width, uint32_t height)
                                                             clearValue, /*allowUAV=*/true);
     if (!maskResource_)
     {
-        Logger::Error("RtShadowPass: 影マスクのテクスチャを作成できませんでした。");
+        Logger::Error("RtShadowPass: Failed to create shadow mask texture.");
         return;
     }
 

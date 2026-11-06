@@ -16,8 +16,7 @@ namespace Hagine {
 namespace {
 
 /// 加速構造はアライメント要件があるので、要求サイズを切り上げる
-UINT64 AlignTo(UINT64 value, UINT64 alignment)
-{
+UINT64 AlignTo(UINT64 value, UINT64 alignment) {
     return (value + alignment - 1) & ~(alignment - 1);
 }
 
@@ -27,8 +26,7 @@ UINT64 AlignTo(UINT64 value, UINT64 alignment)
 constexpr uint64_t kBlasKeepFrames = 8;
 } // namespace
 
-void RaytracingScene::Initialize(DirectXCommon *pDxCommon, SrvManager *pSrvManager)
-{
+void RaytracingScene::Initialize(DirectXCommon *pDxCommon, SrvManager *pSrvManager) {
     pDxCommon_ = pDxCommon;
     pSrvManager_ = pSrvManager;
 
@@ -36,17 +34,15 @@ void RaytracingScene::Initialize(DirectXCommon *pDxCommon, SrvManager *pSrvManag
                  pDxCommon_->GetDevice5() != nullptr &&
                  pDxCommon_->GetCommandList4() != nullptr;
 
-    if (!available_)
-    {
-        Logger::Log("RaytracingScene: この環境ではレイトレーシングを使いません\n");
+    if (!available_) {
+        Logger::Log("RaytracingScene: Ray tracing is not supported in this environment.\n");
         return;
     }
 
-    Logger::Log("RaytracingScene: 初期化しました\n");
+    Logger::Log("RaytracingScene: Initialization completed.\n");
 }
 
-void RaytracingScene::Finalize()
-{
+void RaytracingScene::Finalize() {
     blasCache_.clear();
     skinnedBlasCache_.clear();
     submissions_.clear();
@@ -63,8 +59,7 @@ void RaytracingScene::Finalize()
 }
 
 Microsoft::WRL::ComPtr<ID3D12Resource> RaytracingScene::CreateBuffer(UINT64 sizeInBytes,
-                                                                     D3D12_RESOURCE_STATES initialState)
-{
+                                                                     D3D12_RESOURCE_STATES initialState) {
     D3D12_HEAP_PROPERTIES heapProperties{};
     heapProperties.Type = D3D12_HEAP_TYPE_DEFAULT;
 
@@ -86,11 +81,9 @@ Microsoft::WRL::ComPtr<ID3D12Resource> RaytracingScene::CreateBuffer(UINT64 size
     return resource;
 }
 
-D3D12_GPU_VIRTUAL_ADDRESS RaytracingScene::AcquireBlas(Model *pModel)
-{
+D3D12_GPU_VIRTUAL_ADDRESS RaytracingScene::AcquireBlas(Model *pModel) {
     auto it = blasCache_.find(pModel);
-    if (it != blasCache_.end())
-    {
+    if (it != blasCache_.end()) {
         it->second.lastUsedFrame = frameIndex_;
         return it->second.result ? it->second.result->GetGPUVirtualAddress() : 0;
     }
@@ -110,17 +103,14 @@ D3D12_GPU_VIRTUAL_ADDRESS RaytracingScene::AcquireBlas(Model *pModel)
     const size_t meshCount = pModel->GetMeshCount();
     geometries.reserve(meshCount);
 
-    for (uint32_t i = 0; i < meshCount; ++i)
-    {
+    for (uint32_t i = 0; i < meshCount; ++i) {
         Mesh *pMesh = pModel->GetMesh(i);
-        if (!pMesh || pMesh->GetIndexCount() == 0 || pMesh->GetVertexCount() == 0)
-        {
+        if (!pMesh || pMesh->GetIndexCount() == 0 || pMesh->GetVertexCount() == 0) {
             continue;
         }
         // GPUが書き換えるメッシュ（メタボールの表面）は、毎フレーム作り直さないと
         // 形がずれる。今のところ対象外にしておく
-        if (pMesh->IsGpuWritable())
-        {
+        if (pMesh->IsGpuWritable()) {
             continue;
         }
 
@@ -142,8 +132,7 @@ D3D12_GPU_VIRTUAL_ADDRESS RaytracingScene::AcquireBlas(Model *pModel)
         geometries.push_back(geometry);
     }
 
-    if (geometries.empty())
-    {
+    if (geometries.empty()) {
         return rememberEmpty();
     }
 
@@ -156,8 +145,7 @@ D3D12_GPU_VIRTUAL_ADDRESS RaytracingScene::AcquireBlas(Model *pModel)
 
     D3D12_RAYTRACING_ACCELERATION_STRUCTURE_PREBUILD_INFO prebuild{};
     pDxCommon_->GetDevice5()->GetRaytracingAccelerationStructurePrebuildInfo(&inputs, &prebuild);
-    if (prebuild.ResultDataMaxSizeInBytes == 0)
-    {
+    if (prebuild.ResultDataMaxSizeInBytes == 0) {
         return rememberEmpty();
     }
 
@@ -189,16 +177,13 @@ D3D12_GPU_VIRTUAL_ADDRESS RaytracingScene::AcquireBlas(Model *pModel)
     return address;
 }
 
-D3D12_GPU_VIRTUAL_ADDRESS RaytracingScene::AcquireSkinnedBlas(Model *pModel)
-{
+D3D12_GPU_VIRTUAL_ADDRESS RaytracingScene::AcquireSkinnedBlas(Model *pModel) {
     Skin *pSkin = pModel->GetSkin();
-    if (!pSkin)
-    {
+    if (!pSkin) {
         return 0;
     }
     ID3D12Resource *pVertexResource = pSkin->GetOutputVertexResource();
-    if (!pVertexResource)
-    {
+    if (!pVertexResource) {
         return 0;
     }
 
@@ -216,11 +201,9 @@ D3D12_GPU_VIRTUAL_ADDRESS RaytracingScene::AcquireSkinnedBlas(Model *pModel)
     const size_t meshCount = pModel->GetMeshCount();
     entry.geometries.reserve(meshCount);
 
-    for (uint32_t i = 0; i < meshCount; ++i)
-    {
+    for (uint32_t i = 0; i < meshCount; ++i) {
         Mesh *pMesh = pModel->GetMesh(i);
-        if (!pMesh || pMesh->GetIndexCount() == 0 || pMesh->GetVertexCount() == 0)
-        {
+        if (!pMesh || pMesh->GetIndexCount() == 0 || pMesh->GetVertexCount() == 0) {
             continue;
         }
 
@@ -241,8 +224,7 @@ D3D12_GPU_VIRTUAL_ADDRESS RaytracingScene::AcquireSkinnedBlas(Model *pModel)
         entry.geometries.push_back(geometry);
     }
 
-    if (entry.geometries.empty())
-    {
+    if (entry.geometries.empty()) {
         return 0;
     }
 
@@ -256,8 +238,7 @@ D3D12_GPU_VIRTUAL_ADDRESS RaytracingScene::AcquireSkinnedBlas(Model *pModel)
 
     D3D12_RAYTRACING_ACCELERATION_STRUCTURE_PREBUILD_INFO prebuild{};
     pDxCommon_->GetDevice5()->GetRaytracingAccelerationStructurePrebuildInfo(&inputs, &prebuild);
-    if (prebuild.ResultDataMaxSizeInBytes == 0)
-    {
+    if (prebuild.ResultDataMaxSizeInBytes == 0) {
         return 0;
     }
 
@@ -265,12 +246,10 @@ D3D12_GPU_VIRTUAL_ADDRESS RaytracingScene::AcquireSkinnedBlas(Model *pModel)
                                        D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BYTE_ALIGNMENT);
     const UINT64 resultSize = AlignTo(prebuild.ResultDataMaxSizeInBytes,
                                       D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BYTE_ALIGNMENT);
-    if (!entry.scratch || entry.scratch->GetDesc().Width < scratchSize)
-    {
+    if (!entry.scratch || entry.scratch->GetDesc().Width < scratchSize) {
         entry.scratch = CreateBuffer(scratchSize, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
     }
-    if (!entry.result || entry.result->GetDesc().Width < resultSize)
-    {
+    if (!entry.result || entry.result->GetDesc().Width < resultSize) {
         entry.result = CreateBuffer(resultSize, D3D12_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE);
         entry.builtOnce = false; // 器を作り直したので中身はまだ無い
     }
@@ -279,16 +258,13 @@ D3D12_GPU_VIRTUAL_ADDRESS RaytracingScene::AcquireSkinnedBlas(Model *pModel)
     return entry.result->GetGPUVirtualAddress();
 }
 
-bool RaytracingScene::BuildSkinnedBlas(Model *pModel)
-{
-    if (!IsActive() || !pModel)
-    {
+bool RaytracingScene::BuildSkinnedBlas(Model *pModel) {
+    if (!IsActive() || !pModel) {
         return false;
     }
 
     auto it = skinnedBlasCache_.find(pModel);
-    if (it == skinnedBlasCache_.end())
-    {
+    if (it == skinnedBlasCache_.end()) {
         return false;
     }
 
@@ -296,14 +272,12 @@ bool RaytracingScene::BuildSkinnedBlas(Model *pModel)
     // 記述が前フレームのままなので、作り直しても意味が無い
     SkinnedBlas &entry = it->second;
     if (!entry.needsBuild || !entry.result || !entry.scratch || !entry.pVertexResource ||
-        entry.geometries.empty())
-    {
+        entry.geometries.empty()) {
         return false;
     }
 
     ID3D12GraphicsCommandList4 *pCommandList = pDxCommon_->GetCommandList4();
-    if (!pCommandList)
-    {
+    if (!pCommandList) {
         return false;
     }
 
@@ -342,26 +316,21 @@ bool RaytracingScene::BuildSkinnedBlas(Model *pModel)
     return true;
 }
 
-void RaytracingScene::EvictUnusedBlas()
-{
-    if (frameIndex_ <= kBlasKeepFrames)
-    {
+void RaytracingScene::EvictUnusedBlas() {
+    if (frameIndex_ <= kBlasKeepFrames) {
         return;
     }
     const uint64_t threshold = frameIndex_ - kBlasKeepFrames;
 
-    for (auto it = blasCache_.begin(); it != blasCache_.end();)
-    {
+    for (auto it = blasCache_.begin(); it != blasCache_.end();) {
         it = (it->second.lastUsedFrame < threshold) ? blasCache_.erase(it) : std::next(it);
     }
-    for (auto it = skinnedBlasCache_.begin(); it != skinnedBlasCache_.end();)
-    {
+    for (auto it = skinnedBlasCache_.begin(); it != skinnedBlasCache_.end();) {
         it = (it->second.lastUsedFrame < threshold) ? skinnedBlasCache_.erase(it) : std::next(it);
     }
 }
 
-void RaytracingScene::OnModelDestroyed(const Model *pModel)
-{
+void RaytracingScene::OnModelDestroyed(const Model *pModel) {
     // const を外して引くだけ（キーとしてのアドレス比較しかしない）
     Model *pKey = const_cast<Model *>(pModel);
     blasCache_.erase(pKey);
@@ -372,13 +341,11 @@ void RaytracingScene::OnModelDestroyed(const Model *pModel)
     std::erase_if(submissions_, [pKey](const Submission &submission) { return submission.pModel == pKey; });
 }
 
-void RaytracingScene::RequestUse()
-{
+void RaytracingScene::RequestUse() {
     useRequested_ = true;
 }
 
-void RaytracingScene::BeginFrame()
-{
+void RaytracingScene::BeginFrame() {
     // 前のフレームに要求があったときだけ、このフレームは加速構造を作る。
     // 使う側が動くのは描画フェーズで、積むのはその前なので1フレーム遅れになる
     active_ = useRequested_;
@@ -395,10 +362,8 @@ void RaytracingScene::BeginFrame()
     EvictUnusedBlas();
 }
 
-void RaytracingScene::Submit(Model *pModel, const Matrix4x4 &worldMatrix)
-{
-    if (!IsActive() || !pModel)
-    {
+void RaytracingScene::Submit(Model *pModel, const Matrix4x4 &worldMatrix) {
+    if (!IsActive() || !pModel) {
         return;
     }
 
@@ -407,8 +372,7 @@ void RaytracingScene::Submit(Model *pModel, const Matrix4x4 &worldMatrix)
     const bool skinned = pModel->IsSkinned();
     const D3D12_GPU_VIRTUAL_ADDRESS blasAddress =
         skinned ? AcquireSkinnedBlas(pModel) : AcquireBlas(pModel);
-    if (blasAddress == 0)
-    {
+    if (blasAddress == 0) {
         return;
     }
 
@@ -419,8 +383,7 @@ void RaytracingScene::Submit(Model *pModel, const Matrix4x4 &worldMatrix)
     // DXR の Transform は「列ベクトル規約の 3x4」。
     // このエンジンは行ベクトル規約（world = pos * M）なので、
     // 3x3 部分は転置し、平行移動は M の4行目から持ってくる
-    for (int row = 0; row < 3; ++row)
-    {
+    for (int row = 0; row < 3; ++row) {
         submission.desc.Transform[row][0] = worldMatrix.m[0][row];
         submission.desc.Transform[row][1] = worldMatrix.m[1][row];
         submission.desc.Transform[row][2] = worldMatrix.m[2][row];
@@ -436,38 +399,31 @@ void RaytracingScene::Submit(Model *pModel, const Matrix4x4 &worldMatrix)
     submissions_.push_back(submission);
 }
 
-void RaytracingScene::EnsureTlas()
-{
-    if (!IsActive() || tlasAttemptedThisFrame_)
-    {
+void RaytracingScene::EnsureTlas() {
+    if (!IsActive() || tlasAttemptedThisFrame_) {
         return;
     }
     tlasAttemptedThisFrame_ = true;
     BuildTlas();
 }
 
-void RaytracingScene::BuildTlas()
-{
+void RaytracingScene::BuildTlas() {
     // 形が出来ている物だけを入れる。
     // スキニングのBLASは「積まれたが、まだ一度も作られていない」ことがあり、
     // 中身が未初期化のBLASを指したTLASを組むとGPUが壊れる
     instances_.clear();
     instances_.reserve(submissions_.size());
-    for (const Submission &submission : submissions_)
-    {
-        if (submission.skinned)
-        {
+    for (const Submission &submission : submissions_) {
+        if (submission.skinned) {
             auto it = skinnedBlasCache_.find(submission.pModel);
-            if (it == skinnedBlasCache_.end() || !it->second.builtOnce)
-            {
+            if (it == skinnedBlasCache_.end() || !it->second.builtOnce) {
                 continue;
             }
         }
         instances_.push_back(submission.desc);
     }
 
-    if (instances_.empty())
-    {
+    if (instances_.empty()) {
         return;
     }
 
@@ -475,8 +431,7 @@ void RaytracingScene::BuildTlas()
 
     // ── インスタンス記述をGPUへ送る ──
     const UINT64 required = sizeof(D3D12_RAYTRACING_INSTANCE_DESC) * instances_.size();
-    if (!instanceBuffer_ || instanceBufferCapacity_ < required)
-    {
+    if (!instanceBuffer_ || instanceBufferCapacity_ < required) {
         // 作り直しを減らすため、必要量の倍を確保しておく
         instanceBufferCapacity_ = (std::max)(required * 2, static_cast<UINT64>(1024));
         instanceBuffer_ = pDxCommon_->CreateBufferResource(static_cast<size_t>(instanceBufferCapacity_));
@@ -484,8 +439,7 @@ void RaytracingScene::BuildTlas()
     {
         void *mapped = nullptr;
         D3D12_RANGE readRange{0, 0};
-        if (SUCCEEDED(instanceBuffer_->Map(0, &readRange, &mapped)) && mapped)
-        {
+        if (SUCCEEDED(instanceBuffer_->Map(0, &readRange, &mapped)) && mapped) {
             std::memcpy(mapped, instances_.data(), static_cast<size_t>(required));
             instanceBuffer_->Unmap(0, nullptr);
         }
@@ -501,8 +455,7 @@ void RaytracingScene::BuildTlas()
 
     D3D12_RAYTRACING_ACCELERATION_STRUCTURE_PREBUILD_INFO prebuild{};
     pDxCommon_->GetDevice5()->GetRaytracingAccelerationStructurePrebuildInfo(&inputs, &prebuild);
-    if (prebuild.ResultDataMaxSizeInBytes == 0)
-    {
+    if (prebuild.ResultDataMaxSizeInBytes == 0) {
         return;
     }
 
@@ -511,12 +464,10 @@ void RaytracingScene::BuildTlas()
                                        D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BYTE_ALIGNMENT);
     const UINT64 resultSize = AlignTo(prebuild.ResultDataMaxSizeInBytes,
                                       D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BYTE_ALIGNMENT);
-    if (!tlasScratch_ || tlasScratch_->GetDesc().Width < scratchSize)
-    {
+    if (!tlasScratch_ || tlasScratch_->GetDesc().Width < scratchSize) {
         tlasScratch_ = CreateBuffer(scratchSize, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
     }
-    if (!tlasResult_ || tlasResult_->GetDesc().Width < resultSize)
-    {
+    if (!tlasResult_ || tlasResult_->GetDesc().Width < resultSize) {
         tlasResult_ = CreateBuffer(resultSize, D3D12_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE);
     }
 
@@ -537,8 +488,7 @@ void RaytracingScene::BuildTlas()
 
     // 加速構造の規模は起動直後に一度だけ出す。毎フレーム出すとログが溢れる
     static bool loggedOnce = false;
-    if (!loggedOnce)
-    {
+    if (!loggedOnce) {
         loggedOnce = true;
         Logger::Log(std::format(
             "RaytracingScene: TLAS を構築しました（形の種類={} / 配置数={} / スキン={}）\n",
