@@ -10,7 +10,6 @@
 #ifdef USE_IMGUI
 #include "imgui.h"
 #include <debug/imgui/DebugUIHelper.h>
-#include <icon/IconsFontAwesome5.h>
 #endif // USE_IMGUI
 
 #include <algorithm>
@@ -413,97 +412,45 @@ void BloomPass::SaveData()
 void BloomPass::DrawImGui()
 {
 #ifdef USE_IMGUI
-    if (!ThemedHeader(ICON_FA_SUN " ブルーム（ミップ列）", DebugTheme::kAccentOrange, true))
+    if (!ThemedHeader("ブルーム", DebugTheme::kAccentOrange, true))
     {
         return;
     }
     ImGui::Indent();
 
     AccentCheckbox("有効##bloomPass", &enabled_, DebugTheme::kAccentGreen);
-    if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("ミップ列方式のブルーム。\nポストエフェクト一覧の旧「ブルーム」とは別物で、こちらの方が広く自然に滲む。");
-
-    AccentCheckbox("パーティクルだけを光らせる##bloomParticleOnly", &particleOnly_,
-                   DebugTheme::kAccentBlue);
-    if (ImGui::IsItemHovered())
-    {
-        ImGui::SetTooltip("ON : パーティクル描画の前後の差だけを光らせる（キャラや地形は光らない）\n"
-                          "OFF: 画面全体の明るい部分を光らせる\n\n"
-                          "※ ON のときはGPUパーティクルだけが対象。\n"
-                          "　 デバッグ線とUIは対象外（パーティクルより後に描かれるため）。");
-    }
+    AccentCheckbox("パーティクルだけ光らせる##bloomParticleOnly", &particleOnly_, DebugTheme::kAccentBlue);
 
     ImGui::DragFloat("しきい値##bloomThreshold", &threshold_, 0.01f, 0.0f, 20.0f, "%.2f");
-    if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("この明るさを超えた分が光る。\nシーンはHDRなので 1.0 を超える値も普通にある。");
-
     ImGui::DragFloat("なめらかさ##bloomKnee", &knee_, 0.01f, 0.0f, 2.0f, "%.2f");
-    if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("しきい値の境目のなめらかさ。\n0 にすると境目でチラつきやすくなる。");
-
     ImGui::DragFloat("強さ##bloomIntensity", &intensity_, 0.01f, 0.0f, 5.0f, "%.2f");
-
-    ImGui::DragFloat("滲みの広がり##bloomRadius", &filterRadius_, 0.0005f, 0.0f, 0.05f, "%.4f");
-    if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("拡大するときのテント幅（UV空間）。\n大きいほど柔らかく広がるが、大きすぎると形が崩れる。");
-
+    ImGui::DragFloat("広がり##bloomRadius", &filterRadius_, 0.0005f, 0.0f, 0.05f, "%.4f");
     int mipCount = static_cast<int>(activeMipCount_);
     if (ImGui::SliderInt("段数##bloomMip", &mipCount, 1, static_cast<int>(kMipCount)))
     {
         activeMipCount_ = static_cast<uint32_t>(std::clamp(mipCount, 1, static_cast<int>(kMipCount)));
     }
-    if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("多いほど滲みが広い範囲へ届く。\n減らすと光の周りだけが締まって光る。");
 
-    // ---- 歪み（熱揺らぎ）----
-    ImGui::Spacing();
-    ImGui::SeparatorText("歪み（熱揺らぎ）");
+    ImGui::SeparatorText("歪み");
     AccentCheckbox("有効##bloomDistort", &distortionEnabled_, DebugTheme::kAccentBlue);
-    if (ImGui::IsItemHovered())
-    {
-        ImGui::SetTooltip("強いオーラのまわりの空気が揺れて、向こう側の景色が歪んで見えるやつ。\n"
-                          "ブルームが作ったパーティクルだけのミップをそのままマスクに使うので、\n"
-                          "法線テクスチャなどの素材は1枚も要りません。\n\n"
-                          "歪むのは背景だけで、パーティクル自身は歪みません。");
-    }
     if (distortionEnabled_ && !particleOnly_)
     {
-        ImGui::TextColored(DebugTheme::kAccentOrange,
-                           "※「パーティクルだけを光らせる」がONでないと動きません");
+        ImGui::TextColored(DebugTheme::kAccentOrange, "「パーティクルだけ光らせる」が必要");
     }
     if (distortionEnabled_)
     {
-        ImGui::DragFloat("揺れの大きさ##distStrength", &distortionStrength_, 0.0005f, 0.0f, 0.1f, "%.4f");
-        if (ImGui::IsItemHovered())
-            ImGui::SetTooltip("背景をずらす量（UV空間）。\n0.03 を超えると景色が割れて見えます。");
-
-        ImGui::DragFloat("ゆらぎの細かさ##distFreq", &distortionFrequency_, 0.5f, 1.0f, 200.0f, "%.1f");
-        if (ImGui::IsItemHovered())
-            ImGui::SetTooltip("大きいほど細かく波打ちます。熱揺らぎは 20〜40 くらいが自然。");
-
-        ImGui::DragFloat("ゆらぎの速さ##distSpeed", &distortionSpeed_, 0.01f, 0.0f, 5.0f, "%.2f");
-
+        ImGui::DragFloat("大きさ##distStrength", &distortionStrength_, 0.0005f, 0.0f, 0.1f, "%.4f");
+        ImGui::DragFloat("細かさ##distFreq", &distortionFrequency_, 0.5f, 1.0f, 200.0f, "%.1f");
+        ImGui::DragFloat("速さ##distSpeed", &distortionSpeed_, 0.01f, 0.0f, 5.0f, "%.2f");
         ImGui::DragFloat("マスクの効き##distGain", &distortionMaskGain_, 0.05f, 0.0f, 20.0f, "%.2f");
-        if (ImGui::IsItemHovered())
-        {
-            ImGui::SetTooltip("パーティクルの明るさ→揺れ量の倍率。\n"
-                              "上げるほど暗い粒のまわりでも揺れますが、上げすぎると画面全体が揺れます。");
-        }
-
         int maskMip = static_cast<int>(distortionMaskMip_);
-        if (ImGui::SliderInt("揺れの広がり（段）##distMip", &maskMip, 0, static_cast<int>(kMipCount) - 1))
+        if (ImGui::SliderInt("マスクの段##distMip", &maskMip, 0, static_cast<int>(kMipCount) - 1))
         {
             distortionMaskMip_ = static_cast<uint32_t>(std::clamp(maskMip, 0, static_cast<int>(kMipCount) - 1));
         }
-        if (ImGui::IsItemHovered())
-        {
-            ImGui::SetTooltip("マスクに使うミップの段。\n"
-                              "大きいほどぼけたマスクになり、粒の外側まで広く揺れます。\n"
-                              "0 は粒のほぼ真上だけが揺れます。");
-        }
     }
 
-    if (ConfirmButton(ICON_FA_SAVE " ブルーム設定を保存", ImVec2(-1.0f, 0.0f)))
+    if (ConfirmButton("保存##bloom", ImVec2(-1.0f, 0.0f)))
     {
         SaveData();
     }

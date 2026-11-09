@@ -409,15 +409,11 @@ void DeferredRenderer::DrawImGui()
 #ifdef USE_IMGUI
     ImGui::PushStyleColor(ImGuiCol_CheckMark, DebugTheme::kAccentCyan);
     bool enabled = enabled_;
-    if (ImGui::Checkbox("ディファードレンダリングを使う", &enabled))
+    if (ImGui::Checkbox("ディファード", &enabled))
     {
         enabled_ = enabled;
     }
     ImGui::PopStyleColor();
-    ImGui::SetItemTooltip(
-        "不透明オブジェクトをG-Bufferへ描いてから1回でライティングします。\n"
-        "光源が多いほど前方描画より軽くなります。\n"
-        "オフにすると従来の前方描画に戻ります（見た目は同じ）。");
 
     if (!initialized_)
     {
@@ -425,35 +421,24 @@ void DeferredRenderer::DrawImGui()
         return;
     }
 
-    ImGui::Separator();
-    ImGui::Text("G-Buffer: %u x %u", width_, height_);
-    ImGui::Text("タイル: %u x %u (%u px/タイル)", tileCountX_, tileCountY_, kTileSize);
-
-    // レイトレーシングの影（G-Buffer と深度を使うのでディファードとセットで置く）
-    ImGui::Separator();
-    SectionHeader("[ レイトレーシングの影 ]", DebugTheme::kAccentPurple);
-    RtShadowPass::GetInstance()->DrawImGui();
+    ImGui::TextDisabled("G-Buffer %u x %u / タイル %u x %u (%u px)", width_, height_, tileCountX_, tileCountY_, kTileSize);
 
     LightGroup *lightGroup = LightGroup::GetInstance();
     const uint32_t totalLights = lightGroup->GetGpuTotalLightCount();
-    ImGui::Text("ポイントライト: %u / %u", totalLights, LightGroup::kMaxBufferedPointLights);
-    ImGui::SetItemTooltip("CPU側（手置き＋動的）%u個 ＋ GPU生成の粒子光源 %u個",
-                          lastPointLightCount_, lightGroup->GetParticleLightCount());
+    ImGui::Text("ポイントライト %u / %u", totalLights, LightGroup::kMaxBufferedPointLights);
+    ImGui::SetItemTooltip("手置き・動的 %u / 粒子 %u", lastPointLightCount_, lightGroup->GetParticleLightCount());
     if (totalLights > LightGroup::kMaxBufferedPointLights)
     {
-        ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kAccentOrange);
-        ImGui::TextWrapped("※ 光源が上限を超えています。溢れた粒子光源は捨てられます");
-        ImGui::PopStyleColor();
+        ImGui::TextColored(DebugTheme::kAccentOrange, "上限を超えた分は捨てています");
     }
-    ImGui::Text("1タイルの上限: %u", kMaxLightsPerTile);
-    ImGui::SetItemTooltip("1タイルに届く光源がこれを超えると先着順で切り捨てられます。\n"
-                          "粒子光源が密集すると簡単に溢れるので、間引きと半径で調整してください。");
+    ImGui::Text("1タイルの上限 %u", kMaxLightsPerTile);
 
-    // 遮蔽は G-Buffer を使うので、ディファードの設定と同じ場所に置く。
-    // SSAO と RT の遮蔽は同じものを作るので並べて見せる（ONにできるのはどちらか一方）
-    ImGui::Separator();
+    ImGui::SeparatorText("レイトレの影");
+    RtShadowPass::GetInstance()->DrawImGui();
+
+    ImGui::SeparatorText("SSAO");
     SsaoRenderer::GetInstance()->DrawImGui();
-    ImGui::Separator();
+    ImGui::SeparatorText("RT AO");
     RtAoPass::GetInstance()->DrawImGui();
 #endif
 }

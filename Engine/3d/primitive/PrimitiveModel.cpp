@@ -503,15 +503,15 @@ PrimitiveModel::PrimitiveData PrimitiveModel::BuildCylinder(uint32_t divide, uin
             uint32_t topLeft = bottomLeft + stride;
             uint32_t topRight = topLeft + 1;
 
-            // 三角形1
+            // 三角形1（外側から見て時計回り＝表が外向き）
             primitiveData.indices.push_back(bottomLeft);
-            primitiveData.indices.push_back(bottomRight);
             primitiveData.indices.push_back(topLeft);
+            primitiveData.indices.push_back(bottomRight);
 
             // 三角形2
             primitiveData.indices.push_back(topLeft);
-            primitiveData.indices.push_back(bottomRight);
             primitiveData.indices.push_back(topRight);
+            primitiveData.indices.push_back(bottomRight);
         }
     }
 
@@ -913,15 +913,15 @@ void PrimitiveModel::CreateClosedCylinder()
         uint32_t bottomRight = bottomLeft + 2;
         uint32_t topRight = bottomLeft + 3;
 
-        // 三角形1
+        // 三角形1（外側から見て時計回り＝表が外向き）
         primitiveData.indices.push_back(bottomLeft);
-        primitiveData.indices.push_back(bottomRight);
         primitiveData.indices.push_back(topLeft);
+        primitiveData.indices.push_back(bottomRight);
 
         // 三角形2
         primitiveData.indices.push_back(topLeft);
-        primitiveData.indices.push_back(bottomRight);
         primitiveData.indices.push_back(topRight);
+        primitiveData.indices.push_back(bottomRight);
     }
 
     // -------------------------------------------------------

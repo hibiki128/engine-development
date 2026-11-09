@@ -37,6 +37,7 @@ void ImGuiManager::BuildWindowRegistry()
         {"inspector", ICON_FA_CUBE, "シーンのオブジェクト設定", "シーン・オブジェクト", "シーンが持つキャラクターなど（プレイヤー・敵・演出）の調整項目", &showObjectView_},
         {"gizmo", ICON_FA_ARROWS_ALT, "ギズモ (トランスフォーム)", "シーン・オブジェクト", "移動/回転/拡縮の操作と、操作対象の種類フィルタ", &showGizmoView_},
         {"placement", ICON_FA_TH, "配置ツール", "シーン・オブジェクト", "選択中のオブジェクトを直線・格子・円・ばらまきで並べて複製します（置く場所を下描きしてから作れる）", &showPlacementToolView_},
+        {"objectGroup", ICON_FA_OBJECT_GROUP, "オブジェクトグループ", "シーン・オブジェクト", "オブジェクトをグループにまとめて保存・呼び出し", &showObjectGroupView_},
         {"collider", ICON_FA_SHAPES, "コライダー", "シーン・オブジェクト", "当たり判定の確認・調整とタグ管理", &showColliderTagManagerView_},
 
         {"assets", ICON_FA_IMAGES, "アセットブラウザ", "アセット・UI", "画像・モデル・プレハブ・サウンド・JSON を探して、ドラッグで割り当て・配置します", &showAssetBrowserView_},

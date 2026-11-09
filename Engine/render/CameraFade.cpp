@@ -93,24 +93,20 @@ void CameraFade::DrawImGui()
 {
 #ifdef USE_IMGUI
     Settings &settings = GetSettings();
-    SectionHeader("[ カメラに近い物を透けさせる ]", DebugTheme::kAccentCyan);
     AccentCheckbox("有効##cameraFade", &settings.enabled, DebugTheme::kAccentCyan);
-    ImGui::SetItemTooltip("カメラが物に近づくと、網目状に間引いてだんだん透けさせ、最後は見えなくします。\n"
-                          "影は残ります。オブジェクトごとに外すこともできます（インスペクタの「表示」）");
     ImGui::BeginDisabled(!settings.enabled);
     ImGui::SetNextItemWidth(160.0f);
     ImGui::DragFloat("透け始める距離##cameraFade", &settings.fadeStartDistance, 0.05f, 0.0f, 50.0f, "%.2f");
     ImGui::SetNextItemWidth(160.0f);
-    ImGui::DragFloat("完全に消える距離##cameraFade", &settings.fadeEndDistance, 0.05f, 0.0f, 50.0f, "%.2f");
+    ImGui::DragFloat("消える距離##cameraFade", &settings.fadeEndDistance, 0.05f, 0.0f, 50.0f, "%.2f");
     settings.fadeEndDistance = (std::min)(settings.fadeEndDistance, settings.fadeStartDistance);
     ImGui::SetNextItemWidth(160.0f);
-    ImGui::DragFloat("対象にする大きさの上限##cameraFade", &settings.maxObjectSize, 0.5f, 0.0f, 1000.0f, "%.1f");
-    ImGui::SetItemTooltip("箱の対角線がこれより大きい物（地形・床など）は透けさせません");
+    ImGui::DragFloat("大きさの上限##cameraFade", &settings.maxObjectSize, 0.5f, 0.0f, 1000.0f, "%.1f");
     ImGui::EndDisabled();
     if (NeutralButton("保存##cameraFade"))
     {
         Save();
-        ImGuiNotification::Post("カメラの近接フェードの設定を保存しました", {0.2f, 0.8f, 0.2f, 1.0f});
+        ImGuiNotification::Post("近接フェードの設定を保存しました", {0.2f, 0.8f, 0.2f, 1.0f});
     }
 #endif // USE_IMGUI
 }

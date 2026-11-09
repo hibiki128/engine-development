@@ -13,6 +13,7 @@
 #include <fstream>
 #include <icon/IconsFontAwesome5.h>
 #include <imgui.h>
+#include <object/group/ObjectGroupManager.h>
 
 namespace Hagine {
 
@@ -140,6 +141,20 @@ void ImGuiManager::ShowPlacementToolWindow()
     if (ImGui::Begin(ICON_FA_TH " 配置ツール###PlacementTool", &showPlacementToolView_, ImGuiWindowFlags_NoFocusOnAppearing))
     {
         pImGuizmoManager_->DrawPlacementTool();
+    }
+    ImGui::End();
+}
+
+void ImGuiManager::ShowObjectGroupWindow()
+{
+    if (!showObjectGroupView_)
+    {
+        return;
+    }
+    ImGui::SetNextWindowSize(ImVec2(340.0f, 460.0f), ImGuiCond_FirstUseEver);
+    if (ImGui::Begin("オブジェクトグループ###ObjectGroup", &showObjectGroupView_, ImGuiWindowFlags_NoFocusOnAppearing))
+    {
+        ObjectGroupManager::GetInstance()->DrawImGui();
     }
     ImGui::End();
 }

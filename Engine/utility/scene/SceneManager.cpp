@@ -10,6 +10,7 @@
 #include <DirectXCommon.h>
 #include <SpriteManager.h>
 #include <camera/CameraManager.h>
+#include <object/group/ObjectGroupManager.h>
 #include <cassert>
 #include <particle/gpu/ParticleCSSpawner.h>
 #include <utility/debug/imgui/ImGuiNotification.h>
@@ -183,6 +184,7 @@ void SceneManager::SceneChange() {
             SpriteManager::GetInstance()->Clear();
             // 旧シーンが登録したカメラを破棄する（新シーンへ持ち越さない）
             CameraManager::GetInstance()->Clear();
+            ObjectGroupManager::GetInstance()->Clear();
 #ifndef USE_IMGUI
             ParticleCSGroupManager::GetInstance()->ClearIndependentGroups();
 #endif // USE_IMGUI
@@ -274,6 +276,7 @@ void SceneManager::RebuildCurrentScene() {
     BaseObjectManager::GetInstance()->RemoveAllObjects();
     SpriteManager::GetInstance()->Clear();
     CameraManager::GetInstance()->Clear();
+    ObjectGroupManager::GetInstance()->Clear();
     // 旧シーンの描画エントリをすべて削除（ダングリングラムダ呼び出し防止）
     if (pDrawSystem_) {
         pDrawSystem_->Clear();

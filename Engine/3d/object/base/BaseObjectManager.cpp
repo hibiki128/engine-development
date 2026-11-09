@@ -4,6 +4,7 @@
 #include <functional>
 #include <metaball/MetaBallGroupManager.h>
 #include <metaball/MetaBallSource.h>
+#include <object/group/ObjectGroupManager.h>
 #include <asset/AssetPath.h>
 #include <utility/debug/imgui/ImGuiNotification.h>
 #ifdef USE_IMGUI
@@ -933,6 +934,18 @@ bool ObjectMatchesFilter(BaseObject *obj, const char *filter)
         const std::string model = obj->IsPrimitive() ? std::string("primitive") : obj->GetModelPath();
         return NameMatchesFilter(model, query.c_str());
     }
+    if (text.rfind("g:", 0) == 0)
+    {
+        const std::string query = text.substr(2);
+        for (const ObjectGroup *group : ObjectGroupManager::GetInstance()->FindGroupsOf(obj->GetName()))
+        {
+            if (NameMatchesFilter(group->GetName(), query.c_str()))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
     return NameMatchesFilter(obj->GetName(), filter);
 }
 
@@ -1133,13 +1146,14 @@ void BaseObjectManager::ShowParentChildHierarchy()
         // ---- 検索欄と操作の説明（説明は「？」にまとめて一覧の場所を広く取る）----
         const float helpWidth = ImGui::GetFrameHeight();
         ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - helpWidth - ImGui::GetStyle().ItemSpacing.x);
-        ImGui::InputTextWithHint("##hierarchyFilter", ICON_FA_SEARCH " 名前で絞り込み（t:タグ  m:モデル）", g_hierarchyFilter,
+        ImGui::InputTextWithHint("##hierarchyFilter", ICON_FA_SEARCH " 名前で絞り込み（t:タグ  m:モデル  g:グループ）", g_hierarchyFilter,
                                  sizeof(g_hierarchyFilter));
         if (ImGui::IsItemHovered())
         {
             ImGui::SetTooltip("名前の一部で絞り込みます\n"
                               "t:Rock … コライダーのタグで探す\n"
                               "m:gltf … モデルのパスで探す（プリミティブは m:primitive）\n"
+                              "g:敵 … グループで探す\n"
                               "Esc で検索語を消します");
         }
         if (ImGui::IsItemFocused() && ImGui::IsKeyPressed(ImGuiKey_Escape))
@@ -1510,6 +1524,24 @@ void BaseObjectManager::ShowObjectHierarchy(BaseObject *obj, int depth)
         {
             ImGui::SetClipboardText(name.c_str());
         }
+        if (ImGui::BeginMenu(ICON_FA_OBJECT_GROUP " グループ"))
+        {
+            // 選択中の行を右クリックしたときは選択中の物すべてが対象
+            std::vector<std::string> targets;
+            if (isSelected)
+            {
+                for (BaseObject *selected : gizmo->GetSelectedTargets())
+                {
+                    targets.push_back(selected->GetName());
+                }
+            }
+            if (targets.empty())
+            {
+                targets.push_back(name);
+            }
+            ObjectGroupManager::GetInstance()->DrawMembershipMenu(targets);
+            ImGui::EndMenu();
+        }
         ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.92f, 0.52f, 0.48f, 1.0f));
         if (ImGui::MenuItem(ICON_FA_TRASH_ALT " 削除", "Delete"))
         {
@@ -1744,6 +1776,7 @@ std::string BaseObjectManager::RenameObject(const std::string &oldName, const st
 
     // 名前で引いている他マネージャの登録
     AttachmentManager::GetInstance()->RenameTarget(oldName, newName);
+    ObjectGroupManager::GetInstance()->OnObjectRenamed(oldName, newName);
     MotionEditor::GetInstance()->RenameTarget(obj);
     for (TimelineTrack &track : TimelineManager::GetInstance()->GetSequence().GetTracks())
     {

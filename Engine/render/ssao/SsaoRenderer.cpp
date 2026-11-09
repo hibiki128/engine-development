@@ -10,7 +10,6 @@
 #include "imgui.h"
 #include <debug/imgui/DebugUIHelper.h>
 #include <debug/imgui/ImGuiNotification.h>
-#include <icon/IconsFontAwesome5.h>
 #endif // USE_IMGUI
 
 #include <memory>
@@ -282,44 +281,34 @@ void SsaoRenderer::LoadData(const std::string &fileName)
 void SsaoRenderer::DrawImGui()
 {
 #ifdef USE_IMGUI
-    SectionHeader(ICON_FA_CIRCLE " SSAO（接地の陰り）", DebugTheme::kAccentOrange);
-    DimText("物と床の接地部分やへこみに陰りを入れて、置いてある感じを出します");
-
-    ToggleRow("SSAO を使う", "##ssaoEnabled", &enabled_, DebugTheme::kAccentOrange);
+    AccentCheckbox("有効##ssaoEnabled", &enabled_, DebugTheme::kAccentOrange);
     if (!enabled_)
         return;
 
     ImGui::SetNextItemWidth(-1.0f);
-    ImGui::SliderFloat("##ssaoStrength", &strength_, 0.0f, 1.0f, "効かせ具合 %.2f");
+    ImGui::SliderFloat("##ssaoStrength", &strength_, 0.0f, 1.0f, "効き %.2f");
     ImGui::SetNextItemWidth(-1.0f);
-    ImGui::SliderFloat("##ssaoRadius", &settings_.radius, 0.05f, 3.0f, "届く範囲 %.2f");
-    if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("どれだけ離れた所まで遮蔽として数えるか。大きいほど広く柔らかい陰りになります");
+    ImGui::SliderFloat("##ssaoRadius", &settings_.radius, 0.05f, 3.0f, "半径 %.2f");
     ImGui::SetNextItemWidth(-1.0f);
     ImGui::SliderFloat("##ssaoIntensity", &settings_.intensity, 0.0f, 3.0f, "濃さ %.2f");
     ImGui::SetNextItemWidth(-1.0f);
     ImGui::SliderFloat("##ssaoPower", &settings_.power, 0.5f, 4.0f, "コントラスト %.2f");
     ImGui::SetNextItemWidth(-1.0f);
-    ImGui::SliderFloat("##ssaoBias", &settings_.bias, 0.0f, 0.2f, "自己遮蔽の余裕 %.3f");
-    if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("平らな面に縞模様が出るときは上げてください");
+    ImGui::SliderFloat("##ssaoBias", &settings_.bias, 0.0f, 0.2f, "バイアス %.3f");
     ImGui::SetNextItemWidth(-1.0f);
     ImGui::SliderInt("##ssaoSamples", &settings_.sampleCount, 4, 32, "サンプル数 %d");
     ImGui::SetNextItemWidth(-1.0f);
-    ImGui::SliderFloat("##ssaoMaxDistance", &settings_.maxDistance, 1.0f, 50.0f, "遠景の打ち切り %.1f");
+    ImGui::SliderFloat("##ssaoMaxDistance", &settings_.maxDistance, 1.0f, 50.0f, "最大距離 %.1f");
 
-    ImGui::Spacing();
     ImGui::SetNextItemWidth(-1.0f);
-    ImGui::SliderInt("##ssaoBlurRadius", &blurSettings_.radius, 0, 4, "ならし幅 %d");
+    ImGui::SliderInt("##ssaoBlurRadius", &blurSettings_.radius, 0, 4, "ブラー半径 %d");
     ImGui::SetNextItemWidth(-1.0f);
-    ImGui::SliderFloat("##ssaoBlurDepth", &blurSettings_.depthThreshold, 0.0001f, 0.01f,
-                       "輪郭を守る強さ %.4f");
+    ImGui::SliderFloat("##ssaoBlurDepth", &blurSettings_.depthThreshold, 0.0001f, 0.01f, "ブラーの深度しきい値 %.4f");
 
-    ImGui::Spacing();
-    if (ConfirmButton(ICON_FA_SAVE " SSAO設定を保存", ImVec2(-1.0f, 0.0f)))
+    if (ConfirmButton("保存##ssao", ImVec2(-1.0f, 0.0f)))
     {
         SaveData(kDataFileName);
-        ImGuiNotification::Post("SSAO設定を保存しました");
+        ImGuiNotification::Post("SSAOの設定を保存しました");
     }
 #endif // USE_IMGUI
 }

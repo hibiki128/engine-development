@@ -64,6 +64,9 @@
     <Filter Include="Engine\3d\object\base">
       <UniqueIdentifier>{300C0CBA-E782-0A7E-1E9A-A68E581B4C70}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Engine\3d\object\group">
+      <UniqueIdentifier>{7D3B2A91-4C6E-4F0B-9A15-2E8C6D41B7F3}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Engine\3d\particle">
       <UniqueIdentifier>{6F23EA8B-8CF5-9326-1A7F-B27FDCC740DA}</UniqueIdentifier>
     </Filter>
@@ -473,6 +476,15 @@
     </ClCompile>
     <ClCompile Include="Engine\3d\object\base\BaseObjectPrefab.cpp">
       <Filter>Engine\3d\object\base</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\3d\object\group\ObjectGroup.cpp">
+      <Filter>Engine\3d\object\group</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\3d\object\group\ObjectGroupManager.cpp">
+      <Filter>Engine\3d\object\group</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\3d\object\group\ObjectGroupManagerImGui.cpp">
+      <Filter>Engine\3d\object\group</Filter>
     </ClCompile>
     <ClCompile Include="Engine\3d\object\base\BaseObjectSerialize.cpp">
       <Filter>Engine\3d\object\base</Filter>
@@ -1159,6 +1171,12 @@
     </ClInclude>
     <ClInclude Include="Engine\3d\object\base\BaseObjectManager.h">
       <Filter>Engine\3d\object\base</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\3d\object\group\ObjectGroup.h">
+      <Filter>Engine\3d\object\group</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\3d\object\group\ObjectGroupManager.h">
+      <Filter>Engine\3d\object\group</Filter>
     </ClInclude>
     <ClInclude Include="Engine\3d\object\Object3d.h">
       <Filter>Engine\3d\object</Filter>

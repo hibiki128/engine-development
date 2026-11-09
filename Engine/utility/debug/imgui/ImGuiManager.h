@@ -317,6 +317,9 @@ class ImGuiManager {
     /// <summary>配置ツールの窓（ImGuiManagerTools.cpp）</summary>
     void ShowPlacementToolWindow();
 
+    /// <summary>オブジェクトグループの窓（ImGuiManagerTools.cpp）</summary>
+    void ShowObjectGroupWindow();
+
     /// <summary>カラーパレットの窓（ImGuiManagerTools.cpp）。色を貯めて、各所の色の欄へドラッグで渡す</summary>
     void ShowColorPaletteWindow();
     struct PaletteSwatch
@@ -505,6 +508,7 @@ class ImGuiManager {
     unsigned int dockspaceId_ = 0;      // メインのドックスペース（新しい窓を初回にドックする先）
     bool showUndoHistoryView_ = false;  // Undo 履歴の窓
     bool showPlacementToolView_ = false; // 配置ツールの窓
+    bool showObjectGroupView_ = false;   // オブジェクトグループの窓
     bool showColorPaletteView_ = false;  // カラーパレットの窓
     bool showDebugCameraView_ = false;   // デバッグカメラの窓
     bool showDebugLineView_ = false;     // デバッグ線の窓

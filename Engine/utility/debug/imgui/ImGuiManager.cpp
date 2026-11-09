@@ -1726,6 +1726,8 @@ void ImGuiManager::ShowMainUI(OffScreen *pOffScreen) {
     ShowUndoHistoryWindow();
     // 配置ツール窓を描画
     ShowPlacementToolWindow();
+    // オブジェクトグループ窓を描画
+    ShowObjectGroupWindow();
     // カラーパレット窓を描画
     ShowColorPaletteWindow();
     // 階層エディターウィンドウを描画
@@ -2375,6 +2377,7 @@ void ImGuiManager::SaveFlag() {
     data->Save("showInspectorView", showInspectorView_);
     data->Save("showUndoHistoryView", showUndoHistoryView_);
     data->Save("showPlacementToolView", showPlacementToolView_);
+    data->Save("showObjectGroupView", showObjectGroupView_);
     data->Save("showColorPaletteView", showColorPaletteView_);
     data->Save("showDebugCameraView", showDebugCameraView_);
     data->Save("showDebugLineView", showDebugLineView_);
@@ -2450,6 +2453,7 @@ void ImGuiManager::LoadFlag() {
     showInspectorView_ = data->Load("showInspectorView", true);
     showUndoHistoryView_ = data->Load("showUndoHistoryView", false);
     showPlacementToolView_ = data->Load("showPlacementToolView", false);
+    showObjectGroupView_ = data->Load("showObjectGroupView", false);
     showColorPaletteView_ = data->Load("showColorPaletteView", false);
     showDebugCameraView_ = data->Load("showDebugCameraView", false);
     showDebugLineView_ = data->Load("showDebugLineView", false);

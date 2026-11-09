@@ -167,6 +167,9 @@
     <ClCompile Include="Engine\3d\object\base\BaseObject.cpp" />
     <ClCompile Include="Engine\3d\object\base\BaseObjectSerialize.cpp" />
     <ClCompile Include="Engine\3d\object\base\BaseObjectPrefab.cpp" />
+    <ClCompile Include="Engine\3d\object\group\ObjectGroup.cpp" />
+    <ClCompile Include="Engine\3d\object\group\ObjectGroupManager.cpp" />
+    <ClCompile Include="Engine\3d\object\group\ObjectGroupManagerImGui.cpp" />
     <ClCompile Include="Engine\3d\object\base\BaseObjectImGuiCollider.cpp" />
     <ClCompile Include="Engine\3d\object\base\BaseObjectImGui.cpp" />
     <ClCompile Include="Engine\3d\object\base\BaseObjectCollider.cpp" />
@@ -1035,6 +1038,8 @@
     <ClInclude Include="Engine\utility\debug\imgui\SceneProjector.h" />
     <ClInclude Include="Engine\utility\graphics\pipeline\ComputePipelineManager.h" />
     <ClInclude Include="Engine\3d\object\base\BaseObjectManager.h" />
+    <ClInclude Include="Engine\3d\object\group\ObjectGroup.h" />
+    <ClInclude Include="Engine\3d\object\group\ObjectGroupManager.h" />
     <ClInclude Include="Engine\utility\data\DataHandler.h" />
     <ClInclude Include="Engine\3d\particle\ParticleEditor.h" />
     <ClInclude Include="Engine\3d\particle\ParticleEditorUI.h" />

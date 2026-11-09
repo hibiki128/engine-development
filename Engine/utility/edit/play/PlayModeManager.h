@@ -100,6 +100,7 @@ class PlayModeManager
     nlohmann::json objectBaseline_;
     nlohmann::json spriteBaseline_;
     nlohmann::json lightBaseline_;
+    nlohmann::json groupBaseline_; // オブジェクトグループ
     bool hasBaseline_ = false;
 };
 } // namespace Hagine

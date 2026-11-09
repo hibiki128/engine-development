@@ -15,6 +15,7 @@
 #include <light/LightGroup.h>
 #include <nlohmann/json.hpp>
 #include <object/base/BaseObjectManager.h>
+#include <object/group/ObjectGroupManager.h>
 #include <particle/gpu/ParticleCSSpawner.h>
 #include <utility/debug/imgui/ImGuiNotification.h>
 #ifdef USE_IMGUI
@@ -215,6 +216,7 @@ bool SceneSerializer::Save(const std::string &sceneName)
     document["attachments"] = AttachmentManager::GetInstance()->ToJson();
     document["particles"] = ParticleCSSpawner::GetInstance()->ToJson();
     document["cameras"] = CameraManager::GetInstance()->ToJson();
+    document["groups"] = ObjectGroupManager::GetInstance()->ToJson();
     const size_t objectCount = document["objects"].size();
     const size_t particleCount = document["particles"].size();
 
@@ -361,6 +363,8 @@ bool SceneSerializer::LoadInternal(const std::string &sceneName, bool notify)
         // 1体ごとの「追加しました」は人が押した操作ではないので止める（最後にまとめて1回知らせる）
         ImGuiNotification::ScopedMute mute;
         createdCount = BaseObjectManager::GetInstance()->DeserializeSceneObjects((*document)["objects"]);
+        // グループの復元
+        ObjectGroupManager::GetInstance()->FromJson(document->value("groups", json::array()));
         if (document->contains("lights"))
         {
             // 光源はシーンをまたいで残るシングルトンなので、書いてあるときだけ置き換える

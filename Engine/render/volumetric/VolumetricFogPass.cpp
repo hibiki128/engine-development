@@ -14,7 +14,6 @@
 #ifdef USE_IMGUI
 #include "imgui.h"
 #include <debug/imgui/DebugUIHelper.h>
-#include <icon/IconsFontAwesome5.h>
 #endif // USE_IMGUI
 
 #include <algorithm>
@@ -497,65 +496,43 @@ void VolumetricFogPass::SaveData()
 void VolumetricFogPass::DrawImGui()
 {
 #ifdef USE_IMGUI
-    if (!ThemedHeader(ICON_FA_CLOUD " ボリュメトリックフォグ", DebugTheme::kAccentBlue, true))
+    if (!ThemedHeader("ボリュメトリックフォグ", DebugTheme::kAccentBlue, true))
     {
         return;
     }
     ImGui::Indent();
 
     AccentCheckbox("有効##volumetricFog", &enabled_, DebugTheme::kAccentGreen);
-    ImGui::SetItemTooltip("空気中の霧が光を散らして、光源のまわりや光の通り道が光って見える。\n"
-                          "平行光源はシャドウマップ、点光源・スポットライトはレイトレで影を調べ、物陰で光の筋が途切れる");
 
     ImGui::SeparatorText("霧");
     ImGui::DragFloat("濃さ##vfDensity", &density_, 0.001f, 0.0f, 1.0f, "%.3f");
-    ImGui::SetItemTooltip("基準の高さでの霧の濃さ。0.01〜0.05 くらいが自然");
-    ImGui::DragFloat("高さで薄くなる速さ##vfFalloff", &heightFalloff_, 0.005f, 0.0f, 2.0f, "%.3f");
-    ImGui::SetItemTooltip("上へ行くほど霧が薄くなる速さ。0 で高さに関係なく一様");
+    ImGui::DragFloat("高さによる減衰##vfFalloff", &heightFalloff_, 0.005f, 0.0f, 2.0f, "%.3f");
     ImGui::DragFloat("基準の高さ##vfBaseHeight", &baseHeight_, 0.1f, -1000.0f, 1000.0f, "%.1f");
-    ImGui::SetItemTooltip("ここより下は濃さが一定");
-    ImGui::ColorEdit3("霧の色##vfAlbedo", &albedo_.x);
-    ImGui::SetItemTooltip("光をどの色で散らすか。白なら光源の色のまま光る");
+    ImGui::ColorEdit3("色##vfAlbedo", &albedo_.x);
     ImGui::DragFloat("最大距離##vfFar", &farDistance_, 0.5f, 4.0f, 500.0f, "%.1f m");
-    ImGui::SetItemTooltip("ここまでの霧を計算する。長くするほど奥行き方向の格子が粗くなる");
-    ImGui::DragFloat("空に掛ける割合##vfSky", &skyStrength_, 0.01f, 0.0f, 1.0f, "%.2f");
+    ImGui::DragFloat("空への影響##vfSky", &skyStrength_, 0.01f, 0.0f, 1.0f, "%.2f");
 
     ImGui::SeparatorText("光");
     ImGui::DragFloat("散乱の偏り##vfAnisotropy", &anisotropy_, 0.01f, -0.9f, 0.9f, "%.2f");
-    ImGui::SetItemTooltip("0 で全方向に同じだけ散る。大きいほど光源を向いたときだけ強く光る");
-    ImGui::DragFloat("平行光源の強さ##vfDirectional", &directionalScale_, 0.01f, 0.0f, 20.0f, "%.2f");
-    ImGui::DragFloat("点光源・スポットの強さ##vfLocal", &localLightScale_, 0.01f, 0.0f, 20.0f, "%.2f");
+    ImGui::DragFloat("平行光源##vfDirectional", &directionalScale_, 0.01f, 0.0f, 20.0f, "%.2f");
+    ImGui::DragFloat("点光源・スポット##vfLocal", &localLightScale_, 0.01f, 0.0f, 20.0f, "%.2f");
     ImGui::ColorEdit3("環境光##vfAmbient", &ambientColor_.x, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_HDR);
-    ImGui::SetItemTooltip("光が当たっていない所の霧の明るさ");
 
     ImGui::SeparatorText("品質");
-    ImGui::DragFloat("前フレームを混ぜる割合##vfHistory", &historyBlend_, 0.005f, 0.0f, 0.98f, "%.3f");
-    ImGui::SetItemTooltip("大きいほどノイズが消えるが、動く光の後ろに尾を引きやすい");
+    ImGui::DragFloat("前フレームの割合##vfHistory", &historyBlend_, 0.005f, 0.0f, 0.98f, "%.3f");
     ImGui::DragFloat("影のバイアス##vfShadowBias", &shadowBias_, 0.0001f, 0.0f, 0.05f, "%.4f");
-    ImGui::SetItemTooltip("平行光源のシャドウマップと比べるときのずらし量");
 
-    ImGui::SeparatorText("点光源・スポットライトの影");
-    AccentCheckbox("影を調べる（レイトレ）##vfLocalShadow", &localLightShadow_, DebugTheme::kAccentGreen);
-    ImGui::SetItemTooltip("霧の中から光源へレイを飛ばし、壁や柱で遮られた光を落とす。\n"
-                          "レイトレに対応していない環境では影なしで描く");
-    ImGui::DragFloat("光源の手前で止める距離##vfShadowOffset", &lightShadowOffset_, 0.01f, 0.0f, 5.0f, "%.2f m");
-    ImGui::SetItemTooltip("ランプの中に置いた光源が、ランプ自身に遮られて真っ暗にならないようにする距離");
-    if (localLightShadow_)
+    ImGui::SeparatorText("点光源・スポットの影");
+    AccentCheckbox("レイトレで影を出す##vfLocalShadow", &localLightShadow_, DebugTheme::kAccentGreen);
+    ImGui::DragFloat("光源からのオフセット##vfShadowOffset", &lightShadowOffset_, 0.01f, 0.0f, 5.0f, "%.2f m");
+    if (localLightShadow_ && !RaytracingScene::GetInstance()->IsAvailable())
     {
-        if (!RaytracingScene::GetInstance()->IsAvailable())
-        {
-            ImGui::TextColored(DebugTheme::kAccentOrange, "レイトレに対応していないため影なしで描いています");
-        }
-        else
-        {
-            DimText(raytracedShadowActive_ ? "レイトレで影を調べています" : "影を調べる光源がありません");
-        }
+        ImGui::TextColored(DebugTheme::kAccentOrange, "レイトレ非対応のため影なし");
     }
 
-    ImGui::Spacing();
-    ImGui::Text("格子 %u x %u x %u", kGridX, kGridY, kGridZ);
+    ImGui::TextDisabled("格子 %u x %u x %u", kGridX, kGridY, kGridZ);
 
-    if (ConfirmButton(ICON_FA_SAVE " ボリュメトリックフォグの設定を保存", ImVec2(-1.0f, 0.0f)))
+    if (ConfirmButton("保存##volumetricFog", ImVec2(-1.0f, 0.0f)))
     {
         SaveData();
     }

@@ -172,6 +172,11 @@ class DrawSystem
     void RegisterImpl(std::string name, int stageIndex,
                       std::function<void(const ViewProjection &)> drawFunc);
 
+    /// <summary>
+    /// 描画エントリの一覧と描画順を描画
+    /// </summary>
+    void DrawEntryTable();
+
     /// ===================================================
     /// private variables
     /// ===================================================

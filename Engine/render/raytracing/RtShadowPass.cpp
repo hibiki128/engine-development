@@ -233,34 +233,18 @@ void RtShadowPass::DrawImGui()
 #ifdef USE_IMGUI
     if (!pDxCommon_ || !pDxCommon_->IsRaytracingSupported())
     {
-        ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kAccentOrange);
-        ImGui::TextWrapped("この環境ではレイトレーシングが使えません");
-        ImGui::PopStyleColor();
+        ImGui::TextDisabled("レイトレ非対応");
         return;
     }
 
-    ImGui::Checkbox("RTの影を使う##rtshadow", &enabled_);
-    ImGui::SetItemTooltip("シャドウマップの代わりにレイトレーシングで影を求めます。\n"
-                          "解像度によるギザギザや、接地の影の浮き／めり込みが無くなります");
-
+    ImGui::Checkbox("有効##rtshadow", &enabled_);
     ImGui::DragFloat("法線バイアス##rtshadow", &settings_.normalBias, 0.001f, 0.0f, 1.0f, "%.4f");
-    ImGui::SetItemTooltip("レイの始点を面から浮かせる量。\n"
-                          "面が自分自身を遮ってシマシマになるときに上げます");
     ImGui::DragFloat("最大距離##rtshadow", &settings_.maxDistance, 1.0f, 1.0f, 5000.0f);
-    ImGui::SetItemTooltip("この距離までに遮る物があれば影にします");
     ImGui::DragFloat("柔らかさ##rtshadow", &settings_.softness, 0.001f, 0.0f, 0.2f, "%.4f");
-    ImGui::SetItemTooltip("太陽の見かけの大きさです。0で硬い影。\n"
-                          "上げるとぼけますが、1画素1本しか飛ばしていないのでざらつきます");
 
     const RaytracingScene *pScene = RaytracingScene::GetInstance();
-    ImGui::Text("形の種類(BLAS): %u  /  配置数(TLAS): %u  /  スキン再構築: %u",
-                pScene->GetBlasCount(), pScene->GetInstanceCount(), pScene->GetSkinnedBlasCount());
-
-    ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kTextDim);
-    ImGui::TextWrapped("スキニングで動くメッシュも今のポーズで影を落とします"
-                       "（そのぶんBLASを毎フレーム作り直すので、体数ぶんの負荷が乗ります）。"
-                       "「スキン再構築」はこのフレームに作り直した体数です");
-    ImGui::PopStyleColor();
+    ImGui::TextDisabled("BLAS %u / TLAS %u / スキン再構築 %u", pScene->GetBlasCount(), pScene->GetInstanceCount(),
+                        pScene->GetSkinnedBlasCount());
 #endif
 }
 } // namespace Hagine

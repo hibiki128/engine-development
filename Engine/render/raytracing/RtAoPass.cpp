@@ -12,7 +12,6 @@
 #include "imgui.h"
 #include <debug/imgui/DebugUIHelper.h>
 #include <debug/imgui/ImGuiNotification.h>
-#include <icon/IconsFontAwesome5.h>
 #endif // USE_IMGUI
 
 namespace Hagine {
@@ -349,66 +348,40 @@ bool RtAoPass::IsSupported() const
 void RtAoPass::DrawImGui()
 {
 #ifdef USE_IMGUI
-    SectionHeader(ICON_FA_CIRCLE " RTの遮蔽（RT AO）", DebugTheme::kAccentPurple);
-
     if (!pDxCommon_ || !pDxCommon_->IsRaytracingSupported())
     {
-        ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kAccentOrange);
-        ImGui::TextWrapped("この環境ではレイトレーシングが使えません");
-        ImGui::PopStyleColor();
+        ImGui::TextDisabled("レイトレ非対応");
         return;
     }
 
-    DimText("レイで遮蔽を測ります。SSAOと違い、画面に写っていない物も遮蔽に数えます");
-
-    ToggleRow("RTの遮蔽を使う", "##rtAoEnabled", &enabled_, DebugTheme::kAccentPurple);
+    AccentCheckbox("有効##rtAoEnabled", &enabled_, DebugTheme::kAccentPurple);
     if (!enabled_)
     {
-        ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kTextDim);
-        ImGui::TextWrapped("ONにすると SSAO の代わりに使われます（両方掛けると二重に暗くなるため）");
-        ImGui::PopStyleColor();
         return;
     }
 
     ImGui::SetNextItemWidth(-1.0f);
-    ImGui::SliderFloat("##rtAoStrength", &strength_, 0.0f, 1.0f, "効かせ具合 %.2f");
+    ImGui::SliderFloat("##rtAoStrength", &strength_, 0.0f, 1.0f, "効き %.2f");
     ImGui::SetNextItemWidth(-1.0f);
-    ImGui::SliderFloat("##rtAoRadius", &settings_.radius, 0.05f, 10.0f, "届く範囲 %.2f");
-    if (ImGui::IsItemHovered())
-    {
-        ImGui::SetTooltip("どれだけ離れた物まで遮蔽として数えるか。\n"
-                          "SSAOと違って深度バッファに縛られないので、大きくしても破綻しません");
-    }
+    ImGui::SliderFloat("##rtAoRadius", &settings_.radius, 0.05f, 10.0f, "半径 %.2f");
     ImGui::SetNextItemWidth(-1.0f);
     ImGui::SliderFloat("##rtAoIntensity", &settings_.intensity, 0.0f, 3.0f, "濃さ %.2f");
     ImGui::SetNextItemWidth(-1.0f);
     ImGui::SliderFloat("##rtAoPower", &settings_.power, 0.5f, 4.0f, "コントラスト %.2f");
     ImGui::SetNextItemWidth(-1.0f);
-    ImGui::SliderFloat("##rtAoBias", &settings_.normalBias, 0.0f, 0.2f, "自己遮蔽の余裕 %.3f");
-    if (ImGui::IsItemHovered())
-    {
-        ImGui::SetTooltip("平らな面に縞模様が出るときは上げてください");
-    }
+    ImGui::SliderFloat("##rtAoBias", &settings_.normalBias, 0.0f, 0.2f, "バイアス %.3f");
     ImGui::SetNextItemWidth(-1.0f);
     ImGui::SliderInt("##rtAoSamples", &settings_.sampleCount, 1, 32, "レイの本数 %d");
-    if (ImGui::IsItemHovered())
-    {
-        ImGui::SetTooltip("1画素あたりに飛ばす本数。増やすほど滑らかになりますが、そのぶん重くなります。\n"
-                          "少ない本数でもならしでかなり消えるので、まず4〜8で様子を見てください");
-    }
 
-    ImGui::Spacing();
     ImGui::SetNextItemWidth(-1.0f);
-    ImGui::SliderInt("##rtAoBlurRadius", &blurSettings_.radius, 0, 4, "ならし幅 %d");
+    ImGui::SliderInt("##rtAoBlurRadius", &blurSettings_.radius, 0, 4, "ブラー半径 %d");
     ImGui::SetNextItemWidth(-1.0f);
-    ImGui::SliderFloat("##rtAoBlurDepth", &blurSettings_.depthThreshold, 0.0001f, 0.01f,
-                       "輪郭を守る強さ %.4f");
+    ImGui::SliderFloat("##rtAoBlurDepth", &blurSettings_.depthThreshold, 0.0001f, 0.01f, "ブラーの深度しきい値 %.4f");
 
-    ImGui::Spacing();
-    if (ConfirmButton(ICON_FA_SAVE " RT遮蔽の設定を保存", ImVec2(-1.0f, 0.0f)))
+    if (ConfirmButton("保存##rtAo", ImVec2(-1.0f, 0.0f)))
     {
         SaveData(kDataFileName);
-        ImGuiNotification::Post("RT遮蔽の設定を保存しました");
+        ImGuiNotification::Post("RT AOの設定を保存しました");
     }
 #endif // USE_IMGUI
 }

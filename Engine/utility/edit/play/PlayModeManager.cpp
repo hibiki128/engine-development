@@ -5,6 +5,7 @@
 #include <imgui.h>
 #include <light/LightGroup.h>
 #include <object/base/BaseObjectManager.h>
+#include <object/group/ObjectGroupManager.h>
 #include <scene/SceneManager.h>
 #include <utility/debug/imgui/ImGuiExtras.h> // 再生中インジケータ (imspinner)
 #include <utility/debug/imgui/DebugUIHelper.h>
@@ -47,6 +48,7 @@ void PlayModeManager::CaptureBaseline()
     objectBaseline_ = BaseObjectManager::GetInstance()->CaptureUndoState();
     spriteBaseline_ = SpriteManager::GetInstance()->CaptureUndoState();
     lightBaseline_ = LightGroup::GetInstance()->CaptureUndoState();
+    groupBaseline_ = ObjectGroupManager::GetInstance()->CaptureState();
     hasBaseline_ = true;
 }
 
@@ -57,6 +59,7 @@ void PlayModeManager::OnSceneChanged()
     objectBaseline_ = nlohmann::json::object();
     spriteBaseline_ = nlohmann::json::object();
     lightBaseline_ = nlohmann::json::object();
+    groupBaseline_ = nlohmann::json::array();
     hasBaseline_ = false;
 
     // シーンが変わったら再生中に戻す（切り替えた先が止まったままだと動かせないため）
@@ -80,6 +83,7 @@ void PlayModeManager::RestoreBaseline()
     // 光源は作り直しでシーンファイルの保存値に戻るが、保存していない編集までは戻らない
     // （シーンファイルが無ければ LightGroup はシングルトンなので値を持ち続ける）。ここで明示的に戻す
     lightGroup->RestoreUndoState(MergeRemovals(lightBaseline_, lightGroup->CaptureUndoState()));
+    ObjectGroupManager::GetInstance()->FromJson(groupBaseline_);
 }
 
 void PlayModeManager::Play()
