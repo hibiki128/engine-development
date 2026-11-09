@@ -109,12 +109,12 @@ class SpriteManager
     /// <summary>
     /// 外部所有スプライトを描画リストに追加（非所有登録）
     /// </summary>
-    void RegisterExternal(Sprite *sprite);
+    void Register(Sprite *sprite);
 
     /// <summary>
     /// 外部所有スプライトを描画リストから削除
     /// </summary>
-    void UnregisterExternal(Sprite *sprite);
+    void Unregister(Sprite *sprite);
 
     /// <summary>
     /// すべてのスプライトを更新
@@ -178,6 +178,12 @@ class SpriteManager
     void SaveAllSprites();
     void LoadAllSprites();
     void Clear();
+
+    /// <summary>
+    /// 指定フォルダのスプライトをすべて読み込み（保存先もそのフォルダに変更）
+    /// </summary>
+    /// <param name="folderName">Assets/jsons/Sprites 内のフォルダ名</param>
+    void LoadFolder(const std::string &folderName);
 
     /// <summary>
     /// 所有スプライト（RegisterSprite した物）だけを全部消す。

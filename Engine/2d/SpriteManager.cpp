@@ -108,7 +108,7 @@ void SpriteManager::DrawAll()
     }
 }
 
-void SpriteManager::RegisterExternal(Sprite *sprite)
+void SpriteManager::Register(Sprite *sprite)
 {
     if (!sprite)
         return;
@@ -119,7 +119,7 @@ void SpriteManager::RegisterExternal(Sprite *sprite)
     }
 }
 
-void SpriteManager::UnregisterExternal(Sprite *sprite)
+void SpriteManager::Unregister(Sprite *sprite)
 {
     auto it = std::find(externalSprites_.begin(), externalSprites_.end(), sprite);
     if (it != externalSprites_.end())
@@ -733,6 +733,12 @@ void SpriteManager::SaveAllSprites()
         }
     }
     ImGuiNotification::Post("スプライトデータを保存しました: " + saveFolder_, {0.2f, 0.8f, 0.2f, 1.0f});
+}
+
+void SpriteManager::LoadFolder(const std::string &folderName)
+{
+    SetSaveFolder(folderName);
+    LoadAllSprites();
 }
 
 void SpriteManager::LoadAllSprites()
