@@ -89,14 +89,14 @@ class BaseObject {
 
     // 初期化、更新、描画
     // 名前が他のオブジェクトと重なったら "_0", "_1" … を付けて区別する（実際の名前は GetName で取る）
-    virtual void Init(const std::string objectName);
+    virtual void Init(const std::string &objectName);
     // エディタの一時停止・停止中は呼ばれず、代わりに基底の BaseObject::Update だけが呼ばれる（UpdateHierarchy が切り替える）
     virtual void Update();
     virtual void Draw(const ViewProjection &viewProjection);
     void UpdateWorldTransformHierarchy();
     void UpdateHierarchy();
 
-    virtual void CreateModel(const std::string modelname);
+    virtual void CreateModel(const std::string &modelname);
     virtual void CreatePrimitiveModel(const PrimitiveType &type);
 
     /// <summary>
@@ -239,7 +239,7 @@ class BaseObject {
     // オブジェクト単体の保存（jsons/ObjectDatas/名前.json）。コードで作るオブジェクトの調整値用。
     // 派生クラスが独自データを足せるよう virtual にしてある。override する側は基底を必ず呼ぶこと
     virtual void SaveToJson();
-    void LoadFromJson(std::string folderPath, std::string jsonName);
+    void LoadFromJson(const std::string &folderPath, const std::string &jsonName);
     /// <summary>
     /// 全コライダーを jsons/Collider/ 以下へ保存する。
     /// コライダー設定の保存場所はそこだけで、オブジェクトJSONには書かない

@@ -34,14 +34,14 @@ BaseObject::~BaseObject() {
     colliders_.clear();
 }
 
-void BaseObject::Init(const std::string objectName) {
+void BaseObject::Init(const std::string &objectName) {
     transform_ = std::make_unique<WorldTransform>();
     obj3d_ = std::make_unique<Object3d>();
     obj3d_->Initialize();
-    // 同名が既に居れば "_0", "_1" … を付けた名前になる（敵を何体も作るときも同じ名前で Init してよい）
-    // 保存ファイルは連番を付ける前の名前で引くので、何体作っても同じ調整値を共有する
-    objectName_ = BaseObjectManager::GetInstance()->AcquireObjectName(objectName, this);
+    // 保存ファイルを引く名前（連番なし、同名のオブジェクトで共有）
     dataName_ = objectName;
+    // 同名があれば "_0", "_1" … を付けた名前を取得
+    objectName_ = BaseObjectManager::GetInstance()->AcquireObjectName(dataName_, this);
     /// ワールドトランスフォームの初期化
     transform_->Initialize();
     // ライティングのセット
@@ -314,7 +314,7 @@ BaseObject *BaseObject::GetChildByName(const std::string &name) {
     return nullptr;
 }
 
-void BaseObject::CreateModel(const std::string modelname) {
+void BaseObject::CreateModel(const std::string &modelname) {
     // メタボールから作り直すときは融合グループから外す
     if (metaBall_) {
         metaBall_.reset();

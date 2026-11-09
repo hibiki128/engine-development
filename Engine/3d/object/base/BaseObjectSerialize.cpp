@@ -303,7 +303,7 @@ void BaseObject::Deserialize(const json &state) {
     }
 }
 
-void BaseObject::LoadFromJson(std::string folderPath, std::string jsonName) {
+void BaseObject::LoadFromJson(const std::string &folderPath, const std::string &jsonName) {
     // JSONデータを扱うハンドラを作成
     objectData_ = std::make_unique<DataHandler>(folderPath, jsonName);
 

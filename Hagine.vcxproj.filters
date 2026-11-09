@@ -65,7 +65,7 @@
       <UniqueIdentifier>{300C0CBA-E782-0A7E-1E9A-A68E581B4C70}</UniqueIdentifier>
     </Filter>
     <Filter Include="Engine\3d\object\group">
-      <UniqueIdentifier>{7D3B2A91-4C6E-4F0B-9A15-2E8C6D41B7F3}</UniqueIdentifier>
+      <UniqueIdentifier>{C1B89FC7-A663-1841-2D70-B050D32CAAC9}</UniqueIdentifier>
     </Filter>
     <Filter Include="Engine\3d\particle">
       <UniqueIdentifier>{6F23EA8B-8CF5-9326-1A7F-B27FDCC740DA}</UniqueIdentifier>
@@ -148,6 +148,9 @@
     <Filter Include="Engine\EngineAssets\shaders\offscreen">
       <UniqueIdentifier>{D6EA6CC8-855F-7E67-E34D-E21CD7E403C2}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Engine\EngineAssets\shaders\OffScreen\Fx">
+      <UniqueIdentifier>{AA65BFF7-8BB6-750E-B1AB-20BB28804FE8}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Engine\EngineAssets\shaders\particle">
       <UniqueIdentifier>{E660F839-0E52-08A2-BC0E-4CA14E6EB507}</UniqueIdentifier>
     </Filter>
@@ -171,6 +174,9 @@
     </Filter>
     <Filter Include="Engine\EngineAssets\shaders\Sprite">
       <UniqueIdentifier>{6D092838-C3C8-28A7-6DB9-0E4258F154BC}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Engine\EngineAssets\shaders\Transition">
+      <UniqueIdentifier>{D5DE3F3B-8669-09A1-5861-E5D5C1ED178D}</UniqueIdentifier>
     </Filter>
     <Filter Include="Engine\frame">
       <UniqueIdentifier>{402F31DA-6C75-487C-E407-2D839036FB55}</UniqueIdentifier>
@@ -196,9 +202,6 @@
     <Filter Include="Engine\render\bloom">
       <UniqueIdentifier>{EB705720-E200-FAB7-9534-BF4871D77C18}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Engine\render\volumetric">
-      <UniqueIdentifier>{6E2F3A1C-8B4D-4E7F-9A15-3C2D7B9E4F60}</UniqueIdentifier>
-    </Filter>
     <Filter Include="Engine\render\deferred">
       <UniqueIdentifier>{DCCD2B60-B4F0-1726-8716-4D44771C0FD8}</UniqueIdentifier>
     </Filter>
@@ -207,6 +210,9 @@
     </Filter>
     <Filter Include="Engine\render\ssao">
       <UniqueIdentifier>{A838FCC4-2D7C-5D43-3644-21AA8081E754}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Engine\render\volumetric">
+      <UniqueIdentifier>{CC01AA6D-2E18-7586-2238-8E1B6E861C44}</UniqueIdentifier>
     </Filter>
     <Filter Include="Engine\scene">
       <UniqueIdentifier>{0D8826BF-F7C3-8DD2-02A3-E8A58D53AC00}</UniqueIdentifier>
@@ -222,9 +228,6 @@
     </Filter>
     <Filter Include="Engine\utility\collider">
       <UniqueIdentifier>{D2EF5A7B-2C1E-987B-32E7-534AD0B88EE5}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Engine\utility\physics">
-      <UniqueIdentifier>{6B1F3C2E-8A47-4D5B-9E2F-3C7A1D9B4E60}</UniqueIdentifier>
     </Filter>
     <Filter Include="Engine\utility\collider\type">
       <UniqueIdentifier>{379B2A99-FC39-6A2B-4008-90813C82384B}</UniqueIdentifier>
@@ -307,8 +310,14 @@
     <Filter Include="Engine\utility\loader\csv">
       <UniqueIdentifier>{B974C9B8-352C-C979-C2C1-2DA1543B6B1C}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Engine\utility\physics">
+      <UniqueIdentifier>{F89F792D-D7F9-FE83-AE37-B014A0A08D80}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Engine\utility\scene">
       <UniqueIdentifier>{FC31B910-F03B-1758-A2B5-0BF1853916B9}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Engine\utility\scene\transition">
+      <UniqueIdentifier>{20CDE631-C83A-AC13-ACAA-DA25B09752E7}</UniqueIdentifier>
     </Filter>
     <Filter Include="Engine\utility\string">
       <UniqueIdentifier>{DA1C8851-0678-D4FE-143A-9A6A8BBFC624}</UniqueIdentifier>
@@ -318,15 +327,6 @@
     </Filter>
     <Filter Include="externals\imgui">
       <UniqueIdentifier>{247FD816-E10D-AD04-E487-DC143C315049}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Engine\EngineAssets\shaders\OffScreen\Fx">
-      <UniqueIdentifier>{9AED771F-C881-49FA-8B55-2C4244846171}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Engine\EngineAssets\shaders\Transition">
-      <UniqueIdentifier>{2F76470B-E6BB-482D-9E37-5570928E7664}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Engine\utility\scene\transition">
-      <UniqueIdentifier>{7F1F6015-1C84-4B21-AD9F-E92805690167}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>
@@ -369,16 +369,16 @@
     <ClCompile Include="Engine\3d\animation\ik\FootIkSolver.cpp">
       <Filter>Engine\3d\animation\ik</Filter>
     </ClCompile>
-    <ClCompile Include="Engine\3d\animation\ik\LookAtSolver.cpp">
-      <Filter>Engine\3d\animation\ik</Filter>
-    </ClCompile>
     <ClCompile Include="Engine\3d\animation\ik\HandIkSolver.cpp">
       <Filter>Engine\3d\animation\ik</Filter>
     </ClCompile>
-    <ClCompile Include="Engine\3d\animation\ik\TwoBoneIk.cpp">
+    <ClCompile Include="Engine\3d\animation\ik\LookAtSolver.cpp">
       <Filter>Engine\3d\animation\ik</Filter>
     </ClCompile>
     <ClCompile Include="Engine\3d\animation\ik\SpringBoneSolver.cpp">
+      <Filter>Engine\3d\animation\ik</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\3d\animation\ik\TwoBoneIk.cpp">
       <Filter>Engine\3d\animation\ik</Filter>
     </ClCompile>
     <ClCompile Include="Engine\3d\animation\ModelAnimation.cpp">
@@ -477,6 +477,9 @@
     <ClCompile Include="Engine\3d\object\base\BaseObjectPrefab.cpp">
       <Filter>Engine\3d\object\base</Filter>
     </ClCompile>
+    <ClCompile Include="Engine\3d\object\base\BaseObjectSerialize.cpp">
+      <Filter>Engine\3d\object\base</Filter>
+    </ClCompile>
     <ClCompile Include="Engine\3d\object\group\ObjectGroup.cpp">
       <Filter>Engine\3d\object\group</Filter>
     </ClCompile>
@@ -485,9 +488,6 @@
     </ClCompile>
     <ClCompile Include="Engine\3d\object\group\ObjectGroupManagerImGui.cpp">
       <Filter>Engine\3d\object\group</Filter>
-    </ClCompile>
-    <ClCompile Include="Engine\3d\object\base\BaseObjectSerialize.cpp">
-      <Filter>Engine\3d\object\base</Filter>
     </ClCompile>
     <ClCompile Include="Engine\3d\object\Object3d.cpp">
       <Filter>Engine\3d\object</Filter>
@@ -699,6 +699,9 @@
     <ClCompile Include="Engine\offscreen\effect\PostEffectDataManager.cpp">
       <Filter>Engine\offscreen\effect</Filter>
     </ClCompile>
+    <ClCompile Include="Engine\offscreen\effect\PostEffectFxFields.cpp">
+      <Filter>Engine\offscreen\effect</Filter>
+    </ClCompile>
     <ClCompile Include="Engine\offscreen\effect\PostEffectParameters.cpp">
       <Filter>Engine\offscreen\effect</Filter>
     </ClCompile>
@@ -719,9 +722,6 @@
     </ClCompile>
     <ClCompile Include="Engine\render\bloom\BloomPass.cpp">
       <Filter>Engine\render\bloom</Filter>
-    </ClCompile>
-    <ClCompile Include="Engine\render\volumetric\VolumetricFogPass.cpp">
-      <Filter>Engine\render\volumetric</Filter>
     </ClCompile>
     <ClCompile Include="Engine\render\CameraFade.cpp">
       <Filter>Engine\render</Filter>
@@ -753,16 +753,19 @@
     <ClCompile Include="Engine\render\ToneMapSettings.cpp">
       <Filter>Engine\render</Filter>
     </ClCompile>
+    <ClCompile Include="Engine\render\volumetric\VolumetricFogPass.cpp">
+      <Filter>Engine\render\volumetric</Filter>
+    </ClCompile>
     <ClCompile Include="Engine\scene\BaseScene.cpp">
       <Filter>Engine\scene</Filter>
     </ClCompile>
     <ClCompile Include="Engine\utility\asset\AssetPath.cpp">
       <Filter>Engine\utility\asset</Filter>
     </ClCompile>
-    <ClCompile Include="Engine\utility\asset\FileChangeWatcher.cpp">
+    <ClCompile Include="Engine\utility\asset\AssetReport.cpp">
       <Filter>Engine\utility\asset</Filter>
     </ClCompile>
-    <ClCompile Include="Engine\utility\asset\AssetReport.cpp">
+    <ClCompile Include="Engine\utility\asset\FileChangeWatcher.cpp">
       <Filter>Engine\utility\asset</Filter>
     </ClCompile>
     <ClCompile Include="Engine\utility\browser\ShowFolder.cpp">
@@ -779,9 +782,6 @@
     </ClCompile>
     <ClCompile Include="Engine\utility\collider\CollisionManagerImGui.cpp">
       <Filter>Engine\utility\collider</Filter>
-    </ClCompile>
-    <ClCompile Include="Engine\utility\physics\PhysicsWorld.cpp">
-      <Filter>Engine\utility\physics</Filter>
     </ClCompile>
     <ClCompile Include="Engine\utility\collider\type\AABBCollider.cpp">
       <Filter>Engine\utility\collider\type</Filter>
@@ -972,6 +972,9 @@
     <ClCompile Include="Engine\utility\loader\csv\CsvLoad.cpp">
       <Filter>Engine\utility\loader\csv</Filter>
     </ClCompile>
+    <ClCompile Include="Engine\utility\physics\PhysicsWorld.cpp">
+      <Filter>Engine\utility\physics</Filter>
+    </ClCompile>
     <ClCompile Include="Engine\utility\scene\SceneManager.cpp">
       <Filter>Engine\utility\scene</Filter>
     </ClCompile>
@@ -980,6 +983,15 @@
     </ClCompile>
     <ClCompile Include="Engine\utility\scene\SceneTransition.cpp">
       <Filter>Engine\utility\scene</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\utility\scene\SceneTransitionImGui.cpp">
+      <Filter>Engine\utility\scene</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\utility\scene\transition\TransitionPreset.cpp">
+      <Filter>Engine\utility\scene\transition</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\utility\scene\transition\TransitionRenderer.cpp">
+      <Filter>Engine\utility\scene\transition</Filter>
     </ClCompile>
     <ClCompile Include="Engine\utility\string\StringUtility.cpp">
       <Filter>Engine\utility\string</Filter>
@@ -1013,18 +1025,6 @@
     </ClCompile>
     <ClCompile Include="externals\imgui\ImGuizmo.cpp">
       <Filter>externals\imgui</Filter>
-    </ClCompile>
-    <ClCompile Include="Engine\offscreen\effect\PostEffectFxFields.cpp">
-      <Filter>Engine\offscreen\effect</Filter>
-    </ClCompile>
-    <ClCompile Include="Engine\utility\scene\SceneTransitionImGui.cpp">
-      <Filter>Engine\utility\scene</Filter>
-    </ClCompile>
-    <ClCompile Include="Engine\utility\scene\transition\TransitionPreset.cpp">
-      <Filter>Engine\utility\scene\transition</Filter>
-    </ClCompile>
-    <ClCompile Include="Engine\utility\scene\transition\TransitionRenderer.cpp">
-      <Filter>Engine\utility\scene\transition</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -1061,16 +1061,16 @@
     <ClInclude Include="Engine\3d\animation\ik\FootIkSolver.h">
       <Filter>Engine\3d\animation\ik</Filter>
     </ClInclude>
-    <ClInclude Include="Engine\3d\animation\ik\LookAtSolver.h">
-      <Filter>Engine\3d\animation\ik</Filter>
-    </ClInclude>
     <ClInclude Include="Engine\3d\animation\ik\HandIkSolver.h">
       <Filter>Engine\3d\animation\ik</Filter>
     </ClInclude>
-    <ClInclude Include="Engine\3d\animation\ik\TwoBoneIk.h">
+    <ClInclude Include="Engine\3d\animation\ik\LookAtSolver.h">
       <Filter>Engine\3d\animation\ik</Filter>
     </ClInclude>
     <ClInclude Include="Engine\3d\animation\ik\SpringBoneSolver.h">
+      <Filter>Engine\3d\animation\ik</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\3d\animation\ik\TwoBoneIk.h">
       <Filter>Engine\3d\animation\ik</Filter>
     </ClInclude>
     <ClInclude Include="Engine\3d\animation\ModelAnimation.h">
@@ -1343,13 +1343,13 @@
     <ClInclude Include="Engine\input\Input.h">
       <Filter>Engine\input</Filter>
     </ClInclude>
-    <ClInclude Include="Engine\input\Ray.h">
-      <Filter>Engine\input</Filter>
-    </ClInclude>
     <ClInclude Include="Engine\input\InputActions.h">
       <Filter>Engine\input</Filter>
     </ClInclude>
     <ClInclude Include="Engine\input\Mouse.h">
+      <Filter>Engine\input</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\input\Ray.h">
       <Filter>Engine\input</Filter>
     </ClInclude>
     <ClInclude Include="Engine\math\Easing.h">
@@ -1391,10 +1391,16 @@
     <ClInclude Include="Engine\offscreen\effect\PostEffectDataManager.h">
       <Filter>Engine\offscreen\effect</Filter>
     </ClInclude>
+    <ClInclude Include="Engine\offscreen\effect\PostEffectFxFields.h">
+      <Filter>Engine\offscreen\effect</Filter>
+    </ClInclude>
     <ClInclude Include="Engine\offscreen\effect\PostEffectParameters.h">
       <Filter>Engine\offscreen\effect</Filter>
     </ClInclude>
     <ClInclude Include="Engine\offscreen\effect\PostEffectParamsFactory.h">
+      <Filter>Engine\offscreen\effect</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\offscreen\effect\PostEffectParamsFx.h">
       <Filter>Engine\offscreen\effect</Filter>
     </ClInclude>
     <ClInclude Include="Engine\offscreen\effect\PostEffectParamsImpl.h">
@@ -1414,9 +1420,6 @@
     </ClInclude>
     <ClInclude Include="Engine\render\bloom\BloomPass.h">
       <Filter>Engine\render\bloom</Filter>
-    </ClInclude>
-    <ClInclude Include="Engine\render\volumetric\VolumetricFogPass.h">
-      <Filter>Engine\render\volumetric</Filter>
     </ClInclude>
     <ClInclude Include="Engine\render\CameraFade.h">
       <Filter>Engine\render</Filter>
@@ -1454,16 +1457,19 @@
     <ClInclude Include="Engine\render\ToneMapSettings.h">
       <Filter>Engine\render</Filter>
     </ClInclude>
+    <ClInclude Include="Engine\render\volumetric\VolumetricFogPass.h">
+      <Filter>Engine\render\volumetric</Filter>
+    </ClInclude>
     <ClInclude Include="Engine\scene\BaseScene.h">
       <Filter>Engine\scene</Filter>
     </ClInclude>
     <ClInclude Include="Engine\utility\asset\AssetPath.h">
       <Filter>Engine\utility\asset</Filter>
     </ClInclude>
-    <ClInclude Include="Engine\utility\asset\FileChangeWatcher.h">
+    <ClInclude Include="Engine\utility\asset\AssetReport.h">
       <Filter>Engine\utility\asset</Filter>
     </ClInclude>
-    <ClInclude Include="Engine\utility\asset\AssetReport.h">
+    <ClInclude Include="Engine\utility\asset\FileChangeWatcher.h">
       <Filter>Engine\utility\asset</Filter>
     </ClInclude>
     <ClInclude Include="Engine\utility\browser\ShowFolder.h">
@@ -1477,9 +1483,6 @@
     </ClInclude>
     <ClInclude Include="Engine\utility\collider\CollisionManager.h">
       <Filter>Engine\utility\collider</Filter>
-    </ClInclude>
-    <ClInclude Include="Engine\utility\physics\PhysicsWorld.h">
-      <Filter>Engine\utility\physics</Filter>
     </ClInclude>
     <ClInclude Include="Engine\utility\collider\type\AABBCollider.h">
       <Filter>Engine\utility\collider\type</Filter>
@@ -1532,9 +1535,6 @@
     <ClInclude Include="Engine\utility\debug\imgui\ImGuiManagerSceneOverlayInternal.h">
       <Filter>Engine\utility\debug\imgui</Filter>
     </ClInclude>
-    <ClInclude Include="Engine\utility\debug\imgui\SceneProjector.h">
-      <Filter>Engine\utility\debug\imgui</Filter>
-    </ClInclude>
     <ClInclude Include="Engine\utility\debug\imgui\ImGuiNotification.h">
       <Filter>Engine\utility\debug\imgui</Filter>
     </ClInclude>
@@ -1542,6 +1542,9 @@
       <Filter>Engine\utility\debug\imgui</Filter>
     </ClInclude>
     <ClInclude Include="Engine\utility\debug\imgui\ImGuizmoManagerInternal.h">
+      <Filter>Engine\utility\debug\imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\utility\debug\imgui\SceneProjector.h">
       <Filter>Engine\utility\debug\imgui</Filter>
     </ClInclude>
     <ClInclude Include="Engine\utility\debug\imgui\SettingsPanel.h">
@@ -1634,6 +1637,9 @@
     <ClInclude Include="Engine\utility\loader\csv\CsvLoad.h">
       <Filter>Engine\utility\loader\csv</Filter>
     </ClInclude>
+    <ClInclude Include="Engine\utility\physics\PhysicsWorld.h">
+      <Filter>Engine\utility\physics</Filter>
+    </ClInclude>
     <ClInclude Include="Engine\utility\scene\SceneManager.h">
       <Filter>Engine\utility\scene</Filter>
     </ClInclude>
@@ -1645,6 +1651,12 @@
     </ClInclude>
     <ClInclude Include="Engine\utility\scene\SceneTransition.h">
       <Filter>Engine\utility\scene</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\utility\scene\transition\TransitionPreset.h">
+      <Filter>Engine\utility\scene\transition</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\utility\scene\transition\TransitionRenderer.h">
+      <Filter>Engine\utility\scene\transition</Filter>
     </ClInclude>
     <ClInclude Include="Engine\utility\string\StringUtility.h">
       <Filter>Engine\utility\string</Filter>
@@ -1677,18 +1689,6 @@
       <Filter>externals\imgui</Filter>
     </ClInclude>
     <ClInclude Include="resource.h" />
-    <ClInclude Include="Engine\offscreen\effect\PostEffectFxFields.h">
-      <Filter>Engine\offscreen\effect</Filter>
-    </ClInclude>
-    <ClInclude Include="Engine\offscreen\effect\PostEffectParamsFx.h">
-      <Filter>Engine\offscreen\effect</Filter>
-    </ClInclude>
-    <ClInclude Include="Engine\utility\scene\transition\TransitionPreset.h">
-      <Filter>Engine\utility\scene\transition</Filter>
-    </ClInclude>
-    <ClInclude Include="Engine\utility\scene\transition\TransitionRenderer.h">
-      <Filter>Engine\utility\scene\transition</Filter>
-    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <Font Include="Engine\EngineAssets\fonts\Buildingsandundertherailwaytracksfree_ver.otf">
@@ -1851,21 +1851,6 @@
     <None Include="Engine\EngineAssets\shaders\OffScreen\BloomUpsample.CS.hlsl">
       <Filter>Engine\EngineAssets\shaders\OffScreen</Filter>
     </None>
-    <None Include="Engine\EngineAssets\shaders\OffScreen\VolumetricFogApply.CS.hlsl">
-      <Filter>Engine\EngineAssets\shaders\OffScreen</Filter>
-    </None>
-    <None Include="Engine\EngineAssets\shaders\OffScreen\VolumetricFogInject.CS.hlsl">
-      <Filter>Engine\EngineAssets\shaders\OffScreen</Filter>
-    </None>
-    <None Include="Engine\EngineAssets\shaders\OffScreen\VolumetricFogInject.hlsli">
-      <Filter>Engine\EngineAssets\shaders\OffScreen</Filter>
-    </None>
-    <None Include="Engine\EngineAssets\shaders\OffScreen\VolumetricFogInjectRt.CS.hlsl">
-      <Filter>Engine\EngineAssets\shaders\OffScreen</Filter>
-    </None>
-    <None Include="Engine\EngineAssets\shaders\OffScreen\VolumetricFogIntegrate.CS.hlsl">
-      <Filter>Engine\EngineAssets\shaders\OffScreen</Filter>
-    </None>
     <None Include="Engine\EngineAssets\shaders\OffScreen\ChromaticAberration.PS.hlsl">
       <Filter>Engine\EngineAssets\shaders\OffScreen</Filter>
     </None>
@@ -1884,106 +1869,6 @@
     <None Include="Engine\EngineAssets\shaders\offscreen\FullScreen.hlsli">
       <Filter>Engine\EngineAssets\shaders\offscreen</Filter>
     </None>
-    <None Include="Engine\EngineAssets\shaders\OffScreen\Fxaa.PS.hlsl">
-      <Filter>Engine\EngineAssets\shaders\OffScreen</Filter>
-    </None>
-    <None Include="Engine\EngineAssets\shaders\OffScreen\GaussianBlur.CS.hlsl">
-      <Filter>Engine\EngineAssets\shaders\OffScreen</Filter>
-    </None>
-    <None Include="Engine\EngineAssets\shaders\OffScreen\HeightFog.CS.hlsl">
-      <Filter>Engine\EngineAssets\shaders\OffScreen</Filter>
-    </None>
-    <None Include="Engine\EngineAssets\shaders\OffScreen\Impact.PS.hlsl">
-      <Filter>Engine\EngineAssets\shaders\OffScreen</Filter>
-    </None>
-    <None Include="Engine\EngineAssets\shaders\OffScreen\LensDistortion.PS.hlsl">
-      <Filter>Engine\EngineAssets\shaders\OffScreen</Filter>
-    </None>
-    <None Include="Engine\EngineAssets\shaders\OffScreen\LightShafts.CS.hlsl">
-      <Filter>Engine\EngineAssets\shaders\OffScreen</Filter>
-    </None>
-    <None Include="Engine\EngineAssets\shaders\OffScreen\Monochrome.PS.hlsl">
-      <Filter>Engine\EngineAssets\shaders\OffScreen</Filter>
-    </None>
-    <None Include="Engine\EngineAssets\shaders\OffScreen\Retro.PS.hlsl">
-      <Filter>Engine\EngineAssets\shaders\OffScreen</Filter>
-    </None>
-    <None Include="Engine\EngineAssets\shaders\OffScreen\RtReflection.CS.hlsl">
-      <Filter>Engine\EngineAssets\shaders\OffScreen</Filter>
-    </None>
-    <None Include="Engine\EngineAssets\shaders\OffScreen\SceneViewToneMap.CS.hlsl">
-      <Filter>Engine\EngineAssets\shaders\OffScreen</Filter>
-    </None>
-    <None Include="Engine\EngineAssets\shaders\OffScreen\Shockwave.PS.hlsl">
-      <Filter>Engine\EngineAssets\shaders\OffScreen</Filter>
-    </None>
-    <None Include="Engine\EngineAssets\shaders\OffScreen\Ssr.CS.hlsl">
-      <Filter>Engine\EngineAssets\shaders\OffScreen</Filter>
-    </None>
-    <None Include="Engine\EngineAssets\shaders\OffScreen\ToneMap.PS.hlsl">
-      <Filter>Engine\EngineAssets\shaders\OffScreen</Filter>
-    </None>
-    <None Include="Engine\EngineAssets\shaders\Particle\CSParticle\CountParticle.CS.hlsl">
-      <Filter>Engine\EngineAssets\shaders\Particle\CSParticle</Filter>
-    </None>
-    <None Include="Engine\EngineAssets\shaders\Particle\CSParticle\CurlNoise.hlsli">
-      <Filter>Engine\EngineAssets\shaders\Particle\CSParticle</Filter>
-    </None>
-    <None Include="Engine\EngineAssets\shaders\Particle\CSParticle\EmitParticle.CS.hlsl">
-      <Filter>Engine\EngineAssets\shaders\Particle\CSParticle</Filter>
-    </None>
-    <None Include="Engine\EngineAssets\shaders\Particle\CSParticle\InitParticle.CS.hlsl">
-      <Filter>Engine\EngineAssets\shaders\Particle\CSParticle</Filter>
-    </None>
-    <None Include="Engine\EngineAssets\shaders\Particle\CSParticle\ParticleCS.PS.hlsl">
-      <Filter>Engine\EngineAssets\shaders\Particle\CSParticle</Filter>
-    </None>
-    <None Include="Engine\EngineAssets\shaders\Particle\CSParticle\ParticleCS.VS.hlsl">
-      <Filter>Engine\EngineAssets\shaders\Particle\CSParticle</Filter>
-    </None>
-    <None Include="Engine\EngineAssets\shaders\Particle\CSParticle\ResetArgs.CS.hlsl">
-      <Filter>Engine\EngineAssets\shaders\Particle\CSParticle</Filter>
-    </None>
-    <None Include="Engine\EngineAssets\shaders\Particle\CSParticle\UpdateParticle.CS.hlsl">
-      <Filter>Engine\EngineAssets\shaders\Particle\CSParticle</Filter>
-    </None>
-    <None Include="Engine\EngineAssets\shaders\Particle\CSParticle\UpdateParticleLite.CS.hlsl">
-      <Filter>Engine\EngineAssets\shaders\Particle\CSParticle</Filter>
-    </None>
-    <None Include="Engine\EngineAssets\shaders\particle\Particle.hlsli">
-      <Filter>Engine\EngineAssets\shaders\particle</Filter>
-    </None>
-    <None Include="Engine\EngineAssets\shaders\particle\Particle.VS.hlsl">
-      <Filter>Engine\EngineAssets\shaders\particle</Filter>
-    </None>
-    <None Include="Engine\EngineAssets\shaders\Random\Random.hlsli">
-      <Filter>Engine\EngineAssets\shaders\Random</Filter>
-    </None>
-    <None Include="Engine\EngineAssets\shaders\Raytracing\RtAo.CS.hlsl">
-      <Filter>Engine\EngineAssets\shaders\Raytracing</Filter>
-    </None>
-    <None Include="Engine\EngineAssets\shaders\Raytracing\RtShadow.CS.hlsl">
-      <Filter>Engine\EngineAssets\shaders\Raytracing</Filter>
-    </None>
-    <None Include="Engine\EngineAssets\shaders\Shadow\ShadowMap.VS.hlsl">
-      <Filter>Engine\EngineAssets\shaders\Shadow</Filter>
-    </None>
-    <None Include="Engine\EngineAssets\shaders\Shadow\ShadowMapInstanced.VS.hlsl">
-      <Filter>Engine\EngineAssets\shaders\Shadow</Filter>
-    </None>
-    <None Include="Engine\EngineAssets\shaders\Shadow\ShadowSample.hlsli">
-      <Filter>Engine\EngineAssets\shaders\Shadow</Filter>
-    </None>
-    <None Include="Engine\EngineAssets\shaders\Skinning\Skinning.hlsli">
-      <Filter>Engine\EngineAssets\shaders\Skinning</Filter>
-    </None>
-    <None Include="Engine\EngineAssets\shaders\Skybox\Skybox.hlsli">
-      <Filter>Engine\EngineAssets\shaders\Skybox</Filter>
-    </None>
-    <None Include="Engine\EngineAssets\shaders\Sprite\Sprite.hlsli">
-      <Filter>Engine\EngineAssets\shaders\Sprite</Filter>
-    </None>
-    <None Include="README.md" />
     <None Include="Engine\EngineAssets\shaders\OffScreen\Fx\Afterimage.CS.hlsl">
       <Filter>Engine\EngineAssets\shaders\OffScreen\Fx</Filter>
     </None>
@@ -2068,10 +1953,10 @@
     <None Include="Engine\EngineAssets\shaders\OffScreen\Fx\OldFilm.CS.hlsl">
       <Filter>Engine\EngineAssets\shaders\OffScreen\Fx</Filter>
     </None>
-    <None Include="Engine\EngineAssets\shaders\OffScreen\Fx\PostFxCommon.hlsli">
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Fx\Posterize.CS.hlsl">
       <Filter>Engine\EngineAssets\shaders\OffScreen\Fx</Filter>
     </None>
-    <None Include="Engine\EngineAssets\shaders\OffScreen\Fx\Posterize.CS.hlsl">
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Fx\PostFxCommon.hlsli">
       <Filter>Engine\EngineAssets\shaders\OffScreen\Fx</Filter>
     </None>
     <None Include="Engine\EngineAssets\shaders\OffScreen\Fx\RainLens.CS.hlsl">
@@ -2122,9 +2007,124 @@
     <None Include="Engine\EngineAssets\shaders\OffScreen\Fx\WorldScan.CS.hlsl">
       <Filter>Engine\EngineAssets\shaders\OffScreen\Fx</Filter>
     </None>
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Fxaa.PS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\OffScreen</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\OffScreen\GaussianBlur.CS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\OffScreen</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\OffScreen\HeightFog.CS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\OffScreen</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Impact.PS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\OffScreen</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\OffScreen\LensDistortion.PS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\OffScreen</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\OffScreen\LightShafts.CS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\OffScreen</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Monochrome.PS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\OffScreen</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Retro.PS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\OffScreen</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\OffScreen\RtReflection.CS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\OffScreen</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\OffScreen\SceneViewToneMap.CS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\OffScreen</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Shockwave.PS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\OffScreen</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\OffScreen\Ssr.CS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\OffScreen</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\OffScreen\ToneMap.PS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\OffScreen</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\OffScreen\VolumetricFogApply.CS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\OffScreen</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\OffScreen\VolumetricFogInject.CS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\OffScreen</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\OffScreen\VolumetricFogInject.hlsli">
+      <Filter>Engine\EngineAssets\shaders\OffScreen</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\OffScreen\VolumetricFogInjectRt.CS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\OffScreen</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\OffScreen\VolumetricFogIntegrate.CS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\OffScreen</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\Particle\CSParticle\CountParticle.CS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\Particle\CSParticle</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\Particle\CSParticle\CurlNoise.hlsli">
+      <Filter>Engine\EngineAssets\shaders\Particle\CSParticle</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\Particle\CSParticle\EmitParticle.CS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\Particle\CSParticle</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\Particle\CSParticle\InitParticle.CS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\Particle\CSParticle</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\Particle\CSParticle\ParticleCS.PS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\Particle\CSParticle</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\Particle\CSParticle\ParticleCS.VS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\Particle\CSParticle</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\Particle\CSParticle\ResetArgs.CS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\Particle\CSParticle</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\Particle\CSParticle\UpdateParticle.CS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\Particle\CSParticle</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\Particle\CSParticle\UpdateParticleLite.CS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\Particle\CSParticle</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\particle\Particle.hlsli">
+      <Filter>Engine\EngineAssets\shaders\particle</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\particle\Particle.VS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\particle</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\Random\Random.hlsli">
+      <Filter>Engine\EngineAssets\shaders\Random</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\Raytracing\RtAo.CS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\Raytracing</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\Raytracing\RtShadow.CS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\Raytracing</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\Shadow\ShadowMap.VS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\Shadow</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\Shadow\ShadowMapInstanced.VS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\Shadow</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\Shadow\ShadowSample.hlsli">
+      <Filter>Engine\EngineAssets\shaders\Shadow</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\Skinning\Skinning.hlsli">
+      <Filter>Engine\EngineAssets\shaders\Skinning</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\Skybox\Skybox.hlsli">
+      <Filter>Engine\EngineAssets\shaders\Skybox</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\Sprite\Sprite.hlsli">
+      <Filter>Engine\EngineAssets\shaders\Sprite</Filter>
+    </None>
     <None Include="Engine\EngineAssets\shaders\Transition\Transition.CS.hlsl">
       <Filter>Engine\EngineAssets\shaders\Transition</Filter>
     </None>
+    <None Include="README.md" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="Hagine.rc" />
