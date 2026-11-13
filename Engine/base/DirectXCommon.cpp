@@ -4,11 +4,11 @@
 #include "DXDevice.h"
 #include "DXSwapChain.h"
 #include "FrameRateLimiter.h"
-#include "graphics/dsv/DsvManager.h"
-#include "graphics/rtv/RtvManager.h"
 #include "ResourceFactory.h"
 #include "ShaderCompiler.h"
 #include "cassert"
+#include "graphics/dsv/DsvManager.h"
+#include "graphics/rtv/RtvManager.h"
 #include <debug/capture/CaptureManager.h>
 #include <graphics/srv/SrvManager.h>
 
@@ -117,7 +117,6 @@ Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> DirectXCommon::CreateDescriptorHeap
 {
     return dxDevice_->CreateDescriptorHeap(heapType, numDescriptors, shaderVisible);
 }
-
 
 #pragma comment(lib, "d3d12.lib")
 #pragma comment(lib, "dxgi.lib")
@@ -505,20 +504,19 @@ void DirectXCommon::TransitionSRVBarrier()
 void DirectXCommon::BarrierTransition(ID3D12Resource *pResource, D3D12_RESOURCE_STATES Before, D3D12_RESOURCE_STATES After,
                                       UINT subresource)
 {
-    // 今回のバリアはTransition
-    barrier_.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
-    // Noneにしておく
-    barrier_.Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
-    // バリアを張る対象のリソース
-    barrier_.Transition.pResource = pResource;
-    // 対象のサブリソース
-    barrier_.Transition.Subresource = subresource;
-    // 遷移前(現在)のResourceState
-    barrier_.Transition.StateBefore = Before;
-    // 遷移後のResourceState
-    barrier_.Transition.StateAfter = After;
-    // TransitionBarrierを張る
-    directCommandList_->Get()->ResourceBarrier(1, &barrier_);
+    BarrierTransition(directCommandList_->Get(), pResource, Before, After, subresource);
+}
+
+void DirectXCommon::BarrierTransition(ID3D12GraphicsCommandList *pCommandList, ID3D12Resource *pResource, D3D12_RESOURCE_STATES Before, D3D12_RESOURCE_STATES After, UINT subresource)
+{
+    D3D12_RESOURCE_BARRIER barrier{};
+    barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+    barrier.Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
+    barrier.Transition.pResource = pResource;
+    barrier.Transition.Subresource = subresource;
+    barrier.Transition.StateBefore = Before;
+    barrier.Transition.StateAfter = After;
+    pCommandList->ResourceBarrier(1, &barrier);
 }
 
 void DirectXCommon::ViewPortRectInitialize()

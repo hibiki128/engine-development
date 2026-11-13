@@ -204,6 +204,18 @@ class DirectXCommon
     /// （深度ステンシルはステンシル面が1番にあり、0番だけでは遷移しきれない）</param>
     void BarrierTransition(ID3D12Resource *pResource, D3D12_RESOURCE_STATES Before, D3D12_RESOURCE_STATES After,
                            UINT subresource = 0);
+
+    /// <summary>
+    /// 指定したコマンドリストにバリアを貼る
+    /// </summary>
+    /// <param name="pCommandList"></param>
+    /// <param name="pResource"></param>
+    /// <param name="Before"></param>
+    /// <param name="After"></param>
+    /// <param name="subresource"></param>
+    static void BarrierTransition(ID3D12GraphicsCommandList *pCommandList, ID3D12Resource *pResource, D3D12_RESOURCE_STATES Before, D3D12_RESOURCE_STATES After,
+                                  UINT subresource = 0);
+
     D3D12_CPU_DESCRIPTOR_HANDLE CreateAdditionalRTV(ID3D12Resource *resource, int index);
 #pragma region getter
     /// <summary>
@@ -235,6 +247,24 @@ class DirectXCommon
     /// デバイスの取得
     /// </summary>
     Microsoft::WRL::ComPtr<ID3D12Device> GetDevice();
+
+    /// <summary>
+    /// デバイスの取得
+    /// </summary>
+    /// <returns></returns>
+    DXDevice *GetDXDevice() { return dxDevice_.get(); }
+
+    /// <summary>
+    /// キューの取得
+    /// </summary>
+    /// <returns></returns>
+    DXCommandQueue *GetDXCommandQueue() { return directQueue_.get(); }
+
+    /// <summary>
+    /// コマンドリストの取得
+    /// </summary>
+    /// <returns></returns>
+    DXCommandList *GetDXCommandList() { return directCommandList_.get(); }
 
     /// <summary>
     /// レイトレーシング用のデバイス／コマンドリストを取得する。
@@ -393,7 +423,7 @@ class DirectXCommon
         UINT framesLeft = 0;
     };
     std::vector<PendingUpload> pendingUploads_;
-    UINT frameIndex_ = 0;                                 // 現在の描画フレームスロット（0 or 1）
+    UINT frameIndex_ = 0; // 現在の描画フレームスロット（0 or 1）
 
     // ビューポート（オフスクリーン描画用・仮想解像度固定）
     D3D12_VIEWPORT viewport_{};
@@ -408,7 +438,7 @@ class DirectXCommon
 
     // オフスクリーン・深度のSRVハンドル
     uint32_t offScreenSrvIndex_ = 0;
-    uint32_t offScreenUavIndex_ = 0; // ブルームの合成がシーンへ足し込むためのUAV
+    uint32_t offScreenUavIndex_ = 0;                      // ブルームの合成がシーンへ足し込むためのUAV
     D3D12_CPU_DESCRIPTOR_HANDLE offScreenSrvHandleCPU_{}; // SRV作成時に必要なCPUハンドル
     D3D12_GPU_DESCRIPTOR_HANDLE offScreenSrvHandleGPU_{}; // 描画コマンドに必要なGPUハンドル
 
@@ -416,7 +446,7 @@ class DirectXCommon
     // 描画中に深度を読むための複製（ソフトパーティクル用）。必要になった最初のフレームで作る
     Microsoft::WRL::ComPtr<ID3D12Resource> depthCopyResource_;
     uint32_t depthCopySrvIndex_ = 0;
-    bool depthCaptureRequested_ = false; // このフレームに複製要求があったか
+    bool depthCaptureRequested_ = false;              // このフレームに複製要求があったか
     D3D12_CPU_DESCRIPTOR_HANDLE depthSrvHandleCPU_{}; // SRV作成時に必要なCPUハンドル
     D3D12_GPU_DESCRIPTOR_HANDLE depthSrvHandleGPU_{}; // 描画コマンドに必要なGPUハンドル
 };
