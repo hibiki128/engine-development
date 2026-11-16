@@ -267,6 +267,16 @@ class DirectXCommon
     DXCommandList *GetDXCommandList() { return directCommandList_.get(); }
 
     /// <summary>
+    /// コンピュートキューの取得
+    /// </summary>
+    DXCommandQueue *GetDXComputeCommandQueue() { return computeQueue_.get(); }
+
+    /// <summary>
+    /// コンピュートコマンドリストの取得
+    /// </summary>
+    DXCommandList *GetDXComputeCommandList() { return computeCommandList_.get(); }
+
+    /// <summary>
     /// レイトレーシング用のデバイス／コマンドリストを取得する。
     /// どちらも非対応環境では nullptr を返すので、使う前に IsRaytracingSupported() を見ること
     /// </summary>
