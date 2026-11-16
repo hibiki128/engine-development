@@ -61,6 +61,7 @@ constexpr ShapeInfo kShapes[] = {
     {"波打つワイプ", "境目が波打ちながら流れる"},
     {"扇", "扇が開くように覆う"},
     {"ルール画像", "白黒の画像の暗い所から順に覆う（ノベルゲームの「ルール画像」）。画像は自由に描ける"},
+    {"渦", "渦の腕が外から中心へ巻き込む"},
 };
 static_assert(sizeof(kShapes) / sizeof(kShapes[0]) == static_cast<size_t>(TransitionShape::Count), "kShapes は TransitionShape と同数にすること");
 
@@ -96,6 +97,7 @@ bool UsesCenter(TransitionShape s)
     case TransitionShape::Star:
     case TransitionShape::Heart:
     case TransitionShape::Fan:
+    case TransitionShape::Vortex:
         return true;
     default:
         return false;
@@ -125,6 +127,7 @@ const char *CountLabel(TransitionShape s)
     case TransitionShape::Star: return "とげの数";
     case TransitionShape::Wave: return "波の数";
     case TransitionShape::Fan: return "扇の数";
+    case TransitionShape::Vortex: return "腕の数";
     default: return nullptr;
     }
 }
@@ -272,6 +275,8 @@ void SceneTransition::DrawEditor()
                 {
                     DimText(preset.revealMode == TransitionRevealMode::Reverse
                                 ? "いまは「覆ったときの逆再生」で明けます。前半の幕がそのまま逆に動きます。"
+                            : preset.revealMode == TransitionRevealMode::FadeOut
+                                ? "いまは「薄くして消す」で明けます。"
                                 : "いまは「同じ向きへ抜ける」で明けます。前半の幕が、覆ったのと同じ順番で消えていきます。");
                     DimText("明け方を別に作るときは「基本」タブの「明け方」を「別に作る」にしてください。");
                     ImGui::Spacing();
@@ -586,6 +591,8 @@ void SceneTransition::DrawPresetDetails(TransitionPreset &preset)
     changed |= ImGui::RadioButton("同じ向きへ抜ける", &mode, static_cast<int>(TransitionRevealMode::PassThrough));
     ImGui::SetItemTooltip("左から覆ったなら、明けるときも左から消えていく（幕が通り抜ける）");
     ImGui::SameLine();
+    changed |= ImGui::RadioButton("薄くして消す", &mode, static_cast<int>(TransitionRevealMode::FadeOut));
+    ImGui::SameLine();
     changed |= ImGui::RadioButton("別に作る", &mode, static_cast<int>(TransitionRevealMode::Custom));
     ImGui::SetItemTooltip("「後半（明ける）」タブで、明けるときの幕を自由に組みます");
     if (mode != static_cast<int>(preset.revealMode))
@@ -791,7 +798,14 @@ bool SceneTransition::DrawLayerEditor(TransitionLayer &layer, bool isReveal, Tra
     {
         changed |= ImGui::DragFloat("波の大きさ", &layer.amplitude, 0.002f, 0.0f, 0.5f);
     }
-    if (IsCellShape(s) || s == TransitionShape::Dissolve)
+    if (s == TransitionShape::Vortex)
+    {
+        changed |= ImGui::DragFloat("ねじれ", &layer.twist, 0.01f, -4.0f, 4.0f, "%.2f");
+        changed |= ImGui::DragFloat("回る速さ", &layer.spin, 0.01f, -4.0f, 4.0f, "%.2f");
+        changed |= ImGui::SliderFloat("ばらつき", &layer.irregularity, 0.0f, 1.0f);
+        changed |= ImGui::SliderFloat("腕のずれ", &layer.cellSpread, 0.0f, 0.98f);
+    }
+    if (IsCellShape(s) || s == TransitionShape::Dissolve || s == TransitionShape::Vortex)
     {
         changed |= ImGui::DragFloat("乱数の種", &layer.seed, 0.1f, 0.0f, 1000.0f, "%.1f");
         ImGui::SetItemTooltip("変えると、ばらばらの埋まり方・色の割り振りが別の模様になります");
@@ -804,49 +818,59 @@ bool SceneTransition::DrawLayerEditor(TransitionLayer &layer, bool isReveal, Tra
 
     // ---- 塗り ----
     ImGui::SeparatorText("塗り");
-    int fill = static_cast<int>(layer.fill);
-    if (ImGui::Combo("塗り方", &fill, kFillNames))
+    if (s == TransitionShape::Vortex)
     {
-        layer.fill = static_cast<TransitionFill>(fill);
-        changed = true;
+        // 渦は3色で塗り分ける
+        changed |= ImGui::ColorEdit3("暗い色", &layer.palette[0].x);
+        changed |= ImGui::ColorEdit3("中間の色", &layer.palette[1].x);
+        changed |= ImGui::ColorEdit3("明るい色", &layer.palette[2].x);
     }
-    switch (layer.fill)
+    else
     {
-    case TransitionFill::Color:
-        changed |= ImGui::ColorEdit3("色", &layer.color.x);
-        break;
-    case TransitionFill::Gradient:
-        changed |= ImGui::ColorEdit3("始まりの色", &layer.color.x);
-        changed |= ImGui::ColorEdit3("終わりの色", &layer.color2.x);
-        changed |= ImGui::DragFloat("グラデーションの向き（度）", &layer.gradientAngle, 1.0f, -360.0f, 360.0f, "%.0f");
-        break;
-    case TransitionFill::Palette:
-        changed |= ImGui::SliderInt("色の数", &layer.paletteCount, 1, 4);
-        for (int i = 0; i < layer.paletteCount; ++i)
+        int fill = static_cast<int>(layer.fill);
+        if (ImGui::Combo("塗り方", &fill, kFillNames))
         {
-            ImGui::PushID(i);
-            changed |= ImGui::ColorEdit3(std::format("色 {}", i + 1).c_str(), &layer.palette[static_cast<size_t>(i)].x);
-            ImGui::PopID();
+            layer.fill = static_cast<TransitionFill>(fill);
+            changed = true;
         }
-        DimText("マスの形（六角形など）ならマスごと、それ以外は画面を細かく区切った区画ごとに色が決まります");
-        break;
-    case TransitionFill::Image:
-        changed |= ImageSlot("塗りの画像", layer.image);
-        changed |= ImGui::ColorEdit3("画像に掛ける色", &layer.color.x);
-        changed |= ImGui::DragFloat("繰り返し", &layer.imageScale, 0.05f, 0.0f, 50.0f, "%.2f");
-        ImGui::SetItemTooltip("0 で画面いっぱいに引き伸ばす。1 以上で縦にその回数だけ並べる（模様のタイル）");
-        break;
-    case TransitionFill::PreviousScreen:
-        DimText("切り替える直前の画面で塗ります。後半（明ける）で使うと、前の画面から新しい画面へ直接切り替わります");
-        DimText("（プレビューではシーンが変わらないので、今の画面とほぼ同じに見えます。「切り替えて試す」で確認してください）");
-        break;
-    default:
-        break;
+        switch (layer.fill)
+        {
+        case TransitionFill::Color:
+            changed |= ImGui::ColorEdit3("色", &layer.color.x);
+            break;
+        case TransitionFill::Gradient:
+            changed |= ImGui::ColorEdit3("始まりの色", &layer.color.x);
+            changed |= ImGui::ColorEdit3("終わりの色", &layer.color2.x);
+            changed |= ImGui::DragFloat("グラデーションの向き（度）", &layer.gradientAngle, 1.0f, -360.0f, 360.0f, "%.0f");
+            break;
+        case TransitionFill::Palette:
+            changed |= ImGui::SliderInt("色の数", &layer.paletteCount, 1, 4);
+            for (int i = 0; i < layer.paletteCount; ++i)
+            {
+                ImGui::PushID(i);
+                changed |= ImGui::ColorEdit3(std::format("色 {}", i + 1).c_str(), &layer.palette[static_cast<size_t>(i)].x);
+                ImGui::PopID();
+            }
+            DimText("マスの形（六角形など）ならマスごと、それ以外は画面を細かく区切った区画ごとに色が決まります");
+            break;
+        case TransitionFill::Image:
+            changed |= ImageSlot("塗りの画像", layer.image);
+            changed |= ImGui::ColorEdit3("画像に掛ける色", &layer.color.x);
+            changed |= ImGui::DragFloat("繰り返し", &layer.imageScale, 0.05f, 0.0f, 50.0f, "%.2f");
+            ImGui::SetItemTooltip("0 で画面いっぱいに引き伸ばす。1 以上で縦にその回数だけ並べる（模様のタイル）");
+            break;
+        case TransitionFill::PreviousScreen:
+            DimText("切り替える直前の画面で塗ります。後半（明ける）で使うと、前の画面から新しい画面へ直接切り替わります");
+            DimText("（プレビューではシーンが変わらないので、今の画面とほぼ同じに見えます。「切り替えて試す」で確認してください）");
+            break;
+        default:
+            break;
+        }
     }
     changed |= ImGui::SliderFloat("濃さ", &layer.opacity, 0.0f, 1.0f);
 
     // ---- ふちの光 ----
-    if (s != TransitionShape::Fade)
+    if (s != TransitionShape::Fade && s != TransitionShape::Vortex)
     {
         ImGui::SeparatorText("ふちの光");
         changed |= ImGui::DragFloat("光の幅", &layer.edgeWidth, 0.001f, 0.0f, 0.3f, "%.3f");
@@ -878,6 +902,8 @@ void SceneTransition::DrawSceneFxEditor(TransitionSceneFx &fx)
     changed |= ImGui::SliderFloat("明るさ（+白 / -黒）", &fx.brightness, -1.0f, 1.0f);
     changed |= ImGui::DragFloat("揺れ（ピクセル）", &fx.shake, 0.2f, 0.0f, 80.0f, "%.1f");
     changed |= ImGui::DragFloat("波打ち（ピクセル）", &fx.wave, 0.2f, 0.0f, 120.0f, "%.1f");
+    changed |= ImGui::DragFloat("歪み（ピクセル）", &fx.warp, 0.2f, 0.0f, 200.0f, "%.1f");
+    changed |= ImGui::DragFloat("二重のずれ（ピクセル）", &fx.doubleVision, 0.2f, 0.0f, 200.0f, "%.1f");
     int easing = static_cast<int>(fx.easing);
     if (ImGui::Combo("強まり方", &easing, kEasingNames, kEasingCount))
     {

@@ -24,7 +24,7 @@ struct Layer
     float4 color;        // 塗りの色（グラデーションの始まり・画像の色）
     float4 color2;       // グラデーションの終わり
     float4 edgeColor;    // ふちの光の色（a は明るさ）
-    float4 palette[4];   // マスごとに塗り分ける色
+    float4 palette[4];   // マスごとに塗り分ける色（渦では暗い色・中間の色・明るい色）
     float2 center;       // 中心（UV）
     float angle;         // 向き（ラジアン）
     float count;         // 数（帯・マス・とげ・巻き数など）
@@ -44,6 +44,10 @@ struct Layer
     int paletteCount;    // 使う色の数
     int hasRule;         // ルール画像があるか
     int hasImage;        // 塗りの画像があるか
+    float twist;         // 渦のねじれ（端から中心近くまでの巻き数）
+    float spin;          // 渦の回る速さ（回/秒）
+    float irregularity;  // 渦の腕・色の帯の幅のばらつき（0〜1）
+    float layerPadding;
 };
 
 cbuffer TransitionParams : register(b0)
@@ -66,7 +70,9 @@ cbuffer TransitionParams : register(b0)
     float gBrightness; // +で白へ / -で黒へ
     float gShake;      // 揺れ（ピクセル）
     float gWave;       // 波打ち（ピクセル）
-    float gPadding1;
+    float gWarp;       // 縦横に揺らぐ歪み（ピクセル）
+    float gDoubleVision; // 二重に見えるずれ幅（ピクセル）
+    float3 gPadding1;
     Layer gLayers[MAX_LAYERS];
 };
 
@@ -108,6 +114,7 @@ static const float kTwoPi = 6.28318531f;
 #define SHAPE_WAVE 17
 #define SHAPE_FAN 18
 #define SHAPE_RULE 19
+#define SHAPE_VORTEX 20
 
 // 塗り方の番号（C++ の TransitionFill と同じ並び）
 #define FILL_COLOR 0
@@ -261,6 +268,91 @@ float4 ImageValue(int index, float2 uv)
     return gImage3.SampleLevel(gWrapSampler, uv, 0.0f);
 }
 
+/// 渦の1点の情報
+struct VortexSample
+{
+    float armId;    // 腕の番号（0〜腕の数-1）
+    float position; // 腕の中の位置（0〜1）
+    float radius;   // 中心からの距離（0〜1）
+};
+
+/// 番号を1周ぶんの腕の数に収める
+float WrapArm(float index, float arms)
+{
+    return index - arms * floor(index / arms);
+}
+
+/// 腕の始まりの境目のずれ（±0.45 未満）
+float VortexJitter(Layer layer, float index, float arms, float r)
+{
+    float id = WrapArm(index, arms);
+    float base = (Hash12(float2(id, layer.seed + 3.7f)) - 0.5f) * 0.6f;
+    float along = sin(r * 5.0f + id * 1.3f + layer.seed) * 0.15f;
+    return (base + along) * saturate(layer.irregularity);
+}
+
+/// 渦の1点の腕の番号・腕の中の位置を求める（外ほど太く、中心ほど細かく巻く対数らせん）
+VortexSample SampleVortex(Layer layer, float2 uv)
+{
+    float2 p = Rotate2D(ToAspect(uv, layer.center), -layer.angle);
+    float arms = round(max(layer.count, 1.0f));
+    float r = saturate(length(p) / MaxCornerDistance(layer.center, 0, layer.angle));
+    // ねじれは端から r=0.05 までの巻き数
+    float x = (atan2(p.y, p.x) / kTwoPi + layer.twist * log(max(r, 1e-3f)) / log(20.0f) + gTime * layer.spin) * arms;
+
+    // x を含む腕を探す
+    float index = floor(x);
+    float start = index + VortexJitter(layer, index, arms, r);
+    if (x < start)
+    {
+        index -= 1.0f;
+        start = index + VortexJitter(layer, index, arms, r);
+    }
+    else
+    {
+        float next = index + 1.0f + VortexJitter(layer, index + 1.0f, arms, r);
+        if (x >= next)
+        {
+            index += 1.0f;
+            start = next;
+        }
+    }
+    float end = index + 1.0f + VortexJitter(layer, index + 1.0f, arms, r);
+
+    VortexSample s;
+    s.armId = WrapArm(index, arms);
+    s.position = saturate((x - start) / max(end - start, 1e-4f));
+    s.radius = r;
+    return s;
+}
+
+/// 渦の色（暗い色・中間の色・明るい色の3色を腕に沿って塗り分ける）
+float3 VortexColor(Layer layer, VortexSample s)
+{
+    float irregularity = saturate(layer.irregularity);
+    float3 dark = layer.palette[0].rgb;
+    float3 middle = layer.palette[1].rgb;
+    float3 bright = layer.palette[2].rgb;
+
+    // 帯の幅を腕ごとに変える
+    float brightEnd = lerp(0.22f, lerp(0.1f, 0.35f, Hash12(float2(s.armId, layer.seed + 87.1f))), irregularity);
+    float middleEnd = brightEnd + lerp(0.35f, lerp(0.2f, 0.5f, Hash12(float2(s.armId, layer.seed + 11.3f))), irregularity);
+
+    // 明るい色は腕の始まりでくっきり、中間の色はやわらかく暗い色へ溶かす
+    float brightMask = 1.0f - smoothstep(brightEnd * 0.4f, brightEnd, s.position);
+    float middleMask = 1.0f - smoothstep(middleEnd - 0.2f, middleEnd + 0.2f, s.position);
+
+    // 明るい色は外側だけ（腕ごとに強さを変える）
+    brightMask *= smoothstep(0.1f, 0.55f, s.radius);
+    brightMask *= lerp(1.0f, lerp(0.3f, 1.0f, Hash12(float2(s.armId, layer.seed + 41.1f))), irregularity);
+
+    float3 color = lerp(dark, middle, middleMask);
+    color = lerp(color, bright, brightMask);
+
+    // 中心ほど暗く
+    return lerp(dark, color, lerp(0.5f, 1.0f, smoothstep(0.0f, 0.35f, s.radius)));
+}
+
 /// その画素が覆われる順番 v（0〜1）。cellId はマスで塗り分けるときに使う
 float ShapeValue(Layer layer, int index, float2 uv, out float2 cellId)
 {
@@ -411,6 +503,17 @@ float ShapeValue(Layer layer, int index, float2 uv, out float2 cellId)
     }
     case SHAPE_RULE:
         return (layer.hasRule != 0) ? RuleValue(index, uv) : Along(uv, dir);
+    case SHAPE_VORTEX:
+    {
+        // 腕が幅いっぱいのまま、外側から渦に沿って中心へ巻き込む（腕ごとに遅れをずらし、先端は尖らせる）
+        VortexSample s = SampleVortex(layer, uv);
+        cellId = float2(s.armId, 0.0f);
+        float arms = round(max(layer.count, 1.0f));
+        float delay = lerp(s.armId / arms, Hash12(float2(s.armId, layer.seed + 97.3f)), saturate(layer.irregularity));
+        float tip = abs(s.position * 2.0f - 1.0f);
+        float armLength = saturate(layer.cellSpread);
+        return saturate((1.0f - s.radius) * (1.0f - armLength) + (delay * 0.8f + tip * 0.2f) * armLength);
+    }
     default:
         return 0.5f;
     }
@@ -445,6 +548,31 @@ float3 FillColor(Layer layer, int index, float2 uv, float2 cellId)
     return layer.color.rgb;
 }
 
+/// ぼかしを掛けて下の画面を読む
+float3 SampleBlurred(float2 suv, float2 texel)
+{
+    if (gBlur <= 0.5f && gZoomBlur <= 0.0f)
+    {
+        return gScene.SampleLevel(gClampSampler, suv, 0.0f).rgb;
+    }
+    const int kTaps = 16;
+    float3 color = 0.0f;
+    for (int i = 0; i < kTaps; ++i)
+    {
+        float2 offset = 0.0f;
+        if (gBlur > 0.5f)
+        {
+            float rr = sqrt((i + 0.5f) / kTaps) * gBlur;
+            float a = i * 2.39996323f;
+            offset += float2(cos(a), sin(a)) * rr * texel;
+        }
+        // 中心へ流れるぼかし
+        offset += (0.5f - suv) * gZoomBlur * (float(i) / kTaps);
+        color += gScene.SampleLevel(gClampSampler, suv + offset, 0.0f).rgb;
+    }
+    return color / kTaps;
+}
+
 /// 下の画面を崩して読む
 float3 SampleScene(float2 uv, int2 pixel)
 {
@@ -460,6 +588,15 @@ float3 SampleScene(float2 uv, int2 pixel)
     }
     // 波打ち
     suv.x += sin(suv.y * 18.0f + gTime * 9.0f) * gWave * texel.x;
+    // 縦横に揺らぐ歪み
+    if (gWarp > 0.0f)
+    {
+        float2 q = suv * float2(aspect, 1.0f);
+        float2 warp;
+        warp.x = sin(q.y * 5.0f + gTime * 2.1f) + 0.5f * sin((q.x + q.y) * 11.0f - gTime * 3.3f);
+        warp.y = sin(q.x * 4.0f - gTime * 1.7f) + 0.5f * sin((q.x - q.y) * 9.0f + gTime * 2.9f);
+        suv += warp / 1.5f * gWarp * texel;
+    }
 
     // ズーム・回転・渦（画面の中心のまわり）
     float2 p = (suv - 0.5f) * float2(aspect, 1.0f);
@@ -481,28 +618,16 @@ float3 SampleScene(float2 uv, int2 pixel)
         suv = (floor(suv / block) + 0.5f) * block;
     }
 
-    float3 color = 0.0f;
-    if (gBlur > 0.5f || gZoomBlur > 0.0f)
+    float3 color;
+    if (gDoubleVision > 0.0f)
     {
-        const int kTaps = 16;
-        for (int i = 0; i < kTaps; ++i)
-        {
-            float2 offset = 0.0f;
-            if (gBlur > 0.5f)
-            {
-                float rr = sqrt((i + 0.5f) / kTaps) * gBlur;
-                float a = i * 2.39996323f;
-                offset += float2(cos(a), sin(a)) * rr * texel;
-            }
-            // 中心へ流れるぼかし
-            offset += (0.5f - suv) * gZoomBlur * (float(i) / kTaps);
-            color += gScene.SampleLevel(gClampSampler, suv + offset, 0.0f).rgb;
-        }
-        color /= kTaps;
+        // 左右へ揺れながらずれた2枚を重ねる
+        float2 split = float2(0.75f + 0.25f * sin(gTime * 1.7f), 0.3f * sin(gTime * 1.1f)) * gDoubleVision * 0.5f * texel;
+        color = (SampleBlurred(suv - split, texel) + SampleBlurred(suv + split, texel)) * 0.5f;
     }
     else
     {
-        color = gScene.SampleLevel(gClampSampler, suv, 0.0f).rgb;
+        color = SampleBlurred(suv, texel);
     }
 
     // 色ずれ
@@ -567,11 +692,11 @@ void main(uint3 id : SV_DispatchThreadID)
             distanceToEdge = d - softness * 0.5f;
         }
 
-        float3 fill = FillColor(layer, i, uv, cellId);
+        float3 fill = (layer.shape == SHAPE_VORTEX) ? VortexColor(layer, SampleVortex(layer, uv)) : FillColor(layer, i, uv, cellId);
         color = lerp(color, fill, coverage * layer.opacity);
 
-        // ふちの光（覆い始めから覆いきるまでの間だけ）
-        if (layer.edgeWidth > 0.0f && layer.progress > 0.0f && layer.progress < 1.0f)
+        // ふちの光（覆い始めから覆いきるまでの間だけ。渦には付けない）
+        if (layer.shape != SHAPE_VORTEX && layer.edgeWidth > 0.0f && layer.progress > 0.0f && layer.progress < 1.0f)
         {
             float glow = exp(-pow(distanceToEdge / layer.edgeWidth, 2.0f));
             color += layer.edgeColor.rgb * layer.edgeColor.a * glow * layer.opacity;

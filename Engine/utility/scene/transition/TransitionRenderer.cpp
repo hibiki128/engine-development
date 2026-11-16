@@ -119,7 +119,7 @@ bool TransitionRenderer::BindTexture(uint32_t slot, const std::string &relativeP
     return found;
 }
 
-void TransitionRenderer::FillLayer(TransitionGpuLayer &out, const TransitionLayer &layer, float progress, bool flipInvert, int index)
+void TransitionRenderer::FillLayer(TransitionGpuLayer &out, const TransitionLayer &layer, float progress, float opacityScale, bool flipInvert, int index)
 {
     out.color = SrgbToLinear(layer.color);
     out.color2 = SrgbToLinear(layer.color2);
@@ -136,13 +136,16 @@ void TransitionRenderer::FillLayer(TransitionGpuLayer &out, const TransitionLaye
     out.progress = progress;
     out.softness = layer.softness;
     out.edgeWidth = layer.edgeWidth;
-    out.opacity = layer.enabled ? layer.opacity : 0.0f;
+    out.opacity = layer.enabled ? layer.opacity * opacityScale : 0.0f;
     out.shape = static_cast<int>(layer.shape);
     out.fill = static_cast<int>(layer.fill);
     out.invert = (layer.invert != flipInvert) ? 1 : 0;
     out.order = static_cast<int>(layer.order);
     out.cellSpread = layer.cellSpread;
     out.amplitude = layer.amplitude;
+    out.twist = layer.twist;
+    out.spin = layer.spin;
+    out.irregularity = layer.irregularity;
     out.seed = layer.seed;
     out.gradientAngle = ToRadians(layer.gradientAngle);
     out.imageScale = layer.imageScale;
@@ -199,6 +202,8 @@ void TransitionRenderer::Render(ID3D12Resource *pTarget, const TransitionFrame &
     data.brightness = fx.brightness;
     data.shake = fx.shake;
     data.wave = fx.wave;
+    data.warp = fx.warp;
+    data.doubleVision = fx.doubleVision;
 
     // t0 = 画面、t1 = 前の画面
     pSrvManager_->CreateSRVforRenderTexture(currentTable_ + 0, pTarget, DXGI_FORMAT_UNKNOWN);
@@ -213,7 +218,8 @@ void TransitionRenderer::Render(ID3D12Resource *pTarget, const TransitionFrame &
             {
                 break;
             }
-            FillLayer(data.layers[layerCount], layer, frame.layerProgress[layerCount], frame.flipInvert, layerCount);
+            FillLayer(data.layers[layerCount], layer, frame.layerProgress[layerCount], frame.layerOpacity[layerCount],
+                      frame.flipInvert, layerCount);
             ++layerCount;
         }
     }

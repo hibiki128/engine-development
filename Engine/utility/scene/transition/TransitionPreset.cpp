@@ -87,6 +87,9 @@ void to_json(nlohmann::json &json, const TransitionLayer &layer)
         {"order", static_cast<int>(layer.order)},
         {"cellSpread", layer.cellSpread},
         {"amplitude", layer.amplitude},
+        {"twist", layer.twist},
+        {"spin", layer.spin},
+        {"irregularity", layer.irregularity},
         {"seed", layer.seed},
         {"ruleImage", layer.ruleImage},
         {"fill", static_cast<int>(layer.fill)},
@@ -126,6 +129,9 @@ void from_json(const nlohmann::json &json, TransitionLayer &layer)
     layer.order = ReadEnum(json, "order", d.order, static_cast<int>(TransitionOrder::Count));
     layer.cellSpread = json.value("cellSpread", d.cellSpread);
     layer.amplitude = json.value("amplitude", d.amplitude);
+    layer.twist = json.value("twist", d.twist);
+    layer.spin = json.value("spin", d.spin);
+    layer.irregularity = json.value("irregularity", d.irregularity);
     layer.seed = json.value("seed", d.seed);
     layer.ruleImage = json.value("ruleImage", d.ruleImage);
     layer.fill = ReadEnum(json, "fill", d.fill, static_cast<int>(TransitionFill::Count));
@@ -156,7 +162,8 @@ void to_json(nlohmann::json &json, const TransitionSceneFx &fx)
     json = nlohmann::json{
         {"mosaic", fx.mosaic},   {"blur", fx.blur},     {"swirl", fx.swirl},           {"zoom", fx.zoom},
         {"zoomBlur", fx.zoomBlur}, {"rotate", fx.rotate}, {"chroma", fx.chroma},       {"desaturate", fx.desaturate},
-        {"brightness", fx.brightness}, {"shake", fx.shake}, {"wave", fx.wave}, {"easing", static_cast<int>(fx.easing)},
+        {"brightness", fx.brightness}, {"shake", fx.shake}, {"wave", fx.wave}, {"warp", fx.warp},
+        {"doubleVision", fx.doubleVision}, {"easing", static_cast<int>(fx.easing)},
     };
 }
 
@@ -174,6 +181,8 @@ void from_json(const nlohmann::json &json, TransitionSceneFx &fx)
     fx.brightness = json.value("brightness", d.brightness);
     fx.shake = json.value("shake", d.shake);
     fx.wave = json.value("wave", d.wave);
+    fx.warp = json.value("warp", d.warp);
+    fx.doubleVision = json.value("doubleVision", d.doubleVision);
     fx.easing = ReadEnum(json, "easing", d.easing, kEasingCount);
 }
 
@@ -606,6 +615,46 @@ std::vector<TransitionPreset> TransitionLibrary::BuiltInPresets()
         p.cover.sceneFx.mosaic = 10.0f;
         p.cover.sceneFx.wave = 25.0f;
         p.cover.sceneFx.desaturate = 0.5f;
+        list.push_back(p);
+    }
+    {
+        TransitionPreset p = MakePreset("歪みながら暗転", "画面が縦横に揺らいで歪みながら黒へフェードする", 1.4f, 0.15f, 0.9f);
+        TransitionLayer l = MakeLayer("黒", TransitionShape::Fade, kBlack);
+        l.start = 0.4f;
+        l.easing = EasingType::InSine;
+        p.cover.layers.push_back(l);
+        p.cover.sceneFx.warp = 45.0f;
+        p.cover.sceneFx.swirl = 40.0f;
+        p.cover.sceneFx.chroma = 5.0f;
+        p.cover.sceneFx.easing = EasingType::InOutSine;
+        list.push_back(p);
+    }
+    {
+        TransitionPreset p = MakePreset("渦が外から巻き込む", "3色の太い渦が画面の外側から中心へ巻き込んで覆い、回ったまま薄くなって消える", 0.9f, 0.3f, 0.5f);
+        TransitionLayer l = MakeLayer("渦", TransitionShape::Vortex, kBlack);
+        l.count = 3.0f;
+        l.twist = 1.5f;
+        l.spin = 0.25f;
+        l.irregularity = 0.6f;
+        l.cellSpread = 0.5f;
+        l.softness = 0.02f;
+        l.palette[0] = {0.05f, 0.06f, 0.2f, 1.0f};
+        l.palette[1] = {0.2f, 0.35f, 0.7f, 1.0f};
+        l.palette[2] = {0.55f, 0.85f, 1.0f, 1.0f};
+        l.easing = EasingType::InQuad;
+        p.cover.layers.push_back(l);
+        p.revealMode = TransitionRevealMode::FadeOut;
+        list.push_back(p);
+    }
+    {
+        TransitionPreset p = MakePreset("二重にぼやけてフェード", "画面が二重にずれてぼやけ、そのまま黒へ溶ける", 1.2f, 0.2f, 0.9f);
+        TransitionLayer l = MakeLayer("黒", TransitionShape::Fade, kBlack);
+        l.start = 0.5f;
+        l.easing = EasingType::InSine;
+        p.cover.layers.push_back(l);
+        p.cover.sceneFx.doubleVision = 36.0f;
+        p.cover.sceneFx.blur = 8.0f;
+        p.cover.sceneFx.easing = EasingType::OutQuad;
         list.push_back(p);
     }
     {

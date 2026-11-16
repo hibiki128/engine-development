@@ -35,6 +35,7 @@ enum class TransitionShape
     Wave,      // 波打つワイプ
     Fan,       // 扇
     RuleImage, // ルール画像（明るさの順）
+    Vortex,    // 渦の腕が外から巻き込む
     Count,
 };
 
@@ -71,6 +72,7 @@ enum class TransitionRevealMode
     Reverse,     // 覆ったときの逆再生
     PassThrough, // 同じ向きへ抜ける（覆ったのと同じ順に明ける）
     Custom,      // 明ける用のレイヤーを別に作る
+    FadeOut,     // 覆いきった形のまま薄くして消す
     Count,
 };
 
@@ -95,8 +97,11 @@ struct TransitionLayer
     Vector2 center = {0.5f, 0.5f};
     float count = 8.0f;       // 帯・マス・とげ・巻き数など
     TransitionOrder order = TransitionOrder::Random;
-    float cellSpread = 0.6f;  // マスの埋まり始めのばらつき（0で一斉に）
+    float cellSpread = 0.6f;  // マスの埋まり始めのばらつき（0で一斉に）・渦の腕の入るずれ
     float amplitude = 0.05f;  // 波の大きさ
+    float twist = 1.0f;       // 渦のねじれ（端から中心近くまでの巻き数）
+    float spin = 0.0f;        // 渦の回る速さ（回/秒）
+    float irregularity = 0.5f; // 渦の腕・色の帯の幅のばらつき（0〜1）
     float seed = 0.0f;        // 乱数の種
     std::string ruleImage;    // ルール画像（images からの相対パス）
 
@@ -135,6 +140,8 @@ struct TransitionSceneFx
     float brightness = 0.0f; // +で白へ / -で黒へ
     float shake = 0.0f;      // 揺れ（ピクセル）
     float wave = 0.0f;       // 波打ち（ピクセル）
+    float warp = 0.0f;       // 縦横に揺らぐ歪み（ピクセル）
+    float doubleVision = 0.0f; // 二重に見えるずれ幅（ピクセル）
     EasingType easing = EasingType::InQuad;
 };
 
@@ -161,7 +168,7 @@ struct TransitionPreset
     TransitionPhase cover;  // 前半（覆う）
     float hold = 0.1f;      // 覆いきってから明けるまで待つ時間（この間にシーンが切り替わる）
     TransitionRevealMode revealMode = TransitionRevealMode::Reverse;
-    TransitionPhase reveal; // 後半（明ける）。Reverse / PassThrough のときは時間だけ使う
+    TransitionPhase reveal; // 後半（明ける）。Custom 以外のときは時間だけ使う
 
     /// <summary>後半に使うレイヤー（明け方に応じて前半のものを使い回す）</summary>
     const std::vector<TransitionLayer> &RevealLayers() const

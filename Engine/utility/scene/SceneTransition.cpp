@@ -42,6 +42,8 @@ TransitionSceneFx ScaleSceneFx(const TransitionSceneFx &fx, float amount)
     out.brightness *= a;
     out.shake *= a;
     out.wave *= a;
+    out.warp *= a;
+    out.doubleVision *= a;
     return out;
 }
 
@@ -273,6 +275,7 @@ bool SceneTransition::BuildFrame(const TransitionPreset &preset, Stage stage, fl
         for (size_t i = 0; i < preset.cover.layers.size() && i < TransitionPreset::kMaxLayers; ++i)
         {
             out.layerProgress[i] = LayerProgress(preset.cover.layers[i], t);
+            out.layerOpacity[i] = 1.0f;
         }
         out.sceneFx = ScaleSceneFx(preset.cover.sceneFx, t);
         return true;
@@ -288,9 +291,13 @@ bool SceneTransition::BuildFrame(const TransitionPreset &preset, Stage stage, fl
         out.layers = &layers;
         out.flipInvert = (preset.revealMode == TransitionRevealMode::PassThrough);
         // 明けるときは覆ったときの動きを逆にたどる（進み具合 1 → 0）
+        const bool fadeOut = (preset.revealMode == TransitionRevealMode::FadeOut);
         for (size_t i = 0; i < layers.size() && i < TransitionPreset::kMaxLayers; ++i)
         {
-            out.layerProgress[i] = LayerProgress(layers[i], 1.0f - t);
+            // 薄くして消すときは覆いきった形のまま濃さを下げる
+            const float amount = LayerProgress(layers[i], 1.0f - t);
+            out.layerProgress[i] = fadeOut ? 1.0f : amount;
+            out.layerOpacity[i] = fadeOut ? amount : 1.0f;
         }
         out.sceneFx = ScaleSceneFx(preset.RevealSceneFx(), 1.0f - t);
         return true;

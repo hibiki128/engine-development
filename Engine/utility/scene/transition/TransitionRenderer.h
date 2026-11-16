@@ -36,8 +36,12 @@ struct TransitionGpuLayer
     int paletteCount;
     int hasRule;
     int hasImage;
+    float twist;
+    float spin;
+    float irregularity;
+    float layerPadding;
 };
-static_assert(sizeof(TransitionGpuLayer) == 192, "Transition.CS.hlsl の Layer と並びを一致させること");
+static_assert(sizeof(TransitionGpuLayer) == 208, "Transition.CS.hlsl の Layer と並びを一致させること");
 
 /// <summary>
 /// 遷移の定数バッファ（Transition.CS.hlsl の TransitionParams と同じ並び）
@@ -61,10 +65,12 @@ struct TransitionGpuData
     float brightness = 0.0f;
     float shake = 0.0f;
     float wave = 0.0f;
-    float padding1 = 0.0f;
+    float warp = 0.0f;
+    float doubleVision = 0.0f;
+    float padding1[3] = {};
     TransitionGpuLayer layers[TransitionPreset::kMaxLayers] = {};
 };
-static_assert(sizeof(TransitionGpuData) == 848, "Transition.CS.hlsl の TransitionParams と並びを一致させること");
+static_assert(sizeof(TransitionGpuData) == 928, "Transition.CS.hlsl の TransitionParams と並びを一致させること");
 
 /// <summary>
 /// 遷移の1フレームぶんの状態（どの幕がどこまで進んでいるか）
@@ -73,6 +79,7 @@ struct TransitionFrame
 {
     const std::vector<TransitionLayer> *layers = nullptr; // 使う幕
     float layerProgress[TransitionPreset::kMaxLayers] = {}; // 幕ごとの進み具合（イージング済み）
+    float layerOpacity[TransitionPreset::kMaxLayers] = {};  // 幕ごとの濃さに掛ける倍率
     bool flipInvert = false;                             // 明けるときに「同じ向きへ抜ける」なら true
     TransitionSceneFx sceneFx;                           // 下の画面の崩し方（量は進み具合を掛け済み）
 };
@@ -110,7 +117,7 @@ class TransitionRenderer
 
   private:
     /// <summary>レイヤーの値を GPU 用へ詰める</summary>
-    void FillLayer(TransitionGpuLayer &out, const TransitionLayer &layer, float progress, bool flipInvert, int index);
+    void FillLayer(TransitionGpuLayer &out, const TransitionLayer &layer, float progress, float opacityScale, bool flipInvert, int index);
 
     /// <summary>images からの相対パスのテクスチャを、テーブルの slot 番目へ差す（無ければ白）</summary>
     bool BindTexture(uint32_t slot, const std::string &relativePath);
