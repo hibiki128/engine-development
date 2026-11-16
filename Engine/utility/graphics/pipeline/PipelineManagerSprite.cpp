@@ -145,4 +145,72 @@ Microsoft::WRL::ComPtr<ID3D12PipelineState> PipelineManager::CreateSpriteGraphic
     return graphicsPipelineState;
 }
 
+// 吹き出しのルートシグネチャとPSO
+void PipelineManager::CreateBubblePipelines()
+{
+    ShaderRootSignature::BuildOptions options;
+    options.allowInputAssembler = true;
+    options.srvTableMode = ShaderRootSignature::TableMode::PerRegister;
+    options.samplerPresets = {ShaderRootSignature::SamplerPreset::LinearClamp};
+
+    const std::vector<ShaderStageFile> shaders = {
+        {shaderPath + L"shaders/Bubble/Bubble.VS.hlsl", L"vs_6_0", D3D12_SHADER_VISIBILITY_VERTEX},
+        {shaderPath + L"shaders/Bubble/Bubble.PS.hlsl", L"ps_6_0", D3D12_SHADER_VISIBILITY_PIXEL},
+    };
+    auto rootSignature = BuildReflectedRootSignature(PipelineType::Bubble, ShaderMode::None, shaders, options);
+    rootSignatures_[MakeRootSignatureKey(PipelineType::Bubble, ShaderMode::None)] = rootSignature;
+    pipelines_[MakePipelineKey(PipelineType::Bubble, BlendMode::Normal, ShaderMode::None)] = CreateBubbleGraphicsPipeline(rootSignature);
+}
+
+Microsoft::WRL::ComPtr<ID3D12PipelineState> PipelineManager::CreateBubbleGraphicsPipeline(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature)
+{
+    // 通常の半透明合成（アルファは書き込み先を保持）
+    D3D12_BLEND_DESC blendDesc{};
+    blendDesc.RenderTarget[0].RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
+    blendDesc.RenderTarget[0].BlendEnable = TRUE;
+    blendDesc.RenderTarget[0].SrcBlend = D3D12_BLEND_SRC_ALPHA;
+    blendDesc.RenderTarget[0].BlendOp = D3D12_BLEND_OP_ADD;
+    blendDesc.RenderTarget[0].DestBlend = D3D12_BLEND_INV_SRC_ALPHA;
+    blendDesc.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ZERO;
+    blendDesc.RenderTarget[0].BlendOpAlpha = D3D12_BLEND_OP_ADD;
+    blendDesc.RenderTarget[0].DestBlendAlpha = D3D12_BLEND_ONE;
+
+    // 裏面も描画
+    D3D12_RASTERIZER_DESC rasterizerDesc{};
+    rasterizerDesc.CullMode = D3D12_CULL_MODE_NONE;
+    rasterizerDesc.FillMode = D3D12_FILL_MODE_SOLID;
+
+    ShaderInputLayout inputLayout;
+    IDxcBlob *pVertexShaderBlob = CompileVertexShaderWithLayout(shaderPath + L"shaders/Bubble/Bubble.VS.hlsl", inputLayout);
+    assert(pVertexShaderBlob != nullptr);
+    IDxcBlob *pPixelShaderBlob = pDxCommon_->CompileShader(shaderPath + L"shaders/Bubble/Bubble.PS.hlsl", L"ps_6_0");
+    assert(pPixelShaderBlob != nullptr);
+
+    // 深度は使わない
+    D3D12_DEPTH_STENCIL_DESC depthStencilDesc{};
+    depthStencilDesc.DepthEnable = false;
+    depthStencilDesc.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
+    depthStencilDesc.DepthFunc = D3D12_COMPARISON_FUNC_ALWAYS;
+
+    D3D12_GRAPHICS_PIPELINE_STATE_DESC desc{};
+    desc.pRootSignature = rootSignature.Get();
+    desc.InputLayout = inputLayout.Get();
+    desc.VS = {pVertexShaderBlob->GetBufferPointer(), pVertexShaderBlob->GetBufferSize()};
+    desc.PS = {pPixelShaderBlob->GetBufferPointer(), pPixelShaderBlob->GetBufferSize()};
+    desc.BlendState = blendDesc;
+    desc.RasterizerState = rasterizerDesc;
+    desc.NumRenderTargets = 1;
+    desc.RTVFormats[0] = kSceneColorFormat;
+    desc.DepthStencilState = depthStencilDesc;
+    desc.DSVFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;
+    desc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+    desc.SampleDesc.Count = 1;
+    desc.SampleMask = D3D12_DEFAULT_SAMPLE_MASK;
+
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> pipelineState;
+    HRESULT hr = pDxCommon_->GetDevice()->CreateGraphicsPipelineState(&desc, IID_PPV_ARGS(&pipelineState));
+    assert(SUCCEEDED(hr));
+    return pipelineState;
+}
+
 } // namespace Hagine

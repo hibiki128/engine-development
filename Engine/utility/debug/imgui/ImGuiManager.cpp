@@ -1,4 +1,5 @@
 #include "ImGuiManager.h"
+#include <2d/bubble/BubbleManager.h>
 #include <utility/scene/SceneTransition.h>
 #include <particle/ParticleEditor.h>
 #include <particle/gpu/ParticleCSEditor.h>
@@ -782,7 +783,7 @@ void ImGuiManager::ShowMainMenu() {
                 // Framework::RegisterShortcutKey と同じ名前順で Ctrl+数字 が割り当てられている
                 const std::string shortcut = (i < 9) ? "Ctrl+" + std::to_string(i + 1) : "";
                 if (ImGui::MenuItem(label.c_str(), shortcut.empty() ? nullptr : shortcut.c_str())) {
-                    SceneManager::GetInstance()->NextSceneReservation(sceneName);
+                    SceneManager::GetInstance()->SceneChange(sceneName);
                     ImGuiNotification::Post(sceneName + " シーンへ移行します", {0.4f, 0.8f, 1.0f, 1.0f});
                 }
             }
@@ -1452,6 +1453,16 @@ void ImGuiManager::ShowTransitionWindow() {
     ImGui::End();
 }
 
+void ImGuiManager::ShowBubbleWindow() {
+    if (!showBubbleView_)
+        return;
+
+    ImGui::SetNextWindowSize(ImVec2(960.0f, 640.0f), ImGuiCond_FirstUseEver);
+    ImGui::Begin("吹き出し", &showBubbleView_, ImGuiWindowFlags_NoFocusOnAppearing);
+    BubbleManager::GetInstance()->DrawEditor();
+    ImGui::End();
+}
+
 void ImGuiManager::ShowInputActionWindow() {
     if (!showInputActionView_)
         return;
@@ -1768,6 +1779,7 @@ void ImGuiManager::ShowMainUI(OffScreen *pOffScreen) {
     ShowDebugLineWindow();
     ShowInputActionWindow();
     ShowTransitionWindow();
+    ShowBubbleWindow();
     // アセットブラウザ窓を描画
     ShowAssetBrowserWindow();
     // ゲームパラメータHub窓を描画
@@ -2383,6 +2395,7 @@ void ImGuiManager::SaveFlag() {
     data->Save("showDebugLineView", showDebugLineView_);
     data->Save("showInputActionView", showInputActionView_);
     data->Save("showTransitionView", showTransitionView_);
+    data->Save("showBubbleView", showBubbleView_);
     data->Save("debugLineCategoryMask", static_cast<int>(LineRenderer::GetInstance()->GetCategoryMask()));
     data->Save("debugLinesEnabled", LineRenderer::GetInstance()->IsAllLinesEnabled());
     data->Save("sceneLabelMode", sceneLabelMode_);
@@ -2459,6 +2472,7 @@ void ImGuiManager::LoadFlag() {
     showDebugLineView_ = data->Load("showDebugLineView", false);
     showInputActionView_ = data->Load("showInputActionView", false);
     showTransitionView_ = data->Load("showTransitionView", false);
+    showBubbleView_ = data->Load("showBubbleView", false);
     LineRenderer::GetInstance()->SetCategoryMask(static_cast<uint32_t>(
         data->Load("debugLineCategoryMask", static_cast<int>(LineRenderer::GetInstance()->GetCategoryMask()))));
     LineRenderer::GetInstance()->SetAllLinesEnabled(data->Load("debugLinesEnabled", true));

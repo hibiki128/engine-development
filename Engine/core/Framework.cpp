@@ -2,6 +2,7 @@
 #include "utility/debug/imgui/ImGuiNotification.h"
 #include "utility/scene/SceneRegistry.h"
 #include "utility/scene/SceneSerializer.h"
+#include <2d/bubble/BubbleManager.h>
 #include <2d/ui/UIAnimator.h>
 #include <Frame.h>
 #include <attachment/AttachmentManager.h>
@@ -574,6 +575,10 @@ void Framework::Update() {
     {
         HAGINE_CPU_PROFILE("Update/Sprites");
         pSpriteManager_->UpdateAll(Frame::UnscaledDeltaTime());
+    }
+    {
+        // 吹き出しの出方・文字送り
+        BubbleManager::GetInstance()->Update(Frame::UnscaledDeltaTime());
     }
     {
         // テクスチャ差し替えで退避したリソースを、GPUが使い終わった頃に解放する

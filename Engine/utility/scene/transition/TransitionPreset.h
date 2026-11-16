@@ -163,7 +163,7 @@ struct TransitionPreset
 {
     static constexpr int kMaxLayers = 4; // Transition.CS.hlsl の MAX_LAYERS と一致させること
 
-    std::string name = "新しい遷移";
+    std::string name = "NewTransition";
     std::string description;
     TransitionPhase cover;  // 前半（覆う）
     float hold = 0.1f;      // 覆いきってから明けるまで待つ時間（この間にシーンが切り替わる）
@@ -226,7 +226,7 @@ class TransitionLibrary
     const TransitionPreset *Resolve(const std::string &explicitName, const std::string &fromScene,
                                     const std::string &toScene) const;
 
-    /// <summary>重ならない名前を作る（"名前 (2)" のように）</summary>
+    /// <summary>重ならない名前を作る（"Name2" のように）</summary>
     std::string MakeUniqueName(const std::string &base) const;
 
     std::vector<TransitionPreset> presets;

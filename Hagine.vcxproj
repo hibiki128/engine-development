@@ -397,6 +397,11 @@
     <ClCompile Include="Engine\2d\SpriteManagerImGui.cpp" />
     <ClCompile Include="Engine\3d\particle\gpu\ParticleCSFieldManager.cpp" />
     <ClCompile Include="Engine\3d\particle\gpu\ParticleCSFieldManagerImGui.cpp" />
+    <ClCompile Include="Engine\2d\bubble\BubbleData.cpp" />
+    <ClCompile Include="Engine\2d\bubble\BubbleGeometry.cpp" />
+    <ClCompile Include="Engine\2d\bubble\BubbleManager.cpp" />
+    <ClCompile Include="Engine\2d\bubble\BubbleManagerImGui.cpp" />
+    <ClCompile Include="Engine\2d\bubble\BubbleText.cpp" />
     <ClCompile Include="Engine\2d\text\TextRenderer.cpp" />
     <ClCompile Include="Engine\2d\ui\UIAnimator.cpp" />
     <ClCompile Include="Engine\2d\ui\UIAnimatorTimeline.cpp" />
@@ -966,6 +971,21 @@
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Develop|x64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
     </None>
+    <None Include="Engine\EngineAssets\shaders\Bubble\Bubble.hlsli">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Develop|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\Bubble\Bubble.PS.hlsl">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Develop|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\Bubble\Bubble.VS.hlsl">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Develop|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+    </None>
     <None Include="Engine\EngineAssets\shaders\Transition\Transition.CS.hlsl">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Develop|x64'">true</ExcludedFromBuild>
@@ -1183,6 +1203,10 @@
     <ClInclude Include="Engine\utility\edit\undo\UndoRedoManager.h" />
     <ClInclude Include="Engine\utility\edit\undo\ImGuiUndoTracker.h" />
     <ClInclude Include="Engine\2d\SpriteManager.h" />
+    <ClInclude Include="Engine\2d\bubble\BubbleData.h" />
+    <ClInclude Include="Engine\2d\bubble\BubbleGeometry.h" />
+    <ClInclude Include="Engine\2d\bubble\BubbleManager.h" />
+    <ClInclude Include="Engine\2d\bubble\BubbleText.h" />
     <ClInclude Include="Engine\2d\text\TextRenderer.h" />
     <ClInclude Include="Engine\2d\ui\UIAnimator.h" />
     <ClInclude Include="Engine\3d\shadow\ShadowMap.h" />

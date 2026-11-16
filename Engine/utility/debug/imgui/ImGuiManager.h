@@ -220,6 +220,11 @@ class ImGuiManager {
     /// </summary>
     void ShowTransitionWindow();
 
+    /// <summary>
+    /// 吹き出しの窓
+    /// </summary>
+    void ShowBubbleWindow();
+
     // カメラ窓の頭に出すデバッグカメラの状態（使う/使わない・速さ・窓を開く）
     void DrawDebugCameraSummary();
 
@@ -514,6 +519,7 @@ class ImGuiManager {
     bool showDebugLineView_ = false;     // デバッグ線の窓
     bool showInputActionView_ = false;   // 入力（キーコンフィグ）の窓
     bool showTransitionView_ = false;    // シーン遷移の窓
+    bool showBubbleView_ = false;        // 吹き出しの窓
 #ifdef USE_IMGUI
     std::vector<PaletteSwatch> paletteSwatches_;
     bool paletteLoaded_ = false;

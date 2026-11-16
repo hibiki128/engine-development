@@ -75,7 +75,7 @@ void SceneTransition::SetColors(const std::vector<Vector4> &colors)
     {
         return;
     }
-    TransitionPreset *preset = library_.Find("六角形（4色）");
+    TransitionPreset *preset = library_.Find("HexagonFourColor");
     if (!preset)
     {
         return;

@@ -7,6 +7,9 @@
     <Filter Include="Engine\2d">
       <UniqueIdentifier>{9AEE6129-CC10-A8A4-1C6F-5AB4B74E6852}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Engine\2d\bubble">
+      <UniqueIdentifier>{725FE6EE-8449-4653-AB6F-46CFA0900EB7}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Engine\2d\text">
       <UniqueIdentifier>{39AD2835-AAAD-9C3F-BBCC-762BF46A9F1C}</UniqueIdentifier>
     </Filter>
@@ -171,6 +174,9 @@
     </Filter>
     <Filter Include="Engine\EngineAssets\shaders\Skybox">
       <UniqueIdentifier>{58D64E3C-4687-C845-27FD-9667FEB788CA}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Engine\EngineAssets\shaders\Bubble">
+      <UniqueIdentifier>{E36E619F-AC9D-481B-80F9-4173793499A5}</UniqueIdentifier>
     </Filter>
     <Filter Include="Engine\EngineAssets\shaders\Sprite">
       <UniqueIdentifier>{6D092838-C3C8-28A7-6DB9-0E4258F154BC}</UniqueIdentifier>
@@ -341,6 +347,21 @@
     </ClCompile>
     <ClCompile Include="Engine\2d\SpriteManagerImGui.cpp">
       <Filter>Engine\2d</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\2d\bubble\BubbleData.cpp">
+      <Filter>Engine\2d\bubble</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\2d\bubble\BubbleGeometry.cpp">
+      <Filter>Engine\2d\bubble</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\2d\bubble\BubbleManager.cpp">
+      <Filter>Engine\2d\bubble</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\2d\bubble\BubbleManagerImGui.cpp">
+      <Filter>Engine\2d\bubble</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\2d\bubble\BubbleText.cpp">
+      <Filter>Engine\2d\bubble</Filter>
     </ClCompile>
     <ClCompile Include="Engine\2d\text\TextRenderer.cpp">
       <Filter>Engine\2d\text</Filter>
@@ -1039,6 +1060,18 @@
     </ClInclude>
     <ClInclude Include="Engine\2d\SpriteStruct.h">
       <Filter>Engine\2d</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\2d\bubble\BubbleData.h">
+      <Filter>Engine\2d\bubble</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\2d\bubble\BubbleGeometry.h">
+      <Filter>Engine\2d\bubble</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\2d\bubble\BubbleManager.h">
+      <Filter>Engine\2d\bubble</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\2d\bubble\BubbleText.h">
+      <Filter>Engine\2d\bubble</Filter>
     </ClInclude>
     <ClInclude Include="Engine\2d\text\TextRenderer.h">
       <Filter>Engine\2d\text</Filter>
@@ -2120,6 +2153,15 @@
     </None>
     <None Include="Engine\EngineAssets\shaders\Sprite\Sprite.hlsli">
       <Filter>Engine\EngineAssets\shaders\Sprite</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\Bubble\Bubble.hlsli">
+      <Filter>Engine\EngineAssets\shaders\Bubble</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\Bubble\Bubble.PS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\Bubble</Filter>
+    </None>
+    <None Include="Engine\EngineAssets\shaders\Bubble\Bubble.VS.hlsl">
+      <Filter>Engine\EngineAssets\shaders\Bubble</Filter>
     </None>
     <None Include="Engine\EngineAssets\shaders\Transition\Transition.CS.hlsl">
       <Filter>Engine\EngineAssets\shaders\Transition</Filter>

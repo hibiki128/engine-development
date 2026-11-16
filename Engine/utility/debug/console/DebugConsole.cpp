@@ -268,7 +268,7 @@ void DebugConsole::RegisterBuiltInCommands()
         {
             if (ToLower(name) == ToLower(args[1]))
             {
-                SceneManager::GetInstance()->NextSceneReservation(name);
+                SceneManager::GetInstance()->SceneChange(name);
                 Print("シーンを切り替えます: " + name, kColorOk);
                 return;
             }

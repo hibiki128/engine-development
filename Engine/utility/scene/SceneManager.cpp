@@ -9,6 +9,7 @@
 #include "SceneSerializer.h"
 #include <DirectXCommon.h>
 #include <SpriteManager.h>
+#include <2d/bubble/BubbleManager.h>
 #include <camera/CameraManager.h>
 #include <object/group/ObjectGroupManager.h>
 #include <cassert>
@@ -136,7 +137,7 @@ void SceneManager::DrawTransition(ID3D12Resource *pTarget) {
     pTransition_->Draw(pTarget);
 }
 
-void SceneManager::NextSceneReservation(const std::string &sceneName, const std::string &transitionPreset) {
+void SceneManager::SceneChange(const std::string &sceneName, const std::string &transitionPreset) {
     if (!pTransition_->IsEnd() && pTransition_->FadeInStart()) {
         return; // すでに遷移中なので次の予約はしない
     }
@@ -182,6 +183,7 @@ void SceneManager::SceneChange() {
             ParticleCSSpawner::GetInstance()->ClearSceneScoped();
             BaseObjectManager::GetInstance()->RemoveAllObjects();
             SpriteManager::GetInstance()->Clear();
+            BubbleManager::GetInstance()->Clear();
             // 旧シーンが登録したカメラを破棄する（新シーンへ持ち越さない）
             CameraManager::GetInstance()->Clear();
             ObjectGroupManager::GetInstance()->Clear();
@@ -275,6 +277,7 @@ void SceneManager::RebuildCurrentScene() {
     ParticleCSSpawner::GetInstance()->ClearSceneScoped();
     BaseObjectManager::GetInstance()->RemoveAllObjects();
     SpriteManager::GetInstance()->Clear();
+    BubbleManager::GetInstance()->Clear();
     CameraManager::GetInstance()->Clear();
     ObjectGroupManager::GetInstance()->Clear();
     // 旧シーンの描画エントリをすべて削除（ダングリングラムダ呼び出し防止）

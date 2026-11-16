@@ -26,6 +26,7 @@
 #include "render/CameraFade.h"
 #include "raytracing/RtAoPass.h"
 #include "ssao/SsaoRenderer.h"
+#include <2d/bubble/BubbleManager.h>
 #include <algorithm>
 #ifdef USE_IMGUI
 #include "particle/gpu/ParticleCSEditor.h"
@@ -400,6 +401,9 @@ void DrawSystem::Draw(const ViewProjection &vp)
 
         // drawGroup が "UI" の実行時 GPU パーティクル
         ParticleCSSpawner::GetInstance()->DrawGraphics(vp, kUILayer);
+
+        // 吹き出し
+        BubbleManager::GetInstance()->Draw(vp);
 
         lastOffScreen->EndCompositePass();
 

@@ -223,7 +223,7 @@ void to_json(nlohmann::json &json, const TransitionPreset &preset)
 
 void from_json(const nlohmann::json &json, TransitionPreset &preset)
 {
-    preset.name = json.value("name", std::string("遷移"));
+    preset.name = json.value("name", std::string("Transition"));
     preset.description = json.value("description", std::string());
     if (json.contains("cover"))
     {
@@ -371,7 +371,7 @@ std::string TransitionLibrary::MakeUniqueName(const std::string &base) const
     }
     for (int i = 2;; ++i)
     {
-        const std::string candidate = base + " (" + std::to_string(i) + ")";
+        const std::string candidate = base + std::to_string(i);
         if (!Find(candidate))
         {
             return candidate;
@@ -389,7 +389,7 @@ std::vector<TransitionPreset> TransitionLibrary::BuiltInPresets()
 
     {
         // 以前からの既定（六角形が色とりどりにばらばらに埋まる）
-        TransitionPreset p = MakePreset("六角形（4色）", "六角形のマスが4色でばらばらに埋まる。明けるときは最後に埋まったマスから消える", 1.0f, 0.1f, 1.0f);
+        TransitionPreset p = MakePreset("HexagonFourColor", "六角形のマスが4色でばらばらに埋まる。明けるときは最後に埋まったマスから消える", 1.0f, 0.1f, 1.0f);
         TransitionLayer l = MakeLayer("六角形", TransitionShape::Hexagons, kBlack);
         l.count = 11.0f;
         l.fill = TransitionFill::Palette;
@@ -401,19 +401,19 @@ std::vector<TransitionPreset> TransitionLibrary::BuiltInPresets()
         list.push_back(p);
     }
     {
-        TransitionPreset p = MakePreset("フェード（黒）", "黒く暗転して明ける、いちばん素直な切り替え", 0.45f, 0.1f, 0.45f);
+        TransitionPreset p = MakePreset("FadeBlack", "黒く暗転して明ける、いちばん素直な切り替え", 0.45f, 0.1f, 0.45f);
         p.cover.layers.push_back(MakeLayer("黒", TransitionShape::Fade, kBlack));
         list.push_back(p);
     }
     {
-        TransitionPreset p = MakePreset("フェード（白）", "白く飛ばして明ける。回想・場面の大きな転換に", 0.35f, 0.1f, 0.6f);
+        TransitionPreset p = MakePreset("FadeWhite", "白く飛ばして明ける。回想・場面の大きな転換に", 0.35f, 0.1f, 0.6f);
         p.cover.layers.push_back(MakeLayer("白", TransitionShape::Fade, kWhite));
         p.cover.sceneFx.brightness = 0.6f;
         p.cover.sceneFx.blur = 6.0f;
         list.push_back(p);
     }
     {
-        TransitionPreset p = MakePreset("ワイプ（左から右）", "左から黒が流れ込み、そのまま右へ抜けていく", 0.5f, 0.05f, 0.5f);
+        TransitionPreset p = MakePreset("WipeLeftToRight", "左から黒が流れ込み、そのまま右へ抜けていく", 0.5f, 0.05f, 0.5f);
         TransitionLayer l = MakeLayer("ワイプ", TransitionShape::Wipe, kBlack);
         l.softness = 0.15f;
         p.cover.layers.push_back(l);
@@ -421,7 +421,7 @@ std::vector<TransitionPreset> TransitionLibrary::BuiltInPresets()
         list.push_back(p);
     }
     {
-        TransitionPreset p = MakePreset("斜めの二重ワイプ", "色の帯が先に走り、追いかけるように黒が覆う。縁が光る", 0.6f, 0.05f, 0.6f);
+        TransitionPreset p = MakePreset("DiagonalDoubleWipe", "色の帯が先に走り、追いかけるように黒が覆う。縁が光る", 0.6f, 0.05f, 0.6f);
         TransitionLayer accent = MakeLayer("先の帯", TransitionShape::Wipe, {1.0f, 0.55f, 0.15f, 1.0f});
         accent.angle = 30.0f;
         accent.softness = 0.02f;
@@ -439,7 +439,7 @@ std::vector<TransitionPreset> TransitionLibrary::BuiltInPresets()
         list.push_back(p);
     }
     {
-        TransitionPreset p = MakePreset("アイリス（円が閉じる）", "円が中心へ絞られて閉じ、明けるときは中心から開く", 0.6f, 0.15f, 0.6f);
+        TransitionPreset p = MakePreset("IrisClose", "円が中心へ絞られて閉じ、明けるときは中心から開く", 0.6f, 0.15f, 0.6f);
         TransitionLayer l = MakeLayer("円", TransitionShape::Iris, kBlack);
         l.invert = true;
         l.softness = 0.01f;
@@ -448,7 +448,7 @@ std::vector<TransitionPreset> TransitionLibrary::BuiltInPresets()
         list.push_back(p);
     }
     {
-        TransitionPreset p = MakePreset("星形で閉じる", "星形に絞られて閉じる。縁が金色に光る", 0.7f, 0.15f, 0.7f);
+        TransitionPreset p = MakePreset("StarClose", "星形に絞られて閉じる。縁が金色に光る", 0.7f, 0.15f, 0.7f);
         TransitionLayer l = MakeLayer("星", TransitionShape::Star, {0.05f, 0.02f, 0.12f, 1.0f});
         l.count = 5.0f;
         l.invert = true;
@@ -459,7 +459,7 @@ std::vector<TransitionPreset> TransitionLibrary::BuiltInPresets()
         list.push_back(p);
     }
     {
-        TransitionPreset p = MakePreset("ハートで閉じる", "ハート形に絞られて閉じる", 0.7f, 0.15f, 0.7f);
+        TransitionPreset p = MakePreset("HeartClose", "ハート形に絞られて閉じる", 0.7f, 0.15f, 0.7f);
         TransitionLayer l = MakeLayer("ハート", TransitionShape::Heart, {0.95f, 0.45f, 0.6f, 1.0f});
         l.invert = true;
         l.softness = 0.01f;
@@ -467,7 +467,7 @@ std::vector<TransitionPreset> TransitionLibrary::BuiltInPresets()
         list.push_back(p);
     }
     {
-        TransitionPreset p = MakePreset("時計回り", "12時の位置から時計の針のように覆う", 0.6f, 0.05f, 0.6f);
+        TransitionPreset p = MakePreset("ClockWipe", "12時の位置から時計の針のように覆う", 0.6f, 0.05f, 0.6f);
         TransitionLayer l = MakeLayer("時計", TransitionShape::Clock, kBlack);
         l.count = 1.0f;
         l.softness = 0.01f;
@@ -476,7 +476,7 @@ std::vector<TransitionPreset> TransitionLibrary::BuiltInPresets()
         list.push_back(p);
     }
     {
-        TransitionPreset p = MakePreset("ブラインド", "細い帯が一斉に閉じる", 0.5f, 0.1f, 0.5f);
+        TransitionPreset p = MakePreset("Blinds", "細い帯が一斉に閉じる", 0.5f, 0.1f, 0.5f);
         TransitionLayer l = MakeLayer("ブラインド", TransitionShape::Blinds, kBlack);
         l.count = 14.0f;
         l.angle = 90.0f;
@@ -485,7 +485,7 @@ std::vector<TransitionPreset> TransitionLibrary::BuiltInPresets()
         list.push_back(p);
     }
     {
-        TransitionPreset p = MakePreset("交互に滑り込む帯", "横の帯が1本おきに左右から順に滑り込む", 0.7f, 0.05f, 0.7f);
+        TransitionPreset p = MakePreset("AlternatingBars", "横の帯が1本おきに左右から順に滑り込む", 0.7f, 0.05f, 0.7f);
         TransitionLayer l = MakeLayer("帯", TransitionShape::Bars, {0.08f, 0.08f, 0.12f, 1.0f});
         l.count = 8.0f;
         l.order = TransitionOrder::Alternate;
@@ -496,7 +496,7 @@ std::vector<TransitionPreset> TransitionLibrary::BuiltInPresets()
         list.push_back(p);
     }
     {
-        TransitionPreset p = MakePreset("扉が閉まる", "左右から扉のように閉じ、中央から開く", 0.5f, 0.2f, 0.5f);
+        TransitionPreset p = MakePreset("DoorsClose", "左右から扉のように閉じ、中央から開く", 0.5f, 0.2f, 0.5f);
         TransitionLayer l = MakeLayer("扉", TransitionShape::Split, kBlack);
         l.softness = 0.005f;
         l.easing = EasingType::OutBounce;
@@ -506,7 +506,7 @@ std::vector<TransitionPreset> TransitionLibrary::BuiltInPresets()
         list.push_back(p);
     }
     {
-        TransitionPreset p = MakePreset("タイル", "四角いマスが左上から斜めに埋まっていく", 0.7f, 0.05f, 0.7f);
+        TransitionPreset p = MakePreset("Tiles", "四角いマスが左上から斜めに埋まっていく", 0.7f, 0.05f, 0.7f);
         TransitionLayer l = MakeLayer("タイル", TransitionShape::Tiles, {0.06f, 0.06f, 0.1f, 1.0f});
         l.count = 9.0f;
         l.order = TransitionOrder::Sweep;
@@ -518,7 +518,7 @@ std::vector<TransitionPreset> TransitionLibrary::BuiltInPresets()
         list.push_back(p);
     }
     {
-        TransitionPreset p = MakePreset("水玉", "丸い点が中心から広がって埋める", 0.7f, 0.05f, 0.7f);
+        TransitionPreset p = MakePreset("Dots", "丸い点が中心から広がって埋める", 0.7f, 0.05f, 0.7f);
         TransitionLayer l = MakeLayer("水玉", TransitionShape::Dots, {0.1f, 0.6f, 0.9f, 1.0f});
         l.count = 12.0f;
         l.order = TransitionOrder::Center;
@@ -528,7 +528,7 @@ std::vector<TransitionPreset> TransitionLibrary::BuiltInPresets()
         list.push_back(p);
     }
     {
-        TransitionPreset p = MakePreset("三角形（2色）", "三角形のマスが2色でばらばらに埋まる", 0.8f, 0.05f, 0.8f);
+        TransitionPreset p = MakePreset("TriangleTwoColor", "三角形のマスが2色でばらばらに埋まる", 0.8f, 0.05f, 0.8f);
         TransitionLayer l = MakeLayer("三角形", TransitionShape::Triangles, kBlack);
         l.count = 7.0f;
         l.fill = TransitionFill::Palette;
@@ -541,7 +541,7 @@ std::vector<TransitionPreset> TransitionLibrary::BuiltInPresets()
         list.push_back(p);
     }
     {
-        TransitionPreset p = MakePreset("燃えて溶ける", "ノイズで溶けるように黒くなり、溶けるふちが炎のように光る", 0.9f, 0.1f, 0.9f);
+        TransitionPreset p = MakePreset("BurnDissolve", "ノイズで溶けるように黒くなり、溶けるふちが炎のように光る", 0.9f, 0.1f, 0.9f);
         TransitionLayer l = MakeLayer("溶ける", TransitionShape::Dissolve, kBlack);
         l.count = 5.0f;
         l.softness = 0.01f;
@@ -553,7 +553,7 @@ std::vector<TransitionPreset> TransitionLibrary::BuiltInPresets()
         list.push_back(p);
     }
     {
-        TransitionPreset p = MakePreset("うずまき", "中心から渦を描くように覆う", 0.8f, 0.05f, 0.8f);
+        TransitionPreset p = MakePreset("Spiral", "中心から渦を描くように覆う", 0.8f, 0.05f, 0.8f);
         TransitionLayer l = MakeLayer("うずまき", TransitionShape::Spiral, {0.15f, 0.05f, 0.25f, 1.0f});
         l.count = 3.0f;
         l.softness = 0.02f;
@@ -561,7 +561,7 @@ std::vector<TransitionPreset> TransitionLibrary::BuiltInPresets()
         list.push_back(p);
     }
     {
-        TransitionPreset p = MakePreset("波打つワイプ", "波打つ境目が上から下へ流れる", 0.6f, 0.05f, 0.6f);
+        TransitionPreset p = MakePreset("WaveWipe", "波打つ境目が上から下へ流れる", 0.6f, 0.05f, 0.6f);
         TransitionLayer l = MakeLayer("波", TransitionShape::Wave, {0.05f, 0.25f, 0.5f, 1.0f});
         l.angle = 90.0f;
         l.count = 3.0f;
@@ -575,7 +575,7 @@ std::vector<TransitionPreset> TransitionLibrary::BuiltInPresets()
         list.push_back(p);
     }
     {
-        TransitionPreset p = MakePreset("渦に吸い込まれる", "画面がねじれながら寄っていき、黒へ溶ける", 0.8f, 0.1f, 0.6f);
+        TransitionPreset p = MakePreset("SwirlIntoBlack", "画面がねじれながら寄っていき、黒へ溶ける", 0.8f, 0.1f, 0.6f);
         TransitionLayer l = MakeLayer("黒", TransitionShape::Fade, kBlack);
         l.start = 0.5f;
         l.easing = EasingType::InQuad;
@@ -586,7 +586,7 @@ std::vector<TransitionPreset> TransitionLibrary::BuiltInPresets()
         list.push_back(p);
     }
     {
-        TransitionPreset p = MakePreset("モザイク", "画面が粗いモザイクになって暗転し、モザイクのまま明ける", 0.6f, 0.05f, 0.6f);
+        TransitionPreset p = MakePreset("Mosaic", "画面が粗いモザイクになって暗転し、モザイクのまま明ける", 0.6f, 0.05f, 0.6f);
         TransitionLayer l = MakeLayer("黒", TransitionShape::Fade, kBlack);
         l.start = 0.6f;
         p.cover.layers.push_back(l);
@@ -595,7 +595,7 @@ std::vector<TransitionPreset> TransitionLibrary::BuiltInPresets()
         list.push_back(p);
     }
     {
-        TransitionPreset p = MakePreset("ズームで突入", "中心へ流れるぼかしで突っ込み、白く飛ぶ", 0.5f, 0.05f, 0.5f);
+        TransitionPreset p = MakePreset("ZoomToWhite", "中心へ流れるぼかしで突っ込み、白く飛ぶ", 0.5f, 0.05f, 0.5f);
         TransitionLayer l = MakeLayer("白", TransitionShape::Fade, kWhite);
         l.start = 0.55f;
         p.cover.layers.push_back(l);
@@ -606,7 +606,7 @@ std::vector<TransitionPreset> TransitionLibrary::BuiltInPresets()
         list.push_back(p);
     }
     {
-        TransitionPreset p = MakePreset("ノイズで乱れる", "色ずれ・揺れ・粗いモザイクで乱れて切り替わる（デジタルな場面転換）", 0.4f, 0.05f, 0.4f);
+        TransitionPreset p = MakePreset("GlitchNoise", "色ずれ・揺れ・粗いモザイクで乱れて切り替わる（デジタルな場面転換）", 0.4f, 0.05f, 0.4f);
         TransitionLayer l = MakeLayer("黒", TransitionShape::Fade, kBlack);
         l.start = 0.7f;
         p.cover.layers.push_back(l);
@@ -618,7 +618,7 @@ std::vector<TransitionPreset> TransitionLibrary::BuiltInPresets()
         list.push_back(p);
     }
     {
-        TransitionPreset p = MakePreset("歪みながら暗転", "画面が縦横に揺らいで歪みながら黒へフェードする", 1.4f, 0.15f, 0.9f);
+        TransitionPreset p = MakePreset("WarpToBlack", "画面が縦横に揺らいで歪みながら黒へフェードする", 1.4f, 0.15f, 0.9f);
         TransitionLayer l = MakeLayer("黒", TransitionShape::Fade, kBlack);
         l.start = 0.4f;
         l.easing = EasingType::InSine;
@@ -630,7 +630,7 @@ std::vector<TransitionPreset> TransitionLibrary::BuiltInPresets()
         list.push_back(p);
     }
     {
-        TransitionPreset p = MakePreset("渦が外から巻き込む", "3色の太い渦が画面の外側から中心へ巻き込んで覆い、回ったまま薄くなって消える", 0.9f, 0.3f, 0.5f);
+        TransitionPreset p = MakePreset("VortexInward", "3色の太い渦が画面の外側から中心へ巻き込んで覆い、回ったまま薄くなって消える", 0.9f, 0.3f, 0.5f);
         TransitionLayer l = MakeLayer("渦", TransitionShape::Vortex, kBlack);
         l.count = 3.0f;
         l.twist = 1.5f;
@@ -647,7 +647,7 @@ std::vector<TransitionPreset> TransitionLibrary::BuiltInPresets()
         list.push_back(p);
     }
     {
-        TransitionPreset p = MakePreset("二重にぼやけてフェード", "画面が二重にずれてぼやけ、そのまま黒へ溶ける", 1.2f, 0.2f, 0.9f);
+        TransitionPreset p = MakePreset("DoubleVisionFade", "画面が二重にずれてぼやけ、そのまま黒へ溶ける", 1.2f, 0.2f, 0.9f);
         TransitionLayer l = MakeLayer("黒", TransitionShape::Fade, kBlack);
         l.start = 0.5f;
         l.easing = EasingType::InSine;
@@ -658,7 +658,7 @@ std::vector<TransitionPreset> TransitionLibrary::BuiltInPresets()
         list.push_back(p);
     }
     {
-        TransitionPreset p = MakePreset("クロスフェード", "前の画面がそのまま新しい画面へ溶けていく（暗転しない）", 0.0f, 0.0f, 0.8f);
+        TransitionPreset p = MakePreset("CrossFade", "前の画面がそのまま新しい画面へ溶けていく（暗転しない）", 0.0f, 0.0f, 0.8f);
         TransitionLayer l = MakeLayer("前の画面", TransitionShape::Fade, kBlack);
         l.fill = TransitionFill::PreviousScreen;
         p.revealMode = TransitionRevealMode::Custom;
@@ -666,7 +666,7 @@ std::vector<TransitionPreset> TransitionLibrary::BuiltInPresets()
         list.push_back(p);
     }
     {
-        TransitionPreset p = MakePreset("前の画面をワイプで押し出す", "新しい画面が右から流れ込み、前の画面を押し流す", 0.0f, 0.0f, 0.6f);
+        TransitionPreset p = MakePreset("PushWipe", "新しい画面が右から流れ込み、前の画面を押し流す", 0.0f, 0.0f, 0.6f);
         TransitionLayer l = MakeLayer("前の画面", TransitionShape::Wipe, kBlack);
         l.fill = TransitionFill::PreviousScreen;
         l.angle = 180.0f;
@@ -680,7 +680,7 @@ std::vector<TransitionPreset> TransitionLibrary::BuiltInPresets()
         list.push_back(p);
     }
     {
-        TransitionPreset p = MakePreset("前の画面が六角形に崩れる", "前の画面が六角形のかけらになって消えていく", 0.0f, 0.0f, 0.9f);
+        TransitionPreset p = MakePreset("HexagonShatter", "前の画面が六角形のかけらになって消えていく", 0.0f, 0.0f, 0.9f);
         TransitionLayer l = MakeLayer("前の画面", TransitionShape::Hexagons, kBlack);
         l.fill = TransitionFill::PreviousScreen;
         l.count = 9.0f;

@@ -224,6 +224,7 @@ void PipelineManager::CreateAllPipelines()
     CreateStandardPipelines();
     CreateParticlePipelines();
     CreateSpritePipelines();
+    CreateBubblePipelines();
     CreateRenderPipelines();
     CreateSkinningPipelines();
     CreateLine3dPipelines();

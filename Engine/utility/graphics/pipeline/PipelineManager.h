@@ -157,6 +157,8 @@ enum class PipelineType {
     // ポストエフェクトのチェーン出口。HDR(リニアFP16) を露出とトーンマップで
     // 0〜1 の見える範囲へ収めてから最終結果テクスチャへ書く。
     ToneMap,
+    // 吹き出し（頂点ごとの色を持つ2Dの四角形）
+    Bubble,
 };
 
 class PipelineManager {
@@ -295,6 +297,10 @@ class PipelineManager {
     void CreateSpritePipelines();
     Microsoft::WRL::ComPtr<ID3D12RootSignature> CreateSpriteRootSignature();
     Microsoft::WRL::ComPtr<ID3D12PipelineState> CreateSpriteGraphicsPipeline(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature, BlendMode blendMode);
+
+    // 吹き出し関連
+    void CreateBubblePipelines();
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> CreateBubbleGraphicsPipeline(Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature);
 
     // レンダー関連
     void CreateRenderPipelines();

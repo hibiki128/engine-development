@@ -339,7 +339,7 @@ void SceneTransition::DrawPresetList()
         if (ImGui::MenuItem(ICON_FA_FILE " 空から（黒のフェード1枚）"))
         {
             TransitionPreset preset;
-            preset.name = library.MakeUniqueName("新しい遷移");
+            preset.name = library.MakeUniqueName("NewTransition");
             TransitionLayer layer;
             layer.name = "黒";
             preset.cover.layers.push_back(layer);

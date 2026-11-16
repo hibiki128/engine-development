@@ -43,6 +43,7 @@ void ImGuiManager::BuildWindowRegistry()
         {"assets", ICON_FA_IMAGES, "アセットブラウザ", "アセット・UI", "画像・モデル・プレハブ・サウンド・JSON を探して、ドラッグで割り当て・配置します", &showAssetBrowserView_},
         {"sprites", ICON_FA_SQUARE, "スプライトマネージャ", "アセット・UI", "2Dスプライトの一覧・編集と、文字スプライトの作成", &showSpriteManagerView_},
         {"uiEditor", ICON_FA_PLAY_CIRCLE, "UIエディタ", "アセット・UI", "スプライトのグループ化と、名前付きイージング(トゥイーン)の作成・再生", &showUIEditorView_},
+        {"bubble", ICON_FA_COMMENT, "吹き出し", "アセット・UI", "吹き出しの見た目と出し方", &showBubbleView_},
 
         {"motion", ICON_FA_CODE_BRANCH, "モーションエディター", "アニメーション・AI", "オブジェクトのモーション（アニメーション）を編集します", &showMotionEditorView_},
         {"timeline", ICON_FA_FILM, "タイムライン", "アニメーション・AI", "カメラ・オブジェクト・音・パーティクルを1本の時間軸に並べて演出を作ります", &showTimelineView_},
@@ -879,7 +880,7 @@ void ImGuiManager::BuildPaletteCommands(std::vector<EditorCommand> &out)
         const std::string sceneName = sceneNames[i];
         add(Kind::Scene, ICON_FA_GAMEPAD, sceneName + " シーンへ", "scene シーン切り替え", (i < 9) ? "Ctrl+" + std::to_string(i + 1) : "",
             [sceneName] {
-                SceneManager::GetInstance()->NextSceneReservation(sceneName);
+                SceneManager::GetInstance()->SceneChange(sceneName);
                 ImGuiNotification::Post(sceneName + " シーンへ移行します", {0.4f, 0.8f, 1.0f, 1.0f});
             },
             SceneManager::GetInstance()->GetCurrentSceneName() == sceneName);

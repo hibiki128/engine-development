@@ -79,7 +79,7 @@ class SceneManager
     /// </summary>
     /// <param name="sceneName">切り替え先のシーン名</param>
     /// <param name="transitionPreset">使う遷移の演出の名前（空なら「シーン遷移」窓の決まり・既定から選ぶ）</param>
-    void NextSceneReservation(const std::string &sceneName, const std::string &transitionPreset = "");
+    void SceneChange(const std::string &sceneName, const std::string &transitionPreset = "");
 
     /// <summary>
     /// シーン切り替え
