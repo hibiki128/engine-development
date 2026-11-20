@@ -2,6 +2,7 @@
 #include "CameraManager.h"
 #include "frame/Frame.h"
 #include <algorithm>
+#include <attachment/AttachmentManager.h>
 #include <nlohmann/json.hpp>
 #ifdef USE_IMGUI
 #include <imgui.h>
@@ -47,6 +48,8 @@ Camera *CameraManager::Create(const std::string &name)
         selectedName_ = name;
         RefreshOutput(); // 生成直後に描画されても正しい行列になるようにしておく
     }
+    // シーンの Initialize からすぐ親子付けできるよう生成時にも登録
+    SyncAttachTargets();
     return pCamera;
 }
 
@@ -76,6 +79,7 @@ void CameraManager::Remove(const std::string &name)
         pBlendToCamera_ = nullptr;
     }
     cameras_.erase(it);
+    SyncAttachTargets();
 
     // アクティブが消えたら残っているどれかを繋ぎで有効にする
     if (!pActiveCamera_ && !cameras_.empty())
@@ -87,6 +91,7 @@ void CameraManager::Remove(const std::string &name)
 
 void CameraManager::Clear()
 {
+    AttachmentManager::GetInstance()->UnregisterKind(AttachKind::Camera);
     cameras_.clear();
     pActiveCamera_ = nullptr;
     pBlendFromCamera_ = nullptr;
@@ -154,6 +159,7 @@ void CameraManager::BlendTo(Camera *pCamera, float duration, EasingType easing)
     pBlendToCamera_ = pCamera;
     blendDuration_ = duration;
     blendTime_ = 0.0f;
+    blendRate_ = 0.0f;
     blendEasing_ = easing;
     blending_ = true;
     selectedName_ = pCamera->GetName();
@@ -171,6 +177,7 @@ void CameraManager::Update()
     {
         camera->Update();
     }
+    SyncAttachTargets();
 
     if (blending_)
     {
@@ -189,12 +196,39 @@ void CameraManager::Update()
         {
             // 時間はクランプしてから渡す（duration を超えると外挿して行き過ぎる）
             const float time = std::clamp(blendTime_, 0.0f, duration);
-            const float t = ApplyEasing(blendEasing_, 0.0f, 1.0f, time, duration);
-            blendedCamera_->BlendFrom(*pBlendFromCamera_, *pBlendToCamera_, t);
+            blendRate_ = ApplyEasing(blendEasing_, 0.0f, 1.0f, time, duration);
         }
     }
 
+    SyncOutput();
+}
+
+void CameraManager::SyncOutput()
+{
+    // 切り替え中は今の両カメラで補間し直す
+    if (blending_ && blendedCamera_ && pBlendFromCamera_ && pBlendToCamera_)
+    {
+        blendedCamera_->BlendFrom(*pBlendFromCamera_, *pBlendToCamera_, blendRate_);
+    }
     RefreshOutput();
+}
+
+void CameraManager::SyncAttachTargets()
+{
+    AttachmentManager *attachment = AttachmentManager::GetInstance();
+    attachment->UnregisterKind(AttachKind::Camera);
+    for (auto &[name, camera] : cameras_)
+    {
+        if (!camera->GetShouldSave())
+        {
+            continue;
+        }
+        AttachTarget target;
+        target.kind = AttachKind::Camera;
+        target.name = AttachName(name);
+        target.camera = camera.get();
+        attachment->Register(target);
+    }
 }
 
 void CameraManager::RefreshOutput()

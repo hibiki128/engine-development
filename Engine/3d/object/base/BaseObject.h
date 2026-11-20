@@ -100,6 +100,13 @@ class BaseObject {
     virtual void CreatePrimitiveModel(const PrimitiveType &type);
 
     /// <summary>
+    /// 位置・コライダー・物理などを残したまま、見た目を指定したモデルへ差し替え（追加済みのアニメーションは外れる）
+    /// </summary>
+    /// <param name="modelPath">models ルートからの相対パス</param>
+    /// <returns>bool: 差し替えた、または既に同じモデルなら true（ファイルが無ければ false で今のまま）</returns>
+    bool ChangeModel(const std::string &modelPath);
+
+    /// <summary>
     /// メタボールとして作り、自分のモデルは描かずに同じグループのメタボールと融合した表面として描かれるようにする
     /// </summary>
     /// <param name="groupName">融合するグループ名（空なら名前なしの物すべてとくっつく）</param>

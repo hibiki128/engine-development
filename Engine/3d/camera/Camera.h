@@ -123,6 +123,9 @@ class Camera
     /// <summary>注視をやめる（向きは手動設定に戻る）</summary>
     void ClearTarget();
 
+    /// <summary>注視点か注視対象を設定中か</summary>
+    bool HasTarget() const { return hasTarget_ || pTargetTransform_ != nullptr; }
+
     /// <summary>
     /// 中心の周りを回る位置へ移動して中心を向く（周回カメラ）。
     /// </summary>

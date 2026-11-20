@@ -8,6 +8,7 @@
 
 namespace Hagine {
 class WorldTransform;
+class Camera;
 
 /// <summary>
 /// 親子付けできる対象の種類。UIのアイコン代わりの分類と、まとめて登録解除するのに使う。
@@ -17,6 +18,7 @@ enum class AttachKind
     Object,   // BaseObject（3Dオブジェクト）
     Light,    // 光源（点光源・スポットライト）
     Particle, // パーティクルエミッター
+    Camera,   // カメラ
 };
 
 /// <summary>
@@ -37,6 +39,9 @@ struct AttachTarget
     // SRT をまとめて持っている場合はこちら（優先される）
     WorldTransform *worldTransform = nullptr;
 
+    // カメラ（位置・向きは Camera の関数で読み書き）
+    Camera *camera = nullptr;
+
     // 生のメンバへの直接ポインタ（worldTransform が nullptr のとき使う）
     Vector3 *position = nullptr;      // 位置（必須）
     Vector3 *rotationEuler = nullptr; // 回転（任意・ラジアン）
@@ -45,7 +50,7 @@ struct AttachTarget
     /// <summary>
     /// 位置・回転を扱えるだけの情報が揃っているか
     /// </summary>
-    bool IsValid() const { return worldTransform != nullptr || position != nullptr; }
+    bool IsValid() const { return worldTransform != nullptr || camera != nullptr || position != nullptr; }
 };
 
 /// <summary>

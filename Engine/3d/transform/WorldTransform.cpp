@@ -117,17 +117,14 @@ Vector3 WorldTransform::GetWorldRotationEuler() const
 
 Quaternion WorldTransform::GetWorldRotationQuaternion() const
 {
-    // 親がいない場合はローカル回転をそのまま返す
-    if (!pParent_)
+    // 親がいない、または親の回転を継承しない場合はローカル回転をそのまま返す
+    if (!pParent_ || !inheritRotation_)
     {
         return quaternionRotation_;
     }
 
-    // 親のワールド回転を取得
-    Quaternion parentWorldRotation = pParent_->GetWorldRotationQuaternion();
-
-    // 親の回転 * ローカル回転 でワールド回転を計算
-    return parentWorldRotation * quaternionRotation_;
+    // matWorld_ が ローカル * 親 の順なので、クォータニオンも同じ順で掛ける
+    return quaternionRotation_ * pParent_->GetWorldRotationQuaternion();
 }
 
 void WorldTransform::UpdateEuler()

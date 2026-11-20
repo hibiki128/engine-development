@@ -117,6 +117,12 @@ void Object3d::Initialize()
 void Object3d::CreateModel(const std::string &filePath)
 {
     modelFilePath_ = filePath;
+    isPrimitive_ = false;
+
+    // 前のモデル用のアニメーションを破棄
+    currentModelAnimation_.reset();
+    modelAnimations_.clear();
+    isAnimationSwitchPending_ = false;
 
     // ベースモデルはデフォルトループ ON で登録
     animationLoopFlags_[modelFilePath_] = true;

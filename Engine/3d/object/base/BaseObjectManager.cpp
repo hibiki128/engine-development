@@ -1006,7 +1006,15 @@ void ShowAttachNode(const std::string &attachName, int depth)
     }
 
     // 種類が一目で分かるよう色を分ける
-    const ImVec4 color = (target->kind == AttachKind::Light) ? DebugTheme::kAccentYellow : DebugTheme::kAccentPurple;
+    ImVec4 color = DebugTheme::kAccentPurple;
+    if (target->kind == AttachKind::Light)
+    {
+        color = DebugTheme::kAccentYellow;
+    }
+    else if (target->kind == AttachKind::Camera)
+    {
+        color = DebugTheme::kAccentCyan;
+    }
     ImGui::PushStyleColor(ImGuiCol_Text, color);
     const bool nodeOpen = ImGui::TreeNodeEx(displayName.c_str(), flags);
     ImGui::PopStyleColor();
@@ -1080,7 +1088,7 @@ void BaseObjectManager::ShowRootAttachNodes()
 {
 #ifdef USE_IMGUI
     AttachmentManager *attachment = AttachmentManager::GetInstance();
-    for (AttachKind kind : {AttachKind::Light, AttachKind::Particle})
+    for (AttachKind kind : {AttachKind::Camera, AttachKind::Light, AttachKind::Particle})
     {
         for (const std::string &name : attachment->GetTargetNames(kind))
         {
@@ -1245,7 +1253,7 @@ void BaseObjectManager::ShowParentChildHierarchy()
             }
         }
 
-        // どのオブジェクトにも付いていない光源・パーティクルもルートに並べる（検索中は出さない）
+        // どのオブジェクトにも付いていないカメラ・光源・パーティクルもルートに並べる（検索中は出さない）
         if (!filtering)
         {
             ShowRootAttachNodes();

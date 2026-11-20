@@ -597,6 +597,8 @@ void Framework::Update() {
         // 光源やパーティクルの位置をここで親に合わせるので、ライト更新より前に行う。
         HAGINE_CPU_PROFILE("Update/Attachment");
         AttachmentManager::GetInstance()->Update();
+        // 親子付けで動いたカメラを描画用の出力へ反映
+        CameraManager::GetInstance()->SyncOutput();
     }
     {
         HAGINE_CPU_PROFILE("Update/Light");

@@ -1,6 +1,8 @@
 #include "AttachmentManager.h"
 #include <MyMath.h>
 #include <algorithm>
+#include <camera/Camera.h>
+#include <cmath>
 #include <data/DataHandler.h>
 #include <format>
 #include <transform/WorldTransform.h>
@@ -15,6 +17,8 @@ namespace {
 // 「子が外から動かされたか」を判定するときの許容差。
 // 浮動小数の丸めで毎フレーム相対値を取り直してしまわない程度に緩くしておく。
 constexpr float kMoveEpsilon = 1e-4f;
+// 回転の許容差（1 - |内積|。約 0.16 度）
+constexpr float kRotateEpsilon = 1e-6f;
 
 /// <summary>
 /// 種類の表示名
@@ -27,6 +31,8 @@ const char *KindLabel(AttachKind kind)
         return "光源";
     case AttachKind::Particle:
         return "パーティクル";
+    case AttachKind::Camera:
+        return "カメラ";
     case AttachKind::Object:
     default:
         return "オブジェクト";
@@ -45,6 +51,8 @@ AttachKind IntToKind(int value)
         return AttachKind::Light;
     case 2:
         return AttachKind::Particle;
+    case 3:
+        return AttachKind::Camera;
     default:
         return AttachKind::Object;
     }
@@ -56,6 +64,36 @@ AttachKind IntToKind(int value)
 bool NearlyEqual(const Vector3 &a, const Vector3 &b)
 {
     return (a - b).Length() <= kMoveEpsilon;
+}
+
+/// <summary>
+/// 2つの回転が実質同じか（q と -q は同じ回転として扱う）
+/// </summary>
+bool NearlyEqualRotation(const Quaternion &a, const Quaternion &b)
+{
+    return 1.0f - std::abs(a.Normalize().Dot(b.Normalize())) <= kRotateEpsilon;
+}
+
+/// <summary>
+/// MakeRotateXYZMatrix（Rx * Ry * Rz）で同じ行列になるオイラー角を算出
+/// </summary>
+Vector3 RotateXYZMatrixToEuler(const Matrix4x4 &m)
+{
+    Vector3 euler{};
+    const float cosY = std::sqrt(m.m[0][0] * m.m[0][0] + m.m[0][1] * m.m[0][1]);
+    euler.y = std::atan2(-m.m[0][2], cosY);
+    if (cosY > 1e-6f)
+    {
+        euler.x = std::atan2(m.m[1][2], m.m[2][2]);
+        euler.z = std::atan2(m.m[0][1], m.m[0][0]);
+    }
+    else
+    {
+        // 真上・真下を向いているときは Z 回りを X 回りへまとめる
+        euler.x = std::atan2(-m.m[2][1], m.m[1][1]);
+        euler.z = 0.0f;
+    }
+    return euler;
 }
 } // namespace
 
@@ -239,6 +277,10 @@ Vector3 AttachmentManager::ReadPosition(const AttachTarget &target)
     {
         return target.worldTransform->GetWorldPosition();
     }
+    if (target.camera)
+    {
+        return target.camera->GetPosition();
+    }
     return target.position ? *target.position : Vector3{};
 }
 
@@ -246,7 +288,17 @@ Quaternion AttachmentManager::ReadRotation(const AttachTarget &target)
 {
     if (target.worldTransform)
     {
-        return target.worldTransform->GetWorldRotationQuaternion();
+        // WorldTransform の回転は描画で共役として効くので、q * v の向きに揃える
+        return target.worldTransform->GetWorldRotation().Conjugate();
+    }
+    if (target.camera)
+    {
+        // 描画行列の回転を q * v の向きに揃える
+        Matrix4x4 rotation = target.camera->GetViewProjection().matWorld_;
+        rotation.m[3][0] = 0.0f;
+        rotation.m[3][1] = 0.0f;
+        rotation.m[3][2] = 0.0f;
+        return MatrixToQuaternion(rotation).Normalize().Conjugate();
     }
     if (target.rotationEuler)
     {
@@ -264,6 +316,11 @@ void AttachmentManager::WritePosition(const AttachTarget &target, const Vector3 
         target.worldTransform->translation_ = position;
         return;
     }
+    if (target.camera)
+    {
+        target.camera->SetPosition(position);
+        return;
+    }
     if (target.position)
     {
         *target.position = position;
@@ -274,7 +331,16 @@ void AttachmentManager::WriteRotation(const AttachTarget &target, const Quaterni
 {
     if (target.worldTransform)
     {
-        target.worldTransform->SetRotationQuaternion(rotation);
+        target.worldTransform->SetRotationQuaternion(rotation.Conjugate());
+        return;
+    }
+    if (target.camera)
+    {
+        // 注視中は注視の向きを優先。インスペクタと合うようオイラー角で設定
+        if (!target.camera->HasTarget())
+        {
+            target.camera->SetRotation(RotateXYZMatrixToEuler(QuaternionToMatrix4x4(rotation.Conjugate())));
+        }
         return;
     }
     if (target.rotationEuler)
@@ -317,10 +383,14 @@ void AttachmentManager::Update()
 
         // 前フレームに書いた値と違っていれば、子が外から動かされたということ。
         // 相対値を取り直して、その新しい位置関係でくっつけ直す。
+        // カメラは向きの変更でも取り直す（インスペクタで角度を合わせられるように）
+        const bool rotatedByUser = child->camera && !child->camera->HasTarget() && link.inheritRotation &&
+                                   !NearlyEqualRotation(ReadRotation(*child), link.lastWrittenRotation);
         const bool movedByUser =
             link.hasWritten &&
             (!NearlyEqual(ReadPosition(*child), link.lastWrittenPosition) ||
-             (child->direction && !NearlyEqual(*child->direction, link.lastWrittenDirection)));
+             (child->direction && !NearlyEqual(*child->direction, link.lastWrittenDirection)) ||
+             rotatedByUser);
 
         if (!link.hasLocal || movedByUser)
         {
@@ -373,7 +443,7 @@ void AttachmentManager::DrawImGui()
 #ifdef USE_IMGUI
     SectionHeader("[ 親子付け（種類をまたいだアタッチ）]", DebugTheme::kAccentCyan);
     ImGui::PushStyleColor(ImGuiCol_Text, DebugTheme::kTextDim);
-    ImGui::TextWrapped("光源やパーティクルを3Dオブジェクトに付けられます。\n"
+    ImGui::TextWrapped("光源・パーティクル・カメラを3Dオブジェクトに付けられます。\n"
                        "付けたあとも子を動かせば、その位置関係のままついていきます");
     ImGui::PopStyleColor();
 

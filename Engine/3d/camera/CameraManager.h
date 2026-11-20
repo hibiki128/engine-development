@@ -117,6 +117,17 @@ class CameraManager
     void Update();
 
     /// <summary>
+    /// 描画用の出力を今のカメラの状態で作り直す（親子付けでカメラが動いた後に Framework が呼ぶ）
+    /// </summary>
+    void SyncOutput();
+
+    /// <summary>
+    /// 親子付け（AttachmentManager）で使うカメラの登録名
+    /// </summary>
+    /// <param name="cameraName">カメラ名</param>
+    static std::string AttachName(const std::string &cameraName) { return "カメラ/" + cameraName; }
+
+    /// <summary>
     /// ImGuiでカメラ一覧と選択中カメラの設定を表示する
     /// </summary>
     void DrawImGui();
@@ -180,6 +191,11 @@ class CameraManager
     /// </summary>
     void AssignActive(Camera *pCamera);
 
+    /// <summary>
+    /// 保存対象のカメラを親子付けの対象として登録し直す（デバッグカメラは除く）
+    /// </summary>
+    void SyncAttachTargets();
+
   private:
     /// ===================================================
     /// private variables
@@ -195,6 +211,7 @@ class CameraManager
     Camera *pBlendToCamera_ = nullptr;               // 切り替え先
     float blendTime_ = 0.0f;                         // 経過時間
     float blendDuration_ = 0.0f;                     // 全体時間
+    float blendRate_ = 0.0f;                         // 今フレームの補間係数
     EasingType blendEasing_ = EasingType::InOutSine; // 補間のしかた
     // 補間結果を入れるだけの内部カメラ（登録簿には載せない）
     std::unique_ptr<Camera> blendedCamera_;

@@ -13,10 +13,13 @@
 #include "scene/SceneManager.h"
 #include "utility/debug/imgui/DebugUIHelper.h"
 #include "utility/debug/imgui/ImGuiNotification.h"
+#include <DirectXCommon.h>
 #include <algorithm>
+#include <asset/AssetPath.h>
+#include <debug/log/Logger.h>
+#include <filesystem>
 #ifdef USE_IMGUI
 #include "utility/debug/imgui/AssetDragDrop.h"
-#include <asset/AssetPath.h>
 #include <edit/play/PlayModeManager.h>
 #include <graphics/texture/TextureManager.h>
 #include <imgui_internal.h>
@@ -388,6 +391,77 @@ void BaseObject::CreatePrimitiveModel(const PrimitiveType &type) {
     LoadMaterials();
 
     AnimaLoadFromJson();
+}
+
+bool BaseObject::ChangeModel(const std::string &modelPath) {
+    if (modelPath.empty() || !obj3d_) {
+        return false;
+    }
+    // 同じモデルなら何もしない
+    if (!isPrimitive_ && !metaBall_ && obj3d_->GetModelFilePath() == modelPath) {
+        return true;
+    }
+    // ファイルが無ければ今の見た目のまま
+    const std::string fullPath = AssetPath::Model(modelPath);
+    std::error_code ec;
+    if (!std::filesystem::exists(std::filesystem::path(std::u8string(fullPath.begin(), fullPath.end())), ec)) {
+        Logger::Warn("[BaseObject] モデルが見つからないため差し替えなし: " + fullPath + " (" + objectName_ + ")");
+        return false;
+    }
+
+    // 前のマテリアル・スキンを GPU が使い終わるまで待機
+    DirectXCommon::GetInstance()->WaitForGPU();
+
+    // メタボールの融合グループから外す
+    if (metaBall_) {
+        metaBall_.reset();
+        isModelDraw_ = true;
+    }
+    modelPath_ = modelPath;
+    isPrimitive_ = false;
+    type_ = PrimitiveType::Count;
+
+    obj3d_->CreateModel(modelPath_);
+
+    // テクスチャ・色はモデルの物を使用
+    texturePaths_ = obj3d_->GetAllTexturePath();
+
+    // メッシュコライダーを新しい形で再構築
+    for (const std::unique_ptr<ColliderBase> &collider : colliders_) {
+        if (collider && collider->GetType() == ColliderType::Mesh) {
+            auto *pMesh = static_cast<MeshCollider *>(collider.get());
+            pMesh->SetSourceModelPath(modelPath_);
+            pMesh->BuildFromModel(obj3d_->GetModel());
+        }
+    }
+
+    // 各ソルバの骨を新しいスケルトンから再検出
+    ModelAnimation *pAnimation = obj3d_->GetCurrentModelAnimation();
+    Bone *pBone = pAnimation ? pAnimation->GetBone() : nullptr;
+    if (pBone && !pBone->GetSkeletonRef().joints.empty()) {
+        const Skeleton &skeleton = pBone->GetSkeletonRef();
+        if (footIk_) {
+            footIk_->AutoDetect(skeleton);
+        }
+        if (lookAt_) {
+            lookAt_->AutoDetect(skeleton);
+        }
+        if (handIk_) {
+            handIk_->AutoDetect(skeleton);
+        }
+        if (springBone_) {
+            springBone_->AutoDetect(skeleton);
+        }
+    }
+
+    // ステートマシンを新しいモデルで付け直し
+    if (animStateMachine_) {
+        const std::string assetName = animStateMachine_->GetAssetName();
+        if (!SetAnimationStateMachine(assetName)) {
+            animStateMachine_.reset();
+        }
+    }
+    return true;
 }
 
 void BaseObject::CreateMetaBallModel(const std::string &groupName) {
