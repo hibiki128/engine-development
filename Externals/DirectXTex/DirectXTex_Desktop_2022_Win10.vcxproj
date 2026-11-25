@@ -97,7 +97,7 @@
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <SupportJustMyCode>false</SupportJustMyCode>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
-      <LanguageStandard>stdcpp20</LanguageStandard>
+      <LanguageStandard>stdcpp23</LanguageStandard>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -125,6 +125,7 @@
       <GuardEHContMetadata>true</GuardEHContMetadata>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <LanguageStandard>stdcpp23</LanguageStandard>
     </ClCompile>
     <Link>
       <GenerateDebugInformation>true</GenerateDebugInformation>
@@ -153,6 +154,7 @@
       <ExternalWarningLevel>Level4</ExternalWarningLevel>
       <GuardEHContMetadata>true</GuardEHContMetadata>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <LanguageStandard>stdcpp23</LanguageStandard>
     </ClCompile>
     <Link>
       <GenerateDebugInformation>true</GenerateDebugInformation>
@@ -229,11 +231,7 @@
          リポジトリのパスに日本語が含まれると Exec が作る一時バッチの文字コードの都合で
          作業ディレクトリへ移れず、スクリプトを見つけられずに MSB3073 (exit 9009) になる。
          フルパス＋拡張子で呼び、UseUtf8Encoding も明示して回避する。 -->
-    <Exec Condition="!Exists('Shaders/Compiled/BC6HEncode_EncodeBlockCS.inc')"
-          WorkingDirectory="$(ProjectDir)Shaders"
-          Command="call &quot;$(ProjectDir)Shaders\CompileShaders.cmd&quot;"
-          UseUtf8Encoding="Always"
-          EnvironmentVariables="WindowsSdkVerBinPath=$(_ATGFXCPath)" />
+    <Exec Condition="!Exists('Shaders/Compiled/BC6HEncode_EncodeBlockCS.inc')" WorkingDirectory="$(ProjectDir)Shaders" Command="call &quot;$(ProjectDir)Shaders\CompileShaders.cmd&quot;" UseUtf8Encoding="Always" EnvironmentVariables="WindowsSdkVerBinPath=$(_ATGFXCPath)" />
     <PropertyGroup>
       <_ATGFXCPath />
     </PropertyGroup>
